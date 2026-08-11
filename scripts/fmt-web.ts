@@ -11,7 +11,7 @@
 import { exists } from "@std/fs";
 import { fromFileUrl } from "@std/path";
 import * as prettier from "npm:prettier@3.9.1";
-import * as sveltePlugin from "npm:prettier-plugin-svelte@3.5.2";
+import * as sveltePlugin from "npm:prettier-plugin-svelte@4.1.1";
 import * as astroPlugin from "npm:prettier-plugin-astro@0.14.1";
 
 // Repo root as an OS path. `new URL("..").pathname` yields "/C:/work/" on Windows

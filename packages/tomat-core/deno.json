@@ -34,7 +34,7 @@
     "safe-regex": "npm:safe-regex@^2.1.1",
     "ndjson": "npm:ndjson@^2.0.0",
     "ignore": "npm:ignore@^7.0.5",
-    "openai": "npm:openai@^6.42.0",
+    "openai": "npm:openai@^7.0.0",
     "pidusage": "npm:pidusage@^4.0.1"
   }
 }

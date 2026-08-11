@@ -41,7 +41,7 @@
     "@tauri-apps/plugin-process": "npm:@tauri-apps/plugin-process@^2.3.1",
     "@tauri-apps/plugin-updater": "npm:@tauri-apps/plugin-updater@^2.10.1",
     "countries-and-timezones": "npm:countries-and-timezones@^3.9.0",
-    "diff": "npm:diff@^8.0.2",
+    "diff": "npm:diff@^9.0.0",
     "dompurify": "npm:dompurify@^3.4.8",
     "fflate": "npm:fflate@^0.8.3",
     "github-markdown-css": "npm:github-markdown-css@^5.9.0",
@@ -65,11 +65,11 @@
     "@iconify/json": "npm:@iconify/json@^2.2.483",
     "sass-embedded": "npm:sass-embedded@^1.100.0",
     "svelte-check": "npm:svelte-check@^4.6.0",
-    "@types/node": "npm:@types/node@^25.7.0",
+    "@types/node": "npm:@types/node@^26.0.0",
     "vitest": "npm:vitest@^4.1.8",
     "@vitest/coverage-v8": "npm:@vitest/coverage-v8@^4.1.8",
     "@testing-library/svelte": "npm:@testing-library/svelte@^5.3.1",
-    "@testing-library/jest-dom": "npm:@testing-library/jest-dom@^6.9.1",
-    "jsdom": "npm:jsdom@^29.1.1"
+    "@testing-library/jest-dom": "npm:@testing-library/jest-dom@^7.0.0",
+    "jsdom": "npm:jsdom@^30.0.0"
   }
 }

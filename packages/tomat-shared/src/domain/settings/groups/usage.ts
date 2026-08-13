@@ -7,7 +7,7 @@ export const usageGroup: SettingGroup = {
   id: "usage",
   destination: ["client-on-client", "core"],
   name: "Usage",
-  description: "What tomat is using right now: RAM, CPU, and disk on this device and on the Core.",
+  description: "What Tomat is using right now: RAM, CPU, and disk on this device and on the Core.",
   descriptionTier: "ondemand",
   icon: "i-material-symbols-analytics-rounded",
   iconInactive: "i-material-symbols-analytics-outline-rounded",

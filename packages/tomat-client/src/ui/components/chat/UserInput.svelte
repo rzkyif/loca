@@ -336,8 +336,8 @@
   let placeholderText = $derived(
     inputNotice
       ? inputNotice
-      : connectionState.reconnecting
-        ? "Reconnecting to Core..."
+      : connectionState.unavailableCopy
+        ? connectionState.unavailableCopy
         : downloadsState.hasPending
           ? "Pending download, open settings!"
           : downloadsState.loading
@@ -781,7 +781,7 @@
   let textareaDisabled = $derived(
     downloadsState.hasPending ||
       downloadsState.loading ||
-      connectionState.reconnecting ||
+      connectionState.coreUnavailable ||
       (llmStatus !== "Running" && llmStatus !== "Disabled"),
   );
 </script>
@@ -846,7 +846,9 @@
     : sttIdle
       ? "text-default-700 hov:text-default-900"
       : "text-default-700"}
-  voiceDisabled={vadManager.loading || (!sttIdle && !vadManager.enabled)}
+  voiceDisabled={connectionState.coreUnavailable ||
+    vadManager.loading ||
+    (!sttIdle && !vadManager.enabled)}
   onVoiceToggle={() => vadManager.toggle()}
   pttHolding={shortcutHandler.pttHolding}
   pttHoldDuration={shortcutHandler.pttHoldDuration}
@@ -855,7 +857,7 @@
   {sttIdle}
   {hasActiveWork}
   {hasContent}
-  sendDisabled={connectionState.reconnecting}
+  sendDisabled={connectionState.coreUnavailable}
   onSend={handleSend}
   onStop={handleStop}
   onInterruptAndSend={handleInterruptAndSend}

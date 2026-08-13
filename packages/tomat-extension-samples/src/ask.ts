@@ -133,7 +133,7 @@ export async function sampleTable(
   const answers = await ctx.askUser([
     {
       kind: "table",
-      question: "Review the rows before saving.",
+      question: "Review the rows before saving:",
       columns,
       rows: [
         ["Apples", "3"],

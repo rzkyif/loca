@@ -6,8 +6,8 @@ export const sessionBarSamples = {
   default: {
     tokenUsage: { used: 980, max: 8192 },
     showTitle: true,
-    defaultTitle: "Installing tomat",
-    titleText: "Installing tomat",
+    defaultTitle: "Installing Tomat",
+    titleText: "Installing Tomat",
   },
   nearFull: {
     tokenUsage: { used: 7800, max: 8192 },

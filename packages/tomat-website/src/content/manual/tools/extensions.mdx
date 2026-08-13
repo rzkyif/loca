@@ -127,7 +127,7 @@ Each entry in `tools` describes one thing the agent can do. Its fields:
 | `permissions`     | no       | What the tool is allowed to reach. See [Permissions](#permissions).                                              |
 
 The `description` and `triggers` do double duty: the user reads them when browsing
-tools, and tomat uses them to decide when a tool is relevant to a message, so write
+tools, and Tomat uses them to decide when a tool is relevant to a message, so write
 them as the real phrases a person would say rather than as decoration. Lead the
 description with what the tool does, add a short "Use when..." cue, and put any
 constraints the model must respect (a value range, a required format) in the
@@ -155,7 +155,7 @@ it throws, the agent sees the error and can react to it.
 
 <Aside type="note">
   `ToolContext` is the shape of the `ctx` argument. The samples and the built-in each keep a small
-  local copy in `src/types.ts`, so an extension has no compile-time dependency on a tomat package.
+  local copy in `src/types.ts`, so an extension has no compile-time dependency on a Tomat package.
   Copy that file into your own extension as the source of truth for what `ctx` provides.
 </Aside>
 
@@ -339,23 +339,23 @@ it did not declare. The samples and built-in extensions both keep co-located
 Core. They are the pattern to copy.
 
 To share an extension, publish it to npm with a name that starts `tomat-extension-`
-(a convention) and `"keywords": ["tomat-extension"]`. tomat finds extensions by that
+(a convention) and `"keywords": ["tomat-extension"]`. Tomat finds extensions by that
 keyword, so yours then shows up in the in-app marketplace for anyone to `Download`
 from Settings.
 
 ## How It Works
 
-Extensions are distributed the same way as ordinary software packages. tomat finds
-them on the public package registry by the keyword that marks a package as a tomat
+Extensions are distributed the same way as ordinary software packages. Tomat finds
+them on the public package registry by the keyword that marks a package as a Tomat
 extension, downloads the one you chose as a single archive, and checks it against the
 registry's own checksum before unpacking, so a corrupted or tampered download is
 caught rather than installed. It then resolves and locks the extension's dependencies
-and records a fingerprint of the installed files. That fingerprint is what lets tomat
+and records a fingerprint of the installed files. That fingerprint is what lets Tomat
 notice later if an extension's files have changed unexpectedly, and hold off running
 them until you confirm.
 
 Every tool call runs in its own sandboxed worker process that starts with access to
-nothing. tomat spawns it with exactly the permissions that tool declared and you
+nothing. Tomat spawns it with exactly the permissions that tool declared and you
 granted, expanding the path templates to real locations, and gives a sibling tool from
 the same extension its own separate grants. This is why a tool cannot quietly reach a
 network host or a file it never declared: the access was never handed to its process.
@@ -363,11 +363,11 @@ When a tool calls `askUser` or a capability it has not yet been granted, the wor
 pauses and surfaces the request to you in the session, and continues only once you
 answer.
 
-The built-in extension is the one exception to downloading. It ships with tomat and is
+The built-in extension is the one exception to downloading. It ships with Tomat and is
 installed on first boot from a copy the installer already placed on disk, verified
 against a signature, with no network call at all. That is deliberate: a fresh Core sets
 itself up completely offline and reaches out only when you choose to install something
 more.
 
-The other provider of tools is a program tomat talks to rather than a bundle it
+The other provider of tools is a program Tomat talks to rather than a bundle it
 installs: [MCP Servers](/manual/tools/mcp).

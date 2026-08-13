@@ -48,7 +48,6 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: . -> target
-          cache-all-crates: true
 
       # Cache Deno's module + npm cache between runs.
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -100,17 +99,6 @@ jobs:
       - name: "test:js (extension-samples)"
         run: deno task --cwd packages/tomat-extension-samples test:js
         timeout-minutes: 3
-      # Trust-root install-script verification (scripts/install/{core,client}.{sh,ps1}):
-      # not a package, so it is not covered by the per-package steps above. ubuntu-latest
-      # ships both OpenSSL 3.x and pwsh, so the POSIX and the pure-PowerShell Ed25519
-      # verify lanes both run here. TOMAT_REQUIRE_INSTALL_VERIFY makes the suite FAIL
-      # rather than skip if either interpreter is somehow absent, so a runner-image
-      # change can never silently drop this security-critical coverage.
-      - name: "test (install-script signature verification)"
-        run: deno test -A scripts/install/verify.test.ts
-        timeout-minutes: 3
-        env:
-          TOMAT_REQUIRE_INSTALL_VERIFY: "1"
 
   # Rust pipeline: clippy (the single Rust compile-check - `--all-targets` is a
   # superset of cargo check, so check is never run separately) plus the cargo test
@@ -155,7 +143,6 @@ jobs:
         with:
           workspaces: . -> target
           shared-key: rs-${{ matrix.os }}
-          cache-all-crates: true
       # --locked fails if any Cargo.lock would change, so a drifted lock can't
       # pass CI (the signed helper binaries are built from these locks).
       - run: cargo clippy --locked --manifest-path packages/tomat-client/src/tauri/Cargo.toml --all-targets -- -D warnings
@@ -225,7 +212,6 @@ jobs:
         with:
           workspaces: . -> target
           key: android
-          cache-all-crates: true
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
@@ -234,6 +220,17 @@ jobs:
           key: deno-${{ runner.os }}-${{ hashFiles('deno.lock', '**/deno.json', '**/deno.jsonc') }}
           restore-keys: |
             deno-${{ runner.os }}-
+      # Gradle distribution + dependency cache: without it every run re-downloads
+      # the gradle-bin zip (~1.5 min) plus the dependency graph during assemble.
+      # Keyed on the committed gradle build files under gen/android.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('packages/tomat-client/src/tauri/gen/android/**/*.gradle*', 'packages/tomat-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/tomat-client/src/tauri/gen/android/gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
       # Single ABI + debug: compiles the Rust android cfg, generates the wry Kotlin,
       # and runs the gradle Kotlin compile (where a metadata mismatch fails).
       - name: Android APK build (aarch64, debug)
@@ -246,12 +243,9 @@ jobs:
   # iOS cross-compile check. Same rationale as the android job: the shell's mobile
   # cfg (#[cfg(mobile)] / target_os = "ios") is only exercised on an Apple target,
   # so compile it for the device ABI here. Needs a macOS runner (xcodebuild is
-  # preinstalled); no signing, since this is a compile-only check. Dormant until
-  # the IOS_ENABLED repo variable is set (with the Apple account), so it consumes
-  # no macOS runner minutes and cannot block PRs before iOS work is active.
+  # preinstalled); no signing, since this is a compile-only check.
   ios:
     name: "iOS cross-compile check"
-    if: ${{ vars.IOS_ENABLED == 'true' }}
     runs-on: macos-14
     timeout-minutes: 30
     steps:
@@ -264,7 +258,6 @@ jobs:
         with:
           workspaces: . -> target
           key: ios
-          cache-all-crates: true
       - name: iOS cargo check (aarch64-apple-ios)
         run: |
           cargo check --locked \

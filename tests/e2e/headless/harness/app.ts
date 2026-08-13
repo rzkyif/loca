@@ -57,8 +57,10 @@ function installErrorHook(): void {
 
 export interface LaunchOptions {
   /** "paired": boot already connected to the core. "fresh": no paired core, the
-   *  app locks to the pairing wizard. Default "paired". */
-  scenario?: "paired" | "fresh";
+   *  app locks to the pairing wizard (welcome remote-connect page). "installer":
+   *  no paired core, but the spawned core presents as an installer-provided
+   *  LOCAL core, so first boot silently pairs with it. Default "paired". */
+  scenario?: "paired" | "fresh" | "installer";
   /** Initial mock LLM behaviour (default: echo). */
   llm?: LlmScript;
   /** Extra core settings.json entries (destination: core). */
@@ -137,6 +139,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   installE2ePlatform({
     tlsPin,
     clientFiles: opts.clientSettings ? { settings: opts.clientSettings } : undefined,
+    // Any scenario with a usable loopback core presents it as installed on
+    // disk: the app's boot counts a loopback-only paired core only when
+    // isLocalCoreInstalled() confirms the binary (and the deferred phase
+    // prunes it otherwise), and the spawned harness core IS that local core.
+    // "fresh" leaves it unset so the welcome remote-connect page shows.
+    localCore: scenario === "fresh" ? undefined : { adminToken, baseUrl },
   });
   registerCorePin(baseUrl, tlsPin);
 

@@ -13,14 +13,14 @@ A **tool** is one thing the agent can do beyond talking: search the web, fetch a
 page, run a calculation. Tools are how the agent acts in the world rather than only
 describing it. Every tool comes from a provider, either an
 [extension](/manual/tools/extensions) you install or an
-[MCP server](/manual/tools/mcp) tomat connects to, but they all gather in one place:
+[MCP server](/manual/tools/mcp) Tomat connects to, but they all gather in one place:
 the **Tools** group, where you turn each one on or off and set what it may do. Tool
 use is off until you enable it there, so a fresh install talks but does not act
 until you let it.
 
 ## How tools reach the agent
 
-You rarely hand-pick tools for a message. Before each one, tomat ranks your enabled
+You rarely hand-pick tools for a message. Before each one, Tomat ranks your enabled
 tools by how relevant they are to what you asked, and offers the agent only the
 best matches. A model handed every tool you own would waste its attention sorting
 through them; a short, relevant list keeps it focused on the task. The conversation
@@ -30,7 +30,7 @@ for.
 <RelevantToolsDemo />
 
 A few tools you rely on regardless can be marked as always available, so they are
-offered every time instead of waiting to be ranked in. How many tools tomat offers
+offered every time instead of waiting to be ranked in. How many tools Tomat offers
 per message, and which are always on, are dials in the same group.
 
 ## Reading what a tool did
@@ -57,7 +57,7 @@ adjust the selection dials above, all in one list.
 
 ## Permissions and the sandbox
 
-A tool can reach outside tomat, so each one declares the permissions it needs up
+A tool can reach outside Tomat, so each one declares the permissions it needs up
 front, such as access to a specific network host, and runs in a sandbox that holds
 it to them. A tool can only do what you have allowed it to, and you can see what it
 asked for before you let it run.
@@ -70,7 +70,7 @@ asked for before you let it run.
 ## How It Works
 
 The relevance ranking is powered by a small, separate model whose only job is to
-turn text into a list of numbers that captures its meaning. tomat does this once for
+turn text into a list of numbers that captures its meaning. Tomat does this once for
 each tool, from its description, and again for your message as you send it, then
 compares the message against every tool to find the closest matches. That is how the
 shortlist is chosen without the main model in the loop. When that quick pass is
@@ -78,7 +78,7 @@ unsure, an optional second step asks the model itself to refine the picks, and y
 always-available tools are added on top regardless of score.
 
 The sandbox is equally concrete. Each tool runs in its own isolated worker process
-that starts with no access to anything, and tomat grants it exactly the permissions
+that starts with no access to anything, and Tomat grants it exactly the permissions
 the tool declared and you allowed, nothing more, not even what a sibling tool from
 the same extension was given. When a tool is set to ask before a sensitive action,
 that worker pauses and surfaces the request to you in the session, and only

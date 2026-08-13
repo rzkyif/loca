@@ -8,7 +8,7 @@ and link it._
 
 ## Project Overview
 
-tomat is a local-first modular AI client split into a long-running service and a
+Tomat is a local-first modular AI client split into a long-running service and a
 thin desktop UI that talk over an HTTP+WS API, plus helper binaries, a bundled
 extension, and a distribution website. Tools come from two kinds of provider: an
 **extension** (a `tomat.json` bundle the core installs) and an **MCP server** (a
@@ -47,7 +47,7 @@ Model Context Protocol process the core connects to). The packages:
   a sample knowledge memory and a sample skill); NOT installed in production,
   only codebase-installed in the dev environment.
 - **`@tomat/website`**: Astro static site at `au.tomat.ing`: the landing page,
-  the feature showcase, the user manual, and the changelog. Renders the shared
+  the feature showcase, and the user manual. Renders the shared
   `@tomat/shared/ui` components so demos match the app, and is multi-page (link
   navigation + view transitions, not an SPA) so navigation works without JS.
 
@@ -125,19 +125,18 @@ through `npm:` specifiers from `deno task`.
   whole repo (code, comments, strings, Markdown, and every other tracked file).
   When flagged, reword so the sentence reads naturally rather than swapping in
   another symbol.
-- **Brand is lowercase.** The product is always written lowercase **tomat**,
-  even at the start of a sentence or heading. Only the word `tomat` is forced
-  lowercase: the two halves are **Core** (the service) and **Client** (the
-  desktop UI), capitalized when named in a sentence, whether on their own
-  (preferred: "Core", "Client") or with the brand ("tomat Core", "tomat
-  Client"). The thin vocabulary: `tomat` (the product), `tomat Core` /
-  `Core` (the service), `tomat Client` / `Client` (the desktop UI), and
-  `tomat built-in extension`. Hyphenated package names (`tomat-core`), the
-  all-caps `TOMAT_*` env vars, and `au.tomat.ing` identifiers are separate
-  tokens and keep their own casing. `deno task lint` rejects a capital-initial
-  spelling repo-wide via the `tomat/no-uppercase-tomat` oxlint rule plus
-  `check-uppercase-tomat.ts` (the same oxlint-rule-plus-walker pair as the
-  em-dash ban).
+- **Brand is Tomat.** The product is written **Tomat**, capitalized like any
+  proper noun, in prose, headings, and user-facing copy. The two halves are
+  **Core** (the service) and **Client** (the desktop UI), capitalized when named
+  in a sentence, whether on their own (preferred: "Core", "Client") or with the
+  brand ("Tomat Core", "Tomat Client"). The thin vocabulary: `Tomat` (the
+  product), `Tomat Core` / `Core` (the service), `Tomat Client` / `Client` (the
+  desktop UI), and `Tomat built-in extension`. Identifiers keep their own casing
+  and stay lowercase: hyphenated package, crate, and binary names
+  (`tomat-core`), the `@tomat/*` import scope, the all-caps `TOMAT_*` env vars,
+  `au.tomat.ing` and the bundle ids derived from it, the `~/.tomat` paths, the
+  `tomat.json` manifest filename, release artifact filenames (`tomat.pkg`), CSS
+  classes (`tomat-scroll`), and the `tomat::<scope>` log targets.
 - **Logging.** `tomat-core` modules log via `getLogger("scope")` from
   `src/shared/log.ts`; `console.*` is forbidden except the boot-failure catch in
   `main.ts`. Every line runs through `scrubSecrets` (same module) which masks
@@ -162,23 +161,23 @@ through `npm:` specifiers from `deno task`.
   (see `downloads/manager.ts` + the requirements/download routes + the client's
   `requestRequiredModal`). Boot and background code must not fetch, poll, check
   for updates, or download. The built-in extension is installed on first boot
-  OFFLINE from artifacts fetched + verified during install (the Core binary's
-  `bootstrap`/`install-service` subcommand plants
-  `extensions/.tomat-extension-builtin.{tgz,json}`, which every install front-end
-  - the thin scripts, the native installers, the in-app "set up a local Core"
-    flow - wraps; `seeding.ts` then re-verifies the Ed25519 signature + tarball
-    sha256 and installs them with zero network) - never a boot-time fetch. If the
-    plant is missing (an offline native-installer run), boot leaves the built-in for
-    the user to install from the extensions UI rather than fetching.
-    The ONLY place network is expected without a user action is the install phase
-    itself - the install scripts (`scripts/install/*`) and the `install-service`
-    subcommand they and the native installers delegate to - which runs before the
-    app is considered installed. New boot/background work routes through the
-    user-gated download and update flows; it never reaches out on its own.
+  OFFLINE from artifacts fetched + verified during install (the installer
+  payload carries `extensions/.tomat-extension-builtin.{tgz,json}` when the
+  build could stage it, and the Core binary's `bootstrap`/`install-service`
+  subcommand - which every native installer's install hook wraps - plants them
+  otherwise; `seeding.ts` then re-verifies the Ed25519 signature + tarball
+  sha256 and installs them with zero network) - never a boot-time fetch. If the
+  plant is missing (an offline installer run), boot leaves the built-in for
+  the user to install from the extensions UI rather than fetching.
+  The ONLY place network is expected without a user action is the install phase
+  itself - the `install-service` subcommand the native installers delegate to -
+  which runs before the app is considered installed. New boot/background work
+  routes through the user-gated download and update flows; it never reaches out
+  on its own.
 - **Channels and persistence.** All state lives under `~/.tomat/<channel>/`,
   where the channel (`stable` default, `dev`, `latest`) is selected by
-  `TOMAT_CHANNEL` and resolved identically in core, client, and the install
-  scripts. The one exception is `models/`, shared across channels at
+  `TOMAT_CHANNEL` and resolved identically in core, client, and the native
+  installers. The one exception is `models/`, shared across channels at
   `~/.tomat/models` so multi-GB weights are not re-downloaded per channel.
   Keychain entries, default ports, and service labels are channel-namespaced so
   two channels can run at once. See [DEVELOPMENT.md](DEVELOPMENT.md) for the
@@ -194,15 +193,18 @@ through `npm:` specifiers from `deno task`.
   install (Android enforces it at install time). The keystore is supplied at
   release time via base64 in the gitignored `.env`
   (`TOMAT_ANDROID_KEYSTORE_B64`); the decoded `*.jks` + `keystore.properties` are
-  gitignored and never committed. A fourth, OPTIONAL identity applies to macOS: an
-  Apple Developer ID Application certificate (via the `APPLE_*` vars in `.env`)
-  signs + notarizes the macOS client bundle, the client `.dmg`, and the Core
-  `.pkg` at build time. It is inert when unset - the build falls back to ad-hoc
-  signing (`signingIdentity` "-") and the install script strips the Gatekeeper
-  quarantine xattr, which is the current state. A fifth, also-dormant identity is
+  gitignored and never committed. A fourth, OPTIONAL identity pair applies to macOS
+  (via the `APPLE_*` vars in `.env`): an Apple Developer ID Application
+  certificate signs + notarizes the macOS client bundle,
+  and a Developer ID Installer certificate signs + notarizes the macOS `.pkg`
+  installer (`productsign` rejects the Application cert). Both are inert when unset - the
+  build falls back to ad-hoc signing (`signingIdentity` "-") and the `.pkg` ships
+  unsigned, so Gatekeeper warns until the user clears it once. The
+  same `APPLE_*` env (its App Store Connect API key) also gates + signs the iOS
+  App Store build, purely secret-driven. A fifth, also-dormant identity is
   Windows Authenticode (`WINDOWS_CERTIFICATE_THUMBPRINT` / `WINDOWS_SIGN_COMMAND`),
-  which would sign the client + Core NSIS installers; unset today, so Windows
-  installers ship unsigned and the install flow strips Mark-of-the-Web. See
+  which would sign the client NSIS + the unified installer; unset today, so
+  Windows installers ship unsigned and SmartScreen warns on first run. See
   [scripts/release/macos-signing.md](scripts/release/macos-signing.md).
 - **Distribution split.** Two Cloudflare-hosted hostnames, aligned with content
   type: `au.tomat.ing` (Astro Worker, landing page only) and `get.au.tomat.ing`
@@ -238,7 +240,7 @@ For anything beyond the above, the canonical docs are:
 - Release + deploy, channels, Cloudflare + R2 setup:
   [packages/tomat-website/README.md](packages/tomat-website/README.md)
 - macOS Developer ID signing + notarization (cert-ready checklist, entitlements,
-  `.dmg`, future iOS notes): [scripts/release/macos-signing.md](scripts/release/macos-signing.md)
+  iOS notes): [scripts/release/macos-signing.md](scripts/release/macos-signing.md)
 - Extension author API:
   [packages/tomat-extension-builtin/README.md](packages/tomat-extension-builtin/README.md)
 - User-facing copy (the single source for any string a user can read: settings,

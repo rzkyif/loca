@@ -2,7 +2,7 @@ import type { ComponentProps } from "svelte";
 import type { OmitSnippetProps } from "./types.ts";
 import type ModelPresetFieldView from "../components/settings/ModelPresetFieldView.svelte";
 
-// The device-tier buckets and the catalog models mirror what tomat actually
+// The device-tier buckets and the catalog models mirror what Tomat actually
 // ships (the recommendation tiers Smallest / Balanced / Smartest, and the
 // real Gemma 4 + Qwen3.5 families), so the gallery and the website demos show
 // the genuine picker rather than placeholder names.

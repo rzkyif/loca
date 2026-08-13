@@ -7,13 +7,15 @@
 //     secret store). A file rather than the build env because a persistent Gradle
 //     daemon pins whatever channel it first started with.
 //   - For non-stable channels we pass a `--config` override for a distinct
-//     productName (the on-device app label). The distinct applicationId that lets
-//     stable + latest install side by side is applied by gradle via an
-//     applicationIdSuffix keyed off TOMAT_CHANNEL (see gen/android/app/
-//     build.gradle.kts), NOT by overriding the Tauri `identifier`: the identifier
-//     drives the MainActivity's java package path, which is fixed at
-//     `tauri android init` time, so overriding it makes Tauri look for a package
-//     dir that does not exist.
+//     productName, which names the APK. The on-device app LABEL is not productName:
+//     it is `@string/app_name`, generated per channel by resValue() in
+//     gen/android/app/build.gradle.kts off TOMAT_CHANNEL, because Tauri writes
+//     res/values/strings.xml only at `tauri android init`, never on a build.
+//     The distinct applicationId that lets stable + latest install side by side is
+//     likewise applied by gradle via an applicationIdSuffix keyed off TOMAT_CHANNEL,
+//     NOT by overriding the Tauri `identifier`: the identifier drives the
+//     MainActivity's java package path, which is fixed at `tauri android init` time,
+//     so overriding it makes Tauri look for a package dir that does not exist.
 //
 // Distribution is self-hosted: the resulting APK is signed by gradle's
 // signingConfigs (see gen/android/app/build.gradle.kts, fed by
@@ -50,7 +52,7 @@ await Deno.writeTextFile(join(ROOT, "packages/tomat-client/src/tauri/channel"), 
 // header note). Tauri deep-merges this over tauri.conf.json + tauri.android.conf.json.
 const override: Record<string, unknown> = {};
 if (channel !== "stable") {
-  override.productName = `tomat (${channel})`;
+  override.productName = `Tomat (${channel})`;
 }
 
 // Invoke the Tauri CLI directly (not via `deno task ... --`) so `--config`

@@ -1,4 +1,4 @@
-# tomat test suite
+# Tomat test suite
 
 Tests live co-located with source as `*.test.ts`. E2E specs are opt-in and live
 under `tests/e2e/` (two lanes: a headless integration lane and a tauri-driver

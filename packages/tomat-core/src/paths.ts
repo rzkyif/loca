@@ -44,7 +44,7 @@ function channelRoot(): string {
 
 // Suffix that namespaces per-channel resources (binary filenames, keychain
 // service names, OS service labels) away from stable. Stable → "" (bare
-// name); dev/latest → "-dev" / "-latest". Mirrors the install scripts + channel.rs.
+// name); dev/latest → "-dev" / "-latest". Mirrors the client's channel.rs.
 export function channelSuffix(): string {
   const ch = channel();
   return ch === "stable" ? "" : `-${ch}`;
@@ -55,7 +55,7 @@ export function channelKeychainSuffix(): string {
   return channelSuffix();
 }
 
-// On-disk filename for one of tomat's own binaries, namespaced per channel so
+// On-disk filename for one of Tomat's own binaries, namespaced per channel so
 // a latest install's tomat-core-latest never collides with stable's tomat-core.
 // The .exe suffix (Windows) is added by callers via platformExe(). Upstream
 // sidecars (llama-server, …) keep their original names. They're isolated by
@@ -129,7 +129,7 @@ export interface CorePaths {
   logFile: string;
   // One-line reason for the most recent fatal boot failure (port in use, missing
   // helper, DB unwritable, ...). Written by main.ts on the fatal path and cleared
-  // once the listener binds, so a supervising client / the install script can
+  // once the listener binds, so a supervising client / installer can
   // surface why the core won't come up instead of an opaque connection timeout.
   bootErrorFile: string;
   // Written by self-updater before the binary swap; consumed by main.ts on

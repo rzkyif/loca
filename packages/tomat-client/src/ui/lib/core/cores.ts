@@ -178,12 +178,15 @@ class CoresRegistry {
     const token = await platform().keychain.get(entry.id);
     if (!token) throw new Error(`no token for core ${entry.id}; re-pair`);
     if (this.current) this.current.client.close();
-    const client = new CoreClient({
-      baseUrl: entry.baseUrl,
-      token,
-      trustMode: entry.trustMode,
-      tlsPin: entry.tlsPin,
-    });
+    const client = new CoreClient(
+      {
+        baseUrl: entry.baseUrl,
+        token,
+        trustMode: entry.trustMode,
+        tlsPin: entry.tlsPin,
+      },
+      () => isThisDevicesCoreStopped(entry.baseUrl),
+    );
     this.current = { entry, client };
     this.apis = {
       sessions: new SessionsApi(client),
@@ -378,6 +381,33 @@ export function isLoopbackUrl(url: string): boolean {
   // URL.hostname brackets IPv6 literals ("[::1]"); unwrap before comparing.
   const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
   return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+}
+
+/** Whether a paired core IS the core installed on this device, i.e. its base
+ *  URL matches the platform-resolved local core origin exactly. This is the
+ *  gate for handing out the on-disk admin token (promptless code minting,
+ *  password management): a plain loopback check is NOT enough, because a
+ *  REMOTE core tunneled through 127.0.0.1 must never receive this device's
+ *  admin credential. */
+export function isThisDevicesCore(coreBaseUrl: string, localBaseUrl: string | null): boolean {
+  if (!localBaseUrl) return false;
+  try {
+    return new URL(coreBaseUrl).origin === new URL(localBaseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `coreBaseUrl` is this device's own core AND that core's process is
+ *  not running: the one case where a reconnect cannot succeed but the user can
+ *  fix it by starting the core. Gates on `isThisDevicesCore`, not
+ *  `isLoopbackUrl`: a REMOTE core tunneled through 127.0.0.1 is loopback but is
+ *  not ours to start, so it must follow the ordinary reconnect path. Injected
+ *  into every CoreClient (see `select`) as its local-stopped probe. */
+export async function isThisDevicesCoreStopped(coreBaseUrl: string): Promise<boolean> {
+  const local = await platform().pairing.localCoreBaseUrl();
+  if (!isThisDevicesCore(coreBaseUrl, local)) return false;
+  return !(await platform().pairing.isLocalCoreRunning());
 }
 
 // On-demand mode: when the selected core points at loopback and the binary

@@ -23,6 +23,11 @@ export interface E2ePlatformSeed {
    *  pairing PAKE channel-binds this exact value, so a capture-mode fetch must
    *  report it (not a placeholder) or pairing confirmation fails. */
   tlsPin?: string;
+  /** Present the spawned core as an installer-provided LOCAL core: the pairing
+   *  surface reports it installed, hands back its real on-disk admin token, and
+   *  points localCoreBaseUrl at it, so the app's first-boot silent pair runs
+   *  against the real core (the "installer" scenario). */
+  localCore?: { adminToken: string; baseUrl: string };
 }
 
 const NOOP = async (): Promise<void> => {};
@@ -180,12 +185,14 @@ export function buildE2ePlatform(seed: E2ePlatformSeed = {}): Platform {
     },
     pairing: {
       async readAdminToken() {
+        return seed.localCore?.adminToken ?? null;
+      },
+      async readLocalCoreBootError() {
         return null;
       },
-      installLocalCore: unavailable("pairing.installLocalCore"),
-      isLocalCoreInstalled: async () => false,
+      isLocalCoreInstalled: async () => !!seed.localCore,
       startLocalCore: async () => false,
-      localCoreBaseUrl: async () => "https://127.0.0.1:7800",
+      localCoreBaseUrl: async () => seed.localCore?.baseUrl ?? "https://127.0.0.1:7800",
       localSidecarPorts: async () => ({ llm: 7701, stt: 7702 }),
       launchPrefill: async () => null,
     },

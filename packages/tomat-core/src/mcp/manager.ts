@@ -157,7 +157,7 @@ class McpManager {
     this.failed.delete(server.id);
     this.connecting.add(server.id);
     const client = new Client(
-      { name: "tomat", version: "0.1.0" },
+      { name: "Tomat", version: "0.1.0" },
       {
         capabilities: {},
       },
@@ -404,7 +404,7 @@ async function makeDenoStdioTransport(server: McpServer): Promise<StdioClientTra
   return new StdioClientTransport({
     command: denoBin,
     args: ["run", ...perms, target, ...server.args],
-    // Contain the npm/deno cache under tomat's channel dir rather than the
+    // Contain the npm/deno cache under Tomat's channel dir rather than the
     // user's global cache. The SDK merges this over a safe default env that
     // already carries PATH and HOME.
     env: { DENO_DIR: paths().denoCacheDir },

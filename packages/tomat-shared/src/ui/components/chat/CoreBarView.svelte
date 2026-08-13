@@ -2,9 +2,11 @@
   // The single status a CoreBar paints: the backend CoreStatus merged with the
   // client's transport states (which never ride the wire). The client wrapper
   // computes the merge; the website feeds a static value.
-  // A non-connected transport never distinguishes "disconnected" from
-  // "connecting" (the client collapses both into connecting, then reconnecting
-  // after a grace period), so there is no "disconnected" member here.
+  // While a reconnect is still in flight the transport reads "connecting", then
+  // "reconnecting" after a grace period. "disconnected" and "stopped" are the
+  // settled states it lands in once retrying has stopped: the core is
+  // unreachable, or this device's core simply isn't running. Both are actionable
+  // (see onStatusAction) rather than expandable.
   export type DisplayCoreStatus =
     | "starting_up"
     | "downloading"
@@ -14,6 +16,8 @@
     | "error"
     | "connecting"
     | "reconnecting"
+    | "disconnected"
+    | "stopped"
     | "unauthorized";
 
   type StatusMeta = { icon: string; tone: string; label: string; spin: boolean };
@@ -66,6 +70,18 @@
       tone: "text-accent-yellow-700",
       label: "Reconnecting",
       spin: true,
+    },
+    disconnected: {
+      icon: "i-material-symbols-cloud-off-rounded",
+      tone: "text-accent-red-700",
+      label: "Disconnected",
+      spin: false,
+    },
+    stopped: {
+      icon: "i-material-symbols-power-settings-new-rounded",
+      tone: "text-default-700",
+      label: "Stopped",
+      spin: false,
     },
     unauthorized: {
       icon: "i-material-symbols-lock",
@@ -123,6 +139,7 @@
     currentCoreId = "",
     expanded = false,
     onToggleExpand = undefined,
+    onStatusAction = undefined,
     onSwitch,
     onSettings = undefined,
     baseColorOverride = null,
@@ -144,6 +161,9 @@
     expanded?: boolean;
     /** Toggle the detail card; only wired when there is detail to show. */
     onToggleExpand?: () => void;
+    /** Recover from a settled failure: retry the connection when disconnected,
+     *  start this device's core when stopped. Only these two states offer it. */
+    onStatusAction?: () => void;
     onSwitch?: (id: string) => void;
     /** Mobile only: opens Settings from the top app bar (the gear is dropped
      *  from the composer there). Omitted on desktop. */
@@ -188,6 +208,13 @@
       (status === "starting_up" && loadingSubsystems.length > 0),
   );
   const open = $derived(expanded && hasDetail);
+  // The two settled failures offer a way out instead of a detail card, so the
+  // pill clicks through to onStatusAction and grows no chevron.
+  const isActionable = $derived(!hasDetail && (status === "disconnected" || status === "stopped"));
+  // Name the recovery in the tooltip; the label alone only names the problem.
+  const actionTitle = $derived(
+    !isActionable ? undefined : status === "stopped" ? "Start Core" : "Connect again",
+  );
 
   function subsystemName(kind: SidecarKind): string {
     return SUBSYSTEM_NAMES[kind] ?? kind;
@@ -283,16 +310,17 @@
 <!-- Connected-core status pill. An inset pill (like the SessionBar gauge) so the
      bar's regions read as solid controls rather than floating text. The tone
      colors the icon and label by status, at the SessionBar text lightness (the
-     -700 shade). When there is detail it becomes a toggle. Defined at the top
-     level (not inside <Bubble>) so it is a local snippet, not a snippet prop. -->
+     -700 shade). When there is detail it becomes a toggle; when the status is a
+     settled failure it becomes the way out of it. Defined at the top level (not
+     inside <Bubble>) so it is a local snippet, not a snippet prop. -->
 {#snippet statusPill()}
-  {#if hasDetail}
+  {#if hasDetail || isActionable}
     <button
       type="button"
       data-region="core-status"
-      title={detail ?? meta.label}
-      aria-expanded={open}
-      onclick={() => onToggleExpand?.()}
+      title={actionTitle ?? detail ?? meta.label}
+      aria-expanded={hasDetail ? open : undefined}
+      onclick={() => (hasDetail ? onToggleExpand?.() : onStatusAction?.())}
       class="flex items-center gap-1.5 shrink-0 h-8 px-3 bg-surface-inset rounded-large select-none transition-interactive hov:bg-surface-inset-strong hov:cursor-pointer {meta.tone}"
       use:ripple={{ durationMs: rippleDuration }}
     >

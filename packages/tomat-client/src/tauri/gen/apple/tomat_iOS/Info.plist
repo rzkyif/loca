@@ -43,9 +43,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>tomat uses the microphone for voice input: push-to-talk and voice activity detection.</string>
+	<string>Tomat uses the microphone for voice input: push-to-talk and voice activity detection.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>tomat uses the local network to find and connect to a tomat Core running on another device.</string>
+	<string>Tomat uses the local network to find and connect to a Tomat Core running on another device.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

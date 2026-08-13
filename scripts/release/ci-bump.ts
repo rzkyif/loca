@@ -16,9 +16,11 @@
 // Every other item was bumped after its last release, so its local version is
 // strictly greater. So "recorded.version === local version" selects exactly the
 // items this release published and left un-bumped. Source hashes are version-BLIND
-// (each item strips its version before hashing) and client/android extraChanged is
-// fill-only, so ci-publish only ever publishes items whose source actually changed
-// (or a genuine same-version platform fill) - never a lone version bump. That makes
+// (each item strips its version before hashing) and client/android extraChanged
+// never compares against the LOCAL version (platform fill + live-vs-live installer
+// staleness only), so ci-publish only ever publishes items whose source actually
+// changed (or a genuine same-version fill/refresh) - never a lone version bump.
+// That makes
 // this selection equivalent to the local auto-bump's "sourceChanged only" filter:
 // bumping the just-published items is correct and cannot churn.
 //
@@ -56,7 +58,6 @@ import { extensionItem } from "./extension.ts";
 import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
-import { scriptsItem } from "./install-scripts.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
@@ -68,7 +69,6 @@ const ITEMS: ReleaseItem[] = [
   catalogItem,
   clientItem,
   androidItem,
-  scriptsItem,
   schemasItem,
   websiteItem,
 ];

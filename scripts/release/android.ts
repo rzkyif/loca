@@ -197,7 +197,7 @@ function composeAndroidManifest(
 ): AndroidManifest {
   return {
     version,
-    notes: `tomat ${version}`,
+    notes: `Tomat ${version}`,
     pub_date: new Date().toISOString(),
     abis,
   };

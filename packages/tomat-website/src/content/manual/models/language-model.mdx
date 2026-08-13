@@ -10,8 +10,8 @@ import ReasoningTraceDemo from "../../../components/demos/ReasoningTraceDemo.sve
 import Aside from "../../../components/Aside.astro";
 
 The model is the engine behind every reply: it reads your message and writes the
-answer. The most consequential choice you make in tomat is where that model runs.
-A **Provider** is the source of a model, and tomat sorts providers into two kinds,
+answer. The most consequential choice you make in Tomat is where that model runs.
+A **Provider** is the source of a model, and Tomat sorts providers into two kinds,
 **Local** and **External**, which you choose between under **Language Model** in
 Settings.
 
@@ -42,11 +42,11 @@ messages to that provider to be answered.
 ## Smart presets
 
 You do not have to read benchmark tables to pick a Local model. A **smart preset**
-chooses one that fits your machine: you tell tomat the tier you want, and it sizes
+chooses one that fits your machine: you tell Tomat the tier you want, and it sizes
 the download to your hardware so the model runs well rather than thrashing. This is
 the path most people should take to a working Local setup.
 
-A model is several gigabytes, so tomat always asks before it downloads one, and
+A model is several gigabytes, so Tomat always asks before it downloads one, and
 never fetches in the background. Once a model is on disk it is shared across
 channels, so you pay that download only once even if you run more than one build of
 tomat.
@@ -64,7 +64,7 @@ machine's RAM and CPU:
   threads can speed up replies on a capable machine, up to the point where you run
   out of cores to give it.
 
-tomat can also unload an idle model after a while, so a Local model does not hold
+Tomat can also unload an idle model after a while, so a Local model does not hold
 gigabytes of RAM when you have stepped away. It loads again on your next message.
 
 ## Thinking and Creativity
@@ -99,10 +99,10 @@ loads the model file into RAM (and onto the GPU when one is available) and answe
 each turn through a local inference server, so a Local model's speed comes straight
 off your own hardware. An **External** provider skips all of that and forwards the
 turn to the API you configured. Either way the Core speaks the same request shape,
-which is why switching providers does not change anything else about how tomat
+which is why switching providers does not change anything else about how Tomat
 works.
 
-A smart preset leans on a hardware-fit step: at install tomat reads your machine's
+A smart preset leans on a hardware-fit step: at install Tomat reads your machine's
 RAM, processor, and graphics memory, then picks the largest model and quality level
 that should run comfortably in that budget, rather than handing you one that will
 swap to disk. The dials in this chapter ride along with each turn: **Context

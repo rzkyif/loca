@@ -24,7 +24,7 @@ export function pairingRoutes(): Hono {
   const r = new Hono();
 
   // Mint a pairing code. Two authorization paths:
-  //   A) X-Admin-Token  - device access (install script, "pair from this
+  //   A) X-Admin-Token  - device access (the installer's mint-code step, "pair from this
   //      machine"). High-entropy; no rate limit needed.
   //   B) Bearer + password - an already-paired client minting remotely. The
   //      bearer proves the caller is a trusted device; the password is the

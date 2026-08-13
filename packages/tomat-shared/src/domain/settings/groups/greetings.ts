@@ -24,7 +24,7 @@ export const greetingsGroup: SettingGroup = {
           id: "greetings.runOn",
           name: "When to Greet",
           description:
-            "Greet only when tomat opens itself at login, on every launch, or every time the window is shown.",
+            "Greet only when Tomat opens itself at login, on every launch, or every time the window is shown.",
           type: "select",
           defaultValue: "autostart",
           options: [

@@ -45,18 +45,18 @@ targets:
       path: tomat_iOS/Info.plist
       properties:
         LSRequiresIPhoneOS: true
-        # Branded launch screen: LaunchScreen.storyboard centers the tomat ring
+        # Branded launch screen: LaunchScreen.storyboard centers the Tomat ring
         # (LaunchLogo, DayNight imageset) on LaunchBackground (DayNight
         # #FAFAFA/#171717), matching the Android splash. A storyboard is used
         # rather than the UILaunchScreen Info.plist dict because the dict does not
         # resolve dark-appearance colors/images at launch.
         UILaunchStoryboardName: LaunchScreen
-        # tomat records audio for voice input; iOS crashes the app on mic access
+        # Tomat records audio for voice input; iOS crashes the app on mic access
         # without this string. Keep in sync with tomat_iOS/Info.plist (the file
         # the build actually reads; this feeds `init`/xcodegen regeneration).
-        NSMicrophoneUsageDescription: "tomat uses the microphone for voice input: push-to-talk and voice activity detection."
+        NSMicrophoneUsageDescription: "Tomat uses the microphone for voice input: push-to-talk and voice activity detection."
         # Pairing reaches a Core running on another device over the local network.
-        NSLocalNetworkUsageDescription: tomat uses the local network to find and connect to a tomat Core running on another device.
+        NSLocalNetworkUsageDescription: Tomat uses the local network to find and connect to a Tomat Core running on another device.
         # Allow plaintext/self-signed traffic to a Core on the LAN or the dev
         # host (the iOS analogue of Android's usesCleartextTraffic). Scoped to
         # local networking, not arbitrary loads.
@@ -78,8 +78,8 @@ targets:
         # iOS version never drifts from the Tauri config version.
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        # On-device app label. Stable reads "tomat"; dev/latest read "tomat (dev)"
-        # / "tomat (latest)" via the xcconfig, matching the desktop naming.
+        # On-device app label. Stable reads "Tomat"; dev/latest read "Tomat (dev)"
+        # / "Tomat (latest)" via the xcconfig, matching the desktop naming.
         CFBundleDisplayName: $(TOMAT_DISPLAY_NAME)
     entitlements:
       path: tomat_iOS/tomat_iOS.entitlements

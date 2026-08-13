@@ -122,12 +122,14 @@ ask-state permissions surface to the tool as `NotCapable`.
 The built-in extension is CDN-distributed (never on npm) behind an
 Ed25519-signed manifest ([`seeded-manifest.ts`](seeded-manifest.ts)),
 mirroring the binaries manifest; dev runs from the in-repo codebase instead. On
-first boot, [`seeding.ts`](seeding.ts) installs it OFFLINE from the
-artifacts the install script planted (`extensions/.tomat-extension-builtin.{tgz,json}`):
-it re-verifies the manifest signature and the
-tarball sha256, then extracts. This honors the no-non-consented-network rule
-(see [AGENTS.md](../../../../AGENTS.md)) - core never fetches on boot; the
-install-script phase did the downloading. If the artifacts are not planted, the
+first boot, [`seeding.ts`](seeding.ts) installs it OFFLINE from the planted
+artifacts (`extensions/.tomat-extension-builtin.{tgz,json}`) - staged into the
+native installer's payload at build time when reachable, otherwise fetched by
+the `install-service` bootstrap during the install phase: it re-verifies the
+manifest signature and the tarball sha256, then extracts. This honors the
+no-non-consented-network rule (see [AGENTS.md](../../../../AGENTS.md)) - core
+never fetches on boot; the install phase did the downloading. If the artifacts
+are not planted, the
 built-in is left for the user to install through the (user-gated) extensions UI,
 which is the only path that hits the CDN. The seed leaves it at status
 `downloaded` with no grants: Install, trusting, and per-tool Enable stay explicit

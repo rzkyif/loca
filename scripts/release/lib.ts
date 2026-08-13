@@ -1,9 +1,9 @@
 // Shared helpers for the release task family.
 //
 // Anything that touches .env, paths, signing, R2 uploads, or fetches lives
-// here. Sub-scripts (core.ts, client.ts, install-scripts.ts, schemas.ts,
-// website.ts) compose these helpers; main.ts imports each sub-script's
-// main() to run the umbrella release.
+// here. Sub-scripts (core.ts, client.ts, schemas.ts, website.ts) compose these
+// helpers; main.ts imports each sub-script's main() to run the umbrella
+// release.
 
 import { encodeBase64 } from "@std/encoding/base64";
 import { encodeHex } from "@std/encoding/hex";
@@ -29,7 +29,6 @@ export const REPO_ROOT = resolve(dirname(fromFileUrl(import.meta.url)), "../..")
 export const WEBSITE_DIR = join(REPO_ROOT, "packages/tomat-website");
 export const CORE_DIR = join(REPO_ROOT, "packages/tomat-core");
 export const SHARED_DIR = join(REPO_ROOT, "packages/tomat-shared");
-export const INSTALL_DIR = join(REPO_ROOT, "scripts/install");
 export const DIST_DIR = join(REPO_ROOT, "dist");
 export const ENV_PATH = join(REPO_ROOT, ".env");
 export const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
@@ -177,6 +176,22 @@ export interface DeployEnv {
   appleApiKey: string;
   appleApiIssuer: string;
   appleApiKeyPath: string;
+  /** base64 of the App Store Connect .p8, primarily for CI: a runner cannot
+   *  carry a file path as a secret, so the release entry points materialize this
+   *  to a temp file and fill appleApiKeyPath themselves (see
+   *  materializeAppleApiKey in apple-toolchain.ts). Locally prefer leaving it
+   *  empty and pointing APPLE_API_KEY_PATH at the real .p8. */
+  appleApiKeyB64: string;
+  /** Developer ID INSTALLER identity for productsign (the macOS .pkg
+   *  installer). Distinct from appleSigningIdentity: that is an Application
+   *  cert, which productsign rejects. When unset the .pkg ships unsigned (with
+   *  a note), exactly as before. The base64 .p12 (+ password) is CI-only: it is imported into an
+   *  ephemeral keychain for the productsign run (see materializeInstallerKeychain
+   *  in apple-toolchain.ts); locally leave both empty and rely on the cert in
+   *  the login keychain. */
+  appleInstallerSigningIdentity: string;
+  appleInstallerCertificateB64: string;
+  appleInstallerCertificatePassword: string;
   /** Windows Authenticode code-signing, DORMANT by default (no cert yet). When
    *  `windowsCertificateThumbprint` (or `windowsSignCommand`) is set, the client
    *  NSIS installer + the Core NSIS installer are Authenticode-signed at build
@@ -265,6 +280,10 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
     appleApiKey: get("APPLE_API_KEY"),
     appleApiIssuer: get("APPLE_API_ISSUER"),
     appleApiKeyPath: get("APPLE_API_KEY_PATH"),
+    appleApiKeyB64: get("APPLE_API_KEY_B64"),
+    appleInstallerSigningIdentity: get("APPLE_INSTALLER_SIGNING_IDENTITY"),
+    appleInstallerCertificateB64: get("APPLE_INSTALLER_CERTIFICATE"),
+    appleInstallerCertificatePassword: get("APPLE_INSTALLER_CERTIFICATE_PASSWORD"),
     windowsCertificateThumbprint: get("WINDOWS_CERTIFICATE_THUMBPRINT"),
     windowsSignCommand: get("WINDOWS_SIGN_COMMAND"),
     windowsTimestampUrl: get("WINDOWS_TIMESTAMP_URL") || "http://timestamp.digicert.com",
@@ -310,6 +329,10 @@ export function envFromProcess(): DeployEnv {
     appleApiKey: get("APPLE_API_KEY"),
     appleApiIssuer: get("APPLE_API_ISSUER"),
     appleApiKeyPath: get("APPLE_API_KEY_PATH"),
+    appleApiKeyB64: get("APPLE_API_KEY_B64"),
+    appleInstallerSigningIdentity: get("APPLE_INSTALLER_SIGNING_IDENTITY"),
+    appleInstallerCertificateB64: get("APPLE_INSTALLER_CERTIFICATE"),
+    appleInstallerCertificatePassword: get("APPLE_INSTALLER_CERTIFICATE_PASSWORD"),
     windowsCertificateThumbprint: get("WINDOWS_CERTIFICATE_THUMBPRINT"),
     windowsSignCommand: get("WINDOWS_SIGN_COMMAND"),
     windowsTimestampUrl: get("WINDOWS_TIMESTAMP_URL") || "http://timestamp.digicert.com",
@@ -352,8 +375,8 @@ export async function readCoreVersion(): Promise<string> {
   return match[1];
 }
 
-/** Read the top-level `version` field from a JSON file (deno.json, the schema,
- *  scripts/install/version.json, …). Used by the versioned release items. */
+/** Read the top-level `version` field from a JSON file (deno.json, the
+ *  schema, …). Used by the versioned release items. */
 export async function readVersionField(path: string): Promise<string> {
   const cfg = JSON.parse(await Deno.readTextFile(path)) as { version?: string };
   if (!cfg.version) fail(`no "version" field in ${rel(path)}`);
@@ -440,7 +463,7 @@ export function stripCoreVersion(text: string): string {
 export { canonicalize };
 
 // ---------------------------------------------------------------------------
-// host triple detection (same logic the install scripts use)
+// host triple detection
 
 import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
 
@@ -473,7 +496,7 @@ export function parseChannelFlag(value: string | undefined): ReleaseChannel {
   return ch;
 }
 
-/** Suffix on tomat's own binary names: "" for stable, "-latest" otherwise. */
+/** Suffix on Tomat's own binary names: "" for stable, "-latest" otherwise. */
 export function channelBinSuffix(channel: ReleaseChannel): string {
   return channel === "stable" ? "" : `-${channel}`;
 }

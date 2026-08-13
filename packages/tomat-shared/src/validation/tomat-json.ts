@@ -1,4 +1,4 @@
-// Canonical tomat.json schema: the manifest every tomat extension ships.
+// Canonical tomat.json schema: the manifest every Tomat extension ships.
 // Parsed by core's installer to validate an extension at install time and
 // re-validated on hash drift. An npm package is discovered as an extension by
 // the `tomat-extension` keyword and described by this file: a human-readable
@@ -98,7 +98,7 @@ export const toolSchema = z
     alwaysAvailable: z.boolean().default(false),
     // OS gating. Empty (or omitted) = every platform. `linux` matches any Linux
     // session; `linux_x11` / `linux_wayland` narrow to a display server, which
-    // tomat detects centrally. A tool is hidden everywhere on a host its list
+    // Tomat detects centrally. A tool is hidden everywhere on a host its list
     // doesn't cover.
     platforms: z
       .array(z.enum(["darwin", "windows", "linux", "linux_x11", "linux_wayland"]))

@@ -22,12 +22,12 @@
   import ShowcaseFrame from "./ShowcaseFrame.svelte";
 
   // Full-width horizontal snap-scroll track. Each panel is capped to the content
-  // width (the Get tomat button width) and holds a scale-to-fit stage
+  // width (the Get Tomat button width) and holds a scale-to-fit stage
   // (ShowcaseFrame) above its caption; neighbours peek on wide screens, dimmed and
   // frozen at time 0, while only the centred stage animates.
   type Handle = { timeline: Timeline; reset: () => void };
 
-  // Content width (the Get tomat button / caption width, max-w-xl) that caps every
+  // Content width (the Get Tomat button / caption width, max-w-xl) that caps every
   // panel, and the gap between adjacent panels (part of the snap step).
   const CONTENT_W = 576;
   const GAP = 48;
@@ -38,7 +38,7 @@
   // play/pause cover (relative z-30) so they stay clickable during autoplay.
   const meta: { title: string; desc?: string; descHtml?: string }[] = [
     {
-      title: "tomat is an open-source AI assistant",
+      title: "Tomat is an open-source AI assistant",
       desc: "Press the shortcut key and it will show up as an overlay on top of other applications for quick access. Designed to feel like an integrated AI assistant.",
     },
     {

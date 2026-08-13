@@ -1,4 +1,4 @@
-// Seed-marker logic for the extensions tomat ships. The branches here never touch
+// Seed-marker logic for the extensions Tomat ships. The branches here never touch
 // the network (marker-already-set, already-installed, and devOnly-skipped); the
 // actual CDN/codebase install path is exercised by the installer tests + manual
 // verification. Tests run on the default "stable" channel, so the dev-only samples
@@ -45,7 +45,7 @@ Deno.test("seedExtensionsIfNeeded: adopts an existing built-in and marks seeded"
     extensionsRegistry().upsertExtension({
       id: BUILTIN_EXTENSION_ID,
       source: "seeded",
-      displayName: "tomat built-in extension",
+      displayName: "Tomat built-in extension",
       version: "1.0.0",
       installedPath: "/tmp/tomat-extension-builtin",
       manifestHash: "h",

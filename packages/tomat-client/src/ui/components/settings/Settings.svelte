@@ -125,11 +125,11 @@
   });
   $effect(() => layout.observe());
 
-  // When reconnecting, a group whose single destination needs the core (the
+  // While the core is unavailable, a group whose single destination needs it (the
   // shared `core` store or a `client-on-core` per-client overlay) can't be
   // edited; `locked` dims + inerts them. A multi-destination group stays usable.
   const coreGroupLocked = $derived(
-    connectionState.reconnecting &&
+    connectionState.coreUnavailable &&
       !!selectedGroup &&
       groupDestinations(selectedGroup).length === 1 &&
       destinationNeedsCore(groupDestinations(selectedGroup)[0]),
@@ -139,7 +139,7 @@
     const group = SETTINGS_SCHEMA.find((g) => g.id === id);
     if (!group) return false;
     return (
-      connectionState.reconnecting &&
+      connectionState.coreUnavailable &&
       groupDestinations(group).length === 1 &&
       destinationNeedsCore(groupDestinations(group)[0])
     );
@@ -253,7 +253,7 @@
   // While the core is unreachable, settings can't be read/written: clear the
   // search and dismiss the pending-downloads modal (acting on it needs the core).
   $effect(() => {
-    if (!connectionState.reconnecting) return;
+    if (!connectionState.coreUnavailable) return;
     if (search.query) search.clear();
     if (confirmState.pending?.title === "Pending Downloads") confirmState.cancel();
   });
@@ -264,7 +264,7 @@
   let shownSignature = $state<string | null>(null);
   $effect(() => {
     const sig = downloadsState.missingSignature;
-    if (connectionState.reconnecting) return;
+    if (connectionState.coreUnavailable) return;
     // Prompt when files await approval OR when an approved download failed (so a
     // silent resolve/install failure becomes an actionable, retryable modal
     // instead of a limbo the user can't act on).
@@ -356,8 +356,8 @@
     <!-- Sidecar health is no longer shown here as per-service chips: every
          failure folds into the core's status, surfaced (and expandable for the
          specific errors) in the CoreBar pinned at the bottom of this view. -->
-    <DownloadsButton {collapsed} disabled={connectionState.reconnecting} />
-    <UpdateButton {collapsed} disabled={connectionState.reconnecting} />
+    <DownloadsButton {collapsed} disabled={connectionState.coreUnavailable} />
+    <UpdateButton {collapsed} disabled={connectionState.coreUnavailable} />
   {/snippet}
 
   <!-- Positioned, bubble-sized wrapper: the settings modals use Modal's default
@@ -374,10 +374,8 @@
       bind:searchValue={search.query}
       bind:searchMode={search.mode}
       bind:searchEl={search.inputEl}
-      searchPlaceholder={connectionState.reconnecting
-        ? "Reconnecting to Core..."
-        : "Search settings..."}
-      searchDisabled={connectionState.reconnecting}
+      searchPlaceholder={connectionState.unavailableCopy ?? "Search settings..."}
+      searchDisabled={connectionState.coreUnavailable}
       onSearchInput={() => search.onInput()}
       onSearchFocus={() => {
         if (search.query.trim() && !search.mode) void search.setMode(true);

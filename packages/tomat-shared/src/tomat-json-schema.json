@@ -3,7 +3,7 @@
   "$id": "https://get.au.tomat.ing/schemas/tomat-v1.json",
   "version": "0.1.3",
   "title": "tomat.json",
-  "description": "Manifest for a tomat extension: the tools it lets an LLM host execute and the knowledge/skills it bundles. Place at the root of a folder (or as the root of an npm package tagged with the tomat-extension keyword).",
+  "description": "Manifest for a Tomat extension: the tools it lets an LLM host execute and the knowledge/skills it bundles. Place at the root of a folder (or as the root of an npm package tagged with the tomat-extension keyword).",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "displayName", "description"],

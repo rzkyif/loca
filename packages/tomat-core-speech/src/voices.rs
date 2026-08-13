@@ -1,4 +1,4 @@
-//! Maps tomat's named Kokoro voices (e.g. "af_bella") to sherpa speaker ids for
+//! Maps Tomat's named Kokoro voices (e.g. "af_bella") to sherpa speaker ids for
 //! the bundled `kokoro-int8-multi-lang-v1_0` model.
 //!
 //! The order below is authoritative: it mirrors sherpa-onnx's

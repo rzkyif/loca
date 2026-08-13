@@ -18,6 +18,14 @@ test("a fresh install locks to the pairing wizard", async () => {
   await expect.element(page.getByTestId("composer-input")).not.toBeInTheDocument();
 });
 
+test("an installer-provided core auto-pairs on first boot into quick settings", async () => {
+  // The core presents as installed by the native installer (admin token on
+  // disk); the wizard silently pairs with it - real mint + CPace PAKE - and the
+  // first-ever pairing lands on Quick Settings, never showing a form.
+  app = await launchApp({ scenario: "installer" });
+  await app.nav.expectMode("quickSettings");
+});
+
 test("completing the real PAKE pairing lands in chat, connected", async () => {
   // The "paired" scenario runs the real mintCode + pairWithCode flow against the
   // spawned core (full CPace handshake, real SPKI pin), then the app boots and

@@ -71,8 +71,8 @@ R2 (`get.au.tomat.ing`), never here.
   (`BASE_MS`, `CSS_EASING`) so it matches the app's numbers; cursor moves and
   typing are demo-authored. Target elements by stable selectors (`aria-label`,
   `title`, or `data-demo`), resolved lazily so mid-timeline elements still bind.
-- Inherited from the repo: no em dashes, lowercase **tomat**, prefer maintained
-  packages.
+- Inherited from the repo: no em dashes, the brand written **Tomat**, prefer
+  maintained packages.
 
 ## Key Decisions
 
@@ -81,11 +81,11 @@ R2 (`get.au.tomat.ing`), never here.
   practices. JS-only interactivity (the showcase) is fine. The one carve-out is
   `/install`: installing must never be JS-gated, so it ships a native-HTML
   baseline (`InstallGenerator.astro`: `<input type=radio>` + CSS `:has()` drive
-  the target -> OS selection and reveal a pre-rendered command; the shared
-  primitives are JS-driven, so the baseline cannot use them) and progressively
-  enhances with a Svelte island (`InstallGenerator.svelte`: OS auto-detect, live
-  core-option folding, copy button, the shared OptionCard/Toggle). The two are
-  swapped by a `data-js` gate in `site.css`. The topology diagram
+  the OS selection and reveal the pre-rendered installer downloads + how-to; the
+  shared primitives are JS-driven, so the baseline cannot use them) and
+  progressively enhances with a Svelte island (`InstallGenerator.svelte`: OS +
+  arch auto-detect with a recommended-download highlight). The two are swapped
+  by a `data-js` gate in `site.css`. The topology diagram
   (`InstallDiagram.astro`) is pure SVG + SMIL, so it animates with no JS too.
 - **The home page is one `100dvh` viewport:** the showcase (most of the space)
   above a compact install call-to-action, capped to the content width, with no

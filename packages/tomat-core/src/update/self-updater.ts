@@ -198,7 +198,7 @@ async function applyUpdateInner(targetVersion?: string): Promise<void> {
     throw new AppError(
       "update_failed",
       `tomat-core-updater not installed at ${updaterBin}; ` +
-        `rebuild + ship the updater binary or run the install script`,
+        `rebuild + ship the updater binary or reinstall the Core`,
     );
   }
   if (onWindows && !updaterReady) {

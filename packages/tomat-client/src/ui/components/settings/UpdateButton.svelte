@@ -1,13 +1,7 @@
 <script lang="ts">
   // Bottom-left of the Settings sidebar. Drives the combined client + core +
-  // sidecar update flow.
-  //
-  // State machine:
-  //   idle                 : "Check for Updates"
-  //   checking             : "Checking…"
-  //   available            : "Updates Available!" / hover "Install Updates"
-  //   updating             : "Updating…"
-  //   clientRestartPending : "Restart to Update" (relaunches Tauri)
+  // sidecar update flow, mapping it onto the phases UpdateButtonView renders
+  // (which owns the label copy for each). `clientRestartPending` relaunches Tauri.
 
   import { onMount } from "svelte";
   import { platform, type UpdateHandle } from "$lib/platform";
@@ -18,7 +12,6 @@
     type UpdateButtonPhase,
   } from "@tomat/shared/ui/components/settings/UpdateButtonView.svelte";
   import { useBlink } from "$composables/use-blink.svelte";
-  import { useUiContext } from "@tomat/shared/ui/context";
   import { getLogger } from "$lib/util/log";
 
   const log = getLogger("update");
@@ -26,9 +19,6 @@
   // install: a distro/third-party repackage or a raw binary) sends the user to
   // grab the new build, the way VS Code opens the download page on such installs.
   const INSTALL_PAGE_URL = "https://au.tomat.ing/install";
-  // Touch has no hover, so the "available" button can't reveal "Install Updates"
-  // on hover the way desktop does; show the actionable label outright instead.
-  const mobile = useUiContext().platform === "mobile";
 
   let { collapsed, disabled = false } = $props<{
     collapsed: boolean;
@@ -36,7 +26,6 @@
   }>();
 
   let phase = $state<UpdateButtonPhase>("idle");
-  let hovering = $state(false);
   let coreAvailable = $state(false);
   let coreCurrent = $state<string>("");
   let coreLatest = $state<string>("");
@@ -54,21 +43,6 @@
       clientSelfInstall = await platform().updater.canSelfInstall();
     } catch (e) {
       log.warn("canSelfInstall check failed:", e);
-    }
-  });
-
-  const label = $derived.by<string>(() => {
-    switch (phase) {
-      case "checking":
-        return "Checking…";
-      case "available":
-        return hovering || mobile ? "Install Updates" : "Updates Available";
-      case "updating":
-        return "Updating…";
-      case "clientRestartPending":
-        return "Restart to Update";
-      default:
-        return "Check for Updates";
     }
   });
 
@@ -157,12 +131,12 @@
     const lines: string[] = [];
     if (clientUpdate) {
       lines.push(
-        `tomat Client v${clientUpdate.version} (Client` +
+        `Tomat Client v${clientUpdate.version} (Client` +
           (clientRedirect ? ", opens the download page)" : ")"),
       );
     }
     if (coreAvailable) {
-      lines.push(`tomat Core v${coreLatest} (Core, currently v${coreCurrent})`);
+      lines.push(`Tomat Core v${coreLatest} (Core, currently v${coreCurrent})`);
     }
     for (const b of binariesAvailable) {
       lines.push(
@@ -253,12 +227,4 @@
   }
 </script>
 
-<UpdateButtonView
-  {phase}
-  {label}
-  {collapsed}
-  {disabled}
-  blink={updateBlink.on}
-  {onClick}
-  onHoverChange={(h) => (hovering = h)}
-/>
+<UpdateButtonView {phase} {collapsed} {disabled} blink={updateBlink.on} {onClick} />

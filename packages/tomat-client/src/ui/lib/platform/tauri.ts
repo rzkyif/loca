@@ -201,21 +201,10 @@ const impl: Platform = {
   pairing: {
     readAdminToken: () => invoke("read_admin_token"),
     readLocalCoreBootError: () => invoke("read_local_core_boot_error"),
-    installLocalCore: (opts) =>
-      invoke("install_local_core", {
-        service: opts?.service ?? true,
-        bindAll: opts?.bindAll ?? false,
-      }),
-    async subscribeInstallProgress(cb) {
-      const unlisten = await listen<{ label: string; done: number; total: number }>(
-        "core-install-progress",
-        (e) => cb(e.payload),
-      );
-      return () => unlisten();
-    },
-    enableCoreBehindProxy: (service) => invoke("enable_core_behind_proxy", { service }),
     isLocalCoreInstalled: () => invoke("local_core_installed"),
+    isLocalCoreRunning: () => invoke("local_core_running"),
     startLocalCore: () => invoke("start_local_core"),
+    stopLocalCore: () => invoke("stop_local_core"),
     localCoreBaseUrl: () => invoke("local_core_base_url"),
     localSidecarPorts: () => invoke("local_sidecar_ports"),
     launchPrefill: () => invoke("read_launch_prefill"),
@@ -329,6 +318,16 @@ const impl: Platform = {
       } finally {
         clearTimeout(dismissTimer);
       }
+    },
+  },
+  tray: {
+    setCoreState: (installed, running) => invoke("set_tray_core_state", { installed, running }),
+    async subscribeCoreAction(cb) {
+      const offs = await Promise.all([
+        listen("tray-core-start", () => cb("start")),
+        listen("tray-core-stop", () => cb("stop")),
+      ]);
+      return () => offs.forEach((off) => off());
     },
   },
   monitors: {

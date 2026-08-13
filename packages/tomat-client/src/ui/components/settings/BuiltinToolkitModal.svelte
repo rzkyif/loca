@@ -56,7 +56,7 @@
           alert: true,
           title: "Built-in Tools Pending",
           message:
-            "tomat will finish installing the built-in tools once the required files for tools are downloaded.",
+            "Tomat will finish installing the built-in tools once the required files for tools are downloaded.",
           confirmLabel: "Got It",
           onConfirm: () => {},
         });
@@ -85,7 +85,7 @@
   >
     <div class="text-default-800 font-medium">Install Built-in Tools?</div>
     <div class="text-default-600 text-sm">
-      tomat ships a built-in Extension with tools like web search and file access. Install it so the
+      Tomat ships a built-in Extension with tools like web search and file access. Install it so the
       agent can use the tools you turn on.
     </div>
     <div class="flex items-center justify-end gap-2">

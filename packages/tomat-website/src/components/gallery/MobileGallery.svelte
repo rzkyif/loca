@@ -82,11 +82,11 @@
 
   // A short simulated session for the mobile ChatShellView card (mirrors the
   // desktop card), so the phone frame shows the real chat, not stand-ins.
-  const CHAT_PROMPT = "How do I install tomat on macOS?";
+  const CHAT_PROMPT = "How do I install Tomat on macOS?";
   const CHAT_REASONING =
     "The user is on macOS, so the one-line installer is the simplest path; point them at the landing-page command and the launch step.";
   const CHAT_ANSWER =
-    "Run the one-line installer from the landing page, then launch tomat from Applications. Want the per-OS steps?";
+    "Run the one-line installer from the landing page, then launch Tomat from Applications. Want the per-OS steps?";
 
   function expandedFor(gid: string | undefined): Set<string> {
     const keys = new Set<string>();

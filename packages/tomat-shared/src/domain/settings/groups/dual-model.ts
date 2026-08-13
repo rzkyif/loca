@@ -9,7 +9,7 @@ export const dualModelGroup: SettingGroup = {
   destination: ["client-on-core", "core"],
   name: "Dual Model",
   description:
-    "Keep simple messages on your fast default model and send only complex ones to a stronger model. tomat decides per message; you never switch manually.",
+    "Keep simple messages on your fast default model and send only complex ones to a stronger model. Tomat decides per message; you never switch manually.",
   descriptionTier: "always",
   icon: "i-material-symbols-call-split-rounded",
   iconInactive: "i-material-symbols-call-split-rounded",

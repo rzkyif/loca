@@ -3,7 +3,7 @@
 // remains: window visibility, current global shortcut, input shortcuts,
 // system-volume restore marker, region-capture target.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex};
 
 /// What a press should trigger, decided by [`PttState::begin_press`].
@@ -146,17 +146,6 @@ pub struct AppStateInner {
     /// against. Set by the JS helper before showing the overlay window;
     /// read by the overlay page on mount. Defaults to "primary".
     pub region_capture_target: Mutex<String>,
-    /// Guard for the `install_local_core` Tauri command. Set to `true` for
-    /// the duration of a running installer subprocess so a UI double-click
-    /// can't kick off a second concurrent install (which would race for
-    /// the same `~/.tomat/core/bin/` paths). Reset to `false` in the
-    /// command's drop guard regardless of success or failure.
-    pub install_in_progress: AtomicBool,
-    /// Unix-ms timestamp at which the last successful `install_local_core`
-    /// finished. Read by the command to enforce a short cooldown so a
-    /// user spamming the "install" button doesn't re-run the installer
-    /// back-to-back. Initialized to `0` (no install yet → no cooldown).
-    pub install_last_finished_ms: AtomicI64,
     /// PID of a local core THIS client session spawned via `start_local_core`
     /// (the service-less "on-demand" mode). `0` means we never spawned one
     /// (either a background service owns the core, or it was already up when we
@@ -164,6 +153,15 @@ pub struct AppStateInner {
     /// core's liveness"; on app exit we stop exactly that PID, so quitting the
     /// client also stops a core it started. Never stops a core we didn't launch.
     pub spawned_core_pid: AtomicU32,
+    /// The tray menu's "Start Core" / "Stop Core" item. Held so the webview can
+    /// relabel and show/hide it as the local core's state changes (a tray menu
+    /// is built once, then mutated). `None` until the tray is built.
+    #[cfg(desktop)]
+    pub tray_core_item: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+    /// Whether the local core was running as of the webview's last push. Decides
+    /// which intent the tray item emits, so the label and the action can't drift.
+    #[cfg(desktop)]
+    pub tray_core_running: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -183,9 +181,11 @@ mod tests {
             input_shortcuts: Mutex::new(Vec::new()),
             ptt: Mutex::new(PttState::default()),
             region_capture_target: Mutex::new("primary".to_string()),
-            install_in_progress: AtomicBool::new(false),
-            install_last_finished_ms: AtomicI64::new(0),
             spawned_core_pid: AtomicU32::new(0),
+            #[cfg(desktop)]
+            tray_core_item: Mutex::new(None),
+            #[cfg(desktop)]
+            tray_core_running: AtomicBool::new(false),
         }
     }
 

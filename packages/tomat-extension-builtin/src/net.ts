@@ -1,4 +1,4 @@
-// Network-safety helpers shared by the web/download tools. tomat is a
+// Network-safety helpers shared by the web/download tools. Tomat is a
 // local-first app, so a tool that fetches an arbitrary URL on the model's
 // behalf must not be steerable into reaching loopback, link-local (incl. the
 // 169.254.169.254 cloud-metadata endpoint), or private-range hosts. The

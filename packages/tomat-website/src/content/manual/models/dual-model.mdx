@@ -9,14 +9,14 @@ import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelt
 A fast Local model answers most things well, but the occasional hard question wants
 a stronger one. **Dual Model** lets you keep both without choosing up front: simple
 messages stay on your fast default model, and only the complex ones are routed to a
-stronger secondary model. tomat makes that call per message, so you never switch by
+stronger secondary model. Tomat makes that call per message, so you never switch by
 hand.
 
 <SettingsPanelDemo group="dualModel" />
 
 ## How the choice is made
 
-Before answering, tomat checks how involved your message is and routes it
+Before answering, Tomat checks how involved your message is and routes it
 accordingly. That check is itself a prompt, the **Complexity Check**, which lives
 in the same [Prompts](/manual/conversation/system-prompt) group as your system
 prompt, so you can see and adjust the rule that decides what counts as complex. A
@@ -36,7 +36,7 @@ nothing to route to, and you can leave this off.
 
 ## How It Works
 
-The complexity check is a small extra turn that runs before the real one. tomat
+The complexity check is a small extra turn that runs before the real one. Tomat
 sends your message to a model with the Complexity Check prompt, which asks for a
 single quick judgment of how involved the request is, and reads the answer as a
 score. That score decides which model handles the actual reply: below the line it
@@ -46,5 +46,5 @@ the two models turn by turn, spending the heavier one only when a message warran
 it.
 
 With your models settled, the next chapters cover the other things that shape a
-reply, starting with talking to tomat by voice:
+reply, starting with talking to Tomat by voice:
 [Speech-to-Text](/manual/speech/speech-to-text).

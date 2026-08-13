@@ -2,7 +2,7 @@
   "$schema": "https://get.au.tomat.ing/schemas/tomat-v1.json",
   "name": "tomat-extension-samples",
   "displayName": "Samples",
-  "description": "A showcase of every capability a tomat extension can use, with one small single-purpose tool per capability for authors to learn from.",
+  "description": "A showcase of every capability a Tomat extension can use, with one small single-purpose tool per capability for authors to learn from.",
   "license": "MIT",
   "homepage": "https://au.tomat.ing",
   "database": true,

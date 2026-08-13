@@ -4,14 +4,16 @@
 // known verbs the core binary acts as a short-lived installer CLI and exits;
 // otherwise (empty argv from launchd/systemd, or the updater's --restart-args)
 // it returns null and the server boots. This is what lets every installer
-// front-end - the native packages' post-install hooks, the client's in-app
-// "set up a local Core" flow, and the thin bootstrap scripts - wrap ONE
+// front-end - the native installers' install and uninstall hooks - wrap ONE
 // implementation of service registration, secret bootstrap, and pairing.
 //
 // Verbs:
 //   self-install       fetch + verify + place the binary set from core.json
 //   bootstrap          admin token, optional bind-all seed, plant built-in ext
 //   install-service    bootstrap, then register + start the OS service
+//   start-service      start the core through its supervisor; print one JSON
+//                      line: { supervisor, pid } (pid only in background mode)
+//   stop-service       stop the core through its supervisor
 //   mint-code          print one JSON line: { code, url, port }
 //   uninstall-service  stop + remove the service, keychain key, and data
 //   enable-behind-proxy  turn on server.behindProxy on a paired core + restart
@@ -20,13 +22,22 @@
 // TOMAT_INSTALL_SERVICE (0 = background, no service; also selects the
 // enable-behind-proxy restart path), TOMAT_INSTALL_BIND_ALL (1 = seed
 // server.bindHost=0.0.0.0), TOMAT_INSTALL_BEHIND_PROXY (1 = seed
-// server.behindProxy=true for a core served through an HTTPS proxy). Flags:
-// --keep-data (uninstall), --bind-all / --behind-proxy (bootstrap /
-// install-service, same as the matching env var).
+// server.behindProxy=true for a core served through an HTTPS proxy),
+// TOMAT_INSTALL_REGISTER_ARP (0 = skip the Add/Remove Programs entry; the
+// unified Windows installer sets this because its own uninstall.exe owns the
+// Core's ARP entry). Flags: --keep-data / --purge-models (uninstall),
+// --bind-all / --behind-proxy (bootstrap / install-service, same as the
+// matching env var).
 
 import { errMessage } from "@tomat/shared";
 import { bootstrap, enableBehindProxy } from "./bootstrap.ts";
-import { installService, restartService, uninstallService } from "./service.ts";
+import {
+  installService,
+  restartService,
+  startService,
+  stopService,
+  uninstallService,
+} from "./service.ts";
 import { mintCode } from "./pair.ts";
 import { selfInstall } from "./fetch-verify.ts";
 import { progress } from "./io.ts";
@@ -35,6 +46,8 @@ const VERBS = new Set([
   "self-install",
   "bootstrap",
   "install-service",
+  "start-service",
+  "stop-service",
   "mint-code",
   "uninstall-service",
   "enable-behind-proxy",
@@ -52,6 +65,7 @@ export async function maybeRunInstallCommand(args: string[]): Promise<number | n
   const behindProxy =
     flags.has("--behind-proxy") || Deno.env.get("TOMAT_INSTALL_BEHIND_PROXY") === "1";
   const keepData = flags.has("--keep-data");
+  const purgeModels = flags.has("--purge-models");
 
   try {
     switch (verb) {
@@ -67,19 +81,25 @@ export async function maybeRunInstallCommand(args: string[]): Promise<number | n
         await bootstrap({ bindAll, behindProxy });
         await installService();
         break;
+      case "start-service":
+        await startService();
+        break;
+      case "stop-service":
+        await stopService();
+        break;
       case "mint-code":
         await mintCode();
         break;
       case "uninstall-service":
-        await uninstallService({ keepData });
+        await uninstallService({ keepData, purgeModels });
         break;
       case "enable-behind-proxy":
-        // Turn on server.behindProxy for an already-installed, already-paired
-        // core and restart it so the setting takes effect. The client's
-        // "install, pair, then flip" flow calls this AFTER the local loopback
-        // pair, because a proxy-served core folds no cert pin and so cannot be
-        // paired over loopback. The already-pinned loopback client survives the
-        // restart (same key, same cert served on loopback).
+        // Turn on server.behindProxy for an already-installed core and restart
+        // it so the setting takes effect. Kept as its own verb (rather than an
+        // install-time-only option) so an operator can pair over loopback
+        // first and flip afterwards: a proxy-served core folds no cert pin, so
+        // it cannot be paired over loopback. An already-pinned loopback client
+        // survives the restart (same key, same cert served on loopback).
         await enableBehindProxy();
         await restartService();
         break;

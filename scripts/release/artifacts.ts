@@ -25,7 +25,7 @@ import type {
 } from "./core.ts";
 import { DIST_DIR, fail, sha256File } from "./lib.ts";
 import type { ReleaseChannel } from "./lib.ts";
-import type { CoreInstallerAsset } from "./core-installers.ts";
+import type { InstallerAsset } from "./core-installers.ts";
 
 export const BUNDLE_FILENAME = "bundle.json";
 
@@ -52,11 +52,12 @@ export interface ArtifactBundle {
   channel: ReleaseChannel;
   triples: Triple[];
   records: ArtifactRecord[];
-  // Conventional native Core installers (pkg/nsis/deb/rpm) this environment
-  // built, if any. Auxiliary download assets keyed to the core version; the
-  // publish coordinator uploads them + a signed core-installers.json. Kept
-  // separate from `records` (which feed core.json + self-update).
-  installers?: CoreInstallerAsset[];
+  // Native installers this environment built, if any: the unified client+core
+  // installer (Windows .exe / macOS .pkg) and/or the Linux Core packages
+  // (deb/rpm). Auxiliary download assets; the publish coordinator uploads them
+  // + a signed installers.json. Kept separate from `records` (which feed
+  // core.json + self-update).
+  installers?: InstallerAsset[];
 }
 
 /** dist-relative path for a `dist/<triple>/<filename>` artifact. */
@@ -198,26 +199,9 @@ export async function mergeCoreBundles(
 // plus the metadata the host's compose+sign+upload step needs. Mirrors the core
 // ArtifactBundle, one module so drivers and CI share the contract.
 
-/** A conventional-installer download the website links directly. Today that is
- *  only the macOS `.dmg`: the Windows NSIS `.exe` and the Linux `.AppImage` are
- *  themselves the primary updater bundles (aliased directly), and the client
- *  ships no Linux `.deb`/`.rpm` (the AppImage is the sole Linux client format).
- *  Distinct from the Tauri updater bundle above: the updater artifact drives
- *  in-app updates, this drives the first double-click install. sha256 is over
- *  the file bytes. */
-export interface DownloadAsset {
-  format: "dmg";
-  filename: string;
-  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/tomat_0.1.5.dmg"
-  sha256: string;
-  size: number;
-}
-
 /** One desktop-client bundle built on its native platform. `signature` is the
  *  Tauri minisign signature over the bundle (for in-app updates); `sha256` is
- *  over the bundle bytes (for first-install verification, mirrors core.json).
- *  `downloads` is the conventional native installer Tauri also emits (the macOS
- *  .dmg), harvested for the website's direct-download CTA. */
+ *  over the bundle bytes (for first-install verification, mirrors core.json). */
 export interface ClientDescriptor {
   version: string;
   channel: ReleaseChannel;
@@ -225,12 +209,11 @@ export interface ClientDescriptor {
   /** Tauri updater platform key (<os>-<arch>), e.g. "darwin-aarch64". */
   tauriKey: string;
   filename: string;
-  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/tomat.app.tar.gz"
+  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/Tomat.app.tar.gz"
   sigRelPath: string; // dist-relative path to the Tauri .sig sidecar
   sha256: string;
   size: number;
   signature: string;
-  downloads?: DownloadAsset[];
 }
 
 /** One keystore-signed APK for a single ABI. */

@@ -94,7 +94,7 @@ export async function publishGithubRelease(
   step(`Mirroring to the rolling "${channel}" GitHub Release`);
 
   const tag = channel; // "latest" | "stable"
-  const title = `tomat ${channel}`;
+  const title = `Tomat ${channel}`;
   const sha = await targetSha();
   const body = releaseBody(channel, input.items);
 

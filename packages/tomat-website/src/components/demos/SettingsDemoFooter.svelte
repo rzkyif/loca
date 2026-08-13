@@ -1,7 +1,6 @@
 <script lang="ts">
   import SidebarItem from "@tomat/shared/ui/components/primitives/SidebarItem.svelte";
   import UpdateButtonView from "@tomat/shared/ui/components/settings/UpdateButtonView.svelte";
-  import { useUiContext } from "@tomat/shared/ui/context";
 
   // The settings sidebar footer the app pins to the bottom of every settings
   // panel: a Downloads row, then the update/version row. The version row is the
@@ -38,14 +37,6 @@
   const icon = $derived(
     downloading ? "i-line-md-downloading-loop" : "i-material-symbols-downloading-rounded",
   );
-
-  // The idle update label the client resolves: mobile (touch, no hover) shows the
-  // actionable copy, desktop rests on the version string. Mirrors UpdateButton's
-  // idle branch so the shared view renders the same text the app does.
-  const ui = useUiContext();
-  const updateLabel = $derived(
-    ui.platform === "mobile" ? "Check for Updates" : "tomat Client v0.1.0",
-  );
 </script>
 
 <SidebarItem
@@ -58,4 +49,4 @@
   ariaLabel={label}
   onclick={noop}
 />
-<UpdateButtonView phase="idle" label={updateLabel} {collapsed} />
+<UpdateButtonView phase="idle" {collapsed} />

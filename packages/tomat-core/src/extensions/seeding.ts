@@ -1,7 +1,7 @@
-// First-boot seeding of the extensions tomat ships. On a fresh install the core
-// install script plants the verified built-in tarball AND its signed manifest
-// under the extensions dir; this re-verifies them and installs OFFLINE - boot must
-// never make a network request (the install-script phase did all the fetching).
+// First-boot seeding of the extensions Tomat ships. On a fresh install the
+// installer plants the verified built-in tarball AND its signed manifest under
+// the extensions dir; this re-verifies them and installs OFFLINE - boot must
+// never make a network request (the install phase did all the fetching).
 // In dev the bytes come from the codebase, and the dev-only samples extension is
 // seeded the same way (it is never planted or released in prod). If a built-in's
 // artifacts aren't planted, it is left for the user to install via the
@@ -20,9 +20,10 @@ import { extensionsRegistry } from "./registry.ts";
 import { requireWorkerDeno } from "../sidecars/worker-deno.ts";
 import { memoriesStore } from "@tomat/core-engine/services/memories-store";
 
-// Install-script-planted artifact filenames for a seeded extension, read on first
-// boot for an offline install. Keep this naming in sync with
-// scripts/install/core.{sh,ps1}.
+// Installer-planted artifact filenames for a seeded extension, read on first
+// boot for an offline install. Keep this naming in sync with the planting
+// sides: install/bootstrap.ts and the release payload staging
+// (scripts/release/unified-installers.ts).
 function plantedTarball(id: string): string {
   return `.${id}.tgz`;
 }
@@ -60,7 +61,7 @@ async function recordSeeded(id: string): Promise<void> {
   }
 }
 
-/** Seed every extension tomat ships (the built-in, plus the dev-only samples in
+/** Seed every extension Tomat ships (the built-in, plus the dev-only samples in
  *  dev), leaving each at status 'downloaded'. Skips a `devOnly` extension outside
  *  the dev channel so samples is never seeded in prod. */
 export async function seedExtensionsIfNeeded(sink: InstallEventSink): Promise<void> {

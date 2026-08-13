@@ -9,7 +9,7 @@ const noop = (): void => {};
 export const userInputSamples = {
   empty: { value: "", placeholder: "Enter your instructions..." },
   withText: {
-    value: "How do I install tomat on macOS?",
+    value: "How do I install Tomat on macOS?",
     placeholder: "Enter your instructions...",
   },
   voiceReady: {
@@ -143,7 +143,7 @@ export const userInputSamples = {
       questions: [
         {
           kind: "table",
-          question: "Confirm the schedule",
+          question: "Confirm the schedule:",
           columns: ["Day", "Task"],
           rows: [["Mon", "water plants"]],
         },

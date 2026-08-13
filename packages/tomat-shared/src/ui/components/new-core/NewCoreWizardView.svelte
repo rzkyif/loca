@@ -1,27 +1,22 @@
 <script lang="ts" module>
-  // Presentational body of the add-a-core wizard. The four steps (destination
-  // chooser -> local-confirm | remote-address -> remote-pair) plus the shared
-  // header, error footer, and bubble/mobile frame are all pure markup here; the
-  // client owns the state machine, the form drafts, LAN discovery, connection
-  // probing, and the pairing flows, and feeds them in as data while taking the
-  // step transitions back out as callbacks. Props in, callbacks out.
+  // Presentational body of the add-a-core wizard. The steps (connect-local |
+  // remote-address -> remote-pair) plus the shared header, error footer, and
+  // bubble/mobile frame are all pure markup here; the client owns the state
+  // machine, the form drafts, LAN discovery, connection probing, and the
+  // pairing flows, and feeds them in as data while taking the step transitions
+  // back out as callbacks. Props in, callbacks out.
+  //
+  // The Core is installed by the native installer, never from here:
+  // `connectLocal` is the silent first-boot pair with an installer-provided
+  // local core (a spinner, or an error with a remote fallback), and the remote
+  // steps are the welcoming connect-to-a-core flow every other start lands on.
 
   // Which wizard step is showing.
-  export type NewCoreWizardStep =
-    "chooseDestination" | "localConfirm" | "remoteAddress" | "remotePair";
+  export type NewCoreWizardStep = "connectLocal" | "remoteAddress" | "remotePair";
 
-  // The in-flight pairing/install operation, or null when idle. Drives the
-  // primary buttons' spinner + label and disables controls.
-  export type NewCoreWizardBusy = null | "installing" | "claiming" | "checking";
-
-  // The running local install's phase, streamed from the installer while
-  // busy === "installing". The install button shows "<label> (<pct>%)" so the
-  // user sees what is actually happening instead of a bare "Installing…".
-  export interface NewCoreInstallProgress {
-    label: string;
-    done: number;
-    total: number;
-  }
+  // The in-flight pairing operation, or null when idle. Drives the primary
+  // buttons' spinner + label and disables controls.
+  export type NewCoreWizardBusy = null | "claiming" | "checking";
 
   // One LAN-discovered core row (pre-formatted host label + version).
   export interface NewCoreDiscoveredRow {
@@ -51,8 +46,6 @@
     busy = null,
     error = "",
     canStepBack = false,
-    // Choose-destination step.
-    destination = "local",
     // Remote-address step.
     coreSetupDocsUrl,
     discovering = false,
@@ -62,32 +55,18 @@
     // Remote-pair step.
     defaultRemoteName = "",
     remoteCodeValid = false,
-    // Local-confirm step.
-    installServiceChoice = false,
-    installNetworkChoice = false,
-    installBehindProxyChoice = false,
-    installProgress = null,
-    minAdminPasswordLength,
-    installPasswordValid = false,
     onStepBack,
     onClose,
-    onChooseDestination,
-    onContinueFromChoose,
     onPingNetwork,
     onUseDiscovered,
     onCheckConnection,
-    onToggleService,
-    onToggleNetwork,
-    onToggleBehindProxy,
-    onPairLocal,
-    onContinueInBackground,
+    onRetryLocal,
+    onUseRemoteInstead,
     onPairRemote,
     // Controlled text fields.
     remoteUrl = $bindable(""),
     remoteName = $bindable(""),
     remoteCode = $bindable(""),
-    installPassword = $bindable(""),
-    installPasswordConfirm = $bindable(""),
   }: {
     step: NewCoreWizardStep;
     onMobile?: boolean;
@@ -97,7 +76,6 @@
     busy?: NewCoreWizardBusy;
     error?: string;
     canStepBack?: boolean;
-    destination?: "local" | "remote";
     coreSetupDocsUrl: string;
     discovering?: boolean;
     didSweep?: boolean;
@@ -105,41 +83,20 @@
     connectionError?: string | null;
     defaultRemoteName?: string;
     remoteCodeValid?: boolean;
-    installServiceChoice?: boolean;
-    installNetworkChoice?: boolean;
-    installBehindProxyChoice?: boolean;
-    installProgress?: NewCoreInstallProgress | null;
-    minAdminPasswordLength: number;
-    installPasswordValid?: boolean;
     onStepBack?: () => void;
     onClose?: () => void;
-    onChooseDestination?: (d: "local" | "remote") => void;
-    onContinueFromChoose?: () => void;
     onPingNetwork?: () => void;
     onUseDiscovered?: (row: NewCoreDiscoveredRow) => void;
     onCheckConnection?: () => void;
-    onToggleService?: () => void;
-    onToggleNetwork?: () => void;
-    onToggleBehindProxy?: () => void;
-    onPairLocal?: () => void;
-    onContinueInBackground?: () => void;
+    onRetryLocal?: () => void;
+    onUseRemoteInstead?: () => void;
     onPairRemote?: () => void;
     remoteUrl?: string;
     remoteName?: string;
     remoteCode?: string;
-    installPassword?: string;
-    installPasswordConfirm?: string;
   } = $props();
 
   const noop = (): void => {};
-
-  // "<label> (<pct>%)" for the install button while phases stream in, or null
-  // before the first phase lands (the button falls back to "Installing…").
-  const installProgressText = $derived.by(() => {
-    if (!installProgress || installProgress.total <= 0) return null;
-    const pct = Math.min(100, Math.round((installProgress.done / installProgress.total) * 100));
-    return `${installProgress.label} (${pct}%)`;
-  });
 </script>
 
 {#if onMobile}
@@ -163,10 +120,16 @@
   </Bubble>
 {/if}
 
+{#snippet welcomeIntro()}
+  <p class="text-sm text-default-600">
+    Tomat runs on a Core: the service that powers your models, speech, and tools. Connect this
+    device to one to get started.
+  </p>
+{/snippet}
+
 {#snippet mobileHeader()}
   {#if locked && !canStepBack}
-    <!-- First-run welcome: mobile enters the wizard here (the destination chooser
-         is desktop-only), so greet the user instead of opening on a bare form. The
+    <!-- First-run welcome: greet the user instead of opening on a bare form. The
          intro is a normal left-aligned paragraph so it reads as one description
          with the step lead below it, not a second, separately-styled block. -->
     <div class="flex flex-col items-center gap-3 pt-4 pb-1">
@@ -175,12 +138,9 @@
         style="mask:url(/tomat.svg) center/contain no-repeat;-webkit-mask:url(/tomat.svg) center/contain no-repeat;"
         aria-hidden="true"
       ></span>
-      <h1 class="text-2xl font-semibold text-default-800">Welcome to tomat</h1>
+      <h1 class="text-2xl font-semibold text-default-800">Welcome to Tomat</h1>
     </div>
-    <p class="text-sm text-default-600">
-      tomat runs on a Core: the service that powers your models, speech, and tools. Connect this
-      device to one to get started.
-    </p>
+    {@render welcomeIntro()}
   {:else}
     <!-- Later step / additional-core: a left-aligned top bar (back or close) over
          a screen title, matching the other mobile screens. On Android the OS owns
@@ -253,7 +213,7 @@
 {#snippet wizardBody()}
   <!-- Desktop header. Mobile renders its own welcome / top bar in mobileHeader. -->
   {#if !onMobile}
-    {#if step === "chooseDestination" && locked}
+    {#if locked && !canStepBack}
       <!-- Onboarding welcome: centered logo + title, no exit (locked in until a
          core is paired). -->
       <div class="flex flex-col items-center gap-3 pt-2">
@@ -262,8 +222,11 @@
           style="mask:url(/tomat.svg) center/contain no-repeat;-webkit-mask:url(/tomat.svg) center/contain no-repeat;"
           aria-hidden="true"
         ></span>
-        <h1 class="text-lg font-medium text-default-800">Welcome to tomat</h1>
+        <h1 class="text-lg font-medium text-default-800">Welcome to Tomat</h1>
       </div>
+      {#if step === "remoteAddress"}
+        {@render welcomeIntro()}
+      {/if}
     {:else}
       <!-- Header: an optional left back arrow (intra-wizard step-back, hidden when
          no previous step exists), a centered title, and an optional right close
@@ -284,10 +247,8 @@
           <div class="w-9 shrink-0" aria-hidden="true"></div>
         {/if}
         <h1 class="text-lg font-medium text-default-800 flex-1 text-center">
-          {#if step === "chooseDestination"}
-            Add a Core
-          {:else if step === "localConfirm"}
-            Install a Core
+          {#if step === "connectLocal"}
+            Connect to a Core
           {:else}
             Connect to a Remote Core
           {/if}
@@ -309,105 +270,36 @@
     {/if}
   {/if}
 
-  {#if step === "chooseDestination"}
-    <!-- Step 1 of initial setup: pick where the core runs. -->
-    <p class="text-sm text-default-600">
-      tomat needs a Core: the local service that runs language models, speech services and tools.
-      Where should it run?
-    </p>
-
-    <div class="flex flex-col gap-2">
-      <button
-        type="button"
-        class="flex items-start gap-3 rounded-large px-3 py-3 text-left transition-colors hover:cursor-pointer {destination ===
-        'local'
-          ? 'bg-default-inverted-300'
-          : 'bg-surface-inset hover:bg-surface-inset-strong'}"
-        onclick={() => (onChooseDestination ?? noop)("local")}
-        disabled={busy !== null}
+  {#if step === "connectLocal"}
+    <!-- Silent pair with the installer-provided local core. Auto-run: the happy
+         path is just a spinner that resolves into the app; a failure explains
+         itself and offers a retry or the remote fallback. -->
+    {#if error}
+      <ErrorDetailView message={error} />
+      <Button
+        variant="primary"
+        icon="i-material-symbols-refresh-rounded"
+        class="px-4 py-2.5 rounded-large"
+        onclick={() => (onRetryLocal ?? noop)()}
       >
-        <i
-          class="flex i-material-symbols-computer-rounded text-2xl shrink-0 mt-0.5 {destination ===
-          'local'
-            ? 'text-default-inverted-800'
-            : 'text-default-600'}"
-        ></i>
-        <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-          <span
-            class="text-sm font-medium {destination === 'local'
-              ? 'text-default-inverted-800'
-              : 'text-default-800'}"
-          >
-            On this computer
-            <span
-              class="text-xs font-normal {destination === 'local'
-                ? 'text-default-inverted-500'
-                : 'text-default-500'}"
-            >
-              (recommended)
-            </span>
-          </span>
-          <span
-            class="text-xs {destination === 'local'
-              ? 'text-default-inverted-500'
-              : 'text-default-500'}"
-          >
-            Models and tools run locally. No data leaves your machine, and no other device can pair
-            unless you allow it.
-          </span>
-        </div>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-start gap-3 rounded-large px-3 py-3 text-left transition-colors hover:cursor-pointer {destination ===
-        'remote'
-          ? 'bg-default-inverted-300'
-          : 'bg-surface-inset hover:bg-surface-inset-strong'}"
-        onclick={() => (onChooseDestination ?? noop)("remote")}
-        disabled={busy !== null}
+        Try Again
+      </Button>
+      <Button
+        icon="i-material-symbols-devices-rounded"
+        class="px-4 py-2.5 rounded-large"
+        onclick={() => (onUseRemoteInstead ?? noop)()}
       >
-        <i
-          class="flex i-material-symbols-devices-rounded text-2xl shrink-0 mt-0.5 {destination ===
-          'remote'
-            ? 'text-default-inverted-800'
-            : 'text-default-600'}"
-        ></i>
-        <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-          <span
-            class="text-sm font-medium {destination === 'remote'
-              ? 'text-default-inverted-800'
-              : 'text-default-800'}"
-          >
-            On another computer
-          </span>
-          <span
-            class="text-xs {destination === 'remote'
-              ? 'text-default-inverted-500'
-              : 'text-default-500'}"
-          >
-            Connect to a Core already running on another machine in your network. Models and tools
-            run there; this device only sends input and renders the UI.
-          </span>
-        </div>
-      </button>
-    </div>
-
-    <Button
-      variant="primary"
-      icon={busy !== null ? "i-line-md:loading-loop" : "i-material-symbols-arrow-forward-rounded"}
-      class="px-4 py-2.5 rounded-large"
-      disabled={busy !== null}
-      onclick={() => (onContinueFromChoose ?? noop)()}
-    >
-      {#if busy === "installing"}
-        Setting up Core…
-      {:else if busy === "claiming"}
-        Pairing…
-      {:else}
-        Continue
-      {/if}
-    </Button>
+        Connect to a Remote Core
+      </Button>
+    {:else}
+      <p class="text-sm text-default-600">
+        Tomat runs on a Core: the service that powers your models, speech, and tools.
+      </p>
+      <div class="flex items-center justify-center gap-2 py-3 text-sm text-default-600">
+        <i class="i-line-md:loading-loop text-xl shrink-0"></i>
+        <span>Connecting to the Core on this computer…</span>
+      </div>
+    {/if}
   {:else if step === "remoteAddress"}
     <!-- Remote step 1: enter the address and verify the connection. -->
     <p class="text-sm text-default-600">
@@ -536,189 +428,11 @@
         {busy === "claiming" ? "Pairing…" : "Pair"}
       </Button>
     {/if}
-  {:else if step === "localConfirm"}
-    <!-- Step 2 (local branch): confirm install + per-install toggles. -->
-    <p class="text-sm text-default-600">
-      tomat will install the Core service on this computer. Here's what that means:
-    </p>
-
-    <ul class="flex flex-col gap-2 text-sm text-default-700">
-      <li class="flex gap-2">
-        <i
-          class="flex i-material-symbols-cloud-download-rounded text-base text-default-500 shrink-0 mt-0.5"
-        ></i>
-        <span>
-          tomat downloads the Core from
-          <code class="bg-surface-inset-strong px-1 rounded-small">get.au.tomat.ing</code>
-          and installs it on this computer.
-        </span>
-      </li>
-      <li class="flex gap-2">
-        <i class="flex i-material-symbols-folder-rounded text-base text-default-500 shrink-0 mt-0.5"
-        ></i>
-        <span>
-          Binaries and data go to
-          <code class="bg-surface-inset-strong px-1 rounded-small">~/.tomat/core/</code>.
-        </span>
-      </li>
-      <li class="flex gap-2">
-        <i class="flex i-material-symbols-key-rounded text-base text-default-500 shrink-0 mt-0.5"
-        ></i>
-        <span>
-          A pairing code is minted for this Client. The admin password you set below lets you pair
-          more devices later.
-        </span>
-      </li>
-    </ul>
-
-    <!-- Service mode toggle -->
-    <button
-      type="button"
-      class="flex items-start gap-3 bg-surface-inset rounded-large px-3 py-2.5 text-left hover:bg-surface-inset-strong hover:cursor-pointer transition-colors"
-      onclick={() => (onToggleService ?? noop)()}
-      disabled={busy !== null}
-    >
-      <i
-        class="flex text-xl shrink-0 mt-0.5 {installServiceChoice
-          ? 'i-material-symbols-check-box-rounded text-default-800'
-          : 'i-material-symbols-check-box-outline-blank text-default-500'}"
-      ></i>
-      <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-        <span class="text-sm font-medium text-default-800">
-          Keep Core running in the background
-        </span>
-        <span class="text-xs text-default-500">
-          When on, a launchd / systemd / scheduled-task entry boots the Core on login so other
-          Clients on this machine can connect anytime. When off, the Client launches the Core on
-          demand at startup.
-        </span>
-      </div>
-    </button>
-
-    <!-- Network bind toggle -->
-    <button
-      type="button"
-      class="flex items-start gap-3 bg-surface-inset rounded-large px-3 py-2.5 text-left hover:bg-surface-inset-strong hover:cursor-pointer transition-colors"
-      onclick={() => (onToggleNetwork ?? noop)()}
-      disabled={busy !== null}
-    >
-      <i
-        class="flex text-xl shrink-0 mt-0.5 {installNetworkChoice
-          ? 'i-material-symbols-check-box-rounded text-default-800'
-          : 'i-material-symbols-check-box-outline-blank text-default-500'}"
-      ></i>
-      <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-        <span class="text-sm font-medium text-default-800">
-          Allow other devices on this network to pair
-        </span>
-        <span class="text-xs text-default-500">
-          When on, the Core listens on <code class="bg-surface-inset-strong px-1 rounded-small"
-            >0.0.0.0:7800</code
-          >
-          so other Clients in your LAN can connect. When off (default), only this device can reach it
-          via <code class="bg-surface-inset-strong px-1 rounded-small">127.0.0.1</code>. Changeable
-          later by editing the Core's
-          <code class="bg-surface-inset-strong px-1 rounded-small">settings.json</code>.
-        </span>
-      </div>
-    </button>
-
-    <!-- Behind-proxy toggle. This device pairs directly over loopback either
-         way; the option switches the Core so OTHER devices reaching it through
-         an HTTPS proxy trust the proxy's certificate instead of the Core's. -->
-    <button
-      type="button"
-      class="flex items-start gap-3 bg-surface-inset rounded-large px-3 py-2.5 text-left hover:bg-surface-inset-strong hover:cursor-pointer transition-colors"
-      onclick={() => (onToggleBehindProxy ?? noop)()}
-      disabled={busy !== null}
-    >
-      <i
-        class="flex text-xl shrink-0 mt-0.5 {installBehindProxyChoice
-          ? 'i-material-symbols-check-box-rounded text-default-800'
-          : 'i-material-symbols-check-box-outline-blank text-default-500'}"
-      ></i>
-      <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-        <span class="text-sm font-medium text-default-800"> Served through an HTTPS proxy </span>
-        <span class="text-xs text-default-500">
-          Turn this on only if other devices will reach this Core through a reverse proxy that
-          serves HTTPS, such as Caddy or Cloudflare. Those devices then trust the proxy's
-          certificate; this device stays paired directly. Leave it off for a normal local Core.
-        </span>
-      </div>
-    </button>
-
-    <!-- Admin password. Required so the user can pair new devices remotely
-         later (from a paired client) without reading the admin token off disk. -->
-    <div class="flex flex-col gap-2">
-      <FormField label="Admin password">
-        <Input
-          type="password"
-          value={installPassword}
-          placeholder="••••••••"
-          disabled={busy !== null}
-          ariaLabel="Admin password"
-          oninput={(v) => (installPassword = v)}
-        />
-      </FormField>
-      <FormField label="Confirm admin password">
-        <Input
-          type="password"
-          value={installPasswordConfirm}
-          placeholder="••••••••"
-          disabled={busy !== null}
-          ariaLabel="Confirm admin password"
-          oninput={(v) => (installPasswordConfirm = v)}
-        />
-      </FormField>
-      {#if installPassword && installPassword.length < minAdminPasswordLength}
-        <span class="text-xs text-default-500">
-          Use at least {minAdminPasswordLength} characters.
-        </span>
-      {:else if installPasswordConfirm && installPassword !== installPasswordConfirm}
-        <span class="text-xs text-accent-red-700">Passwords do not match.</span>
-      {:else}
-        <span class="text-xs text-default-500">
-          Remember this. You'll need it to pair new devices.
-        </span>
-      {/if}
-    </div>
-
-    <Button
-      variant="primary"
-      icon={busy === "installing" || busy === "claiming"
-        ? "i-line-md:loading-loop"
-        : "i-material-symbols-download-rounded"}
-      class="px-4 py-2.5 rounded-large"
-      disabled={busy !== null || !installPasswordValid}
-      onclick={() => (onPairLocal ?? noop)()}
-    >
-      {#if busy === "installing"}
-        {installProgressText ?? "Installing…"}
-      {:else if busy === "claiming"}
-        Pairing…
-      {:else}
-        Install and Pair
-      {/if}
-    </Button>
-
-    {#if busy === "installing"}
-      <!-- The setup window is always-on-top and can't be moved, and installing a
-           Core can take a while on a slow connection. Let the user send it to the
-           background rather than wait behind it: the tray icon brings it back, and
-           it also returns on its own once the install finishes. Only shown once
-           the install is actually running (busy === "installing"). -->
-      <Button
-        variant="primary"
-        icon="i-material-symbols-keyboard-arrow-down-rounded"
-        class="px-4 py-2.5 rounded-large"
-        onclick={() => (onContinueInBackground ?? noop)()}
-      >
-        Continue in the Background
-      </Button>
-    {/if}
   {/if}
 
-  {#if error}
+  <!-- Shared error footer. connectLocal renders its error inside the step (with
+       the retry / remote-fallback actions), so it is excluded here. -->
+  {#if error && step !== "connectLocal"}
     <ErrorDetailView message={error} />
   {/if}
 {/snippet}

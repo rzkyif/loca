@@ -1,12 +1,12 @@
 # Notice
 
-tomat is licensed under [AGPL-3.0-only](LICENSE). It incorporates and/or
+Tomat is licensed under [AGPL-3.0-only](LICENSE). It incorporates and/or
 distributes the following third-party components. Each is licensed separately;
 please consult the upstream project for its full license text.
 
 ## Binaries downloaded at runtime
 
-`tomat-core` fetches these compiled binaries from the tomat CDN on first use.
+`tomat-core` fetches these compiled binaries from the Tomat CDN on first use.
 They are not part of this repository.
 
 | Component                                           | Upstream                                   | License          |
@@ -21,7 +21,7 @@ They are not part of this repository.
 The `tomat-core-speech` binary statically links espeak-ng, which is licensed
 under GPL-3.0-or-later. As required by that license, the corresponding source
 for espeak-ng is available at <https://github.com/espeak-ng/espeak-ng>, at the
-revision bundled by sherpa-onnx 1.13.2 (the version tomat builds against). tomat
+revision bundled by sherpa-onnx 1.13.2 (the version Tomat builds against). Tomat
 does not modify espeak-ng.
 
 LLM, speech-to-text, and text-to-speech model weights are also downloaded at

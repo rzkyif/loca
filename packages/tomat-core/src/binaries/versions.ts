@@ -33,7 +33,7 @@ export function libDirFor(binRoot: string, kind: BinaryKind): string {
   return join(binRoot, "lib", kind);
 }
 
-// On-disk filename for one of tomat's OWN binaries (tomat-core,
+// On-disk filename for one of Tomat's OWN binaries (tomat-core,
 // tomat-core-updater, tomat-core-keychain): channel-suffixed (so latest's
 // tomat-core-latest coexists with stable's tomat-core) + .exe on Windows.
 export function coreBinaryName(base: string): string {

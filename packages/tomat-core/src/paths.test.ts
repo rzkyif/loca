@@ -83,7 +83,7 @@ Deno.test("channelSuffix is bare on stable and suffixed otherwise", () => {
   withEnv({ HOME, TOMAT_CHANNEL: "dev" }, () => assertEquals(channelSuffix(), "-dev"));
 });
 
-Deno.test("channelBinName suffixes tomat's own binaries per channel", () => {
+Deno.test("channelBinName suffixes Tomat's own binaries per channel", () => {
   withEnv({ HOME, TOMAT_CHANNEL: undefined }, () => {
     assertEquals(channelBinName("tomat-core"), "tomat-core");
   });

@@ -6,11 +6,11 @@ order: 4
 
 import Aside from "../../../components/Aside.astro";
 
-tomat keeps itself current so you do not have to track releases by hand. When a new
+Tomat keeps itself current so you do not have to track releases by hand. When a new
 release is ready, the app offers to install it, and the Core can stage and apply its
 own update safely, rolling back if something goes wrong rather than leaving you with
-a broken service. You can always download the latest installer, or re-run the install
-command, to jump straight to the newest build.
+a broken service. You can always download the latest installer to jump straight to
+the newest build.
 
 ## Channels
 
@@ -40,7 +40,7 @@ sessions and settings on **stable**, because they never share state.
 ## How It Works
 
 An update is never applied on trust. Each release ships with a signature that only
-tomat's release key could have produced, and the Core checks that signature against a
+Tomat's release key could have produced, and the Core checks that signature against a
 key built into it before it will touch a downloaded build, so a file that was tampered
 with or came from the wrong place is rejected. Only after that does it stage the new
 version beside the old one and hand off to a tiny helper that swaps them and restarts.
@@ -55,5 +55,5 @@ outside any channel's folder, in a shared location, so every channel reaches the
 multi-gigabyte files instead of each keeping its own copy.
 
 That isolation is what makes a second channel safe to keep around: a place to try what
-is coming next without putting your daily work at risk. If you are taking tomat back
-off instead, see [Uninstalling tomat](/manual/maintenance/uninstalling).
+is coming next without putting your daily work at risk. If you are taking Tomat back
+off instead, see [Uninstalling Tomat](/manual/maintenance/uninstalling).

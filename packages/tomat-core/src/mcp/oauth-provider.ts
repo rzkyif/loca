@@ -37,7 +37,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: "tomat",
+      client_name: "Tomat",
       redirect_uris: [this.loopbackRedirect],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

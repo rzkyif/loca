@@ -1,6 +1,6 @@
 // OS background-service registration + teardown for tomat-core.
 //
-// This is the source of truth the install scripts used to duplicate: it writes
+// This is the single implementation of service registration: it writes
 // the launchd LaunchAgent (macOS), the systemd user unit (Linux), or the
 // Task Scheduler task (Windows) that starts core at login and restarts it on
 // failure, all namespaced per channel so stable / latest / dev coexist. The
@@ -9,8 +9,9 @@
 // service and just launches core in the background (client owns liveness).
 //
 // uninstall-service reverses it: stop + remove the service, kill stragglers,
-// delete the keychain master key, and remove the channel's core dir - always
-// preserving the shared ~/.tomat/models weights.
+// delete the keychain master key, and remove the channel's core dir -
+// preserving the shared ~/.tomat/models weights unless --purge-models opts
+// into removing them too.
 
 import { dirname, join } from "@std/path";
 import { channel, channelKeychainSuffix, channelSuffix, coreRoot, paths } from "../paths.ts";
@@ -18,7 +19,7 @@ import { binPath } from "../paths.ts";
 import { CORE_VERSION } from "../config.ts";
 import { coreBinaryName } from "../binaries/versions.ts";
 import { keychainDelete } from "../services/keychain.ts";
-import { progress } from "./io.ts";
+import { emitJson, progress } from "./io.ts";
 import { realHome, run, runPwsh } from "./proc.ts";
 
 function installedBinary(): string {
@@ -107,7 +108,20 @@ export async function installService(): Promise<void> {
   // place that lists the Core in Add/Remove Programs (Settings > Apps). Pass
   // whether a Scheduled Task was registered: its removal needs admin, so the
   // uninstall entry must self-elevate (see buildUninstallCommand).
-  if (Deno.build.os === "windows") await registerWindowsUninstallEntry(asService);
+  if (Deno.build.os === "windows" && shouldRegisterArpEntry()) {
+    await registerWindowsUninstallEntry(asService);
+  }
+}
+
+/** Whether install-service writes its own Add/Remove Programs entry.
+ *  TOMAT_INSTALL_REGISTER_ARP=0 (exactly "0") skips it: the unified Windows
+ *  installer writes its own ARP entry pointing at its uninstall.exe, and the
+ *  skip keeps every later install-service re-run (upgrades included) from
+ *  clobbering that entry back to the PowerShell teardown. Exported for tests. */
+export function shouldRegisterArpEntry(
+  value: string | undefined = Deno.env.get("TOMAT_INSTALL_REGISTER_ARP"),
+): boolean {
+  return value !== "0";
 }
 
 /** Restart the running daemon so an on-disk settings change (server.behindProxy)
@@ -154,9 +168,82 @@ export async function restartService(): Promise<void> {
   }
 }
 
+/** Start the installed core through whatever supervisor owns it, and print one
+ *  JSON line describing the result: `{"supervisor":"<kind>","pid":<n>|null}`.
+ *  The pid is non-null only in background mode, where nothing supervises the
+ *  process: the Client records it so quitting the Client also stops the core it
+ *  started. A supervised core outlives the Client, so it reports `pid: null`.
+ *  Idempotent: every branch tolerates an already-running core. */
+export async function startService(): Promise<void> {
+  const sup = await resolveSupervisor();
+  let pid: number | null = null;
+  switch (sup.kind) {
+    case "launchd": {
+      // `load` is non-zero when the agent is already loaded, which is benign.
+      // RunAtLoad starts it, and `start` covers the already-loaded case; both
+      // are no-ops against a running job. Stays on the legacy launchctl verbs
+      // that installLaunchd / removeLaunchd already use, so no uid lookup.
+      await run(["launchctl", "load", plistPath()], { ignoreError: true });
+      const rc = await run(["launchctl", "start", sup.label]);
+      if (!rc.success) throw new Error(`launchctl start ${sup.label} failed`);
+      break;
+    }
+    case "systemd": {
+      const rc = await run(["systemctl", "--user", "start", sup.unit]);
+      if (!rc.success) throw new Error(`systemctl --user start ${sup.unit} failed`);
+      break;
+    }
+    case "schtask": {
+      const rc = await run(["schtasks", "/Run", "/TN", sup.task], { ignoreError: true });
+      if (!rc.success) throw new Error(`schtasks /Run ${sup.task} failed`);
+      break;
+    }
+    case "background":
+      pid = await startBackground();
+      break;
+  }
+  emitJson({ supervisor: sup.kind, pid });
+}
+
+/** Stop the running core through whatever supervisor owns it. Idempotent: a
+ *  core that is already down is not an error. A plain kill would be undone by
+ *  launchd's KeepAlive / systemd's Restart, so each branch goes through the
+ *  supervisor; only background mode kills the process directly. */
+export async function stopService(): Promise<void> {
+  const sup = await resolveSupervisor();
+  switch (sup.kind) {
+    case "launchd":
+      // `unload` stops the job AND drops its KeepAlive, so the agent stays down
+      // until startService loads it again. Non-zero when already unloaded.
+      await run(["launchctl", "unload", plistPath()], { ignoreError: true });
+      progress(`stopped launchd agent ${sup.label}`);
+      break;
+    case "systemd":
+      await run(["systemctl", "--user", "stop", sup.unit], { ignoreError: true });
+      progress(`stopped systemd user unit ${sup.unit}`);
+      break;
+    case "schtask":
+      // /End stops the task's running instance; the RestartCount policy only
+      // fires on failure, so an explicit end stays ended. Sweep any survivor.
+      await run(["schtasks", "/End", "/TN", sup.task], { ignoreError: true });
+      await killStragglers();
+      progress(`stopped scheduled task ${sup.task}`);
+      break;
+    case "background":
+      await killStragglers();
+      break;
+  }
+}
+
 /** Stop + remove the service, kill stragglers, clear the keychain master key,
- *  and remove the channel's core dir (unless keepData). */
-export async function uninstallService(opts: { keepData: boolean }): Promise<void> {
+ *  and remove the channel's core dir (unless keepData). purgeModels also
+ *  removes the shared ~/.tomat/models weights, independent of keepData: the
+ *  uninstaller offers "keep my data" and "remove downloaded models" as separate
+ *  choices, and the models dir is shared across channels either way. */
+export async function uninstallService(opts: {
+  keepData: boolean;
+  purgeModels?: boolean;
+}): Promise<void> {
   switch (Deno.build.os) {
     case "darwin":
       await removeLaunchd();
@@ -178,6 +265,7 @@ export async function uninstallService(opts: { keepData: boolean }): Promise<voi
   } else {
     progress("keeping core data and keychain master key (--keep-data)");
   }
+  if (opts.purgeModels) await removeModelsDir();
 }
 
 // --- macOS launchd --------------------------------------------------------
@@ -302,7 +390,8 @@ async function installScheduledTask(): Promise<void> {
   const task = systemdUnitName(); // same tomat-core<suffix> naming
   const ch = channel();
   // Scheduled tasks have no environment field, so for non-stable channels wrap
-  // the launch in cmd.exe to set TOMAT_CHANNEL before exec (mirrors core.ps1).
+  // the launch in cmd.exe to set TOMAT_CHANNEL before exec (the same trick the
+  // unified installer's install-service invocation uses).
   const action =
     ch === "stable"
       ? `$a = New-ScheduledTaskAction -Execute '${bin}'`
@@ -337,11 +426,23 @@ Start-ScheduledTask -TaskName '${task}'
 
 async function removeScheduledTask(): Promise<void> {
   const task = systemdUnitName();
-  await runPwsh(
+  const teardown =
     `Stop-ScheduledTask -TaskName '${task}' -ErrorAction SilentlyContinue; ` +
-      `Unregister-ScheduledTask -TaskName '${task}' -Confirm:$false -ErrorAction SilentlyContinue`,
-    { ignoreError: true },
-  );
+    `Unregister-ScheduledTask -TaskName '${task}' -Confirm:$false -ErrorAction SilentlyContinue`;
+  await runPwsh(teardown, { ignoreError: true });
+  // Unregistering a root-folder task can need admin (see buildUninstallCommand)
+  // while callers - the unified installer's uninstall.exe included - run this
+  // unelevated. When the plain attempt left the task behind, retry once
+  // self-elevated (an expected UAC prompt) so no dead task pointing at a
+  // deleted binary lingers and fires at every logon.
+  if (await scheduledTaskExists(task)) {
+    await runPwsh(
+      `Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList ` +
+        `'-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass',` +
+        `'-EncodedCommand','${encodePwshCommand(teardown)}'`,
+      { ignoreError: true },
+    );
+  }
   progress(`removed scheduled task ${task}`);
 }
 
@@ -352,10 +453,10 @@ function windowsUninstallKey(): string {
 }
 
 /** The display name a person sees in Settings > Apps: parenthesized channel,
- *  matching the Client's "tomat (latest)" convention. */
+ *  matching the Client's "Tomat (latest)" convention. */
 function windowsDisplayName(): string {
   const ch = channel();
-  return ch === "stable" ? "tomat Core" : `tomat Core (${ch})`;
+  return ch === "stable" ? "Tomat Core" : `Tomat Core (${ch})`;
 }
 
 /** Base64(UTF-16LE) encode a command for PowerShell `-EncodedCommand`. Handing
@@ -429,7 +530,7 @@ async function registerWindowsUninstallEntry(asService: boolean): Promise<void> 
       `New-Item -Path $key -Force | Out-Null\n` +
       `Set-ItemProperty -Path $key -Name DisplayName -Value '${psq(windowsDisplayName())}'\n` +
       `Set-ItemProperty -Path $key -Name DisplayVersion -Value '${psq(CORE_VERSION)}'\n` +
-      `Set-ItemProperty -Path $key -Name Publisher -Value 'tomat'\n` +
+      `Set-ItemProperty -Path $key -Name Publisher -Value 'Tomat'\n` +
       `Set-ItemProperty -Path $key -Name InstallLocation -Value '${psq(root)}'\n` +
       `Set-ItemProperty -Path $key -Name DisplayIcon -Value '${psq(bin)}'\n` +
       `Set-ItemProperty -Path $key -Name UninstallString -Value '${psq(uninstallCmd)}'\n` +
@@ -455,7 +556,11 @@ async function unregisterWindowsUninstallEntry(): Promise<void> {
 
 // --- TOMAT_INSTALL_SERVICE=0 background launch ----------------------------
 
-async function startBackground(): Promise<void> {
+/** Launch core detached, with nothing supervising it, and return its PID so the
+ *  caller can hand it to whoever owns the process's lifetime (the Client stops
+ *  exactly this PID when it quits). Returns null when the PID could not be
+ *  determined; the core is still running in that case. */
+async function startBackground(): Promise<number | null> {
   const bin = installedBinary();
   const logs = paths().logsDir;
   const out = join(logs, "core.stdout.log");
@@ -465,29 +570,47 @@ async function startBackground(): Promise<void> {
     // bInheritHandles, so the detached core inherits every inheritable handle
     // of this PowerShell, including piped stdio. With pipes, our read-to-EOF
     // would block for as long as the core lives - the "stuck on installing"
-    // hang the client used to hit. Null stdio leaves nothing to hold open.
-    const rc = await runPwsh(
-      `$env:TOMAT_CHANNEL='${psq(channel())}'; ` +
-        `Start-Process -FilePath '${psq(bin)}' -WindowStyle Hidden ` +
-        `-RedirectStandardOutput '${psq(out)}' -RedirectStandardError '${psq(err)}'`,
-      { capture: false },
-    );
-    if (!rc.success) {
-      throw new Error(`could not start the core in the background (exit ${rc.code})`);
+    // hang the client used to hit. Null stdio leaves nothing to hold open,
+    // which is why the PID travels through a temp FILE rather than stdout.
+    const pidFile = await Deno.makeTempFile({ prefix: "tomat-core-pid-" });
+    try {
+      const rc = await runPwsh(
+        `$env:TOMAT_CHANNEL='${psq(channel())}'; ` +
+          `$p = Start-Process -FilePath '${psq(bin)}' -WindowStyle Hidden -PassThru ` +
+          `-RedirectStandardOutput '${psq(out)}' -RedirectStandardError '${psq(err)}'; ` +
+          `$p.Id | Set-Content -LiteralPath '${psq(pidFile)}'`,
+        { capture: false },
+      );
+      if (!rc.success) {
+        throw new Error(`could not start the core in the background (exit ${rc.code})`);
+      }
+      progress("started core in the background (no service registered)");
+      return parsePid(await Deno.readTextFile(pidFile).catch(() => ""));
+    } finally {
+      await Deno.remove(pidFile).catch(() => {});
     }
-  } else {
-    // Detach via sh so the `&`-backgrounded core outlives this short-lived CLI,
-    // exactly like the scripts' nohup branch.
-    const shell = `nohup ${shQuote(bin)} >> ${shQuote(out)} 2>> ${shQuote(err)} &`;
-    new Deno.Command("sh", {
-      args: ["-c", shell],
-      env: { ...Deno.env.toObject(), TOMAT_CHANNEL: channel() },
-      stdin: "null",
-      stdout: "null",
-      stderr: "null",
-    }).spawn();
+  }
+  // Detach via sh so the `&`-backgrounded core outlives this short-lived CLI,
+  // exactly like the scripts' nohup branch. Capturing sh's stdout is safe here
+  // (unlike the Windows branch): the core's own stdio is redirected into the
+  // log files, so the pipe only ever carries the `echo $!` line and reaches EOF
+  // when sh exits.
+  const shell = `nohup ${shQuote(bin)} >> ${shQuote(out)} 2>> ${shQuote(err)} & ` + `echo $!`;
+  const rc = await run(["sh", "-c", shell], {
+    env: { ...Deno.env.toObject(), TOMAT_CHANNEL: channel() },
+  });
+  if (!rc.success) {
+    throw new Error(`could not start the core in the background (exit ${rc.code})`);
   }
   progress("started core in the background (no service registered)");
+  return parsePid(rc.stdout);
+}
+
+/** The PID `startBackground` echoes, or null when the output holds no positive
+ *  integer (a shell that printed nothing, an unreadable Windows pid file). */
+export function parsePid(raw: string): number | null {
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 // --- shared teardown steps ------------------------------------------------
@@ -566,6 +689,19 @@ async function removeCoreDir(): Promise<void> {
   // shared models dir lives under ~/.tomat, not the channel dir, so it survives.
   await Deno.remove(dirname(root)).catch(() => {});
   progress(`removed ${root}`);
+}
+
+/** Remove the shared ~/.tomat/models downloads (--purge-models). Independent of
+ *  keepData: models are shared across channels and offered as their own
+ *  uninstall choice. Exported for tests. */
+export async function removeModelsDir(): Promise<void> {
+  const models = paths().modelsDir;
+  if (!(await fileExists(models))) {
+    progress("models directory already gone");
+    return;
+  }
+  await Deno.remove(models, { recursive: true });
+  progress(`removed ${models} (--purge-models)`);
 }
 
 // Recursively delete everything under `dir` except the single file at `keep`

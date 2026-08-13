@@ -2,7 +2,7 @@
 // flow. Guarded by the admin token (X-Admin-Token), i.e. device access: only
 // someone who can read ~/.tomat/<channel>/core/.admin-token may set or replace
 // the password, so a LAN peer on a 0.0.0.0-bound core can't overwrite it. The
-// install scripts and the client's local-install flow call this once with the
+// client's Settings > Cores panel calls this with the on-disk token and the
 // password the user chose. See services/auth.ts for the verify side.
 
 import { Hono } from "hono";

@@ -11,7 +11,7 @@
 //   native=true|false   a matrix-built item (core / desktop client / android)
 //                        differs -> the expensive per-triple build matrix runs.
 //
-// The platform-independent items (extension, catalog, install scripts, schemas,
+// The platform-independent items (extension, catalog, schemas,
 // the landing page) carry no per-triple artifact and build directly on the
 // publish coordinator, so a push that touches ONLY them (e.g. a website-only
 // change) publishes without spinning up a single build runner: changed=true,
@@ -39,7 +39,6 @@ import { extensionItem } from "./extension.ts";
 import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
-import { scriptsItem } from "./install-scripts.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
@@ -55,7 +54,6 @@ const ITEMS: ReleaseItem[] = [
   ...NATIVE_ITEMS,
   extensionItem,
   catalogItem,
-  scriptsItem,
   schemasItem,
   websiteItem,
 ];

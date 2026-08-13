@@ -105,10 +105,12 @@ const CORE_RESET_PRESERVE = new Set(["bin", "deno-cache"]);
 //                   chat, AND drop the dev core's SQLite db + built-in seed
 //                   marker so it boots onto a fresh schema and re-stages the
 //                   built-in extension (dev:reset / dev:reset:install).
-//  --fresh-install  make "On this computer" show the fresh-install confirm
-//                   screen. Sets TOMAT_DEV_FRESH_INSTALL for the client (read
-//                   by the Tauri pairing commands) and skips the remote prefill
-//                   so that flow is front-and-center (dev:reset:install).
+//  --fresh-install  make the client report no local core, so first boot shows
+//                   the welcome remote-connect page instead of silently pairing
+//                   with the dev core. Sets TOMAT_DEV_FRESH_INSTALL for the
+//                   client (read by the Tauri pairing commands) and skips the
+//                   remote prefill so that page starts blank
+//                   (dev:reset:install).
 const RESET = Deno.args.includes("--reset");
 const FRESH_INSTALL = Deno.args.includes("--fresh-install");
 // --android / --ios run the mobile client (`tauri android|ios dev`) against this
@@ -344,8 +346,8 @@ async function ensureAdminToken(): Promise<string> {
 // (generate a pairing code, remove a device) that an already-paired client
 // drives, so without one those can't be exercised in dev. The stored hash is
 // argon2id (a prior plaintext can't be read back), so we overwrite each run and
-// print the fresh value. Skipped in --fresh-install, where the install screen
-// sets its own password.
+// print the fresh value. Skipped in --fresh-install, which exercises the
+// no-password first-boot state (the password is then set in Settings > Cores).
 async function setDevAdminPassword(token: string): Promise<string | null> {
   const suffix = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) =>
     b.toString(16).padStart(2, "0"),
@@ -409,11 +411,10 @@ async function mintPairingCode(token: string): Promise<string | null> {
     const bar = "─".repeat(58);
     devLog(bar);
     if (FRESH_INSTALL) {
-      devLog(`Fresh-install test: "On this computer" shows the install screen.`);
-      devLog(`Or pair via "On another computer" with:`);
+      devLog(`Fresh-install test: the welcome remote-connect page shows.`);
+      devLog(`Pair it with this dev core by entering:`);
     } else {
-      devLog(`Onboarding fields are prefilled into the launched client.`);
-      devLog(`Either option will connect to this dev core:`);
+      devLog(`First boot silently pairs with this dev core; to pair by hand:`);
     }
     devLog(`  URL : ${CORE_URL}`);
     devLog(`  Code: ${data.code}`);
@@ -979,8 +980,8 @@ if (MOBILE) {
 } else {
   // `tauri dev` treats args after the first `--` as runner (cargo) args and args
   // after a SECOND `--` as app args, so the prefill flags go after `-- --` to
-  // reach the binary's argv. Skipped under --fresh-install, where the chooser
-  // should stay on "On this computer".
+  // reach the binary's argv. Skipped under --fresh-install, where the welcome
+  // remote-connect page should start blank.
   clientCmd.push("dev");
   if (!FRESH_INSTALL) {
     const prefill = [`--core-url=${CORE_URL}`];
@@ -993,12 +994,12 @@ if (MOBILE) {
 // don't spawn the client into a tearing-down session.
 if (!shuttingDown) {
   // The Tauri CLI builds vite + cargo before the app binary runs and emits its
-  // first "tomat Client starting" line, and that build chatter is filtered out
+  // first "Tomat Client starting" line, and that build chatter is filtered out
   // here. Emit a synthetic client line up front (mirroring the client's fern
   // format) so the console shows the client is building; it stays the latest
   // client message until the binary starts (or a build error leaks through
   // pipe()). Written directly like devLog, so it bypasses formatChildLine.
-  console.log(`${linePrefix("client", "35")}${levelLine("info", "boot", "tomat Client building")}`);
+  console.log(`${linePrefix("client", "35")}${levelLine("info", "boot", "Tomat Client building")}`);
   children.push(
     spawn("client", "35", clientCmd, `${ROOT}packages/tomat-client`, {
       ...CHANNEL_ENV,

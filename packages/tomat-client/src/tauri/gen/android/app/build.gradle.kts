@@ -25,6 +25,15 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseSigning = keystoreProperties.getProperty("storeFile") != null
 
+// The channel drives both the applicationId suffix (side-by-side install) and the
+// on-device app label. The label is the Android analogue of iOS's
+// TOMAT_DISPLAY_NAME: stable reads "Tomat", dev / latest read "Tomat (dev)" /
+// "Tomat (latest)", matching the desktop naming. It is generated here rather than
+// declared in res/values/strings.xml because it must vary per channel and Tauri
+// only regenerates strings.xml at `tauri android init`, never on a build.
+val tomatChannel = System.getenv("TOMAT_CHANNEL") ?: "stable"
+val tomatAppLabel = if (tomatChannel == "stable") "Tomat" else "Tomat ($tomatChannel)"
+
 android {
     compileSdk = 36
     namespace = "au.tomat.ing"
@@ -35,6 +44,10 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        // Consumed by AndroidManifest.xml as @string/app_name (launcher label) and
+        // @string/main_activity_title (the recents-screen task title).
+        resValue("string", "app_name", tomatAppLabel)
+        resValue("string", "main_activity_title", tomatAppLabel)
     }
     signingConfigs {
         if (hasReleaseSigning) {
@@ -70,7 +83,6 @@ android {
             // namespace stays au.tomat.ing (the MainActivity package path is fixed
             // at `tauri android init`), so only the applicationId varies - which is
             // why the suffix is used rather than overriding the Tauri identifier.
-            val tomatChannel = System.getenv("TOMAT_CHANNEL") ?: "stable"
             if (tomatChannel != "stable") {
                 applicationIdSuffix = ".$tomatChannel"
             }

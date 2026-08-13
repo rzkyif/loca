@@ -1,91 +1,61 @@
 ---
-title: Uninstalling tomat
+title: Uninstalling Tomat
 section: Cores & Maintenance
 order: 5
 ---
 
 import Aside from "../../../components/Aside.astro";
-import InstallGeneratorStatic from "../../../components/InstallGenerator.astro";
-import InstallGenerator from "../../../components/InstallGenerator.svelte";
 
-Removing tomat is straightforward, and a later reinstall starts clean rather than
+Removing Tomat is straightforward, and a later reinstall starts clean rather than
 trying to reach a Core that is gone. Nothing is scattered across your system: the
-Client is a single app, and the Core keeps all of its state under `~/.tomat`. You
-take each part off your machine on its own, the ordinary way for your operating
-system, or with the matching terminal command, which is also where you choose what
-data to keep.
+Client is a single app, and the Core keeps all of its state under `~/.tomat`. Each
+part has its own native uninstaller, which is also where you choose what data to
+keep.
 
-## Remove tomat
+## Remove Tomat
 
-On the desktop, remove tomat the same way you remove any other program, one part
-at a time:
+- **Windows.** Open Settings > Apps (Add or remove programs). Tomat has two
+  entries, the app and **Tomat Core**; remove each you installed. The Core's
+  uninstaller asks whether to keep your data (sessions, memories, and settings)
+  and whether to also remove downloaded models; from a terminal, the same
+  choices are `uninstall.exe /S` with `/KEEPDATA` and `/PURGEMODELS`. Removing
+  the app takes it off the machine along with its own settings.
+- **macOS.** The installer places an uninstaller beside the Core's files. Run
+  `sudo /usr/local/lib/tomat-latest/uninstall.sh` in Terminal: it quits and
+  removes the app, stops the Core's background service, and removes its data.
+  Add `--keep-data` to keep sessions, memories, and settings, `--purge-models`
+  to also remove downloaded models, or `--keep-client` to leave the app in
+  Applications. If you only installed the Client, just drag it to the Trash.
+- **Linux.** The Client is an AppImage: delete that file to remove it. Remove
+  the Core with your package manager: `sudo apt remove tomat-core-latest` stops
+  the service but keeps your data for a reinstall, and `sudo apt purge` (or
+  `dpkg -P`) removes the data too. On Red Hat, `sudo dnf remove` removes the
+  Core and its data in one step.
+- **Android.** Press and hold the Tomat icon and choose Uninstall.
 
-- **Windows.** Open Settings > Apps (Add or remove programs) and remove the tomat
-  Client and the tomat Core from the list.
-- **macOS.** Drag the tomat Client to the Trash. The Core runs in the background
-  with no app icon and has no separate uninstaller on macOS, so remove it with the
-  terminal command in the next section.
-- **Linux.** The Client is an AppImage: delete that file to remove it, or use the
-  terminal command below. If you installed the Core from a `.deb` or `.rpm`, remove
-  it with your package manager (`sudo apt remove` on Debian, `sudo dnf remove` on
-  Red Hat); otherwise the terminal command below removes it.
-- **Android.** Press and hold the tomat icon and choose Uninstall.
+A reinstall never gets stuck on a local Core that is gone: on its next launch
+the Client automatically drops a paired local Core whose Core is no longer
+installed on this device.
 
-How much data this leaves depends on the part. Removing the **Core** (through its
-terminal command, or its entry in Windows Add or remove programs and your Linux
-package manager) stops its background service and removes its sessions and
-memories. Removing the **Client** the native way above takes the app off but
-leaves its data (your settings and the list of Cores you paired with) under
-`~/.tomat`; the terminal command in the next section removes that too, and lets
-you keep the settings with a flag. Either way a reinstall never gets stuck on a
-local Core that is gone: on its next launch the Client automatically drops a paired
-local Core whose Core is no longer installed on this device.
+## What Tomat leaves behind
 
-## Uninstall via terminal
+Downloaded models are kept by default, whichever way you remove tomat. They can
+be many gigabytes and are shared across channels, so only an explicit choice
+removes them: the models option in the uninstaller on Windows and macOS, or
+deleting the `~/.tomat/models` folder by hand on Linux.
 
-The one-line command that installed each part can also remove it, which is handy
-over SSH or on a machine with no desktop. It is also where you change what data is
-kept. Pick your operating system for each part to get the exact command, then copy
-it into a terminal.
-
-Removing the **Client** always removes your paired cores, and removes your settings too unless you add `--keep-data`:
-
-<div data-nojs-fallback>
-  <InstallGeneratorStatic target="client" mode="uninstall" />
-</div>
-<div data-js-enhanced>
-  <InstallGenerator target="client" mode="uninstall" client:load />
-</div>
-
-Removing the **Core** stops its background service, then removes its data unless you
-add `--keep-data`:
-
-<div data-nojs-fallback>
-  <InstallGeneratorStatic target="core" mode="uninstall" />
-</div>
-<div data-js-enhanced>
-  <InstallGenerator target="core" mode="uninstall" client:load />
-</div>
-
-If you installed both parts, you can run both commands, in either order.
-
-## What tomat leaves behind
-
-Downloaded models are always kept, whichever way you remove tomat. They can be
-many gigabytes and are shared across channels, so no removal step touches them. If
-you want that space back, delete the `~/.tomat/models` folder by hand.
-
-If you run tomat on more than one **channel**, each is a separate install with its
-own state under `~/.tomat`, and you remove one channel at a time. The terminal
-commands here act on the latest channel. See
-[Updates and Channels](/manual/maintenance/updates-and-channels) for how channels
-stay isolated.
+If you run Tomat on more than one **channel**, each is a separate install with
+its own state under `~/.tomat` and its own uninstaller entries, so you remove
+one channel at a time. See
+[Updates and Channels](/manual/maintenance/updates-and-channels) for how
+channels stay isolated.
 
 <Aside type="caution">
   Removing either part deletes that data for good. There is no undo, so if you want to keep your
-  settings, sessions, or memories for a later reinstall, add the keep-data option before you run it.
+  settings, sessions, or memories for a later reinstall, choose the keep-data option before you
+  confirm.
 </Aside>
 
-That is everything tomat leaves on your machine, and how to take it back. If you
+That is everything Tomat leaves on your machine, and how to take it back. If you
 are setting up again rather than leaving, head back to
-[installing tomat](/manual/getting-started/installing).
+[installing Tomat](/manual/getting-started/installing).

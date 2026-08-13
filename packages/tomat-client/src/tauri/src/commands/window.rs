@@ -368,7 +368,7 @@ pub fn set_global_shortcut(
 
 /// Test whether an accelerator string can be registered as a global shortcut
 /// right now. Used by the settings UI to fail-fast when the user picks a
-/// combination that's already taken (by tomat, another app, or the OS) so
+/// combination that's already taken (by Tomat, another app, or the OS) so
 /// the bad value never gets persisted.
 ///
 /// Implementation: a transient register → unregister. If registration fails

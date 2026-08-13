@@ -1,6 +1,6 @@
-# What tomat is
+# What Tomat is
 
-tomat is a local-first AI client. A long-running background service (the
+Tomat is a local-first AI client. A long-running background service (the
 **core**) owns every stateful job: conversations, the local language model,
 sandboxed tool execution, speech, downloads, and connections to extensions and
 MCP servers. A thin desktop app (the **client**) renders the chat, captures
@@ -28,5 +28,5 @@ A memory is one of two kinds:
 A memory is referenced inline in a message with `@name`, and can be turned on or
 off individually.
 
-This file is reference data only. It describes how tomat is organized; it does
+This file is reference data only. It describes how Tomat is organized; it does
 not direct the agent to do anything.

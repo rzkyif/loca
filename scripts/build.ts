@@ -12,12 +12,14 @@
 // dist/, which clears the cursor and forces a full rebuild; --force does the
 // same without cleaning.
 //
-// Builds (core + helpers, client, catalog, android). A subset of the umbrella
-// `deno task release` item set: android is included (gated on the keystore being
-// present), and the landing page is NOT - it has no local compile step here; its
-// release item builds Astro itself at release time (via `deno task build:website`
-// under the hood). The extension tarball and the install scripts / schemas
-// likewise have no compile step, so they're release-only.
+// Builds (core + helpers, client, catalog, android, ios). A subset of the
+// umbrella `deno task release` item set: android is included (gated on the
+// keystore being present), ios is included (gated on Apple signing being
+// configured and a mac host; build-only, never uploads), and the landing page is
+// NOT - it has no local compile step here; its release item builds Astro itself
+// at release time (via `deno task build:website` under the hood). The extension
+// tarball and the schemas likewise have no compile step, so
+// they're release-only.
 //
 // `deno task build` builds all targets (the host builds every arch it can
 // natively; the rest are reported skipped pending their environment driver);
@@ -62,6 +64,8 @@ import { clientItem } from "./release/client.ts";
 import { catalogItem } from "./release/catalog.ts";
 import { androidItem, buildAndroidBundle } from "./release/android.ts";
 import { androidToolchainReady } from "./release/android-toolchain.ts";
+import { buildIosBundle, iosItem } from "./release/ios.ts";
+import { iosToolchainReady } from "./release/apple-toolchain.ts";
 
 const BUILD_STATE = join(DIST_DIR, ".build-state.json");
 
@@ -156,6 +160,7 @@ function buildables(
   coreTriples: Triple[],
   environments: BuildEnvironment[] | undefined,
   androidEnv: DeployEnv | null,
+  iosEnv: DeployEnv | null,
 ): Buildable[] {
   return [
     {
@@ -214,6 +219,21 @@ function buildables(
           },
         ]
       : []),
+    // iOS mirrors android: only present when Apple signing is configured and the
+    // mac toolchain exists. buildIosBundle signs into dist/ios/ (the same path
+    // the release apply uses) and never uploads; the App Store Connect upload is
+    // release-only.
+    ...(iosEnv
+      ? [
+          {
+            key: `ios:${channel}`,
+            label: "ios client",
+            sourceHash: () => iosItem.sourceHash(channel),
+            outputHash: () => outputHash(iosItem, channel),
+            run: () => buildIosBundle(iosEnv, channel).then(() => {}),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -236,6 +256,34 @@ async function loadAndroidEnv(): Promise<DeployEnv | null> {
   }
   if (!androidToolchainReady()) {
     info(colors.yellow("Android SDK/NDK/JDK not found; skipping the android client."));
+    return null;
+  }
+  return await loadOrSeedEnv();
+}
+
+/** Whether an Apple signing identity is configured in .env, checked without
+ *  seeding keys (same reasoning as androidKeystoreConfigured). Signing, not the
+ *  App Store Connect trio, is the bar: build-only produces a signed .ipa without
+ *  uploading, and an unsigned build would emit no .ipa at all. */
+async function iosSigningConfigured(): Promise<boolean> {
+  if (!(await exists(ENV_PATH))) return false;
+  const raw = await loadDotenv({ envPath: ENV_PATH, export: false });
+  return !!raw["APPLE_TEAM_ID"] && (!!raw["APPLE_SIGNING_IDENTITY"] || !!raw["APPLE_CERTIFICATE"]);
+}
+
+/** The DeployEnv for the ios item, or null (with a note) to skip it. iOS builds
+ *  only when BOTH Apple signing is configured AND this is a mac with Xcode + the
+ *  ios rust target, so a machine set up for desktop-only builds is never forced
+ *  through a doomed xcodebuild run. */
+async function loadIosEnv(): Promise<DeployEnv | null> {
+  if (!(await iosSigningConfigured())) {
+    info(colors.yellow("Apple signing not set in .env; skipping the ios client."));
+    return null;
+  }
+  if (!iosToolchainReady()) {
+    info(
+      colors.yellow("macOS with Xcode + the ios rust target not found; skipping the ios client."),
+    );
     return null;
   }
   return await loadOrSeedEnv();
@@ -306,9 +354,11 @@ async function main(): Promise<void> {
   // present; loadAndroidEnv notes the reason and returns null to skip otherwise,
   // so a machine without android setup still builds the desktop items.
   const androidEnv = await loadAndroidEnv();
+  // Same for iOS: Apple signing configured AND a mac with Xcode, else a note.
+  const iosEnv = await loadIosEnv();
 
   const state = await readState();
-  const items = buildables(flags.channel, coreTriples, environments, androidEnv);
+  const items = buildables(flags.channel, coreTriples, environments, androidEnv, iosEnv);
   let built = 0;
   for (const item of items) {
     const source = await item.sourceHash();

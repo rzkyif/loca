@@ -87,12 +87,10 @@ pdf-extract = "0.12.0"
 xcap = "0.9.6"
 cpvc = "0.6"
 font-kit = "0.14"
-# Private (mode 0600), unpredictably-named temp files for capturing installer
-# output without a pipe the backgrounded core could hold open (see pairing.rs).
-tempfile = "=3.27.0"
 
 [dev-dependencies]
 rcgen = "=0.14.8"
+tempfile = "=3.27.0"
 
 [lints.clippy]
 unwrap_used = "warn"

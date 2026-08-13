@@ -1,6 +1,6 @@
 # @tomat/client
 
-The tomat desktop UI: Tauri 2 + Svelte 5 + Vite + UnoCSS. It is intentionally
+The Tomat desktop UI: Tauri 2 + Svelte 5 + Vite + UnoCSS. It is intentionally
 thin ("dumb"): it renders, captures input, plays audio, manages global
 shortcuts, and talks to one or more paired cores over HTTP+WS. State and
 computation belong in core; nothing here should grow its own persistence or

@@ -12,7 +12,7 @@ name: Release
 # emits two gates: `changed` (any item differs -> run publish) and `native` (a
 # matrix-built item - core / desktop client / android - differs -> run the
 # expensive per-triple build matrix). The platform-independent items (extension,
-# catalog, install scripts, schemas, the landing page) build on the publish
+# catalog, schemas, the landing page) build on the publish
 # coordinator, so a push touching only them - e.g. a website-only change - skips
 # the whole build matrix: changed=true, native=false, build skipped, publish runs
 # just the changed items. `deno task remote-release` moves the branch with nothing
@@ -35,6 +35,14 @@ name: Release
 # TOMAT_ANDROID_KEY_PASSWORD, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
 # TOMAT_R2_ACCESS_KEY_ID, TOMAT_R2_SECRET_ACCESS_KEY, TOMAT_R2_BUCKET,
 # TOMAT_STORAGE_DOMAIN.
+#
+# Optional Apple secrets (macOS build runners only; every one may be empty and
+# the affected artifact just downgrades - ad-hoc client, unsigned .pkg, iOS
+# skipped): APPLE_SIGNING_IDENTITY, APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+# APPLE_INSTALLER_SIGNING_IDENTITY, APPLE_INSTALLER_CERTIFICATE,
+# APPLE_INSTALLER_CERTIFICATE_PASSWORD, APPLE_TEAM_ID, APPLE_API_KEY,
+# APPLE_API_ISSUER, APPLE_API_KEY_B64 (base64 of the App Store Connect .p8;
+# ci-build materializes the key file itself).
 
 on:
   push:
@@ -80,8 +88,10 @@ jobs:
           TOMAT_STORAGE_DOMAIN: ${{ secrets.TOMAT_STORAGE_DOMAIN }}
         run: deno task release:ci-preflight --channel=${{ steps.ch.outputs.channel }}
 
-  # One native runner per desktop triple. The Linux runner additionally builds the
-  # Android APK(s). Each stages its artifacts + descriptors for the publish job.
+  # One native runner per desktop triple, plus a dedicated Android leg (the APK
+  # build is ~8 min of Rust-for-4-ABIs + gradle and would otherwise serialize
+  # behind the Linux desktop build). Each stages its artifacts + descriptors for
+  # the publish job.
   build:
     name: "Build (${{ matrix.id }})"
     needs: preflight
@@ -97,15 +107,19 @@ jobs:
         include:
           - { id: macos-x64, os: macos-15-intel }
           # The macOS arm64 runner additionally builds + uploads the iOS .ipa
-          # (App Store Connect), the way the Linux runner additionally builds the
-          # Android APK: additive on an existing runner so the host core + desktop
-          # client are not built twice. iOS ships through the App Store, so it
-          # uploads itself rather than staging for the publish coordinator. Inert
-          # until the Apple account + APPLE_* secrets exist.
+          # (App Store Connect): additive on an existing runner so the host core +
+          # desktop client are not built twice. iOS ships through the App Store,
+          # so it uploads itself rather than staging for the publish coordinator.
+          # Secret-driven: without the APPLE_* secrets ci-build skips iOS with a
+          # note and the leg builds exactly what it builds today.
           - { id: macos-arm64, os: macos-14, ios: true }
           - { id: windows-x64, os: windows-latest }
           - { id: windows-arm64, os: windows-11-arm }
-          - { id: linux-x64, os: ubuntu-latest, android: true }
+          - { id: linux-x64, os: ubuntu-latest }
+          # Android-only leg: ci-build --android-only skips core + the desktop
+          # client, so this runs the APK build in parallel with linux-x64
+          # instead of serializing behind it.
+          - { id: android, os: ubuntu-latest, android: true, androidOnly: true }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -125,10 +139,10 @@ jobs:
           toolchain: 1.96.1
           # Android ABIs only on the Linux runner and iOS ABIs only on the macOS
           # arm64 runner; the desktop runners build their host triple natively (no
-          # cross targets needed). iOS stays dormant until the IOS_ENABLED repo
-          # variable is set (alongside the Apple account + secrets), so nothing
-          # iOS runs in CI before then.
-          targets: ${{ matrix.android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || (matrix.ios && vars.IOS_ENABLED == 'true') && 'aarch64-apple-ios,aarch64-apple-ios-sim' || '' }}
+          # cross targets needed). The iOS targets are a few seconds of rustup;
+          # whether iOS actually builds is decided by ci-build from the APPLE_*
+          # secrets alone.
+          targets: ${{ matrix.android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || matrix.ios && 'aarch64-apple-ios,aarch64-apple-ios-sim' || '' }}
 
       # JDK for the Gradle/Tauri Android build (Linux runner only).
       - uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5
@@ -160,7 +174,6 @@ jobs:
         with:
           workspaces: . -> target
           shared-key: release-${{ matrix.id }}
-          cache-all-crates: true
 
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -170,6 +183,20 @@ jobs:
           key: deno-${{ runner.os }}-${{ hashFiles('deno.lock', '**/deno.json', '**/deno.jsonc') }}
           restore-keys: |
             deno-${{ runner.os }}-
+
+      # Gradle distribution + dependency cache for the Android leg: without it
+      # every run re-downloads the gradle-bin zip (~1.5 min) plus the dependency
+      # graph during assemble. Keyed on the committed gradle build files under
+      # gen/android.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.android
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('packages/tomat-client/src/tauri/gen/android/**/*.gradle*', 'packages/tomat-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/tomat-client/src/tauri/gen/android/gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       # win-arm64 only: workerd (a website-only workspace dep) ships no arm64
       # Windows binary, and its npm lifecycle script aborts with "Unsupported
@@ -238,23 +265,25 @@ jobs:
             echo "SHERPA_ONNX_GPU_LIB_DIR_CUDA = $(dirname "$FOUND")"
           fi
 
-      # Native Core installer tooling (core-installers.ts): rpmbuild on Linux and
-      # makensis on Windows. macOS pkgbuild/productsign/notarytool ship with Xcode
-      # on the macOS runners. When a tool is missing the builder degrades to
-      # skipping that installer, so these keep the double-click packages in the
-      # release rather than being strictly required.
+      # Native installer tooling: rpmbuild on Linux (core-installers.ts's Core
+      # deb/rpm) and makensis on Windows (the unified installer,
+      # unified-installers.ts). macOS pkgbuild/productbuild/productsign/notarytool
+      # ship with Xcode on the macOS runners. When a tool is missing the builder
+      # degrades to skipping that installer, so these keep the double-click
+      # packages in the release rather than being strictly required.
       - name: Install Core installer tooling (linux)
-        if: runner.os == 'Linux'
+        if: matrix.id == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       # winget is absent on the windows-11-arm runner, and even where present its
-      # silent NSIS install does not add makensis to PATH (so core-installers.ts's
+      # silent NSIS install does not add makensis to PATH (so unified-installers.ts's
       # have("makensis") would skip the installer on windows-x64 too). Stage the
       # portable NSIS zip and put makensis on PATH so the check passes on both
       # windows-x64 and windows-arm64 (the x86 makensis runs under arm64
-      # emulation). Best-effort: if staging fails, buildWindowsNsis logs
-      # "makensis not available" and skips the Core installer, keeping the run green.
-      # Version-independent of the sherpa pin; bump when a newer NSIS is desired.
+      # emulation). Best-effort: if staging fails, buildWindowsUnified logs
+      # "makensis not available" and skips the unified installer, keeping the run
+      # green. Version-independent of the sherpa pin; bump when a newer NSIS is
+      # desired.
       - name: Install Core installer tooling (windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -282,7 +311,7 @@ jobs:
             Add-Content -Path $env:GITHUB_ENV -Value "NSISDIR=$nsisDir"
             Write-Host "makensis: $($makensis.FullName); NSISDIR=$nsisDir"
           } catch {
-            Write-Host "::warning::NSIS staging failed ($($_.Exception.Message)); Core Windows installer will be skipped"
+            Write-Host "::warning::NSIS staging failed ($($_.Exception.Message)); the unified Windows installer will be skipped"
           }
 
       - name: Build + stage (${{ matrix.id }})
@@ -299,19 +328,26 @@ jobs:
           TOMAT_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TOMAT_ANDROID_KEYSTORE_PASSWORD }}
           TOMAT_ANDROID_KEY_ALIAS: ${{ secrets.TOMAT_ANDROID_KEY_ALIAS }}
           TOMAT_ANDROID_KEY_PASSWORD: ${{ secrets.TOMAT_ANDROID_KEY_PASSWORD }}
-          # Apple signing + App Store Connect (macOS client signing and the iOS
-          # .ipa build/upload). Empty until the account exists, so both stay inert.
+          # Apple signing + App Store Connect (macOS client signing/notarization,
+          # the macOS .pkg installer productsign, and the iOS .ipa build/upload). All
+          # optional: any empty secret just downgrades that artifact with a note.
+          # The Installer identity is a SEPARATE Developer ID Installer cert
+          # (productsign rejects the Application cert); the .p8 arrives base64 in
+          # APPLE_API_KEY_B64 and ci-build materializes the key file itself.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_SIGNING_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGNING_IDENTITY }}
+          APPLE_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_INSTALLER_CERTIFICATE }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
           # Windows Authenticode code-signing, DORMANT until a cert exists. Empty
-          # secrets => the client + Core NSIS installers ship unsigned and the
-          # install flow keeps stripping Mark-of-the-Web (see injectWindowsSigning
-          # in client.ts + signWindows in core-installers.ts).
+          # secrets => the client NSIS + the unified installer ship unsigned and
+          # SmartScreen shows its unknown-publisher warning (see
+          # injectWindowsSigning in client.ts + signWindows in core-installers.ts).
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
           WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
           WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
@@ -326,7 +362,8 @@ jobs:
           deno task release:ci-build \
             --channel=${{ steps.ch.outputs.channel }} \
             ${{ matrix.android && '--android' || '' }} \
-            ${{ (matrix.ios && vars.IOS_ENABLED == 'true') && '--ios' || '' }}
+            ${{ matrix.androidOnly && '--android-only' || '' }} \
+            ${{ matrix.ios && '--ios' || '' }}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

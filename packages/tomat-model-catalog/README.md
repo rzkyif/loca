@@ -1,6 +1,6 @@
 # @tomat/model-catalog
 
-The hand-authored source for tomat's local-model catalog. tomat picks the three
+The hand-authored source for Tomat's local-model catalog. Tomat picks the three
 adaptive presets (Smallest / Half / Full) and powers its model browser from this
 data. Curation is centralized here so quality judgments stay with a human (or a
 coding agent): things like "Gemma 4 QAT matches the standard model at lower

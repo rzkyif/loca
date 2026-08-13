@@ -32,7 +32,7 @@
     {:else}
       <i class="flex shrink-0 i-material-symbols-volume-up-rounded text-base text-accent-green-500"
       ></i>
-      <span class="shrink-0 text-xs font-semibold text-accent-green-600">tomat</span>
+      <span class="shrink-0 text-xs font-semibold text-accent-green-600">Tomat</span>
     {/if}
     {#if active}
       <span class="relative flex shrink-0 h-1.5 w-1.5">

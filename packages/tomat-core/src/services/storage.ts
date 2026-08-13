@@ -1,5 +1,5 @@
 // Storage view for the Settings "Storage" field: a full per-category view of
-// everything tomat keeps on disk (downloaded models, sidecar binaries, the
+// everything Tomat keeps on disk (downloaded models, sidecar binaries, the
 // sessions JSON store, installed extensions, caches, logs, settings) plus the
 // clear/delete operations for each. The core is the sole authority on what may
 // be removed: every node is tagged with a `lock_reason` when it's in use, and a

@@ -1,6 +1,6 @@
-// Minimal local copy of the ToolContext shape the tomat worker injects.
+// Minimal local copy of the ToolContext shape the Tomat worker injects.
 // Keeping this in-source means the extension has no compile-time dependency
-// on a tomat SDK package. The worker just calls the exported function
+// on a Tomat SDK package. The worker just calls the exported function
 // with the structure described here. If the shape ever drifts, this file
 // is the source of truth for what the built-in extension relies on.
 

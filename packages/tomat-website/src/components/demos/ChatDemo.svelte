@@ -15,7 +15,7 @@
 
 <DemoFrame {label} designWidth={620}>
   <div class="mx-auto flex w-full max-w-[620px] flex-col" style:gap={bubbleGap(ui)}>
-    <UserMessageView text="How do I install tomat?" />
+    <UserMessageView text="How do I install Tomat?" />
     <AgentMessageView kind="content" bgClass="bubble-agent">
       {#snippet body()}
         <span class="break-words"

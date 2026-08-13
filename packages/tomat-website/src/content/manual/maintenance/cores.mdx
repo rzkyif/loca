@@ -7,12 +7,10 @@ order: 2
 import CoreBarDemo from "../../../components/demos/CoreBarDemo.svelte";
 import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
 import Aside from "../../../components/Aside.astro";
-import InstallGeneratorStatic from "../../../components/InstallGenerator.astro";
-import InstallGenerator from "../../../components/InstallGenerator.svelte";
 
-The **Core** is the service that does tomat's work, and the **Client** is the app
+The **Core** is the service that does Tomat's work, and the **Client** is the app
 you look at, as [The Basics](/manual/getting-started/basics) introduces. They usually
-sit on the same machine, set up for you the first time you launch the app. But the
+sit on the same machine, installed together and connected on first launch. But the
 Core does not have to live where the Client does, and once you separate them a few
 things follow: how to run a Core elsewhere, how a Client connects to one, and how you
 move between more than one.
@@ -20,47 +18,37 @@ move between more than one.
 ## Running a Core elsewhere
 
 Putting the Core on a more powerful computer lets the heavy model run there while you
-sit at a laptop. You install the Core on that machine directly rather than letting a
-Client set one up for you: pick the operating system of the machine that will run it,
-set the options that fit, and use the command it builds below. A Core meant for other
-machines to reach needs these options, because one of them is what opens the Core to
-the network; the downloaded installer asks for the same options on Windows but not on
-macOS or Linux, so the command is the safe choice everywhere.
+sit at a laptop. On the machine that will run it, download the
+[installer](/install) for its operating system and keep **Tomat Core** selected,
+along with the option that matters for a remote Core: **Allow other devices on
+this network to pair**. By default a Core only listens to its own machine, so
+nothing else on the network can reach it; that option is what opens it up. The
+**Keep the Core running in the background** option installs it as a service so it
+starts on its own and is always there to connect to.
 
-<div data-nojs-fallback>
-  <InstallGeneratorStatic target="core" />
-</div>
-<div data-js-enhanced>
-  <InstallGenerator target="core" client:load />
-</div>
-
-The options shape a remote Core in particular:
-
-- **Allow access from other machines** is the one that matters here. By default a
-  Core only listens to its own machine, so nothing else on the network can reach it.
-  Turn it on to let a Client on another computer pair with it.
-- **Run in the background at login** installs the Core as a service so it starts on
-  its own and is always there to connect to. Turn it off to start the Core by hand.
-- **Served through an HTTPS proxy** is only for a Core that will sit behind a reverse
-  proxy that terminates HTTPS. Read
-  [Serving a Core over HTTPS](#serving-a-core-over-https) before turning it on.
+On Linux the Core is its own `.deb`/`.rpm` package, which installs loopback-only;
+to open it to your network, set `server.bindHost` to `0.0.0.0` in the Core's
+`~/.tomat/latest/core/settings.json` and restart it. On macOS and Windows, a
+server with no screen uses the same installer headless, with the network option
+as a flag; see [headless installs](/manual/getting-started/installing).
 
 Match the **channel** to the one you run on the Client (see
-[Updates and Channels](/manual/maintenance/updates-and-channels)). When the install
-finishes it prints a one-time **pairing code**: enter it in a Client to pair the
-first device. When the Client installs a Core for you on first launch, it also asks
-you to set an **admin password**; choose something you will remember, because it is
-what lets you pair more devices later without going back to the Core's machine.
+[Updates and Channels](/manual/maintenance/updates-and-channels)). Then get a
+one-time **pairing code** from the new Core: open Tomat on that machine and choose
+**Generate Pairing Code** under **Cores** in Settings, or on a headless machine
+run the Core binary's `mint-code` subcommand
+(`~/.tomat/latest/core/bin/tomat-core-latest mint-code`). Enter the code in the
+Client that should connect.
 
 <Aside type="caution">
-  Allowing access from other machines opens the Core to your local network. Only do this on a
-  network you trust; pairing still requires the one-time code, but the Core is reachable to anything
-  that can route to it.
+  Allowing access from other devices opens the Core to your local network. Only do this on a network
+  you trust; pairing still requires the one-time code, but the Core is reachable to anything that
+  can route to it.
 </Aside>
 
 ## Serving a Core over HTTPS
 
-By default the link between a Client and a Core is secured by tomat itself. The Core
+By default the link between a Client and a Core is secured by Tomat itself. The Core
 presents its own certificate, and the Client records ("pins") that exact certificate
 at pairing, so it recognizes the Core every time and refuses an impostor. This needs
 nothing from you and works anywhere, including a Core reachable only by its address on
@@ -72,8 +60,9 @@ domain. There the Client never sees the Core's own certificate, only the proxy's
 the pinning above cannot apply. For that case the Core has a setting,
 `server.behindProxy`, that you turn on so the Client validates the proxy's public
 certificate the way a browser does instead of pinning. It is off by default and set on
-the Core's machine: at install time with the **Served through an HTTPS proxy** option
-above, or later in its `settings.json` alongside the network options (or via the
+the Core's machine: at install time with the headless installer's behind-proxy flag
+(see [headless installs](/manual/getting-started/installing)), or later in its
+`settings.json` alongside the network options (or via the
 `TOMAT_CORE_BEHIND_PROXY` environment variable). It is never set from the app, so a
 paired device can never change how the Core is trusted. The Client detects the mode by itself
 during pairing and marks each Core **Pinned** or **HTTPS** under **Cores** in Settings;
@@ -99,9 +88,13 @@ repeat.
 
 To pair an _additional_ device later, you do not have to go back to the Core's
 machine. From a Client that is already paired, open the Core under **Cores** in
-Settings and choose **Generate Pairing Code**; enter the admin password and the
-Client mints a fresh code to type on the new device. The same password lets you
-remove a device you no longer want from that Core's list of paired devices.
+Settings and choose **Generate Pairing Code**; enter the **admin password** and
+the Client mints a fresh code to type on the new device. The same password lets
+you remove a device you no longer want from that Core's list of paired devices.
+You set the admin password in the same place: on the machine running the Core,
+open it under **Cores** in Settings and choose **Set Admin Password**. Until one
+is set, that same-machine Client can still mint codes on its own, but other
+devices cannot.
 
 ## More than one Core
 
@@ -140,7 +133,7 @@ group is where your introduced Cores live.
 
 Pairing has to do two things at once: prove you typed the right code, and make sure
 you are talking to the real Core and not something impersonating it on the network.
-tomat handles both with a short exchange built around the one-time code. The Client
+Tomat handles both with a short exchange built around the one-time code. The Client
 and the Core each run a calculation from the code and trade the results; only if both
 started from the same code do they agree, so a wrong code fails outright, and the code
 itself never crosses the network in a form anyone could replay. In the same step the

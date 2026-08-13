@@ -1,4 +1,4 @@
-// Local oxlint plugin housing tomat's custom lint rules. Registered via
+// Local oxlint plugin housing Tomat's custom lint rules. Registered via
 // `jsPlugins` in the root `.oxlintrc.json` under the `tomat/` namespace.
 //
 // Rules:
@@ -12,12 +12,6 @@
 //   - no-em-dash: forbid the em dash (U+2014) anywhere: code, comments, or
 //     string/template text. Scans the raw source so every occurrence is caught,
 //     not just AST string nodes.
-//   - no-uppercase-tomat: forbid the capitalized brand word anywhere: code,
-//     comments, or string/template text. The brand is always lowercase. Like
-//     no-em-dash, scans raw source. The all-caps env-var prefix and the
-//     lowercase brand are both fine; only the mixed-case (capital initial) form
-//     is rejected. The needle is built by concatenation so this file never
-//     trips its own rule.
 //   - no-builtin-palette-color: forbid the built-in UnoCSS/Tailwind palette
 //     color utilities (a property prefix + a palette hue + a numeric shade, e.g.
 //     `text-<hue>-<shade>`, `bg-<hue>-<shade>`, `focus:ring-<hue>-<shade>`).
@@ -32,8 +26,7 @@
 //     literally `accent`/`default`, never a palette name). This source keeps no
 //     literal palette-color token, or the rule would flag its own examples.
 //
-// Keep this file em-dash-free and brand-uppercase-free, or the rules will flag
-// their own source.
+// Keep this file em-dash-free, or the rule will flag its own source.
 
 interface ImportDeclarationNode {
   source: { value: unknown };
@@ -82,12 +75,6 @@ const EM_DASH = String.fromCharCode(0x2014);
 const EM_DASH_MESSAGE =
   "Em dash (U+2014) is not allowed. Reword the surrounding text so the " +
   "sentence reads naturally without an em dash.";
-
-// Built by concatenation so this source file does not trip the rule itself.
-const UPPERCASE_BRAND = "T" + "omat";
-const UPPERCASE_BRAND_MESSAGE =
-  "The brand is always lowercase 'tomat'. Replace the capital-initial " +
-  "spelling. (The all-caps TOMAT_ env-var prefix is a separate token and fine.)";
 
 // A built-in UnoCSS/Tailwind color utility: a color property prefix, a palette
 // hue, and a numeric shade (e.g. `text-<hue>-<shade>`). The `*-accent-*` /
@@ -217,26 +204,6 @@ const noEmDash = {
   },
 };
 
-const noUppercaseBrand = {
-  create(context: RuleContext) {
-    return {
-      Program() {
-        const lines = context.sourceCode.text.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          let col = lines[i].indexOf(UPPERCASE_BRAND);
-          while (col !== -1) {
-            context.report({
-              message: UPPERCASE_BRAND_MESSAGE,
-              loc: { line: i + 1, column: col },
-            });
-            col = lines[i].indexOf(UPPERCASE_BRAND, col + 1);
-          }
-        }
-      },
-    };
-  },
-};
-
 const noBuiltinPaletteColor = {
   create(context: RuleContext) {
     return {
@@ -264,7 +231,6 @@ export default {
     "no-tauri-import": noTauriImport,
     "no-host-import": noHostImport,
     "no-em-dash": noEmDash,
-    "no-uppercase-tomat": noUppercaseBrand,
     "no-builtin-palette-color": noBuiltinPaletteColor,
   },
 };

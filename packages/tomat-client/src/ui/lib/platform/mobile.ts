@@ -358,16 +358,15 @@ const impl: Platform = {
     delete: (coreId) => invoke("keychain_delete_token", { coreId }),
   },
   pairing: {
-    // Remote-only on mobile: no on-device core install/spawn. These resolve to
-    // inert values so the (desktop-shaped) onboarding never throws before the
-    // mobile NewCore flow drops the local branch entirely.
+    // Remote-only on mobile: no on-device core. These resolve to inert values
+    // so the (desktop-shaped) onboarding never throws before the mobile NewCore
+    // flow skips the local branch entirely.
     readAdminToken: () => Promise.resolve(null),
     readLocalCoreBootError: () => Promise.resolve(null),
-    installLocalCore: () => notSupported("Installing a local Core"),
-    subscribeInstallProgress: () => Promise.resolve(() => {}),
-    enableCoreBehindProxy: () => notSupported("Configuring a local Core"),
     isLocalCoreInstalled: () => Promise.resolve(false),
+    isLocalCoreRunning: () => Promise.resolve(false),
     startLocalCore: () => Promise.resolve(false),
+    stopLocalCore: () => Promise.resolve(),
     localCoreBaseUrl: () => Promise.resolve(""),
     localSidecarPorts: () => Promise.resolve({ llm: 0, stt: 0 }),
     // Dev-only onboarding autofill, the mobile analogue of the desktop
@@ -454,6 +453,12 @@ const impl: Platform = {
     // shared ActionSheet and resolves with the chosen id, so every context menu
     // works on touch once a long-press trigger invokes its builder.
     showContextMenu: (items) => presentActionSheet(items),
+  },
+  tray: {
+    // No status-bar icon on a single-activity mobile shell, and no on-device
+    // core to start or stop.
+    setCoreState: () => Promise.resolve(),
+    subscribeCoreAction: () => Promise.resolve(() => {}),
   },
   monitors: {
     primary: () => Promise.resolve(null),

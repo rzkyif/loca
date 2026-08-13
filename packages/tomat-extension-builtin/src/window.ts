@@ -1,6 +1,6 @@
 // Read and restore the positions and sizes of open app windows. This is a
 // best-effort, platform-specific capability: macOS drives it through osascript
-// (which needs a one-time Accessibility grant for tomat Core), Windows through
+// (which needs a one-time Accessibility grant for Tomat Core), Windows through
 // PowerShell + the Win32 window APIs, and Linux through wmctrl on X11. Wayland
 // has no protocol to position another app's windows, so the tools declare
 // `platforms: ["darwin", "windows", "linux_x11"]` in tomat.json and are never

@@ -1,7 +1,7 @@
 // Boot-time presence check for the native helper binaries core depends on.
 //
-// These ship in the signed release manifest and are placed in the bin dir at
-// install time (scripts/install/core.sh) or, in dev, by `deno task dev`
+// These ship in the signed release manifest and are placed in the bin dir by
+// the native installer's payload or, in dev, by `deno task dev`
 // (scripts/dev.ts provisionHelpers). Core refuses to start if any are missing
 // rather than silently degrading: each helper has a quiet runtime fallback that
 // is appropriate when the helper RUNS but its OS facility is unavailable (e.g.

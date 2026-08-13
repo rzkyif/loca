@@ -1,5 +1,5 @@
 ---
-title: Installing tomat
+title: Installing Tomat
 section: Getting Started
 order: 1
 ---
@@ -7,60 +7,123 @@ order: 1
 import Aside from "../../../components/Aside.astro";
 import InstallDiagram from "../../../components/InstallDiagram.astro";
 
-tomat comes in two parts: a **Client**, the app you look at, and a **Core**, the
-service that does the work. You install the Client first, then point it at a Core.
-The common setup runs both on your own machine and does everything locally, with
-nothing sent anywhere until you decide otherwise, but the Core can just as well run
-on a different computer (see [The Basics](/manual/getting-started/basics)).
+Tomat comes in two parts: a **Client**, the app you look at, and a **Core**, the
+service that does the work. One installer sets up both. The common setup runs
+both on your own machine and does everything locally, with nothing sent anywhere
+until you decide otherwise, but the Core can just as well run on a different
+computer (see [The Basics](/manual/getting-started/basics)).
 
 <InstallDiagram />
 
 They connect over the network, so one Core can serve many Clients and one Client
 can reach many Cores. The picture above is one such spread: a laptop running both
 halves, a phone that carries only the Client, and a desktop that runs a Core for the
-heavier work. You do not have to plan any of that up front, though. Install the
-Client, let it set up a Core on the same machine, and you have a complete local
-setup; you can add or move Cores whenever you like (see
+heavier work. You do not have to plan any of that up front, though. Run the
+installer with everything selected and you have a complete local setup; you can
+add or move Cores whenever you like (see
 [Cores and Pairing](/manual/maintenance/cores)).
 
-## Install the Client
+## Run the installer
 
-Head to the [Install page](/install), pick your operating system, and download the
-installer. Open it and follow the prompts, the same as any other app: a `.dmg` on
-macOS and a setup installer on Windows. On Linux the Client is an **AppImage**, a
-single portable file you make executable and run, and the build that keeps itself
-up to date. Either way you get the **Client** alone, and you connect it to a Core
-in the next step.
+Head to the [Install page](/install), pick your operating system, and download
+the installer: a `.pkg` on macOS, a setup `.exe` on Windows. It installs the
+**Client** and, pre-selected, the **Core**, along with the Core's options: whether
+it keeps running in the background at login, and whether other devices on your
+network may pair with it. Keep the Core selected for the everything-local setup;
+uncheck it only if this device should connect to a Core on another machine.
+Re-running the installer over an existing Core updates its files but keeps its
+settings as they are; the network option can be changed afterwards in the Core's
+`settings.json`.
 
-Prefer the command line, or installing over SSH onto a server with no desktop? The
-same page has a one-line command next to the download buttons, and its **How to
-Install** list walks each path step by step. The command runs the script published
-at `get.au.tomat.ing/install`, so you can read it before you run it. Either way,
-everything tomat places lives under your home directory; there is no system-wide
-service to manage.
+Linux is the one split platform: the Client is an **AppImage**, a single portable
+file you make executable and run (and the build that keeps itself up to date),
+and the Core is a separate `.deb` or `.rpm` package that registers the Core
+service when you install it. Both are on the same Install page.
 
 <Aside type="note">
-  macOS blocks the downloaded app the first time you open it, since tomat is not yet signed by an
-  identified Apple developer (that signing is on the way). Open System Settings, go to Privacy &
-  Security, and choose **Open Anyway** next to the tomat message. The install command clears this
-  for you, so it only affects the downloaded installer.
+  If macOS or Windows warns about an unidentified developer the first time you open the installer
+  (signed builds are rolling out), choose **Open Anyway** in System Settings under Privacy &
+  Security on macOS, or **More info**, then **Run anyway** on Windows.
 </Aside>
 
-## Set up a Core
+## First launch
 
-The first time you launch the Client it asks where its Core should run, since it
-needs one to do anything. You have two choices:
+Open tomat. If you installed the Core with it, the app finds it and connects on
+its own; there is nothing to configure, and you land in a short settings tour.
+If you skipped the Core, the app instead asks for the address of a Core on
+another machine and its **pairing code** (see
+[Cores and Pairing](/manual/maintenance/cores)).
 
-- **On this computer.** The Client installs and starts a local Core for you and
-  pairs with it automatically. This is the path most people want: everything stays
-  on your machine, fully local.
-- **On another computer.** Pair with a Core running elsewhere, such as a more
-  powerful desktop. Install the Core there first, then pair the Client with it.
-  See [Cores and Pairing](/manual/maintenance/cores).
+Either way, once a Core is connected the Client remembers it and reconnects on
+its own. You can pair more Cores or switch between them later under **Cores** in
+Settings.
 
-Either way, once a Core is paired the Client remembers it and reconnects on its
-own. You can pair more Cores or switch between them later under **Cores** in
-Settings (see [Cores and Pairing](/manual/maintenance/cores)).
+## Headless and server installs
+
+The same installer runs without a screen, for a Core on a server or an install
+scripted across machines. Each flag mirrors an installer option; a Core set up
+this way is paired from another device with a pairing code.
+
+On Windows, run the installer from a terminal with `/S` for a silent install.
+`/CLIENT=0` skips the app for a Core-only machine; `/CORE=0` skips the Core;
+`/SERVICE=0` skips the background service; `/BINDALL=1` lets other devices on
+the network pair; `/BEHINDPROXY=1` makes the Core trust a terminating HTTPS
+proxy in front of it instead of pinning its own certificate (servers only). For
+example, a headless Core reachable from your network:
+`tomat-latest-setup.exe /S /CLIENT=0 /BINDALL=1`.
+
+On macOS, run `sudo installer -pkg tomat-latest.pkg -target /` for the default
+install. To change the selection, pass `-applyChoiceChangesXML choices.xml`;
+print the editable choice list with
+`installer -pkg tomat-latest.pkg -target / -showChoiceChangesXML`. The choice
+ids are `client`, `core`, `core-service`, `core-lan`, and `core-behindproxy`
+(the proxy-trust option above, available only this way). A Core-only server
+that other devices may pair with:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>choiceIdentifier</key><string>client</string>
+    <key>choiceAttribute</key><string>enabled</string>
+    <key>attributeSetting</key><integer>1</integer>
+  </dict>
+  <dict>
+    <key>choiceIdentifier</key><string>client</string>
+    <key>choiceAttribute</key><string>selected</string>
+    <key>attributeSetting</key><integer>0</integer>
+  </dict>
+  <dict>
+    <key>choiceIdentifier</key><string>core-lan</string>
+    <key>choiceAttribute</key><string>selected</string>
+    <key>attributeSetting</key><integer>1</integer>
+  </dict>
+</array>
+</plist>
+```
+
+(The `client` choice is locked in the GUI, so a Core-only install re-enables it
+before deselecting it, as above.) And the reverse, the app alone on a machine
+that connects to a Core elsewhere:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>choiceIdentifier</key><string>core</string>
+    <key>choiceAttribute</key><string>selected</string>
+    <key>attributeSetting</key><integer>0</integer>
+  </dict>
+</array>
+</plist>
+```
+
+On Linux, the Core package is already headless: install the `.deb` or `.rpm`
+with your package manager and the service is registered.
 
 ## What gets installed
 
@@ -72,11 +135,11 @@ A local setup leaves you with two things:
 
 That `~/.tomat` directory is where the Core keeps your sessions, memories, and
 settings, along with any models you download later. Keeping it on disk is what
-makes tomat local-first: your conversations are files on the machine running the
+makes Tomat local-first: your conversations are files on the machine running the
 Core, not rows in someone else's database. (Snippets and the look of the app are
 kept by the Client instead, so they travel with it; see
 [The Settings Panel](/manual/maintenance/settings-panel).) If you ever want to take
-it all back off, see [Uninstalling tomat](/manual/maintenance/uninstalling).
+it all back off, see [Uninstalling Tomat](/manual/maintenance/uninstalling).
 
 <Aside type="caution">
   Nothing leaves your machine until you point a setting at an **External** provider. When you do,
@@ -86,14 +149,14 @@ it all back off, see [Uninstalling tomat](/manual/maintenance/uninstalling).
 
 ## Staying current
 
-tomat keeps itself up to date. When a new release is available, the app offers to
+Tomat keeps itself up to date. When a new release is available, the app offers to
 install it, and the Core can stage and apply its own update in the background,
 rolling back if anything goes wrong. You can also download the latest installer
-(or re-run the install command) at any time to jump straight to the newest build.
+at any time to jump straight to the newest build.
 
 How new those builds are is set by your **channel**, which you can leave on its
 default for now. When you want to try faster-moving builds without disturbing
 your setup, see [Updates and Channels](/manual/maintenance/updates-and-channels).
 
-Next, open the app and learn the few things particular to tomat in
+Next, open the app and learn the few things particular to Tomat in
 [The Basics](/manual/getting-started/basics).

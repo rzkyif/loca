@@ -1,4 +1,4 @@
-// Animation timing constants shared by every tomat UI surface. The actual
+// Animation timing constants shared by every Tomat UI surface. The actual
 // transition factories (which read the client's animation settings) stay in the
 // client; what is shared is the canonical easing curve and base duration so the
 // extracted components and the website animate on the same numbers. The client
@@ -304,18 +304,34 @@ export async function slideSwap(
   // tail). It exits while the incoming content slides in underneath.
   const sc = scroller.getBoundingClientRect();
   const er = el.getBoundingClientRect();
+  // Leaving the settings tree also leaves behind any ancestor `transform: scale()`
+  // (the website scales a full-size app stage down to fit its showcase frame), so
+  // a clone parked at the body root would render at its full design size over a
+  // shrunken UI. Recover that visual scale - on-screen px over layout px - and
+  // re-apply it to a wrapper inside the clip. Every offset below is then written
+  // in the outgoing layer's own unscaled px, the same space `el` animates in.
+  // `offsetWidth` is integer-rounded, so an unscaled tree lands a hair off 1;
+  // snap it so the client (never scaled) gets a plain untransformed wrapper.
+  const measured = el.offsetWidth > 0 ? er.width / el.offsetWidth : 1;
+  const scale = Math.abs(measured - 1) < 0.01 ? 1 : measured;
   const clip = document.createElement("div");
   clip.setAttribute("aria-hidden", "true");
   clip.style.cssText =
     `position:fixed;top:${sc.top}px;left:${sc.left}px;width:${sc.width}px;` +
     `height:${sc.height}px;overflow:hidden;pointer-events:none;z-index:40;`;
+  const scaler = document.createElement("div");
+  scaler.style.cssText =
+    `position:absolute;top:0;left:0;width:${sc.width / scale}px;` +
+    `height:${sc.height / scale}px;` +
+    (scale === 1 ? "" : `transform:scale(${scale});transform-origin:0 0;`);
   const ghost = el.cloneNode(true) as HTMLElement;
   // Drop any h-full / flex sizing so the ghost is exactly content-tall, then place
   // it at the outgoing content's current on-screen offset (negative when scrolled).
   ghost.style.cssText =
-    `position:absolute;margin:0;height:auto;width:${er.width}px;` +
-    `top:${er.top - sc.top}px;left:${er.left - sc.left}px;`;
-  clip.appendChild(ghost);
+    `position:absolute;margin:0;height:auto;width:${er.width / scale}px;` +
+    `top:${(er.top - sc.top) / scale}px;left:${(er.left - sc.left) / scale}px;`;
+  scaler.appendChild(ghost);
+  clip.appendChild(scaler);
   // Append to the document root, NOT inside the settings tree: the panel layer
   // carries `will-change: transform`, which makes it the containing block for
   // `position: fixed`, so a fixed overlay nested under it would be offset by the
@@ -327,8 +343,9 @@ export async function slideSwap(
   // Travel = the greater of the content's own size and one viewport, so a group
   // taller than the viewport clears whole (tail included) AND a short group still
   // slides the full view rather than a stub. The incoming content enters from one
-  // viewport away, enough to reach rest whatever its height.
-  const viewPx = axis === "y" ? sc.height : sc.width;
+  // viewport away, enough to reach rest whatever its height. Unscaled px, matching
+  // the ghost's and `el`'s local coordinate space.
+  const viewPx = (axis === "y" ? sc.height : sc.width) / scale;
   const contentPx = axis === "y" ? ghost.scrollHeight : ghost.scrollWidth;
   const outPx = Math.max(contentPx, viewPx);
   const inPx = viewPx;

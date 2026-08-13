@@ -228,7 +228,7 @@ export interface CpaceInitiator {
  *
  * `ci` is the CPace channel identifier: a public value both parties must agree
  * on for the run to succeed (it is folded into the generator, so the derived key
- * differs if the two sides disagree). In tomat we pass the observed TLS cert
+ * differs if the two sides disagree). In Tomat we pass the observed TLS cert
  * pin, binding it INTO the key. A MITM that presents a different cert yields a
  * different key on each side, so the handshake fails.
  */

@@ -178,7 +178,7 @@ async function main(): Promise<void> {
       log.error(`extension verifyAllOnBoot failed: ${errMessage(err)}`);
     });
 
-  // Seed the extensions tomat ships on a fresh install (background, non-blocking):
+  // Seed the extensions Tomat ships on a fresh install (background, non-blocking):
   // the built-in, plus the dev-only samples in dev. This only brings them to status
   // 'downloaded'; installing the built-in's tools is an explicit user choice from
   // the Tools prompt (requestBuiltinInstall). Respects a prior user delete via the
@@ -300,10 +300,10 @@ async function main(): Promise<void> {
     // channel misconfigured to the same port, or an unrelated program). Deno's
     // bare "AddrInUse" reaches the user as an opaque connection timeout, so
     // rewrite it into something actionable. main()'s caller records the reason
-    // to bootErrorFile for a supervising client / the install script to surface.
+    // to bootErrorFile for a supervising client / installer to surface.
     if (err instanceof Deno.errors.AddrInUse) {
       throw new Error(
-        `port ${cfg.port} on ${bindHost} is already in use. Another tomat Core may ` +
+        `port ${cfg.port} on ${bindHost} is already in use. Another Tomat Core may ` +
           `already be running, or a different program holds the port. Stop it, or set ` +
           `TOMAT_CORE_HOST to a free host:port and relaunch.`,
       );
@@ -312,7 +312,7 @@ async function main(): Promise<void> {
   }
 
   // The listener bound cleanly: drop any stale boot-failure breadcrumb so a
-  // supervising client / the install script doesn't surface a resolved error.
+  // supervising client / installer doesn't surface a resolved error.
   void Deno.remove(paths().bootErrorFile).catch(() => {});
 
   // Healthy checkpoint: the HTTP listener is bound (the DB is open and the TLS
@@ -443,7 +443,7 @@ if (import.meta.main) {
       // manually since the formatter never runs.
       console.error(scrubSecrets(`tomat-core failed to start: ${msg}`));
     }
-    // Leave a one-line breadcrumb a supervising client / the install script can
+    // Leave a one-line breadcrumb a supervising client / installer can
     // read to explain why the core won't come up (cleared once it next binds).
     // Best-effort and scrubbed: a write failure here must not mask the real
     // error, and the reason can echo a path/token-bearing message.

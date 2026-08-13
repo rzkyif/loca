@@ -4,6 +4,7 @@
   import { useUiContext } from "@tomat/shared/ui/context";
   import { type BubbleMerge, NO_MERGE } from "@tomat/shared/ui/merge";
   import { messagesState, sessionsState, settingsState, viewState } from "../../state";
+  import { connectionState } from "$stores/connection.svelte";
 
   // Mobile rides the panel carousel for screen entry, so the per-bar entry slide
   // is gated off there (it would double up with the carousel); desktop keeps it.
@@ -170,6 +171,7 @@
     nextDisabled={!nextSession}
     {isNewSession}
     {confirmingDelete}
+    coreDisabled={connectionState.coreUnavailable}
     onList={() => {
       confirmingDelete = false;
       viewState.navigate("sessionList");

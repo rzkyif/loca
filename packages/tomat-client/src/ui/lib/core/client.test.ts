@@ -303,4 +303,107 @@ describe("CoreClient reconnect", () => {
     expect(sockets.length).toBe(0);
     expect(states.at(-1)).toBe("unauthorized");
   });
+
+  // Six consecutive failures mean the core is not coming back on its own, so the
+  // client parks: no more sockets, and the UI can offer a manual retry instead of
+  // spinning forever behind a 30s backoff.
+  it("parks as 'gaveUp' after MAX_ATTEMPTS failed attempts, then resumes on retryNow()", async () => {
+    vi.useFakeTimers();
+    const c = new CoreClient(ENDPOINT);
+    const states: string[] = [];
+    c.onConnectionState((s) => states.push(s));
+    c.subscribe(() => {});
+
+    // Advance exactly the remote backoff (500ms, doubling) so each step opens
+    // one socket, then fail it at once - staying well inside the 12s connect
+    // watchdog, which would otherwise abandon attempts on its own schedule.
+    for (const delay of [0, 500, 1_000, 2_000, 4_000, 8_000]) {
+      await vi.advanceTimersByTimeAsync(delay);
+      sockets.at(-1)?.errored?.("Connection refused");
+    }
+    expect(sockets.length).toBe(6);
+    expect(states.at(-1)).toBe("gaveUp");
+
+    // A stray subscriber must not revive the parked loop.
+    c.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sockets.length).toBe(6);
+
+    // The user clicks the pill: attempts reset and a fresh socket opens.
+    c.retryNow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets.length).toBe(7);
+    expect(states.at(-1)).toBe("connecting");
+  });
+
+  // A local core that isn't running can't be reconnected to, only started, so the
+  // client parks as "stopped" well before it would have exhausted its attempts.
+  it("parks as 'stopped' when the local-stopped probe says this device's core is down", async () => {
+    vi.useFakeTimers();
+    const c = new CoreClient(ENDPOINT, () => Promise.resolve(true));
+    const states: string[] = [];
+    c.onConnectionState((s) => states.push(s));
+    c.subscribe(() => {});
+
+    // The probe only runs from the SECOND failed attempt, so the first close
+    // still schedules an ordinary reconnect (a restarting core must not flash
+    // "Stopped").
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].errored?.("Connection refused");
+    expect(states).not.toContain("stopped");
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(sockets.length).toBe(2);
+    sockets[1].errored?.("Connection refused");
+    await vi.advanceTimersByTimeAsync(0); // let the probe resolve
+
+    expect(states.at(-1)).toBe("stopped");
+    // Parked: the backoff timer that was armed before the probe landed is torn
+    // down, so no seventh socket ever appears.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sockets.length).toBe(2);
+  });
+
+  // The probe is async, so the backoff can open the next socket before it
+  // answers. Parking must CLOSE that socket, not just drop the reference, or a
+  // half-open connection outlives the parked client.
+  it("closes a socket the backoff opened while the stopped probe was in flight", async () => {
+    vi.useFakeTimers();
+    let resolveProbe!: (down: boolean) => void;
+    const c = new CoreClient(ENDPOINT, () => new Promise<boolean>((r) => (resolveProbe = r)));
+    c.subscribe(() => {});
+
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].errored?.(); // attempt 1: no probe yet
+    await vi.advanceTimersByTimeAsync(600);
+    sockets[1].errored?.(); // attempt 2: probe fires, stays pending
+
+    // The 1s backoff elapses and opens socket 3 while the probe is unanswered.
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(sockets.length).toBe(3);
+    const closed = vi.spyOn(sockets[2], "close");
+
+    resolveProbe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closed).toHaveBeenCalled();
+  });
+
+  // A local core that IS running (paired over a tunnel, say) is unreachable for
+  // some other reason: keep the ordinary backoff rather than offering a start.
+  it("keeps reconnecting when the local-stopped probe says the core is up", async () => {
+    vi.useFakeTimers();
+    const c = new CoreClient(ENDPOINT, () => Promise.resolve(false));
+    const states: string[] = [];
+    c.onConnectionState((s) => states.push(s));
+    c.subscribe(() => {});
+
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].errored?.();
+    await vi.advanceTimersByTimeAsync(600);
+    sockets[1].errored?.();
+    await vi.advanceTimersByTimeAsync(1_600);
+
+    expect(states).not.toContain("stopped");
+    expect(sockets.length).toBe(3);
+  });
 });

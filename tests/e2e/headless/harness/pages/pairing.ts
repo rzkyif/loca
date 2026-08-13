@@ -9,11 +9,6 @@ export class PairingPage {
     await expect.element(page.getByTestId("mode-newCore")).toBeVisible({ timeout: 15_000 });
   }
 
-  /** Choose the "another computer" (remote) destination. */
-  async chooseRemote(): Promise<void> {
-    await page.getByTestId("pairing-dest-remote").click();
-  }
-
   async fillRemote(url: string, code: string): Promise<void> {
     await page.getByTestId("pairing-url").fill(url);
     await page.getByTestId("pairing-code").fill(code);

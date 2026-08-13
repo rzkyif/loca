@@ -1,4 +1,4 @@
-// Model catalog: the hand-authored, signed list of local models tomat can run,
+// Model catalog: the hand-authored, signed list of local models Tomat can run,
 // served at get.au.tomat.ing/manifests[/<channel>]/catalog.json.
 //
 // Authoring lives in the `@tomat/model-catalog` package as one TS file per model

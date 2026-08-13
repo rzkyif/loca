@@ -165,15 +165,6 @@ export interface NetSocket {
   onError(cb: (reason?: string) => void): void;
 }
 
-/** One phase update of a running local-core install, parsed by the Rust
- *  trampoline from the install script's transcript: the active phase's label
- *  plus how many of the registered phases are done. */
-export interface InstallProgress {
-  label: string;
-  done: number;
-  total: number;
-}
-
 /** Severity levels for the client logger (lib/util/log.ts). */
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -246,7 +237,7 @@ export interface Platform {
      *  exit hint). */
     canExit(): boolean;
   };
-  // OS login entry ("start tomat when I log in").
+  // OS login entry ("start Tomat when I log in").
   autostart: {
     isEnabled(): Promise<boolean>;
     setEnabled(enabled: boolean): Promise<void>;
@@ -323,37 +314,24 @@ export interface Platform {
      *  (port in use, missing helper, ...) and clears it once it next binds, so
      *  the pair flow can explain an otherwise-opaque connection failure. */
     readLocalCoreBootError(): Promise<string | null>;
-    /** Runs the platform install script and returns the printed pairing code.
-     *  `service: true` (default) registers a launchd / systemd / scheduled
-     *  task so the core boots on login; `false` skips that and expects the
-     *  client to spawn the core on demand. `bindAll: true` seeds the new
-     *  core's settings.json with `server.bindHost: "0.0.0.0"` so it listens on
-     *  all interfaces from the very first boot. The bind host is not part of
-     *  the settings schema (a paired client must not widen network exposure
-     *  over the API); changing it later means editing that file by hand. */
-    installLocalCore(opts?: { service?: boolean; bindAll?: boolean }): Promise<string>;
-    /** Subscribe to the running install's phase updates (label + done/total),
-     *  parsed from the installer's transcript. Fires only while
-     *  installLocalCore is in flight; returns an unsubscribe. */
-    subscribeInstallProgress(cb: (progress: InstallProgress) => void): Promise<() => void>;
-    /** Turn the just-installed local core into "served behind an HTTPS proxy"
-     *  mode and restart it. Called AFTER the loopback pair (a proxy-served core
-     *  folds no cert pin and so can't be paired over loopback), so this is a
-     *  separate step from installLocalCore rather than an install option. The
-     *  pin captured at pairing is unaffected, so this Client keeps connecting;
-     *  later remote devices reach the core through the proxy and validate its
-     *  certificate. `service` mirrors the install's background-service choice so
-     *  the restart uses the matching path. */
-    enableCoreBehindProxy(service: boolean): Promise<void>;
-    /** Whether ~/.tomat/core/bin/tomat-core exists. Used at boot to decide
-     *  whether we should attempt to spawn the local core for on-demand mode. */
+    /** Whether ~/.tomat/core/bin/tomat-core exists (planted by the native
+     *  installer). Decides both the first-boot silent pair with the
+     *  installer-provided core and whether to spawn it for on-demand mode. */
     isLocalCoreInstalled(): Promise<boolean>;
-    /** Spawn ~/.tomat/core/bin/tomat-core detached if the loopback core isn't
-     *  already responding. Returns `true` when a new process was started. */
+    /** Whether the local core's port is answering. Distinguishes "the core is
+     *  stopped" (offer to start it) from "the core is up but unreachable" (keep
+     *  reconnecting), which is the split the CoreBar's Stopped pill needs. */
+    isLocalCoreRunning(): Promise<boolean>;
+    /** Start the local core when it isn't already responding, through whatever
+     *  supervisor owns it. Returns `true` when a new core was started. An
+     *  unsupervised core is recorded and stopped again when the Client quits. */
     startLocalCore(): Promise<boolean>;
+    /** Stop the local core, through its supervisor when it has one (a plain kill
+     *  would just be undone by launchd's KeepAlive). Idempotent. */
+    stopLocalCore(): Promise<void>;
     /** Loopback base URL of this channel's local core, with the channel-aware
-     *  port (stable 7800, latest 7810, …). Used by the "on this computer"
-     *  pair/install flow so a latest client targets the latest core. */
+     *  port (stable 7800, latest 7810, …). Used by the local-core pair flow so
+     *  a latest client targets the latest core. */
     localCoreBaseUrl(): Promise<string>;
     /** This channel's default local sidecar ports (llama / whisper). Used as
      *  fallbacks when the paired core hasn't overridden llm.port / stt.port so
@@ -432,6 +410,17 @@ export interface Platform {
      *  id of the chosen item, or null if dismissed. Separator entries
      *  carry no id and are skipped when matching the resolved value. */
     showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
+  };
+  // The status-bar icon's Start / Stop Core item. The tray menu is built once
+  // by the host and mutated from here, so the UI (which already tracks the
+  // local core) pushes its state rather than the host polling for it. The item
+  // only ever emits an intent; the UI performs the start / stop, so the tray
+  // and the CoreBar's Stopped pill run the same code. No tray on mobile.
+  tray: {
+    /** Enable (`installed`) and label (`running`) the Start / Stop Core item. */
+    setCoreState(installed: boolean, running: boolean): Promise<void>;
+    /** Listen for a Start / Stop Core click. Resolves to an unsubscribe fn. */
+    subscribeCoreAction(cb: (action: "start" | "stop") => void): Promise<() => void>;
   };
   // Monitor enumeration shared between Settings (pick a monitor) and the
   // window-position math. Distinct from `capture.monitors` (xcap-based,

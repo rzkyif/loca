@@ -4,9 +4,9 @@ import InstallGeneratorStatic from "../components/InstallGenerator.astro";
 import InstallGenerator from "../components/InstallGenerator.svelte";
 ---
 
-<BaseLayout title="Install" description="Install the tomat Client for your operating system.">
+<BaseLayout title="Install" description="Download the Tomat installer for your operating system.">
   <main class="mx-auto w-full max-w-2xl px-4 pt-6 pb-10 flex flex-col gap-6">
-    <h1 class="text-2xl font-semibold text-default-900">Install the Client</h1>
+    <h1 class="text-2xl font-semibold text-default-900">Install Tomat</h1>
 
     {
       /* The generator works with no JS (the native baseline below); the island
@@ -14,10 +14,10 @@ import InstallGenerator from "../components/InstallGenerator.svelte";
         exactly one, with no flash because data-js is set before first paint. */
     }
     <div data-nojs-fallback>
-      <InstallGeneratorStatic target="client" />
+      <InstallGeneratorStatic />
     </div>
     <div data-js-enhanced>
-      <InstallGenerator target="client" client:load />
+      <InstallGenerator client:load />
     </div>
   </main>
 

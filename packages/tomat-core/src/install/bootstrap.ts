@@ -165,7 +165,7 @@ async function downloadToFile(url: string, outPath: string): Promise<string> {
 }
 
 // Owner-only permissions on the admin token: chmod 0600 on unix, an
-// inheritance-stripped owner-full ACL on Windows (mirrors core.ps1's Set-Acl).
+// inheritance-stripped owner-full ACL on Windows.
 async function restrictToOwner(file: string): Promise<void> {
   if (Deno.build.os === "windows") {
     await run(["icacls", file, "/inheritance:r", "/grant:r", `${username()}:F`], {

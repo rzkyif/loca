@@ -46,7 +46,7 @@ Deno.test("serializeSkill: emits quoted description + block list", () => {
 
 Deno.test("round-trip: description with a colon and inner quotes survives", () => {
   const parts = {
-    description: 'Note: keep "tomat" lowercase',
+    description: 'Note: keep "Tomat" capitalized',
     suggestedTools: ["read_session"],
     body: "# Body\n\ntext",
   };

@@ -48,7 +48,7 @@ cd packages/tomat-website && deno task preview    # wrangler dev
 ## Release & deploy
 
 The site is a platform-independent item of the umbrella release, alongside the
-model catalog and install scripts: it carries no per-triple artifact, so it
+model catalog and schemas: it carries no per-triple artifact, so it
 builds + deploys directly on the release host with no build-matrix runner. From
 the **repo root** `deno task release` (or a remote-triggered channel push) runs
 `astro build` then `wrangler deploy` for it, gated by the same source-hash cursor
@@ -140,23 +140,27 @@ so re-pushing the same commit is a no-op). Bump versions as part of the work on
 `TAURI_UPDATER_PRIVATE_KEY_PASSWORD`, `TOMAT_ANDROID_KEYSTORE_B64`,
 `TOMAT_ANDROID_KEYSTORE_PASSWORD`, `TOMAT_ANDROID_KEY_ALIAS`, `TOMAT_ANDROID_KEY_PASSWORD`,
 `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `TOMAT_R2_BUCKET`, `TOMAT_STORAGE_DOMAIN`.
-Optionally, the Apple signing vars, which cover **both** the macOS Developer ID
-bundle and the iOS App Store build (`APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`,
-`APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, and
-the `APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH` App Store Connect
-trio) - these belong on the **macOS build runner only** (build-time signing, like
-the Tauri/Android keys), never the publish job. When unset the macOS bundle stays
-ad-hoc-signed and the iOS `.ipa` build/upload is skipped (the App Store item is
-inert). The Apple identity now also signs + notarizes the client `.dmg` and the
-Core `.pkg`. Optionally, the **dormant** Windows Authenticode vars
+Optionally, the Apple signing vars, which cover the macOS Developer ID bundle,
+the macOS `.pkg` installer, and the iOS App Store build (`APPLE_SIGNING_IDENTITY`,
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_INSTALLER_SIGNING_IDENTITY`, `APPLE_INSTALLER_CERTIFICATE`,
+`APPLE_INSTALLER_CERTIFICATE_PASSWORD`, `APPLE_TEAM_ID`, and the
+`APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_B64` App Store Connect
+trio - the `.p8` as base64, since a runner cannot carry a file path; local
+`.env` uses `APPLE_API_KEY_PATH` instead) - these belong on the **macOS build
+runner only** (build-time signing, like the Tauri/Android keys), never the
+publish job. Purely secret-driven, every var optional: when unset the macOS
+bundle stays ad-hoc-signed, the `.pkg` ships unsigned, and the iOS `.ipa`
+build/upload is skipped with a note; when set, the same runs sign + notarize
+the client bundle and the unified `.pkg` and ship iOS, with no other switch.
+Optionally, the **dormant** Windows Authenticode vars
 (`WINDOWS_CERTIFICATE_THUMBPRINT` or `WINDOWS_SIGN_COMMAND`, with
-`WINDOWS_TIMESTAMP_URL`) sign the client + Core NSIS `.exe` installers on the
-**Windows build runner only**; unset today, so those installers ship unsigned. iOS is additionally gated behind an `IOS_ENABLED` repo **variable**: its
-CI jobs (the `ios` cross-compile check and the `.ipa` build on the release
-runner) stay skipped until that variable is `true`, so iOS consumes no runner
-minutes and cannot block PRs before the account is ready. iOS is distributed
-through the App Store, not R2, so its runner builds + uploads the `.ipa` to App
-Store Connect itself rather than staging for the publish coordinator. See
+`WINDOWS_TIMESTAMP_URL`) sign the client NSIS + the unified `.exe` installer on
+the **Windows build runner only**; unset today, so those installers ship
+unsigned.
+iOS is distributed through the App Store, not R2, so its runner builds +
+uploads the `.ipa` to App Store Connect itself rather than staging for the
+publish coordinator. See
 [macos-signing.md](../../scripts/release/macos-signing.md).
 Build runners receive only the Tauri + Android (+ Apple, on the mac runners)
 subset (plus the signing public key); the publish job receives all. The landing

@@ -1,7 +1,7 @@
-// Runs shellcheck over every tracked shell script. The install/uninstall scripts
-// under scripts/install/ are the current trust entry point (they download,
-// verify Ed25519-signed manifests, and install the app), so a shell bug there is
-// a security-relevant bug; oxlint never sees .sh, so nothing else guards them.
+// Runs shellcheck over every tracked shell script. The installer templates
+// under scripts/release/templates/ ship inside the native installers (the macOS
+// uninstaller runs as root on user machines), so a shell bug there is a
+// security-relevant bug; oxlint never sees .sh, so nothing else guards them.
 //
 // Wired into `deno task lint` via scripts/lint-walkers.ts. Scans warning-level
 // and above (`--severity=warning`) to focus on real problems over style nits on
@@ -23,8 +23,10 @@ const ROOT = fromFileUrl(new URL("../../", import.meta.url));
 const SEVERITY = "warning";
 
 async function trackedShellScripts(): Promise<string[]> {
+  // --cached + --others (minus ignored): tracked files AND new not-yet-added
+  // ones, so a fresh script is linted before its first commit.
   const out = await new Deno.Command("git", {
-    args: ["ls-files", "-z", "*.sh"],
+    args: ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "*.sh"],
     cwd: ROOT,
     stdout: "piped",
     stderr: "piped",
@@ -34,10 +36,22 @@ async function trackedShellScripts(): Promise<string[]> {
     console.error(new TextDecoder().decode(out.stderr));
     Deno.exit(2);
   }
-  return new TextDecoder()
+  const tracked = new TextDecoder()
     .decode(out.stdout)
     .split("\0")
     .filter((p) => p.length > 0);
+  // ls-files lists a deleted-but-unstaged file too; skip anything not on disk
+  // so a pending deletion doesn't fail the walk.
+  const present: string[] = [];
+  for (const p of tracked) {
+    try {
+      await Deno.stat(new URL(p, new URL("../../", import.meta.url)));
+      present.push(p);
+    } catch {
+      // deleted in the working tree
+    }
+  }
+  return present;
 }
 
 async function shellcheckAvailable(): Promise<boolean> {
@@ -62,7 +76,7 @@ if (files.length === 0) {
 if (!(await shellcheckAvailable())) {
   console.warn(
     "check-shell-scripts: shellcheck not found on PATH; SKIPPING.\n" +
-      "  Install it to lint the install scripts locally:\n" +
+      "  Install it to lint the shell scripts locally:\n" +
       "    macOS:  brew install shellcheck\n" +
       "    Debian: apt install shellcheck\n" +
       "  CI installs it, so this check is still enforced there.",

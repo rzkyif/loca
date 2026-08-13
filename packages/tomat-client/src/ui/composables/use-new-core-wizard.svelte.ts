@@ -1,8 +1,14 @@
 /**
- * State machine + flows for the add-a-core wizard (NewCore.svelte): the four
- * steps (destination chooser -> local-confirm | remote-address -> remote-pair),
- * the per-step form fields, LAN discovery, connection probing, and the local /
- * remote pairing that ends by registering + selecting the new core.
+ * State machine + flows for the add-a-core wizard (NewCore.svelte): the steps
+ * (connect-local | remote-address -> remote-pair), the per-step form fields,
+ * LAN discovery, connection probing, and the local / remote pairing that ends
+ * by registering + selecting the new core.
+ *
+ * The Core itself is installed by the native installer, never from here: when
+ * an installer-provided local core exists and none is paired, the wizard opens
+ * on `connectLocal` and silently pairs with it (start it if needed, mint a
+ * code with the on-disk admin token, claim); otherwise it opens on the
+ * welcoming remote-connect form, the same flow mobile always uses.
  *
  * Per the composable convention (see use-autocomplete), this holds the `$state`
  * and imperative flow methods plus pure getters over that state; the component
@@ -11,30 +17,26 @@
  * that comes from the UI context, so it is injected.
  */
 
-import { errMessage, MIN_ADMIN_PASSWORD_LENGTH } from "@tomat/shared";
+import { errMessage } from "@tomat/shared";
 import {
   cores,
-  isLoopbackUrl,
   mintCodeWithAdminToken,
   pairWithCode,
   type PairedCoreEntry,
   probeCore,
-  setAdminPasswordWithToken,
 } from "$lib/core";
-import { type DiscoveredCore, type InstallProgress, platform } from "$lib/platform";
+import { type DiscoveredCore, platform } from "$lib/platform";
 import { getLogger } from "$lib/util/log";
-import { isTauri } from "$lib/util/env";
 import { modelRecommendState, viewState } from "$stores";
 
 const log = getLogger("cores");
-const CLIENT_NAME = "tomat Client";
+const CLIENT_NAME = "Tomat Client";
 
-// Wizard steps. Onboarding (locked) and "no local core paired yet" start at
-// `chooseDestination` (default "this computer"); from there the user lands on
-// the local-install confirmation page or the remote-address form. Adding an
-// additional core while a local core is already paired skips the chooser and
-// starts at `remoteAddress`.
-export type WizardView = "chooseDestination" | "localConfirm" | "remoteAddress" | "remotePair";
+// Wizard steps. `connectLocal` is the silent first-boot pair with an
+// installer-provided local core (auto-run; its UI is a spinner and, on
+// failure, an error with a remote fallback). Everyone else starts at
+// `remoteAddress`.
+export type WizardView = "connectLocal" | "remoteAddress" | "remotePair";
 
 type ConnectionStatus =
   | { kind: "idle" }
@@ -55,12 +57,7 @@ export class NewCoreWizard {
   // default until resolved (and on the web stub).
   localBaseUrl = $state("https://127.0.0.1:7800");
 
-  busy = $state<null | "installing" | "claiming" | "checking">(null);
-  // Live phase of the running local install (label + done/total), streamed
-  // from the installer transcript by the Rust trampoline. Non-null only while
-  // busy === "installing" on the script path; the button renders it as
-  // "<label> (<pct>%)" instead of the bare "Installing…".
-  installProgress = $state<InstallProgress | null>(null);
+  busy = $state<null | "claiming" | "checking">(null);
   error = $state("");
   remoteUrl = $state("");
   remoteName = $state("");
@@ -75,46 +72,14 @@ export class NewCoreWizard {
   didSweep = $state(false);
   discovered = $state<DiscoveredCore[]>([]);
 
-  view = $state<WizardView>("chooseDestination");
-  destination = $state<"local" | "remote">("local");
-  installServiceChoice = $state(false);
-  installNetworkChoice = $state(false);
-  // Whether the new Core will be reached through a terminating HTTPS proxy. When
-  // on, the Core is switched into behind-proxy mode AFTER this Client pairs over
-  // loopback (a proxy-served Core folds no cert pin, so it can't be paired over
-  // loopback); see pairLocal's post-pair flip.
-  installBehindProxyChoice = $state(false);
-  // Admin password set at install. Required (entered twice) so the user can
-  // later pair new devices remotely without reading the admin token off disk.
-  installPassword = $state("");
-  installPasswordConfirm = $state("");
-  localAlreadyInstalled = $state(false);
-  // True once the user sent the always-on-top setup window to the background
-  // during a local install (see continueInBackground). pairLocal reads it in
-  // its finally to bring the window back once the install resolves, so the
-  // result (the unlocked UI, or an error) is never stranded off screen.
-  private hidWindowForInstall = false;
-  // True when the chooser was skipped (a local core is already paired), so the
-  // back arrow on the first step cancels the flow instead of revealing a chooser
-  // the user was never meant to see.
-  chooserSkipped = $state(false);
+  view = $state<WizardView>("remoteAddress");
 
   constructor(private readonly onMobile: boolean) {}
-
-  get installPasswordValid(): boolean {
-    return (
-      this.installPassword.length >= MIN_ADMIN_PASSWORD_LENGTH &&
-      this.installPassword === this.installPasswordConfirm
-    );
-  }
 
   // Whether an intra-wizard step-back is available (same condition as the header
   // back arrow). Drives both the arrow and the Android back interceptor.
   get canStepBack(): boolean {
-    return (
-      this.view === "remotePair" ||
-      ((this.view === "remoteAddress" || this.view === "localConfirm") && !this.chooserSkipped)
-    );
+    return this.view === "remotePair";
   }
 
   // Suggested name shown as the placeholder on the (optional) name field: the
@@ -123,8 +88,8 @@ export class NewCoreWizard {
     return hostFromUrl(this.normalizedRemoteUrl());
   }
 
-  // Called from the consumer's onMount: pick the first step and resolve the
-  // local core base URL.
+  // Called from the consumer's onMount: pick the first step (auto-running the
+  // local pair when it applies) and resolve the local core base URL.
   init(): void {
     void this.decideInitialView();
     void platform()
@@ -135,34 +100,33 @@ export class NewCoreWizard {
       .catch((e) => log.warn("localCoreBaseUrl failed", e));
   }
 
-  // Pick the first step. Adding an additional core when a local core is already
-  // paired skips straight to the remote-address form; everyone else starts at
-  // the destination chooser.
+  // Pick the first step. First boot (zero cores paired) on a desktop with an
+  // installer-provided local core connects to it silently; everything else
+  // (mobile, no local core on disk, any core already paired - including the
+  // add-another-core entry from Settings) is the remote-connect form.
   async decideInitialView(): Promise<void> {
     const list = await cores().list();
-    const firstEver = list.length === 0;
-    const localCorePaired = list.some((c) => isLoopbackUrl(c.baseUrl));
 
-    if (this.onMobile) {
-      // Remote-only: there is no "this computer" option on mobile, so the
-      // chooser and local-install branch are skipped and we go straight to the
-      // remote-address form (back-arrow suppressed via chooserSkipped).
-      this.destination = "remote";
-      this.chooserSkipped = true;
-      this.view = "remoteAddress";
-    } else if (!firstEver && localCorePaired) {
-      this.destination = "remote";
-      this.chooserSkipped = true;
-      this.view = "remoteAddress";
+    let localInstalled = false;
+    if (!this.onMobile && list.length === 0) {
+      try {
+        localInstalled = await platform().pairing.isLocalCoreInstalled();
+      } catch {
+        localInstalled = false;
+      }
+    }
+
+    if (localInstalled) {
+      this.view = "connectLocal";
+      void this.connectLocal();
     } else {
-      this.view = "chooseDestination";
+      this.view = "remoteAddress";
     }
 
     // Prefill the remote fields from launch arguments (--core-url /
     // --pairing-code), as supplied by a shareable setup command or by what
-    // `deno task dev` passes. The chooser still defaults to "this computer";
-    // the fields are simply ready if the user picks the remote flow. Only
-    // fills empty fields, never clobbers typed input.
+    // `deno task dev` passes. Only fills empty fields, never clobbers typed
+    // input.
     try {
       const pre = await platform().pairing.launchPrefill();
       if (pre?.coreUrl) {
@@ -174,21 +138,6 @@ export class NewCoreWizard {
     } catch {
       /* no launch prefill available */
     }
-
-    if (isTauri() && !this.onMobile) {
-      try {
-        this.localAlreadyInstalled = await platform().pairing.isLocalCoreInstalled();
-      } catch {
-        this.localAlreadyInstalled = false;
-      }
-    }
-  }
-
-  // The streamed installer's phase count, read in a fresh scope because inline
-  // reads of `installProgress` after the install await are narrowed to the
-  // pre-await null (TS cannot see the subscription callback's writes).
-  private streamedInstallTotal(): number {
-    return this.installProgress?.total ?? 1;
   }
 
   // A local pair can fail because the core died on boot (e.g. its port is
@@ -263,18 +212,13 @@ export class NewCoreWizard {
     }
   }
 
-  // Step-back within the wizard, one step at a time: remote pairing -> remote
-  // address -> destination chooser; local-confirm -> chooser. Only wired to the
-  // back arrow, which is hidden when no previous step exists (the chooser, or a
-  // skipped-chooser remote root), so it never needs to handle the root case.
+  // Step-back within the wizard: remote pairing -> remote address. Only wired
+  // to the back arrow, which is hidden when no previous step exists, so it
+  // never needs to handle the root case.
   goBack(): void {
     if (this.busy !== null) return;
     this.error = "";
-    if (this.view === "remotePair") {
-      this.view = "remoteAddress";
-      return;
-    }
-    this.view = "chooseDestination";
+    this.view = "remoteAddress";
   }
 
   // Explicit exit out of the whole wizard, bound to the close button shown on
@@ -285,48 +229,32 @@ export class NewCoreWizard {
     viewState.navigate("settings");
   }
 
-  // From the destination chooser: route to the right next step. If the user
-  // picked "this computer" and the core is already installed, skip the
-  // confirmation page entirely and go straight to "fast-path" pairing
-  // (which uses the local admin token to mint a code without re-running the
-  // installer).
-  async continueFromChoose(): Promise<void> {
+  // Silently pair with the installer-provided local core: make sure it's
+  // running, mint a pairing code via its on-disk admin token, and claim.
+  // Auto-run when the wizard opens on `connectLocal`; also re-run by the
+  // error state's "Try Again".
+  async connectLocal(): Promise<void> {
     this.error = "";
-    if (this.destination === "remote") {
-      this.connectionStatus = { kind: "idle" };
-      this.view = "remoteAddress";
-      return;
-    }
-    if (!isTauri()) {
-      this.error = "Local install requires the desktop app";
-      return;
-    }
-    if (this.localAlreadyInstalled) {
-      await this.pairLocalAlreadyInstalled();
-      return;
-    }
-    this.installServiceChoice = false;
-    this.installNetworkChoice = false;
-    this.installBehindProxyChoice = false;
-    this.view = "localConfirm";
-  }
-
-  // Local core already exists on disk: make sure it's running, mint a
-  // pairing code via its admin token, and claim. Skips the install script.
-  private async pairLocalAlreadyInstalled(): Promise<void> {
-    this.busy = "installing";
+    this.busy = "claiming";
     try {
+      // Resolve the channel-aware base URL before probing: init() resolves it
+      // concurrently, and this auto-runs immediately on mount, so waiting on
+      // that race would sometimes target the wrong channel's port.
+      try {
+        this.localBaseUrl = await platform().pairing.localCoreBaseUrl();
+      } catch {
+        /* keep the stable default */
+      }
       await platform().pairing.startLocalCore();
       const adminToken = await platform().pairing.readAdminToken();
       if (!adminToken) {
         throw new Error(
           "Local Core admin token not found. The install may be corrupt. " +
-            "Delete ~/.tomat/core/ and try again.",
+            "Reinstall the Core with the Tomat installer and try again.",
         );
       }
       const { code } = await mintCodeWithAdminToken(this.localBaseUrl, adminToken);
       if (!code) throw new Error("response missing pairing code");
-      this.busy = "claiming";
       await this.claimAndAdd(this.localBaseUrl, code, "Local Core", true);
     } catch (e) {
       this.error = await this.localPairErrorMessage(e);
@@ -334,96 +262,12 @@ export class NewCoreWizard {
     }
   }
 
-  // Send the always-on-top, immovable setup window to the background during the
-  // (potentially slow) local install so the user isn't trapped behind it. The
-  // tray icon and global shortcut re-show it on demand; pairLocal also re-shows
-  // it automatically once the install resolves. Only meaningful mid-install.
-  async continueInBackground(): Promise<void> {
-    if (this.busy !== "installing") return;
-    this.hidWindowForInstall = true;
-    try {
-      await platform().windowing.requestHide();
-    } catch (e) {
-      log.warn("hide for background install failed", e);
-      this.hidWindowForInstall = false;
-    }
-  }
-
-  async pairLocal(): Promise<void> {
+  // From connectLocal's error state: give up on the local core and fall back
+  // to the remote-connect form.
+  useRemoteInstead(): void {
     this.error = "";
-    this.busy = "installing";
-    this.installProgress = null;
-    // Follow the installer's phases so the button can narrate them. Best-effort:
-    // a failed subscription just leaves the bare "Installing…" label.
-    let unsubscribe: (() => void) | null = null;
-    try {
-      unsubscribe = await platform()
-        .pairing.subscribeInstallProgress((p) => {
-          this.installProgress = p;
-        })
-        .catch((e) => {
-          log.warn("install progress subscription failed", e);
-          return null;
-        });
-      const code = await platform().pairing.installLocalCore({
-        service: this.installServiceChoice,
-        bindAll: this.installNetworkChoice,
-      });
-      // The script is done; the remaining pre-pair work (admin password over
-      // loopback) is one quick step, shown as the final phase at 100%.
-      const total = this.streamedInstallTotal();
-      this.installProgress = { label: "Securing your Core", done: total, total };
-      // Set the admin password the user chose. The install script never
-      // prompts for one (it must run non-interactively), so we set it here
-      // over loopback using the freshly-written admin token. The install
-      // just minted that token, so a missing one means a corrupt install: fail
-      // loudly rather than pair a Core with no admin password (which would
-      // silently discard the password the user was required to enter and leave
-      // them unable to pair further devices). Mirrors pairLocalAlreadyInstalled.
-      const adminToken = await platform().pairing.readAdminToken();
-      if (!adminToken) {
-        throw new Error(
-          "Local Core admin token not found after install. The install may be " +
-            "corrupt. Delete ~/.tomat/core/ and try again.",
-        );
-      }
-      await setAdminPasswordWithToken(this.localBaseUrl, adminToken, this.installPassword);
-      this.busy = "claiming";
-      await this.claimAndAdd(this.localBaseUrl, code, "Local Core", true);
-      // "Install, pair, then flip": the pair above ran in pin mode over loopback
-      // (a proxy-served Core folds no cert pin, so loopback pairing must happen
-      // while the Core still pins). Only now switch the Core into behind-proxy
-      // mode and restart it, so later remote devices pair through the proxy. Our
-      // loopback pin survives the restart (same key, same cert on loopback).
-      // Best-effort: the Core is already paired and working, so a failed flip is
-      // logged, not surfaced (claimAndAdd has navigated away); the user can turn
-      // on server.behindProxy by hand (see the manual) if the flip did not land.
-      if (this.installBehindProxyChoice) {
-        try {
-          await platform().pairing.enableCoreBehindProxy(this.installServiceChoice);
-        } catch (e) {
-          log.warn("enable behind-proxy after pairing failed", e);
-        }
-      }
-    } catch (e) {
-      this.error = await this.localPairErrorMessage(e);
-      this.busy = null;
-    } finally {
-      unsubscribe?.();
-      this.installProgress = null;
-      // If the user backgrounded the window mid-install, bring it back now that
-      // the install has resolved (success unlocks the UI; failure shows the
-      // error). show() is idempotent, so this is a no-op if the tray already
-      // re-showed it. Best-effort: a failed re-show must not mask the result.
-      if (this.hidWindowForInstall) {
-        this.hidWindowForInstall = false;
-        try {
-          await platform().windowing.show();
-        } catch (e) {
-          log.warn("re-show after background install failed", e);
-        }
-      }
-    }
+    this.connectionStatus = { kind: "idle" };
+    this.view = "remoteAddress";
   }
 
   normalizedRemoteUrl(): string {

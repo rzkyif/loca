@@ -8,6 +8,7 @@ export {
   cores,
   ensureLocalCoreUpIfNeeded,
   isLoopbackUrl,
+  isThisDevicesCore,
   pruneUninstalledLocalCores,
 } from "./cores";
 export type { PairedCoreEntry } from "./cores";

@@ -30,11 +30,18 @@
     codeCopied = false,
     devices = null,
     devicesError = null,
+    // Admin password (same-device Cores only): whether one is set (null while
+    // unknown / not applicable) and whether this Core can manage it here (the
+    // Client can read the local Core's admin token, so a local Core can set or
+    // replace the password without knowing the old one).
+    adminPasswordSet = null,
+    canSetPassword = false,
     onNameInput,
     onNameBlur,
     onGenerateCode,
     onCopyCode,
     onRemoveDevice,
+    onSetPassword,
   }: {
     draftName: string;
     baseUrl: string;
@@ -44,14 +51,25 @@
     codeCopied?: boolean;
     devices?: DeviceRow[] | null;
     devicesError?: string | null;
+    adminPasswordSet?: boolean | null;
+    canSetPassword?: boolean;
     onNameInput?: (v: string) => void;
     onNameBlur?: () => void;
     onGenerateCode?: () => void;
     onCopyCode?: () => void;
     onRemoveDevice?: (id: string) => void;
+    onSetPassword?: () => void;
   } = $props();
 
   const noop = (): void => {};
+
+  // A local Core without an admin password mints codes with its on-disk admin
+  // token (no prompt); everywhere else the password is required.
+  const pairingCodeDescription = $derived(
+    canSetPassword && adminPasswordSet === false
+      ? "Generate a one-time code to pair a new device."
+      : "Generate a one-time code to pair a new device. You'll need your admin password.",
+  );
 </script>
 
 <FormField label="Name">
@@ -68,10 +86,7 @@
 </FormField>
 
 {#if isCurrent}
-  <FormField
-    label="Pairing code"
-    description="Generate a one-time code to pair a new device. You'll need your admin password."
-  >
+  <FormField label="Pairing code" description={pairingCodeDescription}>
     {#if mintedCode}
       <div class="flex flex-col gap-2">
         <div class="flex flex-col gap-2 bg-surface-inset rounded-medium px-3 py-3">
@@ -107,6 +122,19 @@
       </Button>
     {/if}
   </FormField>
+
+  {#if canSetPassword}
+    <FormField
+      label="Admin password"
+      description={adminPasswordSet
+        ? "Used to generate pairing codes and remove devices from any paired device."
+        : "Set a password so you can manage pairing from other paired devices too."}
+    >
+      <Button variant="secondary" onclick={() => (onSetPassword ?? noop)()}>
+        {adminPasswordSet ? "Replace Admin Password" : "Set Admin Password"}
+      </Button>
+    </FormField>
+  {/if}
 
   <FormField label="Paired devices">
     {#if devicesError}

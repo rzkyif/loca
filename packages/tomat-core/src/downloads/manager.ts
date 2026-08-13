@@ -48,7 +48,7 @@ export interface EnqueueSpec {
   sha256?: string;
   // Direct-URL mode. When `url` is set, parseSource is bypassed and the
   // caller-supplied url + relPath are used instead. Useful for fetching
-  // binaries from the tomat CDN where the source format isn't an HF spec.
+  // binaries from the Tomat CDN where the source format isn't an HF spec.
   url?: string;
   relPath?: string;
   filename?: string;

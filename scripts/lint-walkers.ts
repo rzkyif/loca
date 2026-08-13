@@ -1,8 +1,8 @@
 // Runs the repo's custom lint walkers concurrently: the checks oxlint cannot
-// express (tauri-import bans in .svelte, the em-dash and lowercase-brand bans,
-// shared-UI purity, the view / primitive / component-tier coverage walkers, the
-// website composer check, icon-class validation, and shellcheck over the shell
-// install scripts). Each walker is an
+// express (tauri-import bans in .svelte, the em-dash ban, shared-UI purity, the
+// view / primitive / component-tier coverage walkers, the website composer
+// check, icon-class validation, and shellcheck over the shell installer
+// templates). Each walker is an
 // independent read-only `git ls-files` scan, so they run in parallel; output is
 // buffered and flushed as one labeled block per walker. Wired into the root
 // `lint:js` task after oxlint. Exits non-zero if any walker fails.
@@ -20,7 +20,6 @@ const PLUGINS = join(ROOT, "scripts", "lint-plugins");
 const walkers = [
   "check-tauri-imports-svelte.ts",
   "check-em-dash.ts",
-  "check-uppercase-tomat.ts",
   "check-builtin-palette-color.ts",
   "check-shared-ui-purity.ts",
   "check-view-coverage.ts",

@@ -1,4 +1,4 @@
-// Text-to-Speech catalog: the sherpa-onnx offline-TTS bundles tomat offers,
+// Text-to-Speech catalog: the sherpa-onnx offline-TTS bundles Tomat offers,
 // served by the tomat-core-speech sidecar. Mirrors the STT catalog shape.
 //
 // Sources (verified against the HuggingFace API tree on 2026-06-15). A model is

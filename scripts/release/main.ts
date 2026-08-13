@@ -18,6 +18,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
 import {
   colors,
+  type DeployEnv,
   fail,
   info,
   loadOrSeedEnv,
@@ -48,14 +49,13 @@ import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
 import { iosItem } from "./ios.ts";
-import { appleReleaseConfigured } from "./apple-toolchain.ts";
-import { scriptsItem } from "./install-scripts.ts";
+import { appleReleaseConfigured, materializeAppleApiKey } from "./apple-toolchain.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
 // Apply order: core first (everything else can depend on it being published).
 // The landing page is a platform-independent item (no per-triple artifact), so
-// it rides along at the tail like the catalog + install scripts.
+// it rides along at the tail like the catalog.
 const ITEMS: ReleaseItem[] = [
   coreItem,
   extensionItem,
@@ -63,7 +63,6 @@ const ITEMS: ReleaseItem[] = [
   clientItem,
   androidItem,
   iosItem,
-  scriptsItem,
   schemasItem,
   websiteItem,
 ];
@@ -183,6 +182,22 @@ async function main(): Promise<void> {
 
   step("Loading deploy environment");
   const env = await loadOrSeedEnv();
+  // APPLE_API_KEY_B64 is primarily the CI form of the App Store Connect key,
+  // but hasAppStoreConnectApi accepts either form, so honor the base64 here too
+  // (no-op when it is unset or APPLE_API_KEY_PATH already points at the .p8).
+  const cleanupApiKey = await materializeAppleApiKey(env);
+  try {
+    await releaseWithEnv(env, flags, environments);
+  } finally {
+    await cleanupApiKey();
+  }
+}
+
+async function releaseWithEnv(
+  env: DeployEnv,
+  flags: Flags,
+  environments: BuildEnvironment[] | undefined,
+): Promise<void> {
   await writeSigningKeys(encodeBase64(env.signingPublicKey));
 
   // The client can only be released when the Tauri updater keys are present,

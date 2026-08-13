@@ -24,7 +24,7 @@
   } = $props();
 
   // Two exchanges in one session: a simple question the fast default model
-  // answers, then a complex one tomat auto-routes to the stronger secondary
+  // answers, then a complex one Tomat auto-routes to the stronger secondary
   // model (the `bubble-agent-secondary` answer bubble is the visual tell, the
   // same class the client sets from `modelUsed === "secondary"`).
   const Q1 = "How far is Kyoto from Tokyo?";

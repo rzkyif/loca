@@ -4,7 +4,7 @@
   import { relevantMemoriesSamples } from "@tomat/shared/ui/samples";
   import DemoFrame from "./DemoFrame.svelte";
 
-  // The memories tomat surfaced as relevant to a message.
+  // The memories Tomat surfaced as relevant to a message.
   type Scenario = keyof typeof relevantMemoriesSamples;
   let { scenario = "found", label }: { scenario?: Scenario; label?: string } = $props();
 </script>

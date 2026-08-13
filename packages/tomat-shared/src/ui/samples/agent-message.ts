@@ -7,7 +7,7 @@ import type AgentMessageView from "../components/chat/messages/AgentMessageView.
 export const AGENT_REASONING =
   "The user is on macOS, so the one-line installer script is the simplest path; point them at the landing page command and the launch step.";
 export const AGENT_ANSWER =
-  "Run the one-line installer from the landing page, then launch tomat from Applications. Want the per-OS steps?";
+  "Run the one-line installer from the landing page, then launch Tomat from Applications. Want the per-OS steps?";
 
 export const agentMessageSamples = {
   content: { kind: "content", bgClass: "bubble-agent" },

@@ -1,6 +1,6 @@
 # @tomat/core
 
-The Deno service that owns every stateful and computational concern of tomat:
+The Deno service that owns every stateful and computational concern of Tomat:
 session/message storage, LLM streaming, sandboxed tool execution, TTS/STT
 supervision, model and binary downloads, extension installation, embedding-based
 tool relevance, multi-client pairing auth, and self-update. The client stays
@@ -49,44 +49,31 @@ tokens are masked before they reach `core.log` or stderr.
 
 ## Installing a release build on another device
 
-To control a different machine, install `tomat-core` on it (the desktop client's
-pairing screen links here). The [Install page](https://au.tomat.ing/install) has a
-native installer for it (macOS `.pkg`, Windows `.exe`, Linux `.deb`/`.rpm`); the
-one-line command below is the headless equivalent for a server or SSH session, and
-the one the client's in-app "set up a local Core" flow drives:
+To control a different machine, install `tomat-core` on it. The
+[Install page](https://au.tomat.ing/install) has the native installers: the
+unified macOS `.pkg` / Windows `.exe` (Client + optional Core; keep the Core
+selected) and the Linux Core `.deb`/`.rpm`. For a server or SSH session the
+same installers run headless: `tomat-setup.exe /S /CLIENT=0 [/BINDALL=1]` on
+Windows, `sudo installer -pkg tomat.pkg -target /` (with a choices XML for a
+Core-only selection) on macOS, and the package manager on Linux.
 
-```bash
-# macOS / Linux
-curl -fsSL https://get.au.tomat.ing/install/core.sh | bash
+The install hooks all run the same Core subcommands: `install-service`
+bootstraps the admin token + built-in extension and registers an auto-start
+service (launchd / systemd-user / Task Scheduler), and `mint-code` prints a
+6-digit pairing code on demand (`~/.tomat/<channel>/core/bin/tomat-core<suffix>
+mint-code`). A non-stable channel install (`TOMAT_CHANNEL=latest`) lands as
+`tomat-core-latest`, a `tomat-core-latest` service, and port 7810, side by side
+with stable.
 
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://get.au.tomat.ing/install/core.ps1 | iex"
-```
-
-To install the latest channel alongside stable, pass `--latest` (or
-`TOMAT_CHANNEL=latest`); it installs `tomat-core-latest`, a `tomat-core-latest`
-service, and binds port 7810:
-
-```bash
-# macOS / Linux
-curl -fsSL https://get.au.tomat.ing/install/core.sh | bash -s -- --latest
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -Command "& { $env:TOMAT_CHANNEL='latest'; iwr -useb https://get.au.tomat.ing/install/core.ps1 | iex }"
-```
-
-Both paths run the same Core subcommands: `self-install` downloads the signed core
-manifest and verifies each binary's SHA-256, `install-service` registers an
-auto-start service (launchd / systemd-user / Task Scheduler) and starts the daemon,
-and `mint-code` prints a 6-digit pairing code. Open the client, paste the core's URL
-(e.g. `http://192.168.1.50:7800`) and the pairing code. The client receives a
-long-lived bearer token, stored in the OS keychain under the service
-`tomat-client`, and sets the admin password over the API after pairing (no terminal
-prompt). The admin password lets an already-paired client mint more pairing codes
-(and remove other devices) remotely, without reading the admin token off the core's
-machine. A single client can pair with multiple cores and switch between
-them via a dropdown in Settings. A single core can serve multiple clients
-simultaneously. Sessions are owned by the client that created them and are
-invisible to other paired clients.
+Open the client, enter the core's URL (e.g. `https://192.168.1.50:7800`) and a
+pairing code. The client receives a long-lived bearer token, stored in the OS
+keychain under the service `tomat-client`. Setting an admin password (Settings >
+Cores, on the core's machine) lets an already-paired client mint more pairing
+codes (and remove other devices) remotely, without reading the admin token off
+the core's machine. A single client can pair with multiple cores and switch
+between them via a dropdown in Settings. A single core can serve multiple
+clients simultaneously. Sessions are owned by the client that created them and
+are invisible to other paired clients.
 
 ## Secrets and the master key in dev
 

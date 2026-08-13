@@ -8,11 +8,11 @@
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"/></a>
 </p>
 
-# tomat
+# Tomat
 
 **Open source local-first modular AI assistant.**
 
-tomat takes care of all the hassle in running a complete state-of-the-art local
+Tomat takes care of all the hassle in running a complete state-of-the-art local
 AI assistant on your PC, with speech-to-text, LLM inference, text-to-speech, and
 a bunch of other quality of life features.
 

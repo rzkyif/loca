@@ -3,9 +3,9 @@
 // Runs on the core host after install-service: it waits for the daemon to bind
 // its port, then mints a pairing code authenticated by the on-disk admin token.
 // Trust for the self-signed loopback API comes from the cert core writes to
-// paths().tlsCertFile at boot (a CA-of-one); this avoids disabling TLS
-// verification the way the old `curl -k` install script did. The result is one
-// JSON line on stdout so the client's in-app installer can parse it.
+// paths().tlsCertFile at boot (a CA-of-one), so TLS verification stays on even
+// against loopback. The result is one JSON line on stdout so a headless setup
+// script can parse it (a human just reads the code).
 
 import { corePort, paths } from "../paths.ts";
 import { emitJson, progress } from "./io.ts";

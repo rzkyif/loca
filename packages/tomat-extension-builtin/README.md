@@ -1,6 +1,6 @@
 # tomat-extension-builtin
 
-Reference tomat extension, installed by default on fresh setups and doubling as
+Reference Tomat extension, installed by default on fresh setups and doubling as
 the baseline example for third-party extension authors. It bundles a spread of
 everyday tools (web search and page reading, a calculator, date and time,
 downloads, memories, and scheduled prompts) chosen to cover the common
@@ -40,7 +40,7 @@ permissions it needs, and the user grants them per tool (see Permissions below).
 
 ```
 .
-├── tomat.json     # tomat manifest: names, parameters, triggers, permissions
+├── tomat.json     # Tomat manifest: names, parameters, triggers, permissions
 ├── deno.json      # exports (entry) + imports (mime-types, expr-eval, @mozilla/readability, linkedom)
 ├── index.ts       # entry point: re-exports every tool function
 └── src/
@@ -61,7 +61,7 @@ permissions it needs, and the user grants them per tool (see Permissions below).
 ## Permissions
 
 Each tool declares the minimum set of permissions it needs in `tomat.json`
-(network hosts, filesystem paths, executables, env vars, plus the tomat module
+(network hosts, filesystem paths, executables, env vars, plus the Tomat module
 kinds `memories`, `llm`, `tts`, `stt`). The worker pool reads the user's
 per-tool grants on spawn and gives the worker subprocess exactly the matching
 `--allow-*` flags; module access (memories, ...) is brokered by the core rather
@@ -101,16 +101,16 @@ than handed to the worker. Specifically:
 Use this extension as a template for your own. The shape every extension must
 respect:
 
-1. A `tomat.json` at the package root, validated against the tomat `tools-v1`
+1. A `tomat.json` at the package root, validated against the Tomat `tools-v1`
    schema (`https://au.tomat.ing/schemas/tomat-v1.json`). It needs a `name`, a
    user-facing `displayName`, and a `description`. `tools` is optional: an
    extension may ship only memories and declare no tools at all. Set
    `"database": true` at the top level if any tool uses `ctx.db`. A tool may
    declare `platforms` (`darwin` / `windows` / `linux` / `linux_x11` /
-   `linux_wayland`) to limit which operating systems it runs on; tomat hides it
+   `linux_wayland`) to limit which operating systems it runs on; Tomat hides it
    everywhere on a host its list doesn't cover, so OS-specific tools never reach
    the model. The display server (`linux_x11` vs `linux_wayland`) is detected by
-   tomat, so authors never inspect environment variables for it.
+   Tomat, so authors never inspect environment variables for it.
 2. Dependencies declared in `deno.json` `imports` (use `npm:` / `jsr:`
    specifiers). The host installs them with `deno install` and never edits your
    `deno.json`. A deno-native extension like this built-in needs no

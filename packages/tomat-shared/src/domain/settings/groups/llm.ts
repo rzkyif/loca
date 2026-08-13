@@ -360,7 +360,7 @@ export const llmGroup: SettingGroup = {
           id: "llm.gpuLayers",
           name: "GPU Layers",
           description:
-            "How much of the model to run on the GPU. Higher is faster if it fits; blank lets tomat decide.",
+            "How much of the model to run on the GPU. Higher is faster if it fits; blank lets Tomat decide.",
           type: "number",
           defaultValue: "",
           optional: true,

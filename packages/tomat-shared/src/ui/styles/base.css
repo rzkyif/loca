@@ -1,4 +1,4 @@
-/* tomat design system: the single source of truth for the color ladders,
+/* Tomat design system: the single source of truth for the color ladders,
    bubble visuals, roundedness, range/scrollbar chrome, and font variables that
    both the client and the website paint from. App-window-specific rules (the
    transparent-window overflow clamp, the SvelteKit #app root, the clickthrough

@@ -7,7 +7,7 @@ order: 4
 import RelevantMemoriesDemo from "../../../components/demos/RelevantMemoriesDemo.svelte";
 import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
 
-**Memories** are notes you keep in tomat for the agent to draw on. Unlike an
+**Memories** are notes you keep in Tomat for the agent to draw on. Unlike an
 attachment, which belongs to a single message, a memory lives on your Core and stays
 available across every session, so a reference you add once is there for every future
 conversation. They are how you give the agent lasting context about your work, your
@@ -30,21 +30,21 @@ crowding the conversation until it is needed.
 ## Enabling a memory
 
 Every memory has an on/off toggle, so you can keep one written down without it being
-in play. Turn a memory off and it stays saved but is set aside: tomat will not surface
+in play. Turn a memory off and it stays saved but is set aside: Tomat will not surface
 it and the agent will not draw on it until you turn it back on. This is the clean way
 to park a note you are not using right now without deleting it.
 
 ## Relevant memories
 
 You do not have to remember which memory matters for a given question. As you write a
-message, tomat finds the memories most related to it, lets the agent see their
+message, Tomat finds the memories most related to it, lets the agent see their
 summaries, and lets it read the full text on demand. The memory surfaces itself when
 it is relevant, and stays out of the way when it is not.
 
 <RelevantMemoriesDemo />
 
 The conversation shows which memories were surfaced, so a reply that leans on one tells
-you which it used. When nothing matches, tomat can either stay quiet or show that it
+you which it used. When nothing matches, Tomat can either stay quiet or show that it
 looked and found nothing, whichever you prefer, so silence is never ambiguous.
 
 Skills surface the same way, by relevance, and you can also reach for one deliberately
@@ -57,12 +57,12 @@ way.
 When you know exactly which memory you want, you do not have to wait for it to be
 ranked in. Type `@` and the memory's name in the input bar to drop its full content
 straight into your message; `@` is the symbol for memories. That is the difference
-between the two paths: retrieval is tomat finding a memory for you, while a mention is
+between the two paths: retrieval is Tomat finding a memory for you, while a mention is
 you naming one outright.
 
 ## Settings
 
-Turn relevant memories on or off, and cap how many tomat offers at once, under
+Turn relevant memories on or off, and cap how many Tomat offers at once, under
 **Memories** in Settings. The cap is the main dial worth knowing: a higher one
 surfaces more memories per message at the cost of more of the
 [context window](/manual/getting-started/basics), while a lower one keeps replies
@@ -79,8 +79,8 @@ reference and a set of procedures in one step.
 ## How It Works
 
 Relevant memories use the same idea as the tool shortlist. Each memory carries a short
-summary, which tomat turns into a list of numbers that captures its meaning ahead of
-time. When you send a message, tomat does the same to your message and compares it
+summary, which Tomat turns into a list of numbers that captures its meaning ahead of
+time. When you send a message, Tomat does the same to your message and compares it
 against every memory's summary, keeping the closest matches that clear a minimum
 similarity. Those few are handed to the agent, summary first with the full text a step
 away, up to the cap you set. A skill is ranked the same way when auto-relevancy is on,

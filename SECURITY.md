@@ -1,6 +1,6 @@
 # Security Policy
 
-tomat is a local-first desktop app: a Deno service (`tomat-core`) that owns all
+Tomat is a local-first desktop app: a Deno service (`tomat-core`) that owns all
 state and compute, paired with a deliberately thin Tauri + Svelte client
 (`tomat-client`), plus helper binaries, a bundled extension, and a Cloudflare/R2
 distribution site. The interesting attack surface is binary and model
@@ -191,14 +191,15 @@ gitignored `.env`; only public keys are committed.
   or revoke another client (which cascade-deletes that client's data). This is
   by design under the trust model above; the destructive client actions in the
   UI are gated behind a confirmation to guard against honest mistakes.
-- **Install-time provenance.** The `curl | bash` / `iwr | iex` installers verify
-  the manifest's Ed25519 signature against the committed signing key BEFORE
-  trusting any artifact URL or sha256: Unix via an OpenSSL 3.x raw-verify (the
-  script hard-requires it), Windows via a self-contained pure-PowerShell verifier
-  guarded by a fail-closed known-answer self-test. Each downloaded artifact's
-  sha256 is then checked against the now-authenticated manifest. Once installed,
-  the running core re-enforces the signature on every subsequent update. The
-  client bundle is minisign-verified by the Tauri updater for in-app updates.
+- **Install-time provenance.** The native installers carry the Core payload
+  inside the signed installer artifact itself; any install-time fetch (the
+  `install-service` bootstrap fetching what the payload did not carry, e.g. the
+  built-in extension) runs through the Core binary's own fetch-verify path,
+  which verifies the manifest's Ed25519 signature against the committed signing
+  key BEFORE trusting any artifact URL or sha256, then checks each download's
+  sha256 against the now-authenticated manifest. Once installed, the running
+  core re-enforces the signature on every subsequent update. The client bundle
+  is minisign-verified by the Tauri updater for in-app updates.
 - **Latest channel sidecar provenance.** On the latest channel, sidecar binaries
   resolve to the latest upstream GitHub release at runtime and are verified
   against GitHub's published sha256 over TLS, which is outside our Ed25519

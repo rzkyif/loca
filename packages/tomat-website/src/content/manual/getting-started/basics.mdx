@@ -9,10 +9,10 @@ import CoreBarDemo from "../../../components/demos/CoreBarDemo.svelte";
 import SessionBarDemo from "../../../components/demos/SessionBarDemo.svelte";
 import UserInputDemo from "../../../components/demos/UserInputDemo.svelte";
 
-When you open tomat you land in a **session**: one conversation with the agent.
+When you open Tomat you land in a **session**: one conversation with the agent.
 You type in the bar at the bottom, and each reply arrives above it. That much is
 familiar from any chat app. This page covers the few things that are particular to
-tomat, the ones worth knowing before everything else falls into place: the two
+Tomat, the ones worth knowing before everything else falls into place: the two
 programs that make it run, the session you work in, and the ways to put more than
 plain text into a message.
 
@@ -20,7 +20,7 @@ plain text into a message.
 
 ## Core and Client
 
-tomat is built from two programs with a clear division of labor. The **Core** is a
+Tomat is built from two programs with a clear division of labor. The **Core** is a
 service that holds your data and does the heavy lifting: it stores sessions, runs
 models, executes tools, and reads your memories. The **Client** is the desktop app
 you see: it draws the conversation, captures what you type, plays audio, and
@@ -37,10 +37,10 @@ bottom of the app tells you which Core you are connected to and how it is doing.
 ## The session you work in
 
 A session is a single conversation, with its own history and its own context, and
-tomat saves every one locally so you can leave it and return later. The bar across
+Tomat saves every one locally so you can leave it and return later. The bar across
 the top carries the two things you keep an eye on: its title, and a running measure
 of the **context window**, how much of the model's attention the conversation has
-used so far. tomat names a session for you from your first message, so you never
+used so far. Tomat names a session for you from your first message, so you never
 stop to title it.
 
 <SessionBarDemo
@@ -72,7 +72,7 @@ beyond typing.
   if your model supports vision, so a text-only model cannot see one.
 - **The `#`, `@`, and `/` symbols.** Type one of these and an autocomplete list
   opens for things you have saved: your [snippets](/manual/tools/snippets) and
-  [memories](/manual/tools/memories). Pick a match and tomat drops its contents
+  [memories](/manual/tools/memories). Pick a match and Tomat drops its contents
   into your message without your hands leaving the keyboard.
 - **Dictation.** If you would rather speak than type, the bar can show a
   microphone for [Speech-to-Text](/manual/speech/speech-to-text), transcribing
@@ -85,12 +85,12 @@ requests to the Core and streams replies back over a live link, which is why a
 reply can keep arriving even if you switch away and come back. The Client holds no
 conversation state of its own; it renders what the Core reports.
 
-Everything tomat stores lives under `~/.tomat` on the machine running the Core:
+Everything Tomat stores lives under `~/.tomat` on the machine running the Core:
 your sessions, memories, snippets, downloaded models, and the settings you have
 changed. A session is a plain file on that disk, not a row in someone else's
 database, which is what local-first means in practice. Nothing about a
 conversation leaves that machine unless you point a setting at an **External**
-provider, and tomat tells you when you have.
+provider, and Tomat tells you when you have.
 
 With the loop in hand, the next chapter is the engine behind every reply:
 [Language Model](/manual/models/language-model).

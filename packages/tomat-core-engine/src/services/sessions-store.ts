@@ -1,6 +1,6 @@
 // Sessions / messages / attachments store, backed by plain JSON files on disk
 // (one dir per session under ~/.tomat/<channel>/core/sessions/), the way the
-// old tomat Client stored them. Each session is a single `session.json`
+// old Tomat Client stored them. Each session is a single `session.json`
 // holding its metadata, messages, and attachment records; attachment bytes live
 // next to it under `attachments/` (written by the HTTP route, recorded here).
 //

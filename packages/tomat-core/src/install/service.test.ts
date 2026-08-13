@@ -1,10 +1,18 @@
-// Unit tests for the Windows Add/Remove Programs UninstallString builder. The
+// Unit tests for the Windows Add/Remove Programs UninstallString builder (the
 // self-elevation for a service install is what lets a Settings > Apps uninstall
-// remove the root-folder Scheduled Task (which needs admin); a background
-// install has no task and must not prompt.
+// remove the root-folder Scheduled Task, which needs admin; a background
+// install has no task and must not prompt), the ARP-ownership skip the unified
+// installer relies on, and the --purge-models directory removal.
 
 import { assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
-import { buildUninstallCommand, encodePwshCommand } from "./service.ts";
+import { join } from "@std/path";
+import {
+  buildUninstallCommand,
+  encodePwshCommand,
+  parsePid,
+  removeModelsDir,
+  shouldRegisterArpEntry,
+} from "./service.ts";
 
 /** Decode a PowerShell -EncodedCommand payload (base64 of UTF-16LE) back to a
  *  string, mirroring what powershell.exe does when it runs the elevated relaunch. */
@@ -69,3 +77,61 @@ Deno.test("paths with a single quote are escaped for the single-quoted PS litera
   // Single quote doubled (PowerShell's single-quote escape), never left bare.
   assertStringIncludes(cmd, "C:\\o''brien\\core.exe");
 });
+
+Deno.test("ARP registration skips on exactly TOMAT_INSTALL_REGISTER_ARP=0", () => {
+  // Only the unified installer's explicit "0" hands the entry over; anything
+  // else (unset included) keeps install-service as the entry's owner.
+  assertEquals(shouldRegisterArpEntry("0"), false);
+  assertEquals(shouldRegisterArpEntry(undefined), true);
+  assertEquals(shouldRegisterArpEntry("1"), true);
+  assertEquals(shouldRegisterArpEntry("false"), true);
+});
+
+Deno.test("parsePid reads the PID startBackground echoes", () => {
+  // unix: `echo $!` on its own stdout line; windows: the temp pid file.
+  assertEquals(parsePid("4242\n"), 4242);
+  assertEquals(parsePid("  4242  \r\n"), 4242);
+});
+
+Deno.test("parsePid returns null rather than a bogus PID", () => {
+  // A null here only means "we don't own this core's liveness", which is safe.
+  // A wrong number would have the client SIGTERM an unrelated process on exit.
+  for (const raw of ["", "\n", "not a pid", "0", "-1", "12.5", "NaN", "Infinity"]) {
+    assertEquals(parsePid(raw), null, `expected null for ${JSON.stringify(raw)}`);
+  }
+});
+
+Deno.test("removeModelsDir removes only the shared models dir", async () => {
+  // paths() resolves everything under TOMAT_CORE_HOME, so point it at a temp
+  // tree shaped like a real ~/.tomat and check the surgical removal.
+  const home = await Deno.makeTempDir({ prefix: "tomat-models-test-" });
+  const prev = Deno.env.get("TOMAT_CORE_HOME");
+  Deno.env.set("TOMAT_CORE_HOME", home);
+  try {
+    await Deno.mkdir(join(home, "models", "llm"), { recursive: true });
+    await Deno.writeTextFile(join(home, "models", "llm", "weights.gguf"), "w");
+    await Deno.mkdir(join(home, "stable", "core"), { recursive: true });
+    await Deno.writeTextFile(join(home, "stable", "core", "settings.json"), "{}");
+
+    await removeModelsDir();
+    assertEquals(await exists(join(home, "models")), false);
+    // The channel data next to it is untouched.
+    assertEquals(await exists(join(home, "stable", "core", "settings.json")), true);
+
+    // Idempotent: a second run on the already-gone dir is a no-op, not a throw.
+    await removeModelsDir();
+  } finally {
+    if (prev === undefined) Deno.env.delete("TOMAT_CORE_HOME");
+    else Deno.env.set("TOMAT_CORE_HOME", prev);
+    await Deno.remove(home, { recursive: true }).catch(() => {});
+  }
+});
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}

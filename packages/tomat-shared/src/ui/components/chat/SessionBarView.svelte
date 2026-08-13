@@ -33,6 +33,7 @@
     nextDisabled = false,
     isNewSession = false,
     confirmingDelete = false,
+    coreDisabled = false,
     onList,
     onPrev,
     onNext,
@@ -61,6 +62,10 @@
     nextDisabled?: boolean;
     isNewSession?: boolean;
     confirmingDelete?: boolean;
+    /** The core can't serve a request right now. Every control on this bar reads
+     *  or writes sessions on the core, so all of them go inert together rather
+     *  than failing one by one when clicked. */
+    coreDisabled?: boolean;
     onList?: () => void;
     onPrev?: () => void;
     onNext?: () => void;
@@ -155,6 +160,7 @@
             onblur={() => onTitleBlur?.()}
             onkeydown={(e) => onTitleKeydown?.(e)}
             placeholder={defaultTitle}
+            disabled={coreDisabled}
             class="row-start-1 col-start-1 w-full min-h-full pl-3 pr-1 py-1 text-default-700 flex items-center text-ellipsis"
           />
         </div>
@@ -164,7 +170,7 @@
             : "i-material-symbols-auto-awesome-rounded"}
           title={generatingTitle ? "Generating Title…" : "Regenerate Title"}
           size="sm"
-          disabled={generatingTitle}
+          disabled={generatingTitle || coreDisabled}
           class="mr-2"
           onclick={() => onRegenerateTitle?.()}
         />
@@ -179,6 +185,7 @@
         icon="i-material-symbols-format-list-bulleted-rounded"
         title="Session List"
         size="sm"
+        disabled={coreDisabled}
         onclick={() => onList?.()}
       />
       {#if !mobile}
@@ -186,14 +193,14 @@
           icon="i-material-symbols-chevron-left-rounded"
           title="Previous Session"
           size="sm"
-          disabled={prevDisabled}
+          disabled={prevDisabled || coreDisabled}
           onclick={() => onPrev?.()}
         />
         <IconButton
           icon="i-material-symbols-chevron-right-rounded"
           title="Next Session"
           size="sm"
-          disabled={nextDisabled}
+          disabled={nextDisabled || coreDisabled}
           onclick={() => onNext?.()}
         />
       {/if}
@@ -204,6 +211,7 @@
             : "i-material-symbols-delete-outline-rounded"}
           title={confirmingDelete ? "Confirm Delete" : "Delete Session"}
           size="sm"
+          disabled={coreDisabled}
           onclick={() => onDelete?.()}
           data-delete-btn
         />
@@ -211,6 +219,7 @@
           icon="i-material-symbols-add-rounded"
           title="New Session"
           size="sm"
+          disabled={coreDisabled}
           onclick={() => onNew?.()}
         />
       {/if}

@@ -122,7 +122,7 @@ export function cancel(serverId: string): void {
 
 function htmlPage(message: string): Response {
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>tomat</title>` +
+    `<!doctype html><meta charset="utf-8"><title>Tomat</title>` +
       `<body style="font:16px system-ui;padding:3rem;text-align:center">${message}</body>`,
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );

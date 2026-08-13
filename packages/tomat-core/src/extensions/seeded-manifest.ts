@@ -187,7 +187,7 @@ async function verifyManifestSignature(m: BuiltinExtensionManifest): Promise<voi
   }
 }
 
-/** Read a signed seeded manifest JSON planted on disk by the install script and
+/** Read a signed seeded manifest JSON planted on disk by the installer and
  *  verify its Ed25519 signature OFFLINE (no network). Returns null when the file is
  *  absent, malformed, or the signature does not verify. This lets first-boot seeding
  *  install the built-in from install-script-planted artifacts without a single

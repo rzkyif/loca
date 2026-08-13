@@ -16,9 +16,9 @@ const ADMIN_TOKEN = "test-admin-token";
 
 async function seedAdminToken(): Promise<void> {
   await Deno.writeTextFile(paths().adminTokenFile, ADMIN_TOKEN);
-  // Mirror the install scripts (core.{sh,ps1}) which write the token 0600 on
-  // Unix; tests have to match so future hardening that refuses to read
-  // world-readable tokens doesn't pass here while breaking prod.
+  // Mirror bootstrap, which writes the token 0600 on Unix; tests have to match
+  // so future hardening that refuses to read world-readable tokens doesn't
+  // pass here while breaking prod.
   if (Deno.build.os !== "windows") {
     await Deno.chmod(paths().adminTokenFile, 0o600);
   }

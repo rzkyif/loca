@@ -2,8 +2,9 @@
   // Add-a-core wizard. It is the only reachable mode while no core is paired
   // (viewState.locked: first launch, or after the last core is removed), and is
   // also launched from the Cores settings manager to add an additional core.
-  // When adding an additional core and a local core is already paired, the
-  // local/remote chooser is skipped (a second local install is unsupported).
+  // The Core itself is installed by the native installer: when an unpaired
+  // local core exists on disk the wizard silently pairs with it, otherwise it
+  // opens on the welcoming remote-connect flow (see decideInitialView).
   //
   // The state machine + pairing flows live in the NewCoreWizard composable; this
   // shell owns the `$effect`s and the onMount kick-off, and feeds the live state
@@ -11,16 +12,14 @@
 
   import { onMount } from "svelte";
   import NewCoreWizardView from "@tomat/shared/ui/components/new-core/NewCoreWizardView.svelte";
-  import { MIN_ADMIN_PASSWORD_LENGTH } from "@tomat/shared";
   import { useUiContext } from "@tomat/shared/ui/context";
   import { settingsState, viewState } from "$stores";
   import { backState } from "$stores/back.svelte";
   import { hostFromUrl, NewCoreWizard } from "$composables/use-new-core-wizard.svelte";
 
-  // Mobile is remote-only: no on-device core to install, so the local/remote
-  // chooser and the whole local-install branch are skipped (see
-  // decideInitialView) and the wizard renders full-screen rather than in a
-  // fixed-width bubble.
+  // Mobile is remote-only: there is no on-device core, so the connect-local
+  // branch is skipped (see decideInitialView) and the wizard renders
+  // full-screen rather than in a fixed-width bubble.
   const ui = useUiContext();
   const onMobile = ui.platform === "mobile";
   // On Android the OS owns back navigation, so the wizard drops its in-UI
@@ -72,7 +71,6 @@
   busy={wizard.busy}
   error={wizard.error}
   canStepBack={wizard.canStepBack}
-  destination={wizard.destination}
   coreSetupDocsUrl={CORE_SETUP_DOCS_URL}
   discovering={wizard.discovering}
   didSweep={wizard.didSweep}
@@ -86,31 +84,18 @@
     : null}
   defaultRemoteName={wizard.defaultRemoteName}
   remoteCodeValid={/^\d{6}$/.test(wizard.remoteCode)}
-  installServiceChoice={wizard.installServiceChoice}
-  installNetworkChoice={wizard.installNetworkChoice}
-  installBehindProxyChoice={wizard.installBehindProxyChoice}
-  installProgress={wizard.installProgress}
-  minAdminPasswordLength={MIN_ADMIN_PASSWORD_LENGTH}
-  installPasswordValid={wizard.installPasswordValid}
   onStepBack={() => wizard.goBack()}
   onClose={() => wizard.exitFlow()}
-  onChooseDestination={(d) => (wizard.destination = d)}
-  onContinueFromChoose={() => wizard.continueFromChoose()}
   onPingNetwork={() => wizard.pingNetwork()}
   onUseDiscovered={(row) => {
     const found = wizard.discovered.find((c) => c.pin === row.pin);
     if (found) wizard.useDiscovered(found);
   }}
   onCheckConnection={() => wizard.checkConnection()}
-  onToggleService={() => (wizard.installServiceChoice = !wizard.installServiceChoice)}
-  onToggleNetwork={() => (wizard.installNetworkChoice = !wizard.installNetworkChoice)}
-  onToggleBehindProxy={() => (wizard.installBehindProxyChoice = !wizard.installBehindProxyChoice)}
-  onPairLocal={() => wizard.pairLocal()}
-  onContinueInBackground={() => wizard.continueInBackground()}
+  onRetryLocal={() => wizard.connectLocal()}
+  onUseRemoteInstead={() => wizard.useRemoteInstead()}
   onPairRemote={() => wizard.pairRemote()}
   bind:remoteUrl={wizard.remoteUrl}
   bind:remoteName={wizard.remoteName}
   bind:remoteCode={wizard.remoteCode}
-  bind:installPassword={wizard.installPassword}
-  bind:installPasswordConfirm={wizard.installPasswordConfirm}
 />

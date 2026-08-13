@@ -8,7 +8,7 @@ import type { BuiltinExtensionManifest } from "@tomat/shared";
 export type InstallSource =
   | { source: "npm"; name: string; version?: string }
   | { source: "local"; path: string; slug: string }
-  // A seeded extension tomat ships (the built-in, or the dev-only samples), keyed
+  // A seeded extension Tomat ships (the built-in, or the dev-only samples), keyed
   // by its id. Bytes are resolved at install time:
   // - `planted` set (first-boot seeding ONLY): install offline from the
   //   install-script-planted tarball + already-verified signed manifest, with NO

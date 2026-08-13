@@ -8,7 +8,18 @@ import { ensureDir } from "@std/fs/ensure-dir";
 import { encodeBase64 } from "@std/encoding/base64";
 import { join } from "@std/path";
 import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
-import { type ClientDescriptor, type DownloadAsset, reanchorFile } from "./artifacts.ts";
+import { type ClientDescriptor, reanchorFile } from "./artifacts.ts";
+import {
+  buildLinuxCoreInstallers,
+  type InstallerAsset,
+  type InstallersManifest,
+  uploadInstallers,
+} from "./core-installers.ts";
+import {
+  buildMacUnified,
+  buildWindowsUnified,
+  materializeCorePayload,
+} from "./unified-installers.ts";
 import { reportRouting, routeTriples } from "./all-targets.ts";
 import { withEnvironment } from "./drivers/lifecycle.ts";
 import type { BuildEnvironment } from "./drivers/mod.ts";
@@ -71,11 +82,6 @@ interface ClientManifest {
   notes: string;
   pub_date: string;
   platforms: Record<string, { signature: string; url: string; sha256: string }>;
-  // Conventional-installer direct downloads per Tauri platform key (macOS .dmg
-  // only; Windows's NSIS installer and the Linux AppImage ARE the `platforms`
-  // bundle, so they are not duplicated here). Consumed by the website's download
-  // CTA, NOT by the Tauri updater (which only reads `platforms`).
-  downloads?: Record<string, Array<DownloadAsset & { url: string }>>;
 }
 
 /** The client's published version is the one baked into the app bundle by Tauri
@@ -90,7 +96,7 @@ async function readClientVersion(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// tauri platform key (release/install scripts use the Rust triple; tauri's
+// tauri platform key (the release scripts use the Rust triple; tauri's
 // updater consumes <os>-<arch> instead)
 
 function tauriPlatformKey(triple: Triple): string {
@@ -233,40 +239,6 @@ async function findClientBundle(triple: Triple, bundleRoot: string): Promise<Cli
   );
 }
 
-/** Collect the conventional native installer Tauri emits alongside the updater
- *  bundle, for the website's direct-download CTA: the macOS `.dmg`. Windows and
- *  Linux are skipped - the NSIS `.exe` and the Linux `.AppImage` ARE the updater
- *  bundle (`findClientBundle`), so the website links those directly; the Linux
- *  client ships no `.deb`/`.rpm`. Missing formats are skipped without error (a
- *  dmg needs a signed+notarized macOS build to be worth shipping). */
-async function collectExtraDownloads(
-  triple: Triple,
-  bundleRoot: string,
-): Promise<
-  Array<{ format: DownloadAsset["format"]; srcPath: string; filename: string; size: number }>
-> {
-  const specs: { dir: string; ext: string; format: DownloadAsset["format"] }[] = [];
-  if (triple.endsWith("apple-darwin")) {
-    specs.push({ dir: join(bundleRoot, "dmg"), ext: ".dmg", format: "dmg" });
-  }
-  const out: Array<{
-    format: DownloadAsset["format"];
-    srcPath: string;
-    filename: string;
-    size: number;
-  }> = [];
-  for (const s of specs) {
-    if (!(await exists(s.dir))) continue;
-    for await (const entry of Deno.readDir(s.dir)) {
-      if (!entry.isFile || !entry.name.endsWith(s.ext)) continue;
-      const srcPath = join(s.dir, entry.name);
-      const size = (await Deno.stat(srcPath)).size;
-      out.push({ format: s.format, srcPath, filename: entry.name, size });
-    }
-  }
-  return out;
-}
-
 /** Dormant Windows Authenticode signing. When a cert is configured (env, via
  *  DeployEnv), patch tauri.conf.json's bundle.windows so Tauri signs the NSIS
  *  installer, restoring the file afterward (mirrors injectTauriPubkey). When the
@@ -376,27 +348,9 @@ export async function buildClientBundle(
     await Deno.copyFile(bundle.bundlePath, join(DIST_DIR, relPath));
     await Deno.copyFile(bundle.sigPath, join(DIST_DIR, sigRelPath));
 
-    // Harvest the conventional native installer Tauri also built (the macOS
-    // dmg), copy it under dist/<triple>/, and record it for the website's
-    // direct-download CTA. Absent on a build with no dmg (simply skipped).
-    const downloads: DownloadAsset[] = [];
-    for (const d of await collectExtraDownloads(triple, bundleRoot)) {
-      const dlRel = `${triple}/${d.filename}`;
-      await Deno.copyFile(d.srcPath, join(DIST_DIR, dlRel));
-      const { sha256 } = await sha256File(d.srcPath);
-      downloads.push({
-        format: d.format,
-        filename: d.filename,
-        relPath: dlRel,
-        sha256,
-        size: d.size,
-      });
-      ok(`  + download: ${d.filename}  ${humanBytes(d.size)}`);
-    }
-
-    // sha256 over the exact bytes the installer downloads (mirrors core.json):
+    // sha256 over the exact bytes the updater downloads (mirrors core.json):
     // the Tauri minisign signature protects in-app updates, this protects the
-    // FIRST install (client.sh verifies it before installing).
+    // transit between build runner and publish host (reanchorFile).
     const signature = (await Deno.readTextFile(bundle.sigPath)).trim();
     const { sha256 } = await sha256File(bundle.bundlePath);
     return {
@@ -410,7 +364,6 @@ export async function buildClientBundle(
       sha256,
       size: bundle.size,
       signature,
-      downloads: downloads.length ? downloads : undefined,
     };
   } finally {
     await restoreWinSigning();
@@ -421,19 +374,17 @@ export async function buildClientBundle(
 // ---------------------------------------------------------------------------
 // publish half (runs ONCE on the host over every platform's descriptor)
 
-/** Version-less current/ alias for a platform's PRIMARY client bundle, when that
- *  bundle is itself the user-facing installer: the Windows NSIS `.exe` and the
- *  Linux AppImage. macOS's primary is the `.app.tar.gz` updater payload (its dmg
- *  is aliased separately), so it returns undefined. Kept in sync with the
- *  clientDownload builders in the website's lib/install.ts. */
+/** Version-less current/ alias for a platform's PRIMARY client bundle, when
+ *  that bundle is itself the user-facing download: only the Linux AppImage (the
+ *  one platform without a unified installer). The Windows and macOS downloads
+ *  are the unified installers (their aliases are written by uploadInstallers),
+ *  and macOS's primary bundle is the `.app.tar.gz` updater payload, not a user
+ *  download. Kept in sync with the website's lib/install.ts. */
 function clientBundleAlias(
   triple: Triple,
   storagePrefix: string,
   suffix: string,
 ): string | undefined {
-  if (triple.endsWith("pc-windows-msvc")) {
-    return `${storagePrefix}current/${triple}/tomat${suffix}-setup.exe`;
-  }
   if (triple.endsWith("unknown-linux-gnu")) {
     return `${storagePrefix}current/${triple}/tomat${suffix}.AppImage`;
   }
@@ -441,13 +392,17 @@ function clientBundleAlias(
 }
 
 /** A non-stable channel's productName carries the channel-suffixed DISPLAY name
- *  ("tomat (latest)"), which Tauri bakes verbatim - spaces and parens included -
+ *  ("Tomat (latest)"), which Tauri bakes verbatim - spaces and parens included -
  *  into the built bundle filename. That filename becomes the R2 object key AND
  *  the `url` in client.json the updater fetches, so a raw space/paren would land
  *  in the CDN URL and break the download. Strip the " (channel)" wrapper back to
  *  a URL-safe "-channel" here (mirrors android.ts keying by a fixed clean name).
- *  Stable's productName has no such wrapper, so this is a no-op there. Paired with
- *  the productName format in scripts/build-client.ts. */
+ *  Stable's productName has no such wrapper, so this is a no-op there. The
+ *  capitalized brand rides through: these versioned keys are only ever read back
+ *  from client.json, never hand-typed. The version-less `current/` aliases the
+ *  website links (clientBundleAlias, unifiedInstallerStableName) keep their own
+ *  fixed lowercase names. Paired with the productName format in
+ *  scripts/build-client.ts. */
 function urlSafeBundleName(filename: string): string {
   return filename.replace(/ \(([^)]+)\)/, "-$1");
 }
@@ -481,8 +436,6 @@ export async function composeAndUploadClient(
     // Version-less current/ alias the website links against (mirrors android.ts).
     aliasKey?: string;
   }> = [];
-  const downloads: NonNullable<ClientManifest["downloads"]> =
-    live?.version === version && live.downloads ? { ...live.downloads } : {};
   for (const d of descriptors) {
     // Re-anchor + verify the bundle bytes against the descriptor's sha256.
     const bundlePath = await reanchorFile(d.relPath, d.sha256);
@@ -497,45 +450,21 @@ export async function composeAndUploadClient(
       path: bundlePath,
       label: `${d.triple}_${d.filename}`,
       size: d.size,
-      // The Windows NSIS .exe and the Linux AppImage ARE the primary user-facing
-      // installers (neither has a separate conventional-download harvest), so
-      // alias them for the download page. macOS's primary bundle is the
-      // .app.tar.gz updater payload, not a user download - its dmg (below) is
-      // aliased instead.
       aliasKey: clientBundleAlias(d.triple, storagePrefix, suffix),
     });
-
-    // Conventional native installer (the macOS dmg): re-anchor, upload, alias, and
-    // record a direct URL for the website. Keyed by the same tauri platform key.
-    if (d.downloads?.length) {
-      downloads[d.tauriKey] = [];
-      for (const dl of d.downloads) {
-        const dlPath = await reanchorFile(dl.relPath, dl.sha256);
-        const dlKey = `${storagePrefix}${version}/${d.triple}/${urlSafeBundleName(dl.filename)}`;
-        downloads[d.tauriKey].push({ ...dl, url: `https://${env.storageDomain}/${dlKey}` });
-        uploads.push({
-          key: dlKey,
-          path: dlPath,
-          label: `${d.triple}_${dl.filename}`,
-          size: dl.size,
-          aliasKey: `${storagePrefix}current/${d.triple}/tomat${suffix}.${dl.format}`,
-        });
-      }
-    }
   }
 
   const manifest: ClientManifest = {
     version,
-    notes: `tomat ${version}`,
+    notes: `Tomat ${version}`,
     pub_date: new Date().toISOString(),
     platforms,
-    downloads: Object.keys(downloads).length ? downloads : undefined,
   };
   const clientJsonPath = await writeManifestFile(manifestDir, "client.json", manifest);
   ok(`client.json → ${rel(clientJsonPath)}`);
 
-  // Detached Ed25519 signature over the exact client.json bytes, so client.sh
-  // authenticates the manifest (and thus the sha256 it trusts) before installing.
+  // Detached Ed25519 signature over the exact client.json bytes, so a consumer
+  // can authenticate the manifest (and thus the sha256 it trusts) before use.
   const clientJsonSig = await signEd25519Bytes(
     env.signingPrivateKey,
     await Deno.readFile(clientJsonPath),
@@ -551,7 +480,7 @@ export async function composeAndUploadClient(
     return;
   }
 
-  step(`Uploading client bundle(s) + installers to R2 bucket "${env.r2Bucket}"`);
+  step(`Uploading client bundle(s) to R2 bucket "${env.r2Bucket}"`);
   await mapPool(uploads, R2_CONCURRENCY, async (u) => {
     info(`uploading ${u.key}  (${humanBytes(u.size)})`);
     await r2Put(env, u.key, u.path, "application/octet-stream");
@@ -653,7 +582,7 @@ const CLIENT_HASH_INPUTS = packagesHashInputs(CLIENT_PACKAGES);
 
 export const clientItem: ReleaseItem = {
   id: "client",
-  label: "desktop client",
+  label: "desktop client + installers",
   scope: "channel",
   packages: CLIENT_PACKAGES,
   bumpHint: "packages/tomat-client/src/tauri/tauri.conf.json (version)",
@@ -680,18 +609,37 @@ export const clientItem: ReleaseItem = {
     return clientBuildOutputs();
   },
 
-  // Platform-fill only: the CURRENT version is already published but this host's
-  // platform is missing from it (another machine released a different platform),
-  // so republish to fill it - no version bump. A published version merely being
-  // BEHIND the local (bumped) version is NOT a change here: a lone version bump
-  // must not rebuild/republish; it ships with the next real source change, which
-  // trips the source hash above.
+  // Two republish triggers beyond the source hash, both no-bump:
+  // - Platform fill: the CURRENT version is already published but this host's
+  //   platform is missing from it (another machine released a different
+  //   platform). A published version merely being BEHIND the local (bumped)
+  //   version is NOT a change: a lone version bump must not rebuild/republish;
+  //   it ships with the next real source change, which trips the source hash.
+  // - Stale installers: the live installers.json does not match the LIVE
+  //   client.json + core.json versions (e.g. a core-only release just moved
+  //   core.json), so the published unified installers wrap an outdated half and
+  //   must be rebuilt. Live-vs-live on purpose: every client publish refreshes
+  //   installers.json in the same run, so comparing against the LOCAL version
+  //   (which ci-bump moves ahead right after a release) would flag "stale" on
+  //   every subsequent run and publish a new client version per push, forever.
+  //   Costs a client rebuild at the same version; acceptable.
   async extraChanged(env: DeployEnv, channel: ReleaseChannel): Promise<boolean> {
     const version = await readClientVersion();
     const manifestDir = channelManifestDir(channel);
     const live = await fetchLiveJson<ClientManifest>(env, `${manifestDir}/client.json`);
     const hostKey = tauriPlatformKey(detectHostTriple());
-    return !!live && live.version === version && !live.platforms[hostKey];
+    if (!!live && live.version === version && !live.platforms[hostKey]) return true;
+    const liveCore = await fetchLiveJson<{ version: string }>(env, `${manifestDir}/core.json`);
+    if (!live || !liveCore) return false; // nothing published yet; source hash owns the first run
+    const liveInstallers = await fetchLiveJson<InstallersManifest>(
+      env,
+      `${manifestDir}/installers.json`,
+    );
+    return (
+      !liveInstallers ||
+      liveInstallers.clientVersion !== live.version ||
+      liveInstallers.coreVersion !== liveCore.version
+    );
   },
 
   async apply(env: DeployEnv, channel: ReleaseChannel, opts: ApplyOpts): Promise<void> {
@@ -710,5 +658,56 @@ export const clientItem: ReleaseItem = {
       return;
     }
     await composeAndUploadClient(env, channel, version, descriptors, opts);
+    // Native installers for a LOCAL release: package this host OS's installers
+    // (the unified pkg/exe wrapping the bundle just built, or the Linux Core
+    // deb/rpm) and publish installers.json. In CI each build runner packages
+    // its own OS in ci-build.ts and the coordinator publishes (opts.prebuilt),
+    // so this path is local-only. Cross-OS installers in local all-targets mode
+    // inherit the host-OS-only gap: only this host's OS gets its installers;
+    // the CI matrix covers the full set.
+    if (!opts.prebuilt) {
+      await buildAndUploadHostInstallers(env, channel, version, descriptors, opts);
+    }
   },
 };
+
+/** Build + publish the HOST OS's native installers from a local release run:
+ *  macOS/Windows wrap the host descriptor's just-built client bundle around the
+ *  Core payload materialized from the live core.json (fresh when the core item
+ *  published earlier in this run); Linux packages the Core alone (its client
+ *  stays the AppImage). Skips with a note when the host bundle is missing or
+ *  the packaging tools are absent. */
+async function buildAndUploadHostInstallers(
+  env: DeployEnv,
+  channel: ReleaseChannel,
+  clientVersion: string,
+  descriptors: ClientDescriptor[],
+  opts: ApplyOpts,
+): Promise<void> {
+  const hostTriple = detectHostTriple();
+  const hostDescriptor = descriptors.find((d) => d.triple === hostTriple);
+  if (!hostDescriptor) {
+    info(colors.yellow("no host client bundle in this run; skipping the native installers"));
+    return;
+  }
+  const { version: coreVersion, built } = await materializeCorePayload(env, channel, hostTriple);
+  const unifiedOpts = { coreVersion, clientVersion, channel, triple: hostTriple, env };
+  const installers: InstallerAsset[] = [];
+  if (hostTriple.endsWith("apple-darwin")) {
+    installers.push(...(await buildMacUnified(built, unifiedOpts)));
+  } else if (hostTriple.endsWith("pc-windows-msvc")) {
+    installers.push(...(await buildWindowsUnified(built, hostDescriptor.relPath, unifiedOpts)));
+  } else if (hostTriple.endsWith("unknown-linux-gnu")) {
+    installers.push(
+      ...(await buildLinuxCoreInstallers(built, {
+        version: coreVersion,
+        channel,
+        triple: hostTriple,
+        env,
+      })),
+    );
+  }
+  if (installers.length > 0) {
+    await uploadInstallers(env, channel, { coreVersion, clientVersion }, installers, opts);
+  }
+}

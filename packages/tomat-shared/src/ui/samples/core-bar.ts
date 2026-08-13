@@ -83,6 +83,19 @@ export const coreBarSamples = {
     cores: CORES,
     currentCoreId: "studio",
   },
+  // The two settled failures. Both render an actionable pill (a button that
+  // retries, or starts this device's core) rather than an expandable one.
+  disconnected: {
+    status: "disconnected",
+    detail: "Connection refused",
+    cores: CORES,
+    currentCoreId: "studio",
+  },
+  stopped: {
+    status: "stopped",
+    cores: CORES.slice(0, 1),
+    currentCoreId: "laptop",
+  },
   multiCore: {
     status: "idle",
     cores: CORES,

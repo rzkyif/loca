@@ -1,4 +1,4 @@
-tomat does not accept code contributions through pull requests.
+Tomat does not accept code contributions through pull requests.
 
 All code in this repository is written and committed by its maintainers. A pull
 request containing code changes will be closed without review. This is a

@@ -3,12 +3,11 @@
 //
 // Deno's `fetch` has NO default idle timeout: a stalled TCP read (corporate
 // proxy, TLS-inspection middlebox, flaky link) makes a bare `await fetch(...)`
-// or `for await (chunk of body)` hang forever. The client's in-app installer
-// then parks on a phase's percentage (e.g. "Starting the Core (67%)") until the
-// 45-minute hard cap in the Rust trampoline fires. Every install/update fetch
-// routes through here so a dead connection fails within a bounded idle window
-// with a clear error instead of stranding the UI. Mirrors the stall-timer +
-// AbortSignal.any pattern already used by downloads/transfer.ts.
+// or `for await (chunk of body)` hang forever, stranding an install-service
+// bootstrap or a self-update mid-phase. Every install/update fetch routes
+// through here so a dead connection fails within a bounded idle window with a
+// clear error. Mirrors the stall-timer + AbortSignal.any pattern already used
+// by downloads/transfer.ts.
 
 /** Default overall deadline for a SMALL response (manifest / JSON): the caller
  *  reads the whole body immediately, so one wall-clock cap is safe. */

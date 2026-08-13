@@ -30,14 +30,38 @@ export interface CoreEndpoint {
 export type WsListener = (frame: ServerToClientFrame) => void;
 
 // Coarse connection state for UI banners. "connecting" is the initial state
-// before the first open, plus during reconnect attempts after a close.
-// "unauthorized" is terminal: the core rejected our bearer token during the
-// WS handshake (e.g. its DB was reset and no longer has this client), so the
-// same token will never connect. We stop the reconnect loop and surface this
-// so the UI can prompt a re-pair, instead of hammering the core forever.
-export type ConnectionState = "connecting" | "connected" | "disconnected" | "unauthorized";
+// before the first open, plus during reconnect attempts after a close;
+// "disconnected" is the transient gap between those attempts.
+//
+// The last three PARK the client: no reconnect is scheduled and only an
+// explicit retryNow() (or a fresh CoreClient) resumes it.
+//  - "unauthorized": the core rejected our bearer at the ticket mint (its DB was
+//    reset, this client was revoked), so the same token will never connect.
+//    Recovery is a re-pair.
+//  - "gaveUp": MAX_ATTEMPTS consecutive attempts failed. The core is unreachable
+//    and hammering it further buys nothing; the user retries when they're ready.
+//  - "stopped": this device's core process isn't running, so there is nothing to
+//    reach. The user starts it, rather than waiting on a reconnect that cannot
+//    succeed.
+export type ConnectionState =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "unauthorized"
+  | "gaveUp"
+  | "stopped";
 
 export type ConnectionListener = (state: ConnectionState, reason?: string) => void;
+
+// Consecutive failed connect attempts in one disconnect gap before we park as
+// "gaveUp". At the remote backoff (500ms, doubling to a 30s cap) six attempts
+// span roughly half a minute of trying.
+const MAX_ATTEMPTS = 6;
+
+// The attempt from which we start asking whether the local core is even running.
+// Not the first close: a local core restarts in well under a second (dev
+// hot-reload, on-demand respawn) and would otherwise flash "Stopped" every time.
+const STOPPED_PROBE_FROM_ATTEMPT = 2;
 
 export class ApiError extends Error {
   readonly code: string;
@@ -86,8 +110,19 @@ export class CoreClient {
   // Connect attempts in the current gap, for the "connecting (attempt N)" log.
   // Reset on a successful open.
   private connectAttempt = 0;
+  // Parked in one of the terminal states: no reconnect is scheduled and none
+  // will be until retryNow(). Guards connectWs the same way "unauthorized" does.
+  private parked = false;
 
-  constructor(public readonly endpoint: CoreEndpoint) {
+  /** @param localStoppedProbe resolves true when this endpoint is this device's
+   *  own core AND that core's process is not running, so a reconnect cannot
+   *  succeed until someone starts it. Injected (rather than reached for here)
+   *  to keep this class transport-only: which core is ours, and whether its
+   *  process is up, are the registry's concerns. Absent for a remote core. */
+  constructor(
+    public readonly endpoint: CoreEndpoint,
+    private readonly localStoppedProbe?: () => Promise<boolean>,
+  ) {
     // A loopback core (dev hot-reload, on-demand local spawn) restarts in well
     // under a second, so reconnect briskly with a low cap; a remote core can be
     // down a while, so back off further to avoid hammering the link.
@@ -96,6 +131,20 @@ export class CoreClient {
     this.wsBackoffCapMs = this.isLocalCore ? 2_000 : 30_000;
     this.wsConnectTimeoutMs = this.isLocalCore ? 4_000 : 12_000;
     this.wsBackoffMs = this.wsBackoffInitialMs;
+  }
+
+  /** Leave a parked state and connect again immediately. The UI calls this when
+   *  the user clicks the Disconnected / Stopped pill (after starting the core,
+   *  in the Stopped case). A client parked as "unauthorized" is NOT revived:
+   *  its token is dead, and recovery there is a re-pair that builds a new
+   *  client. Safe to call on a healthy client (connectWs no-ops). */
+  retryNow(): void {
+    if (this.connState === "unauthorized") return;
+    this.parked = false;
+    this.connectAttempt = 0;
+    this.wsBackoffMs = this.wsBackoffInitialMs;
+    this.disconnectedAtMs = null;
+    this.connectWs();
   }
 
   // Subscribe to connection-state transitions. The listener is invoked
@@ -300,10 +349,10 @@ export class CoreClient {
 
   private connectWs(): void {
     if (this.wsClosing) return;
-    // The core definitively rejected our credentials; retrying with the same
-    // dead token would just spam it. Recovery is a re-pair, which builds a
-    // fresh CoreClient, so this one stays parked.
-    if (this.connState === "unauthorized") return;
+    // Parked: the credentials are dead, the core is unreachable, or its process
+    // is down. Retrying buys nothing, so a stray subscribe() must not revive the
+    // loop; only retryNow() (or, for "unauthorized", a fresh CoreClient) does.
+    if (this.parked) return;
     // Already connected, a connect is in flight, or a reconnect is scheduled:
     // don't open a competing socket.
     if (this.ws || this.wsConnecting || this.wsReconnectTimer !== null) return;
@@ -508,13 +557,56 @@ export class CoreClient {
   // CoreClient. A bad ticket at the upgrade layer does NOT reach here - that is
   // transient and flows through handleWsClosed's normal backoff instead.
   private enterUnauthorized(reason: string): void {
+    this.park("unauthorized", reason);
+    log.warn(`core rejected credentials (${reason}); halting reconnect, re-pair required`);
+  }
+
+  // Stop the reconnect loop and settle on a state the user has to act on. Tears
+  // down the in-flight connect and any armed retry, and bumps the generation so
+  // a late callback from the abandoned socket can't drive state afterwards.
+  // The socket is closed, not merely dropped: parking can race a reconnect the
+  // backoff already started (the stopped probe resolves asynchronously), and an
+  // orphaned half-open socket would keep the transport busy behind our back.
+  private park(state: "unauthorized" | "gaveUp" | "stopped", reason?: string): void {
     this.clearConnectWatchdog();
+    if (this.wsReconnectTimer !== null) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = null;
+    }
+    this.wsConnectGen++;
     this.wsConnected = false;
     this.wsConnecting = false;
+    const sock = this.ws;
     this.ws = null;
+    if (sock) {
+      try {
+        sock.close();
+      } catch {
+        /* already closing */
+      }
+    }
     this.disconnectedAtMs = null;
-    log.warn(`core rejected credentials (${reason}); halting reconnect, re-pair required`);
-    this.setConnState("unauthorized", reason);
+    this.parked = true;
+    this.setConnState(state, reason);
+  }
+
+  // Is this endpoint this device's own core, with its process down? Asked from
+  // STOPPED_PROBE_FROM_ATTEMPT onwards, off the close path so the backoff timer
+  // is armed either way; if the answer arrives while we're still down we park as
+  // "stopped" instead. Scoped to the disconnect GAP (not the connect generation,
+  // which the 250ms local backoff would roll over before a probe resolves): a
+  // successful open clears disconnectedAtMs, so a late "it's down" is discarded.
+  private async maybeEnterStopped(gapStartedAtMs: number, probe: () => Promise<boolean>) {
+    let stopped: boolean;
+    try {
+      stopped = await probe();
+    } catch (err) {
+      log.warn("local-core liveness probe failed; staying in reconnect", err);
+      return;
+    }
+    if (!stopped || this.parked || this.disconnectedAtMs !== gapStartedAtMs) return;
+    log.info("this device's core is not running; halting reconnect until it is started");
+    this.park("stopped", "Core is not running");
   }
 
   private handleWsClosed(): void {
@@ -530,8 +622,22 @@ export class CoreClient {
       this.disconnectedAtMs = Date.now();
       log.info(this.lastWsError ? `disconnected: ${this.lastWsError}` : "disconnected");
     }
+    if (this.wsClosing || this.listeners.size === 0) {
+      this.setConnState("disconnected", this.lastWsError ?? undefined);
+      return;
+    }
+    // Enough attempts have failed that the core is not coming back on its own.
+    // Park rather than retry every 30s forever; the user resumes via retryNow().
+    if (this.connectAttempt >= MAX_ATTEMPTS) {
+      log.warn(`giving up after ${this.connectAttempt} attempts; retry is now manual`);
+      this.park("gaveUp", this.lastWsError ?? undefined);
+      return;
+    }
     this.setConnState("disconnected", this.lastWsError ?? undefined);
-    if (this.wsClosing || this.listeners.size === 0) return;
+    const probe = this.localStoppedProbe;
+    if (probe && this.connectAttempt >= STOPPED_PROBE_FROM_ATTEMPT && this.disconnectedAtMs) {
+      void this.maybeEnterStopped(this.disconnectedAtMs, probe);
+    }
     if (this.wsReconnectTimer !== null) return; // a reconnect is already scheduled
     const delay = this.wsBackoffMs;
     this.wsBackoffMs = Math.min(this.wsBackoffMs * 2, this.wsBackoffCapMs);

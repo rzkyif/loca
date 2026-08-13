@@ -55,7 +55,6 @@ import {
   stripCoreVersion,
 } from "./lib.ts";
 import { reportRouting, routeTriples } from "./all-targets.ts";
-import { buildCoreInstallers, uploadCoreInstallers } from "./core-installers.ts";
 import { type ArtifactBundle, mergeCoreBundles } from "./artifacts.ts";
 import { withEnvironment } from "./drivers/lifecycle.ts";
 import type { BuildEnvironment } from "./drivers/mod.ts";
@@ -606,7 +605,7 @@ async function composeCoreManifest(
   privateKey: Uint8Array,
 ): Promise<CoreManifest> {
   // URLs point at the gzip-compressed artifacts (`.gz`); `sha256` is over the
-  // DECOMPRESSED file, so consumers (install scripts + self-updater) gunzip the
+  // DECOMPRESSED file, so consumers (self-install + self-updater) gunzip the
   // download then verify the same hash against the real binary/script.
   const binaries = artifacts
     .filter((a) => a.name === "tomat-core")
@@ -1015,27 +1014,10 @@ export const coreItem: ReleaseItem = {
         ? await buildCoreUnified(opts.triples, suffix, channel, opts.environments)
         : await buildCoreArtifacts(opts.triples, suffix);
     await composeAndUploadCore(env, channel, version, built, opts);
-
-    // Native Core installers for a LOCAL release. In CI these are built per-runner
-    // (ci-build) and uploaded on the coordinator (ci-publish); the prebuilt path
-    // here is exactly that CI compose, so it already handled its installers and we
-    // skip. For a local `deno task release` we package the HOST OS's installer
-    // (the only platform whose pkgbuild/makensis/dpkg/rpmbuild tooling is present
-    // on this machine); buildCoreInstallers returns [] when that tooling is absent,
-    // so a plain checkout degrades cleanly. Cross-OS installers in all-targets mode
-    // would need each build environment to package its own OS (a follow-up).
-    if (!opts.prebuilt) {
-      const hostTriple = detectHostTriple();
-      const installers = await buildCoreInstallers(built, {
-        version,
-        channel,
-        triple: hostTriple,
-        env,
-      });
-      if (installers.length > 0) {
-        await uploadCoreInstallers(env, channel, version, installers, opts);
-      }
-    }
+    // Native installers are NOT built here: they belong to the client item
+    // (client.ts), which wraps the just-published core artifacts and its own
+    // bundle into the host OS's installers. In CI each build runner packages
+    // its own OS's installers (ci-build.ts).
   },
 };
 

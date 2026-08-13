@@ -8,7 +8,6 @@
   },
   "rules": {
     "tomat/no-em-dash": "error",
-    "tomat/no-uppercase-tomat": "error",
     "tomat/no-builtin-palette-color": "error"
   },
   "env": {
@@ -37,12 +36,6 @@
       "files": ["packages/tomat-client/src/ui/lib/platform/*.ts"],
       "rules": {
         "tomat/no-tauri-import": "off"
-      }
-    },
-    {
-      "files": ["**/*.svelte"],
-      "rules": {
-        "tomat/no-uppercase-tomat": "off"
       }
     }
   ]

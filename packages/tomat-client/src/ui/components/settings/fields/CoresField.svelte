@@ -1,6 +1,14 @@
 <script lang="ts">
-  import { errMessage, type PairedClientEntry } from "@tomat/shared";
-  import { cores, type PairedCoreEntry } from "$lib/core";
+  import { errMessage, MIN_ADMIN_PASSWORD_LENGTH, type PairedClientEntry } from "@tomat/shared";
+  import {
+    cores,
+    isThisDevicesCore,
+    mintCodeWithAdminToken,
+    type PairedCoreEntry,
+    probeCore,
+    setAdminPasswordWithToken,
+  } from "$lib/core";
+  import { platform } from "$lib/platform";
   import { confirmState, passwordPromptState, viewState } from "$stores";
   import type { ParsedQuery } from "$lib/objects/query";
   import { type MenuRow, showFilterSortMenu, showObjectActionMenu } from "$lib/objects/menu";
@@ -30,6 +38,10 @@
   let mintedCode = $state<string | null>(null);
   let mintedExpiresAtMs = $state<number | null>(null);
   let codeCopied = $state(false);
+  // Whether the opened core has an admin password (from its health probe; null
+  // while unknown). A same-device core without one can still mint codes and set
+  // the password via its on-disk admin token, so the detail adapts to it.
+  let adminPasswordSet = $state<boolean | null>(null);
 
   $effect(() => {
     const sel = selectedItem;
@@ -41,15 +53,34 @@
     mintedCode = null;
     mintedExpiresAtMs = null;
     codeCopied = false;
-    if (sel && isCurrent(sel.id)) void loadDevices();
+    adminPasswordSet = null;
+    if (sel && isCurrent(sel.id)) {
+      void loadDevices();
+      void probeCore(sel.baseUrl)
+        .then((h) => (adminPasswordSet = h.adminPasswordSet))
+        .catch(() => (adminPasswordSet = null));
+    }
   });
 
   function isCurrent(id: string): boolean {
     return cores().currentEntry()?.id === id;
   }
 
+  // The on-disk admin token only authorizes the Core the installer put on THIS
+  // device, so token-gated actions (password management, promptless minting)
+  // match the platform-resolved local base URL exactly (isThisDevicesCore).
+  let localBaseUrl = $state<string | null>(null);
+  void platform()
+    .pairing.localCoreBaseUrl()
+    .then((u) => (localBaseUrl = u))
+    .catch(() => (localBaseUrl = null));
+
+  function isLocal(c: PairedCoreEntry): boolean {
+    return isThisDevicesCore(c.baseUrl, localBaseUrl);
+  }
+
   // Card / detail badges: the "Current" marker plus a read-only trust indicator
-  // so the user can see whether tomat secures this Core itself (Pinned) or trusts
+  // so the user can see whether Tomat secures this Core itself (Pinned) or trusts
   // the HTTPS certificate of the reverse proxy in front of it.
   function coreBadges(item: PairedCoreEntry): Badge[] {
     const badges: Badge[] = [];
@@ -59,11 +90,11 @@
         ? {
             label: "HTTPS",
             accent: "blue",
-            title: "Served over HTTPS by a reverse proxy; tomat trusts its certificate.",
+            title: "Served over HTTPS by a reverse proxy; Tomat trusts its certificate.",
           }
         : {
             label: "Pinned",
-            title: "tomat secures this connection with a pinned certificate.",
+            title: "Tomat secures this connection with a pinned certificate.",
           },
     );
     return badges;
@@ -78,10 +109,29 @@
     }
   }
 
-  // Generate a pairing code for another device. The password modal stays open on
-  // a wrong password (onSubmit throws); on success it closes and we show the
-  // minted code inline for the user to enter on the new device.
-  function generatePairingCode() {
+  // Generate a pairing code for another device. A local core without an admin
+  // password mints straight off its on-disk admin token (no prompt); otherwise
+  // the password modal stays open on a wrong password (onSubmit throws) and on
+  // success closes, showing the minted code inline for the new device. The
+  // token path also covers an unsettled/failed probe (adminPasswordSet null):
+  // the core accepts the admin token regardless of whether a password exists,
+  // while the password prompt would dead-end on a passwordless core.
+  function generatePairingCode(c: PairedCoreEntry) {
+    if (isLocal(c) && adminPasswordSet !== true) {
+      void (async () => {
+        try {
+          const adminToken = await platform().pairing.readAdminToken();
+          if (!adminToken) throw new Error("local Core admin token not found");
+          const res = await mintCodeWithAdminToken(c.baseUrl, adminToken);
+          mintedCode = res.code;
+          mintedExpiresAtMs = res.expiresAtMs;
+          codeCopied = false;
+        } catch (e) {
+          confirmState.alert({ title: "Could not generate a code", message: errMessage(e) });
+        }
+      })();
+      return;
+    }
     passwordPromptState.request({
       title: "Generate a pairing code",
       message: "Enter your admin password to create a code for pairing a new device.",
@@ -91,6 +141,28 @@
         mintedCode = res.code;
         mintedExpiresAtMs = res.expiresAtMs;
         codeCopied = false;
+      },
+    });
+  }
+
+  // Set or replace the local core's admin password, authorized by the on-disk
+  // admin token (so no old password is needed; owning the device is the proof).
+  // The installer never asks for a password, so this is where one is created.
+  function setAdminPassword(c: PairedCoreEntry) {
+    passwordPromptState.request({
+      title: adminPasswordSet ? "Replace admin password" : "Set admin password",
+      message:
+        `Choose a password of at least ${MIN_ADMIN_PASSWORD_LENGTH} characters. ` +
+        "You'll use it to pair new devices and remove old ones from any paired device.",
+      confirmLabel: adminPasswordSet ? "Replace" : "Set",
+      onSubmit: async (password) => {
+        if (password.length < MIN_ADMIN_PASSWORD_LENGTH) {
+          throw new Error(`Use at least ${MIN_ADMIN_PASSWORD_LENGTH} characters.`);
+        }
+        const adminToken = await platform().pairing.readAdminToken();
+        if (!adminToken) throw new Error("local Core admin token not found");
+        await setAdminPasswordWithToken(c.baseUrl, adminToken, password);
+        adminPasswordSet = true;
       },
     });
   }
@@ -266,17 +338,20 @@
           isMe: d.isMe,
         })) ?? null}
         {devicesError}
+        {adminPasswordSet}
+        canSetPassword={isLocal(item)}
         onNameInput={(v) => {
           draftName = v;
           scheduleSave();
         }}
         onNameBlur={() => flushSave()}
-        onGenerateCode={() => generatePairingCode()}
+        onGenerateCode={() => generatePairingCode(item)}
         onCopyCode={() => copyCode()}
         onRemoveDevice={(id) => {
           const d = devices?.find((x) => x.id === id);
           if (d) removeDevice(d);
         }}
+        onSetPassword={() => setAdminPassword(item)}
       />
     </ObjectDetailScroll>
   {/snippet}

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run -A
 // Starts the Astro dev server for the website. No staging. Release artifacts
-// (manifests, install scripts, schemas) live on R2 at get.au.tomat.ing now,
+// (manifests, installers, schemas) live on R2 at get.au.tomat.ing now,
 // not on the Worker, so the landing page is fully self-contained.
 
 import { dirname, fromFileUrl, join, resolve } from "@std/path";

@@ -86,31 +86,37 @@ export class PairingApi {
 
 // --- unpaired flow (no pin yet) -------------------------------------------
 
-/** Probe an unpaired core's health over a TOFU TLS connection. Returns the
- *  reported version and its `behindProxy` hint (whether it is served over HTTPS
- *  by a terminating reverse proxy). The hint selects the pairing trust mode; it
- *  is unauthenticated, but the PAKE cert fold makes a forged value fail closed
- *  (see `pairWithCode`), so it is a convenience, not a trust decision. */
+/** Probe a core's health over a TOFU TLS connection. Returns the reported
+ *  version, its `behindProxy` hint (whether it is served over HTTPS by a
+ *  terminating reverse proxy), and whether an admin password is set. The
+ *  behindProxy hint selects the pairing trust mode; it is unauthenticated, but
+ *  the PAKE cert fold makes a forged value fail closed (see `pairWithCode`),
+ *  so it is a convenience, not a trust decision. */
 export async function probeCore(
   baseUrl: string,
-): Promise<{ version: string; behindProxy: boolean }> {
+): Promise<{ version: string; behindProxy: boolean; adminPasswordSet: boolean }> {
   const res = await platform().net.fetch({
     url: `${baseUrl}/api/v1/health`,
     mode: "capture",
   });
   if (!ok(res)) throw new Error(`Core responded ${res.status}`);
-  const body = JSON.parse(text(res)) as { version?: unknown; behindProxy?: unknown };
+  const body = JSON.parse(text(res)) as {
+    version?: unknown;
+    behindProxy?: unknown;
+    adminPasswordSet?: unknown;
+  };
   return {
     version: typeof body.version === "string" ? body.version : "unknown",
     behindProxy: body.behindProxy === true,
+    adminPasswordSet: body.adminPasswordSet === true,
   };
 }
 
-/** Set the admin password on a freshly-installed local core, authorized by its
- *  on-disk admin token, over TOFU TLS. Used by the client's "install on this
- *  computer" flow (a terminal install sets none; the script only mints a
- *  pairing code). The password lets this and other paired devices mint codes /
- *  revoke remotely afterward. */
+/** Set or replace the admin password on a local core, authorized by its
+ *  on-disk admin token, over TOFU TLS. The installer never asks for one (it
+ *  runs non-interactively), so Settings > Cores offers this on the local Core.
+ *  The password lets this and other paired devices mint codes / revoke
+ *  remotely afterward. */
 export async function setAdminPasswordWithToken(
   baseUrl: string,
   adminToken: string,

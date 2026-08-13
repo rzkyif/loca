@@ -113,11 +113,11 @@
 
   // A short simulated session for the ChatShellView card, so the shell shows the
   // real chat the way the client paints it (mirrors the homepage ChatStage).
-  const CHAT_PROMPT = "How do I install tomat on macOS?";
+  const CHAT_PROMPT = "How do I install Tomat on macOS?";
   const CHAT_REASONING =
     "The user is on macOS, so the one-line installer is the simplest path; point them at the landing-page command and the launch step.";
   const CHAT_ANSWER =
-    "Run the one-line installer from the landing page, then launch tomat from Applications. Want the per-OS steps?";
+    "Run the one-line installer from the landing page, then launch Tomat from Applications. Want the per-OS steps?";
 
   // The color picker is a Popover anchored to an element; each card mounts its
   // own stand-in anchor so the popover positions inside that card's frame. Keyed
@@ -143,7 +143,7 @@
   <header class="flex flex-col gap-2">
     <h1 class="text-2xl font-semibold">Component Gallery</h1>
     <p class="text-default-500 text-sm">
-      A one to one replica of tomat Client components in various states.
+      A one to one replica of Tomat Client components in various states.
     </p>
     <p class="text-default-500 text-sm">
       The Client is built with Tauri and Svelte, and both it and this page shares one UI package. A

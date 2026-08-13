@@ -143,18 +143,17 @@ const impl: Platform = {
     async readLocalCoreBootError() {
       return null;
     },
-    installLocalCore: unavailable("pairing.installLocalCore"),
-    subscribeInstallProgress() {
-      return Promise.resolve(() => {});
-    },
-    enableCoreBehindProxy() {
-      return Promise.resolve();
-    },
     isLocalCoreInstalled() {
+      return Promise.resolve(false);
+    },
+    isLocalCoreRunning() {
       return Promise.resolve(false);
     },
     startLocalCore() {
       return Promise.resolve(false);
+    },
+    stopLocalCore() {
+      return Promise.resolve();
     },
     localCoreBaseUrl() {
       return Promise.resolve("https://127.0.0.1:7800");
@@ -207,6 +206,10 @@ const impl: Platform = {
   },
   menu: {
     showContextMenu: unavailable("menu.showContextMenu"),
+  },
+  tray: {
+    setCoreState: NOOP,
+    subscribeCoreAction: async () => () => {},
   },
   monitors: {
     primary: async () => null,

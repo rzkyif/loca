@@ -80,7 +80,7 @@ if (Deno.build.os === "windows") {
 // needs. Tauri deep-merges this over tauri.conf.json.
 const override: Record<string, unknown> = {};
 if (channel !== "stable") {
-  override.productName = `tomat (${channel})`;
+  override.productName = `Tomat (${channel})`;
   override.identifier = `au.tomat.ing.${channel}`;
   override.plugins = {
     updater: {

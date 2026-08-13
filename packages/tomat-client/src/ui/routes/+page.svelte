@@ -178,12 +178,12 @@
   let connectWatchdog: ReturnType<typeof setTimeout> | null = null;
   const AUTOSTART_REVEAL_FALLBACK_MS = 10_000;
 
-  // Redirect out of the two core-backed transient modes while reconnecting:
-  // quick settings falls back to settings (which shows its own disabled state)
-  // and the session list (which reads/loads sessions from the core) falls back
-  // to chat, the safe resting mode.
+  // Redirect out of the two core-backed transient modes while the core is
+  // unavailable: quick settings falls back to settings (which shows its own
+  // disabled state) and the session list (which reads/loads sessions from the
+  // core) falls back to chat, the safe resting mode.
   $effect(() => {
-    if (!connectionState.reconnecting) return;
+    if (!connectionState.coreUnavailable) return;
     if (viewState.mode === "quickSettings") viewState.navigate("settings");
     else if (viewState.mode === "sessionList") viewState.navigate("chat");
   });

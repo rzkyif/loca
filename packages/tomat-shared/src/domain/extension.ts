@@ -3,7 +3,7 @@
 // (see validation/tomat-json.ts). These types describe the DB-projected
 // view that the API serves.
 
-// "seeded" covers every extension tomat ships and installs on a fresh Core (the
+// "seeded" covers every extension Tomat ships and installs on a fresh Core (the
 // built-in and the dev-only samples). Seeded bytes resolve from the codebase in
 // dev and from install-script-planted / CDN artifacts in prod; npm + local are
 // the user-supplied sources.
@@ -16,7 +16,7 @@ export type ExtensionSource = "npm" | "local" | "seeded";
 // re-confirms (which re-pins the current content).
 export type ExtensionStatus = "downloaded" | "installed" | "drift";
 
-// Seeded extensions tomat ships and installs on a fresh Core. Each id doubles as
+// Seeded extensions Tomat ships and installs on a fresh Core. Each id doubles as
 // the on-disk folder name under the extensions dir and as the package directory
 // name under packages/; ids satisfy the local-slug charset, so no flattening is
 // applied. The built-in is released + planted in prod; samples is dev-only (never
@@ -148,7 +148,7 @@ export interface Grant {
 export type ToolProviderKind = "extension" | "mcp";
 
 // Platforms a tool can declare it works on. `linux` matches any Linux session;
-// `linux_x11` / `linux_wayland` narrow to a display server. tomat resolves the
+// `linux_x11` / `linux_wayland` narrow to a display server. Tomat resolves the
 // host's tokens centrally (Core reads the display server once) so authors never
 // detect it themselves. A tool whose declared list doesn't intersect the host's
 // resolved tokens is dropped from every listing path: the relevance filter, the

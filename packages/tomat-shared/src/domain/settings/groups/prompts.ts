@@ -18,7 +18,7 @@ export const promptsGroup: SettingGroup = {
   // "Client" badge.
   destination: "client-on-core",
   name: "Prompts",
-  description: "Customize the instructions and helper prompts tomat sends behind the scenes.",
+  description: "Customize the instructions and helper prompts Tomat sends behind the scenes.",
   descriptionTier: "ondemand",
   icon: "i-material-symbols-chat-bubble-rounded",
   iconInactive: "i-material-symbols-chat-bubble-outline-rounded",

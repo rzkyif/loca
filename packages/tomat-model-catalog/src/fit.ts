@@ -7,7 +7,7 @@ export const FIT_CONFIG: FitConfig = {
   // Half targets ~50% of the memory budget; Full ~90% with a safety margin so a
   // model that fits on paper does not OOM the machine in practice.
   budgetFraction: { half: 0.5, full: 0.9 },
-  // Headroom subtracted from the budget before fitting (OS + tomat + slack).
+  // Headroom subtracted from the budget before fitting (OS + Tomat + slack).
   safetyMarginBytes: 1_500_000_000,
   // "Smartness" ranking source.
   primaryScore: { source: "artificial-analysis", metric: "intelligence-index" },

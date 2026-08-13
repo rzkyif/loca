@@ -7,7 +7,7 @@ order: 3
 import ExpandableMessageDemo from "../../../components/demos/ExpandableMessageDemo.svelte";
 import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
 
-A **scheduled prompt** is a message tomat sends on its own, on a schedule you set,
+A **scheduled prompt** is a message Tomat sends on its own, on a schedule you set,
 so the agent works for you when you are not watching. It can run once at a future
 time, every so often, or on a weekly, monthly, or yearly cadence. Each run opens a
 fresh session, so the result is waiting for you as a conversation you can read and
@@ -35,13 +35,13 @@ come out of a normal conversation instead of a trip to Settings.
 ## Missed runs
 
 A schedule is only dependable if it survives downtime. If your Core was off when a
-prompt was due, tomat can make up the missed run the next time it starts, rather
+prompt was due, Tomat can make up the missed run the next time it starts, rather
 than silently skipping it. So a daily digest you rely on still arrives after your
 machine was asleep overnight, instead of leaving a gap you might not notice.
 
 ## How It Works
 
-A scheduled prompt is the one tomat feature that runs with no app open, so it lives
+A scheduled prompt is the one Tomat feature that runs with no app open, so it lives
 entirely on the Core. The Core keeps each schedule with its cadence and works out
 when the next run is due; when that time arrives, it starts a session by itself,
 runs your prompt as a turn using its own default settings, and saves the result for

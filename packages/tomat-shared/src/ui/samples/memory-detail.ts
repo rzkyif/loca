@@ -8,11 +8,12 @@ export const memoryDetailSamples = {
     isSkill: false,
     editable: true,
     summaryStale: false,
-    summary: "Brand and dependency conventions: write tomat lowercase; prefer maintained packages.",
+    summary:
+      "Brand and dependency conventions: write the brand as Tomat; prefer maintained packages.",
     draftTitle: "Project conventions",
     contentLoaded: true,
     draftContent:
-      "Always write the brand lowercase as tomat.\nPrefer maintained packages over hand-rolled code.",
+      "Always write the brand as Tomat.\nPrefer maintained packages over hand-rolled code.",
   },
   skill: {
     enabled: true,
@@ -58,7 +59,7 @@ export const memoryDetailSamples = {
     draftTitle: "",
     titleError: "Give this memory a title",
     contentLoaded: true,
-    draftContent: "Always write the brand lowercase as tomat.",
+    draftContent: "Always write the brand as Tomat.",
   },
   contentLoading: {
     enabled: true,

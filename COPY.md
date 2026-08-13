@@ -1,6 +1,6 @@
 # COPY.md
 
-The single source for **user-facing copy** across tomat: every string a person
+The single source for **user-facing copy** across Tomat: every string a person
 can read in the product. Settings labels and descriptions, the user manual,
 extension and tool descriptions, the memories an extension ships, chat and error
 messages, onboarding text. If a user can see it, this guide governs it.
@@ -111,14 +111,14 @@ tone, "Requests, not guarantees").
 - **Code font** for literal commands, file paths, and setting ids.
 - **No em dashes (U+2014).** Reword with a comma, parentheses, or a colon, or
   split the sentence. Do not substitute another dash character.
-- **Always lowercase tomat**, even at the start of a sentence or heading. (The
-  hyphenated package names, `TOMAT_*` env vars, and `au.tomat.ing` are separate
-  tokens and keep their own casing.) Only the word `tomat` is forced lowercase:
-  the two halves are **Core** and **Client**, capitalized whenever they name the
-  service or the app, on their own (preferred) or after the brand ("tomat Core",
-  "tomat Client"). Lowercase `core`/`client` only for genuinely generic uses.
+- **Write the brand as Tomat**, capitalized like any proper noun. (The hyphenated
+  package names, `TOMAT_*` env vars, `tomat.json`, the `~/.tomat` paths, and
+  `au.tomat.ing` are separate tokens and keep their own lowercase casing.) The two
+  halves are **Core** and **Client**, capitalized whenever they name the service or
+  the app, on their own (preferred) or after the brand ("Tomat Core", "Tomat
+  Client"). Lowercase `core`/`client` only for genuinely generic uses.
 
-The last two are lint-enforced across every tracked file, including this one and
+The em-dash ban is lint-enforced across every tracked file, including this one and
 all the copy it governs (`deno task lint`).
 
 ## Settings copy
@@ -205,7 +205,7 @@ conceptual first, task-oriented, never breathless.
   and describe the tool author API directly (the `ctx` surface, permissions, the
   manifest) rather than deferring mechanism to How It Works, because its second
   audience is extension authors. It still obeys everything else: voice,
-  terminology, lowercase tomat, the em-dash ban, and a calm demo-driven
+  terminology, the em-dash ban, and a calm demo-driven
   user-facing opening (what an extension is, installing, trust) before the
   reference sections. No other manual page gets this latitude.
 
@@ -239,8 +239,7 @@ the user, the model, and relevance ranking all read tool and skill descriptions.
 
 ## Before you commit
 
-- `deno task check`, `fmt`, `lint`, `test`. Lint bans the em dash and a
-  capital-initial "tomat" across every tracked file, including this guide and the
-  copy it governs.
+- `deno task check`, `fmt`, `lint`, `test`. Lint bans the em dash across every
+  tracked file, including this guide and the copy it governs.
 - Re-read each new string aloud. If it explains mechanism (outside a How It Works
   section), trim it. If the label already says it, drop the description to `none`.

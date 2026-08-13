@@ -4,7 +4,7 @@
   import { relevantToolsSamples } from "@tomat/shared/ui/samples";
   import DemoFrame from "./DemoFrame.svelte";
 
-  // The tools tomat offered the agent for a message, ranked by relevance.
+  // The tools Tomat offered the agent for a message, ranked by relevance.
   let { label }: { label?: string } = $props();
 </script>
 

@@ -44,7 +44,7 @@ export const websiteItem: ReleaseItem = {
     return hashWebsiteSource();
   },
 
-  // No buildOutputs: like the extension, install scripts, and schemas, the
+  // No buildOutputs: like the extension, catalog, and schemas, the
   // landing page is a coordinator-only item with no entry in the unified
   // `deno task build`. Its apply() runs the Astro build itself at release time.
 

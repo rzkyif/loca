@@ -48,12 +48,11 @@ import {
   readClientDescriptor,
 } from "./artifacts.ts";
 import { coreItem } from "./core.ts";
-import { uploadCoreInstallers } from "./core-installers.ts";
+import { uploadInstallers } from "./core-installers.ts";
 import { extensionItem } from "./extension.ts";
 import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
-import { scriptsItem } from "./install-scripts.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
@@ -81,7 +80,7 @@ async function collectPrebuilt(stagingRoot: string): Promise<PrebuiltStaging> {
   // A website-only / platform-independent-only publish skips the build matrix,
   // so no runner staged anything and the download leaves no staging root. That
   // is expected: the publish plan just builds the changed coordinator-side items
-  // (catalog, install scripts, schemas, landing page) with an empty prebuilt set.
+  // (catalog, schemas, landing page) with an empty prebuilt set.
   if (!(await exists(stagingRoot))) {
     info(`no staging root (${stagingRoot}); publishing platform-independent items only`);
     return staging;
@@ -141,27 +140,34 @@ async function main(): Promise<void> {
   const items: ReleaseItem[] = [coreItem, extensionItem, catalogItem];
   if (prebuilt.clientDescriptors.length > 0) items.push(clientItem);
   if (prebuilt.android) items.push(androidItem);
-  items.push(scriptsItem, schemasItem, websiteItem);
+  items.push(schemasItem, websiteItem);
 
-  // Publish the conventional native Core installers each runner built (pkg / nsis
-  // / deb+rpm) + a signed core-installers.json BEFORE the release plan, so the
-  // installers ride into the same GitHub-Release mirror as every other artifact:
-  // uploadCoreInstallers writes core-installers.json{,.sig} under dist/<manifestDir>
-  // (picked up by the mirror's manifest walk) and returns the installer binaries
-  // as GH assets, which we hand the plan via extraGithubAssets. The installers are
-  // auxiliary download assets keyed to the core version, so they ride outside the
-  // release-plan cursor. R2 puts are idempotent, so a plan failure after this just
-  // retries on re-push.
+  // Publish the native installers each runner built (the unified Windows .exe /
+  // macOS .pkg + the Linux Core deb/rpm) + a signed installers.json BEFORE the
+  // release plan, so the installers ride into the same GitHub-Release mirror as
+  // every other artifact: uploadInstallers writes installers.json{,.sig} under
+  // dist/<manifestDir> (picked up by the mirror's manifest walk) and returns the
+  // installer binaries as GH assets, which we hand the plan via
+  // extraGithubAssets. The installers are auxiliary download assets, so they
+  // ride outside the release-plan cursor. R2 puts are idempotent, so a plan
+  // failure after this just retries on re-push.
   const installers = prebuilt.coreBundles.flatMap((b) => b.installers ?? []);
   let extraGithubAssets: Array<{ path: string; name: string }> = [];
   if (installers.length > 0) {
     const coreVersion =
       prebuilt.coreBundles.find((b) => b.installers?.length)?.version ??
       prebuilt.coreBundles[0].version;
-    extraGithubAssets = await uploadCoreInstallers(env, channel, coreVersion, installers, {
-      triples: RELEASE_TARGET_TRIPLES,
-      dryRun: args["dry-run"],
-    });
+    const clientVersion = prebuilt.clientDescriptors[0]?.version;
+    extraGithubAssets = await uploadInstallers(
+      env,
+      channel,
+      { coreVersion, clientVersion },
+      installers,
+      {
+        triples: RELEASE_TARGET_TRIPLES,
+        dryRun: args["dry-run"],
+      },
+    );
   }
 
   const published = await runReleasePlan(env, items, channel, {

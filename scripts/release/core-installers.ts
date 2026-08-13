@@ -1,24 +1,27 @@
-// Native Core installers: the conventional per-OS packages (macOS .pkg, Windows
-// NSIS .exe, Linux .deb/.rpm) that lay down the Core binary set and register its
-// background service by delegating to the binary's own install subcommands
-// (packages/tomat-core/src/install). This is the greenfield counterpart to the
-// gzip'd raw binaries core.ts already publishes: those feed self-update + the
-// thin scripts; these give a double-click install.
+// Native installer building blocks + the Linux Core packages + the installers
+// manifest publisher.
 //
-// Each installer bundles the core binary + its per-triple helpers + the workers,
-// and its post-install hook runs `tomat-core install-service` (which bootstraps
-// the admin token, plants the built-in extension, and registers the launchd /
-// systemd-user / Scheduled Task). The removal hook runs `tomat-core
+// The user-facing Windows .exe and macOS .pkg are the UNIFIED installers
+// (client + optional core) built in unified-installers.ts; this module owns
+// what they share - payload assembly, signing/notarization helpers, the
+// record/publish plumbing - plus the standalone Linux Core packages
+// (.deb/.rpm), the one platform that keeps a separate client (AppImage) and
+// core download.
+//
+// Every package delegates provisioning to the core binary's own install
+// subcommands (packages/tomat-core/src/install): the post-install hook runs
+// `tomat-core install-service` (admin token, built-in extension plant, launchd
+// / systemd-user / Scheduled Task) and removal runs `tomat-core
 // uninstall-service`. Because the runtime state lives per-user under
 // ~/.tomat/<channel>/core, the post-install hooks resolve the target user and
-// install into their home (the awkward bit called out in the plan: a root pkg /
-// deb postinstall targeting a user-domain service).
+// install into their home (a root pkg / deb postinstall targeting a
+// user-domain service).
 //
-// VALIDATION NOTE: this module invokes pkgbuild/productsign/notarytool,
-// makensis/signtool, dpkg-deb, and rpmbuild - it only runs on a runner
-// provisioned with those tools (the CI matrix + the local drivers install them).
-// It cannot be exercised in a plain dev checkout; the templates + argument
-// wiring are correct-by-construction and verified on a real release run.
+// VALIDATION NOTE: this module invokes productsign/notarytool, signtool,
+// dpkg-deb, and rpmbuild - it only runs on a runner provisioned with those
+// tools (the CI matrix + the local drivers install them). It cannot be
+// exercised in a plain dev checkout; the templates + argument wiring are
+// correct-by-construction and verified on a real release run.
 
 import { basename, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
@@ -51,13 +54,18 @@ import {
 // ---------------------------------------------------------------------------
 // types
 
-/** One built native Core installer, copied under dist/<triple>/ so it rides the
- *  same publish path as every other artifact. */
-export interface CoreInstallerAsset {
+/** One built native installer, copied under dist/<triple>/ so it rides the same
+ *  publish path as every other artifact. `kind` separates the unified
+ *  client+core installers (Windows .exe, macOS .pkg) from the core-only Linux
+ *  packages; `version` is the namespace the asset uploads under (the client
+ *  version for unified installers, the core version for core packages). */
+export interface InstallerAsset {
+  kind: "unified" | "core";
   format: "pkg" | "exe" | "deb" | "rpm";
   triple: Triple;
+  version: string;
   filename: string;
-  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/tomat-core-0.1.5.pkg"
+  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/tomat-0.1.5.pkg"
   sha256: string;
   size: number;
 }
@@ -69,24 +77,22 @@ export interface CoreInstallerOpts {
   env: DeployEnv;
 }
 
-const IDENTIFIER_BASE = "au.tomat.core";
-
-/** Version-less download filename for a Core installer, used for the `current/`
- *  alias the website links against without knowing the version. Kept in sync
- *  with the stableName() helper (target "core") in the website's lib/install.ts. */
+/** Version-less download filename for a Linux Core package, used for the
+ *  `current/` alias the website links against without knowing the version. Kept
+ *  in sync with the linuxCoreInstallers() helper in the website's
+ *  lib/install.ts. */
 export function coreInstallerStableName(
-  format: CoreInstallerAsset["format"],
+  format: InstallerAsset["format"],
   channel: ReleaseChannel,
 ): string {
   const suffix = channelBinSuffix(channel);
-  if (format === "exe") return `tomat-core${suffix}-setup.exe`;
   return `tomat-core${suffix}.${format}`;
 }
 
 // ---------------------------------------------------------------------------
 // small process helper (no engine host / logger; runs on a release machine)
 
-async function run(argv: string[], cwd?: string): Promise<void> {
+export async function run(argv: string[], cwd?: string): Promise<void> {
   const { code, stderr } = await new Deno.Command(argv[0], {
     args: argv.slice(1),
     cwd,
@@ -100,7 +106,7 @@ async function run(argv: string[], cwd?: string): Promise<void> {
   }
 }
 
-async function have(bin: string): Promise<boolean> {
+export async function have(bin: string): Promise<boolean> {
   // Presence, not success: Deno.Command throws NotFound when the binary is not on
   // PATH but returns a (possibly non-zero) exit code when it exists. Some tools we
   // probe reject `--version` (pkgbuild wants an argument, makensis uses /VERSION),
@@ -124,8 +130,9 @@ async function have(bin: string): Promise<boolean> {
 
 /** Stage the core binary + matching helpers + workers into `<root>/{bin,workers}`
  *  using the channel-suffixed on-disk names the runtime expects. Returns the
- *  installed binary's basename (e.g. tomat-core-latest[.exe]). */
-async function assemblePayload(
+ *  installed binary's basename (e.g. tomat-core-latest[.exe]). Shared by the
+ *  Linux packages here and the unified installers (unified-installers.ts). */
+export async function assemblePayload(
   built: CoreBuildArtifacts,
   triple: Triple,
   channel: ReleaseChannel,
@@ -155,101 +162,40 @@ async function assemblePayload(
 }
 
 // ---------------------------------------------------------------------------
-// public entry
+// public entry (Linux)
 
-/** Build the native Core installer for `triple`'s OS. Returns the asset(s)
- *  produced (deb + rpm on Linux, one otherwise), or [] when the packaging tool
- *  is unavailable (so a plain host build degrades rather than fails). */
-export async function buildCoreInstallers(
+/** Build the standalone Linux Core packages (.deb + .rpm). Returns the assets
+ *  produced, or fewer/none when a packaging tool is unavailable (so a plain
+ *  host build degrades rather than fails). The Windows and macOS user-facing
+ *  installers are the unified ones (unified-installers.ts). */
+export function buildLinuxCoreInstallers(
   built: CoreBuildArtifacts,
   opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset[]> {
-  const { triple } = opts;
-  if (triple.endsWith("apple-darwin")) return await buildMacPkg(built, opts);
-  if (triple.endsWith("pc-windows-msvc")) return await buildWindowsNsis(built, opts);
-  if (triple.endsWith("unknown-linux-gnu")) return await buildLinuxPackages(built, opts);
-  info(`no native Core installer for ${triple}; skipping`);
-  return [];
+): Promise<InstallerAsset[]> {
+  return buildLinuxPackages(built, opts);
 }
 
 /** Copy a produced installer under dist/<triple>/ and describe it. */
-async function record(
+export async function record(
   builtPath: string,
   triple: Triple,
-  format: CoreInstallerAsset["format"],
-): Promise<CoreInstallerAsset> {
+  kind: InstallerAsset["kind"],
+  format: InstallerAsset["format"],
+  version: string,
+): Promise<InstallerAsset> {
   const filename = basename(builtPath);
   const relPath = `${triple}/${filename}`;
   await ensureDir(join(DIST_DIR, triple));
   const dest = join(DIST_DIR, relPath);
   await Deno.copyFile(builtPath, dest);
   const { sha256, size } = await sha256File(dest);
-  ok(`  Core installer: ${filename}  ${humanBytes(size)}`);
-  return { format, triple, filename, relPath, sha256, size };
-}
-
-// ---------------------------------------------------------------------------
-// macOS .pkg (pkgbuild → productsign + notarytool when APPLE_* is set)
-
-async function buildMacPkg(
-  built: CoreBuildArtifacts,
-  opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset[]> {
-  if (!(await have("pkgbuild"))) {
-    info(colors.yellow(`pkgbuild not available; skipping Core .pkg for ${opts.triple}`));
-    return [];
-  }
-  const { version, channel, triple, env } = opts;
-  const suffix = channelBinSuffix(channel);
-  const identifier = `${IDENTIFIER_BASE}${suffix}`;
-  const work = await Deno.makeTempDir({ prefix: "tomat-core-pkg-" });
-  const pkgRoot = join(work, "root");
-  const scripts = join(work, "scripts");
-  await ensureDir(scripts);
-  // Install the payload under a neutral system prefix; the postinstall copies it
-  // into the console user's ~/.tomat/<channel>/core and runs install-service.
-  const installPrefix = `/usr/local/lib/tomat${suffix || "-stable"}`;
-  const { binName } = await assemblePayload(built, triple, channel, pkgRoot);
-
-  await Deno.writeTextFile(
-    join(scripts, "postinstall"),
-    macPostinstall(channel, installPrefix, binName),
-  );
-  await Deno.chmod(join(scripts, "postinstall"), 0o755);
-
-  const unsigned = join(work, `tomat-core${suffix}-${version}.pkg`);
-  await run([
-    "pkgbuild",
-    "--root",
-    pkgRoot,
-    "--identifier",
-    identifier,
-    "--version",
-    version,
-    "--scripts",
-    scripts,
-    "--install-location",
-    installPrefix,
-    unsigned,
-  ]);
-
-  let finalPkg = unsigned;
-  if (env.appleSigningIdentity) {
-    finalPkg = join(work, `tomat-core${suffix}-${version}-signed.pkg`);
-    await run(["productsign", "--sign", env.appleSigningIdentity, unsigned, finalPkg]);
-    await notarizePkg(finalPkg, env);
-  } else {
-    info(colors.yellow(`APPLE_SIGNING_IDENTITY unset; shipping an unsigned Core .pkg`));
-  }
-  // Name the published artifact stably (drop the -signed suffix).
-  const published = join(work, `tomat-core${suffix}-${version}.pkg`);
-  if (finalPkg !== published) await Deno.rename(finalPkg, published);
-  return [await record(published, triple, "pkg")];
+  ok(`  installer: ${filename}  ${humanBytes(size)}`);
+  return { kind, format, triple, version, filename, relPath, sha256, size };
 }
 
 /** Notarize + staple a signed .pkg when notarization creds exist; otherwise warn
  *  (Gatekeeper will still block a signed-but-unnotarized pkg on download). */
-async function notarizePkg(pkg: string, env: DeployEnv): Promise<void> {
+export async function notarizePkg(pkg: string, env: DeployEnv): Promise<void> {
   const args = ["notarytool", "submit", pkg, "--wait"];
   if (env.appleApiKey && env.appleApiIssuer && env.appleApiKeyPath) {
     args.push(
@@ -277,62 +223,10 @@ async function notarizePkg(pkg: string, env: DeployEnv): Promise<void> {
   await run(["xcrun", "stapler", "staple", pkg]);
 }
 
-function macPostinstall(channel: ReleaseChannel, installPrefix: string, binName: string): string {
-  // Runs as root. Resolve the console user, copy the payload into their home,
-  // chown it, and register the (user-domain) service as that user.
-  return `#!/bin/bash
-set -euo pipefail
-CONSOLE_USER="$(stat -f%Su /dev/console)"
-if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
-  echo "no console user; skipping per-user service registration" >&2
-  exit 0
-fi
-USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
-DEST="$USER_HOME/.tomat/${channel}/core"
-mkdir -p "$DEST/bin" "$DEST/workers"
-cp -R "${installPrefix}/bin/." "$DEST/bin/"
-cp -R "${installPrefix}/workers/." "$DEST/workers/"
-chown -R "$CONSOLE_USER" "$USER_HOME/.tomat/${channel}"
-# Run install-service AS the console user with HOME pinned to their home: sudo's
-# env_reset would otherwise leave HOME as root's, so the LaunchAgent plist +
-# admin token would land in /var/root instead of the user home. The env prefix
-# guarantees the var reaches the child regardless of the sudoers setenv policy.
-sudo -u "$CONSOLE_USER" env HOME="$USER_HOME" TOMAT_CHANNEL="${channel}" "$DEST/bin/${binName}" install-service || true
-exit 0
-`;
-}
-
 // ---------------------------------------------------------------------------
-// Windows NSIS .exe (makensis → signtool when a cert is configured)
+// Windows Authenticode (dormant until a cert is configured)
 
-async function buildWindowsNsis(
-  built: CoreBuildArtifacts,
-  opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset[]> {
-  if (!(await have("makensis"))) {
-    info(colors.yellow(`makensis not available; skipping Core NSIS installer for ${opts.triple}`));
-    return [];
-  }
-  const { version, channel, triple, env } = opts;
-  const suffix = channelBinSuffix(channel);
-  const work = await Deno.makeTempDir({ prefix: "tomat-core-nsis-" });
-  const payload = join(work, "payload");
-  const { binName } = await assemblePayload(built, triple, channel, payload);
-
-  const nsi = join(work, "tomat-core.nsi");
-  const outFile = join(work, `tomat-core${suffix}-setup-${version}.exe`);
-  await Deno.writeTextFile(nsi, windowsNsi(channel, version, payload, binName, outFile));
-  await run(["makensis", nsi]);
-
-  if (env.windowsCertificateThumbprint || env.windowsSignCommand) {
-    await signWindows(outFile, env);
-  } else {
-    info(colors.yellow(`no Windows cert; shipping an unsigned Core installer`));
-  }
-  return [await record(outFile, triple, "exe")];
-}
-
-async function signWindows(file: string, env: DeployEnv): Promise<void> {
+export async function signWindows(file: string, env: DeployEnv): Promise<void> {
   if (env.windowsSignCommand) {
     // A user-provided sign command with %1 replaced by the file (Tauri's convention).
     const argv = env.windowsSignCommand.replace(/%1/g, file).split(/\s+/);
@@ -354,144 +248,14 @@ async function signWindows(file: string, env: DeployEnv): Promise<void> {
   ]);
 }
 
-/** The human display name for a channel's Core, matching the Client's
- *  parenthesized convention ("tomat (latest)"): never the raw -latest suffix. */
-function coreDisplayName(channel: ReleaseChannel): string {
-  return channel === "stable" ? "tomat Core" : `tomat Core (${channel})`;
-}
-
-function windowsNsi(
-  channel: ReleaseChannel,
-  version: string,
-  payloadDir: string,
-  binName: string,
-  outFile: string,
-): string {
-  const suffix = channel === "stable" ? "" : `-${channel}`;
-  const displayName = coreDisplayName(channel);
-  // Per-user install (no admin): an options page (background service /
-  // LAN pairing, mirroring the install script's TOMAT_INSTALL_* env vars and
-  // the client wizard's toggles), then drop the payload into
-  // %USERPROFILE%\.tomat\<ch>\core and run the binary's own install-service.
-  //
-  // Uninstall entry ownership: install-service itself registers the
-  // Add/Remove Programs entry (see tomat-core src/install/service.ts), the
-  // same one every install front-end gets, whose command re-runs
-  // uninstall-service and sweeps the install dir (including uninstall.exe).
-  // The registry writes below are only the FALLBACK for an install-service
-  // failure mid-install: they run first, install-service overwrites them on
-  // success, and either command fully removes the install.
-  //
-  // A silent install (/S) skips the custom page; .onInit sets the defaults
-  // (service on, loopback only).
-  return `!include "MUI2.nsh"
-!include "nsDialogs.nsh"
-!include "LogicLib.nsh"
-Name "${displayName}"
-OutFile "${outFile}"
-RequestExecutionLevel user
-InstallDir "$PROFILE\\.tomat\\${channel}\\core"
-!define UNINST_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\tomat-core${suffix}"
-
-Var ServiceCheckbox
-Var BindAllCheckbox
-Var ServiceFlag
-Var BindAllFlag
-
-Page custom CoreOptionsPage CoreOptionsPageLeave
-!insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TITLE "${displayName} is installed"
-!define MUI_FINISHPAGE_TEXT "The Core now runs in the background on this computer.$\\r$\\n$\\r$\\nOpen a tomat Client to pair it: choose to set up a Core on this computer and the Client finds it on its own."
-!insertmacro MUI_PAGE_FINISH
-!insertmacro MUI_UNPAGE_INSTFILES
-!insertmacro MUI_LANGUAGE "English"
-
-Function .onInit
-  StrCpy $ServiceFlag "1"
-  StrCpy $BindAllFlag "0"
-FunctionEnd
-
-Function CoreOptionsPage
-  !insertmacro MUI_HEADER_TEXT "Options" "Choose how the Core runs on this computer."
-  nsDialogs::Create 1018
-  Pop $0
-  \${If} $0 == error
-    Abort
-  \${EndIf}
-  \${NSD_CreateCheckbox} 0 10u 100% 12u "Keep the Core running in the background"
-  Pop $ServiceCheckbox
-  \${NSD_Check} $ServiceCheckbox
-  \${NSD_CreateLabel} 10u 24u -10u 20u "Starts the Core at login so it is always ready. When off, a tomat Client on this computer starts it on demand."
-  Pop $0
-  \${NSD_CreateCheckbox} 0 52u 100% 12u "Allow other devices on this network to pair"
-  Pop $BindAllCheckbox
-  \${NSD_CreateLabel} 10u 66u -10u 20u "When off, only this computer can reach the Core. Changeable later in the Core's settings.json."
-  Pop $0
-  nsDialogs::Show
-FunctionEnd
-
-Function CoreOptionsPageLeave
-  \${NSD_GetState} $ServiceCheckbox $0
-  \${If} $0 == \${BST_CHECKED}
-    StrCpy $ServiceFlag "1"
-  \${Else}
-    StrCpy $ServiceFlag "0"
-  \${EndIf}
-  \${NSD_GetState} $BindAllCheckbox $0
-  \${If} $0 == \${BST_CHECKED}
-    StrCpy $BindAllFlag "1"
-  \${Else}
-    StrCpy $BindAllFlag "0"
-  \${EndIf}
-FunctionEnd
-
-Section "Install"
-  SetOutPath "$INSTDIR\\bin"
-  File /r "${join(payloadDir, "bin")}\\*"
-  SetOutPath "$INSTDIR\\workers"
-  File /r "${join(payloadDir, "workers")}\\*"
-  WriteUninstaller "$INSTDIR\\uninstall.exe"
-  WriteRegStr HKCU "\${UNINST_KEY}" "DisplayName" "${displayName}"
-  WriteRegStr HKCU "\${UNINST_KEY}" "DisplayVersion" "${version}"
-  WriteRegStr HKCU "\${UNINST_KEY}" "Publisher" "tomat"
-  WriteRegStr HKCU "\${UNINST_KEY}" "UninstallString" '"$INSTDIR\\uninstall.exe"'
-  WriteRegStr HKCU "\${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\\uninstall.exe" /S'
-  ; Provision + start via the binary's own subcommand (bootstrap, service or
-  ; background launch, and the authoritative Add/Remove Programs entry).
-  ; Background mode must NOT run under nsExec: nsExec reads the command's
-  ; output through a pipe, the detached core that install-service leaves
-  ; running inherits that pipe's write end (every spawn hop on Windows passes
-  ; bInheritHandles), and nsExec's read-to-EOF then blocks forever even after
-  ; install-service exits (the same hang scripts/install/core.ps1 documents).
-  ; ExecWait uses no pipe, at the cost of a briefly visible console. Service
-  ; mode keeps nsExec's hidden console: the Task Scheduler starts the core
-  ; out-of-tree, so no long-lived process ever holds the pipe.
-  \${If} $ServiceFlag == "0"
-    ExecWait 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& set TOMAT_INSTALL_SERVICE=$ServiceFlag&& set TOMAT_INSTALL_BIND_ALL=$BindAllFlag&& "$INSTDIR\\bin\\${binName}" install-service' $0
-  \${Else}
-    nsExec::Exec 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& set TOMAT_INSTALL_SERVICE=$ServiceFlag&& set TOMAT_INSTALL_BIND_ALL=$BindAllFlag&& "$INSTDIR\\bin\\${binName}" install-service'
-    Pop $0
-  \${EndIf}
-  DetailPrint "install-service exited $0"
-SectionEnd
-
-Section "Uninstall"
-  nsExec::Exec 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& "$INSTDIR\\bin\\${binName}" uninstall-service'
-  Pop $0
-  DeleteRegKey HKCU "\${UNINST_KEY}"
-  RMDir /r "$INSTDIR"
-SectionEnd
-`;
-}
-
 // ---------------------------------------------------------------------------
 // Linux .deb + .rpm (dpkg-deb / rpmbuild)
 
 async function buildLinuxPackages(
   built: CoreBuildArtifacts,
   opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset[]> {
-  const assets: CoreInstallerAsset[] = [];
+): Promise<InstallerAsset[]> {
+  const assets: InstallerAsset[] = [];
   const deb = await buildDeb(built, opts).catch((e) => {
     info(colors.yellow(`Core .deb build skipped: ${e instanceof Error ? e.message : e}`));
     return null;
@@ -515,7 +279,7 @@ function rpmArch(triple: Triple): string {
 async function buildDeb(
   built: CoreBuildArtifacts,
   opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset> {
+): Promise<InstallerAsset> {
   if (!(await have("dpkg-deb"))) throw new Error("dpkg-deb not available");
   const { version, channel, triple } = opts;
   const suffix = channelBinSuffix(channel);
@@ -530,25 +294,40 @@ async function buildDeb(
   await Deno.writeTextFile(
     join(debian, "control"),
     `Package: ${pkgName}\nVersion: ${version}\nArchitecture: ${debArch(triple)}\n` +
-      `Maintainer: tomat <noreply@au.tomat.ing>\nSection: utils\nPriority: optional\n` +
-      `Description: tomat Core - the local-first AI client service\n`,
+      `Maintainer: Tomat <noreply@au.tomat.ing>\nSection: utils\nPriority: optional\n` +
+      `Description: Tomat Core - the local-first AI client service\n`,
   );
   const postinst = join(debian, "postinst");
   const prerm = join(debian, "prerm");
+  const postrm = join(debian, "postrm");
   await Deno.writeTextFile(postinst, linuxPostinst(channel, prefix, binName));
   await Deno.writeTextFile(prerm, linuxPrerm(channel, prefix, binName));
+  await Deno.writeTextFile(postrm, linuxPostrm(channel));
   await Deno.chmod(postinst, 0o755);
   await Deno.chmod(prerm, 0o755);
+  await Deno.chmod(postrm, 0o755);
 
   const outFile = join(work, `${pkgName}_${version}_${debArch(triple)}.deb`);
-  await run(["dpkg-deb", "--root-owner-group", "--build", debRoot, outFile]);
-  return await record(outFile, triple, "deb");
+  // zstd instead of the default xz: xz spends ~2 min on the multi-hundred-MB core
+  // binary while zstd takes seconds, for a ~20% larger .deb. The level is pinned:
+  // dpkg's own zstd default is 3, which costs another ~20% of size for a tenth of
+  // a second, and 19 is slower than the xz it replaces. zstd needs dpkg 1.21.18+
+  // (Debian 12+, Ubuntu 18.04+); on anything older dpkg-deb rejects -Zzstd, so
+  // fall back to xz rather than let buildLinuxPackages swallow the failure and
+  // publish a release with no .deb at all.
+  const buildWith = (compression: string[]) =>
+    run(["dpkg-deb", "--root-owner-group", ...compression, "--build", debRoot, outFile]);
+  await buildWith(["-Zzstd", "-z9"]).catch(async (e) => {
+    info(colors.yellow(`dpkg-deb -Zzstd failed (${e instanceof Error ? e.message : e}); using xz`));
+    await buildWith(["-Zxz"]);
+  });
+  return await record(outFile, triple, "core", "deb", version);
 }
 
 async function buildRpm(
   built: CoreBuildArtifacts,
   opts: CoreInstallerOpts,
-): Promise<CoreInstallerAsset> {
+): Promise<InstallerAsset> {
   if (!(await have("rpmbuild"))) throw new Error("rpmbuild not available");
   const { version, channel, triple } = opts;
   const suffix = channelBinSuffix(channel);
@@ -581,7 +360,7 @@ async function buildRpm(
     // debug_package nil suppresses the debuginfo subpackage. The core binary is
     // shipped gzipped (see above) so brp never touches it either way.
     `%global __os_install_post %{nil}\n%global debug_package %{nil}\n\n` +
-      `Name: ${pkgName}\nVersion: ${version}\nRelease: 1\nSummary: tomat Core service\n` +
+      `Name: ${pkgName}\nVersion: ${version}\nRelease: 1\nSummary: Tomat Core service\n` +
       `License: proprietary\nBuildArch: ${rpmArch(triple)}\n\n` +
       `%description\ntomat Core - the local-first AI client service.\n\n` +
       `%files\n${prefix}\n\n` +
@@ -606,7 +385,7 @@ async function buildRpm(
     if (e.name.endsWith(".rpm")) outFile = join(rpmDir, e.name);
   }
   if (!outFile) throw new Error("rpmbuild produced no .rpm");
-  return await record(outFile, triple, "rpm");
+  return await record(outFile, triple, "core", "rpm", version);
 }
 
 // The install/removal bodies are shared between the deb maintainer scripts and
@@ -633,23 +412,54 @@ else
   cp -R "${prefix}/bin/." "$DEST/bin/"${gunzip}
   cp -R "${prefix}/workers/." "$DEST/workers/"
   chown -R "$TARGET_USER" "$USER_HOME/.tomat/${channel}"
+  # On a first-ever install the mkdir above created ~/.tomat itself as root; the
+  # user's install-service must be able to create the shared models dir in it.
+  chown "$TARGET_USER" "$USER_HOME/.tomat"
   su - "$TARGET_USER" -c "TOMAT_CHANNEL=${channel} '$DEST/bin/${binName}' install-service" || true
 fi`;
 }
-export function linuxPreunBody(channel: ReleaseChannel, _prefix: string, binName: string): string {
+export function linuxPreunBody(
+  channel: ReleaseChannel,
+  _prefix: string,
+  binName: string,
+  opts: { keepData?: boolean } = {},
+): string {
   // Only tear down on a genuine removal, never on upgrade. dpkg runs prerm with
   // "remove" on removal and "upgrade" on upgrade; rpm runs %preun with 0 on the
   // final erase and 1 on upgrade. Running uninstall-service on upgrade would wipe
   // ~/.tomat/<channel>/core (sessions, memories, keychain master key) on every
   // version bump; on upgrade the new package's postinst re-runs the idempotent
   // install-service instead, which preserves that data.
+  //
+  // keepData maps dpkg's remove-vs-purge split onto uninstall-service: `apt
+  // remove` (prerm "remove") only stops + unregisters the service, and the data
+  // wipe waits for `dpkg -P` (postrm "purge", linuxPostrmBody). rpm has no purge
+  // concept - its final erase IS the purge - so %preun keeps the full teardown.
+  const flags = opts.keepData ? " --keep-data" : "";
   return `case "$1" in
 remove|0)
   TARGET_USER="\${SUDO_USER:-$(logname 2>/dev/null || true)}"
   if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
     USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
     DEST="$USER_HOME/.tomat/${channel}/core"
-    su - "$TARGET_USER" -c "TOMAT_CHANNEL=${channel} '$DEST/bin/${binName}' uninstall-service" || true
+    su - "$TARGET_USER" -c "TOMAT_CHANNEL=${channel} '$DEST/bin/${binName}' uninstall-service${flags}" || true
+  fi
+  ;;
+esac`;
+}
+export function linuxPostrmBody(channel: ReleaseChannel): string {
+  // dpkg -P (purge) removes the data `apt remove` kept. The package payload -
+  // the core binary included - is already gone by postrm, so this is a plain
+  // rm -rf of the per-user channel core dir; the shared ~/.tomat/models dir is
+  // always kept, and the keychain master key may linger (the binary that could
+  // clear it is gone) - both documented in the manual's uninstalling article.
+  return `case "$1" in
+purge)
+  TARGET_USER="\${SUDO_USER:-$(logname 2>/dev/null || true)}"
+  if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
+    USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+    rm -rf "$USER_HOME/.tomat/${channel}/core"
+    rmdir "$USER_HOME/.tomat/${channel}" 2>/dev/null || true
   fi
   ;;
 esac`;
@@ -658,16 +468,24 @@ function linuxPostinst(channel: ReleaseChannel, prefix: string, binName: string)
   return `#!/bin/sh\nset -e\n${linuxPostBody(channel, prefix, binName)}\nexit 0\n`;
 }
 function linuxPrerm(channel: ReleaseChannel, prefix: string, binName: string): string {
-  return `#!/bin/sh\nset -e\n${linuxPreunBody(channel, prefix, binName)}\nexit 0\n`;
+  return `#!/bin/sh\nset -e\n${linuxPreunBody(channel, prefix, binName, { keepData: true })}\nexit 0\n`;
+}
+function linuxPostrm(channel: ReleaseChannel): string {
+  return `#!/bin/sh\nset -e\n${linuxPostrmBody(channel)}\nexit 0\n`;
 }
 
 // ---------------------------------------------------------------------------
-// publish: upload the installers + a signed core-installers.json manifest
+// publish: upload the installers + a signed installers.json manifest
 
-interface CoreInstallersManifest {
-  version: string;
+export interface InstallersManifest {
+  /** The core version the core-kind entries (and every unified payload's Core
+   *  half) were built from. */
+  coreVersion: string;
+  /** The client version the unified installers wrap (and are uploaded under). */
+  clientVersion: string;
   installers: Array<{
-    format: CoreInstallerAsset["format"];
+    kind: InstallerAsset["kind"];
+    format: InstallerAsset["format"];
     triple: Triple;
     filename: string;
     url: string;
@@ -676,33 +494,47 @@ interface CoreInstallersManifest {
   }>;
 }
 
-/** Upload every built Core installer to R2 and publish a signed
- *  core-installers.json (Ed25519, same trust root as core.json) the website's
- *  download CTA reads. Carries forward same-version entries from the live
- *  manifest a single-runner publish didn't rebuild. Returns the installer
- *  binaries as GitHub-Release assets ({ path, flat name }) so the caller can
- *  mirror them to the rolling release exactly like client bundles/APKs; the
- *  core-installers.json + .sig it writes under dist/<manifestDir> are picked up
- *  by the publisher's manifest walk automatically. */
-export async function uploadCoreInstallers(
+/** Version-less current/ alias filename for an installer, the stable URL the
+ *  website links without knowing versions. Kept in sync with the download
+ *  helpers (appInstallers/linuxCoreInstallers) in the website's lib/install.ts. */
+export function installerAliasName(a: InstallerAsset, channel: ReleaseChannel): string {
+  if (a.kind === "core") return coreInstallerStableName(a.format, channel);
+  const suffix = channelBinSuffix(channel);
+  return a.format === "exe" ? `tomat${suffix}-setup.exe` : `tomat${suffix}.pkg`;
+}
+
+/** Upload every built installer (the unified Windows .exe / macOS .pkg and the
+ *  Linux Core packages) to R2 and publish a signed installers.json (Ed25519,
+ *  same trust root as core.json) the website's download CTA reads. Carries
+ *  forward same-version entries from the live manifest a single-runner publish
+ *  didn't rebuild - only while BOTH versions match, so a bump on either side
+ *  drops the stale entries. Returns the installer binaries as GitHub-Release
+ *  assets ({ path, flat name }) so the caller can mirror them to the rolling
+ *  release exactly like client bundles/APKs; the installers.json + .sig it
+ *  writes under dist/<manifestDir> are picked up by the publisher's manifest
+ *  walk automatically. */
+export async function uploadInstallers(
   env: DeployEnv,
   channel: ReleaseChannel,
-  version: string,
-  installers: CoreInstallerAsset[],
+  versions: { coreVersion: string; clientVersion?: string },
+  installers: InstallerAsset[],
   opts: ApplyOpts,
 ): Promise<Array<{ path: string; name: string }>> {
   if (installers.length === 0) return [];
   const manifestDir = channelManifestDir(channel);
   const storagePrefix = channelStoragePrefix(channel);
-  const live = await fetchLiveJson<CoreInstallersManifest>(
-    env,
-    `${manifestDir}/core-installers.json`,
-  );
+  const live = await fetchLiveJson<InstallersManifest>(env, `${manifestDir}/installers.json`);
 
-  step(`Composing core-installers.json (${installers.length} installer(s))`);
-  // Keep same-version entries this run did not rebuild (keyed by triple+filename).
-  const byKey = new Map<string, CoreInstallersManifest["installers"][number]>();
-  if (live?.version === version) {
+  // A run that staged no client (a Linux-only publish: deb/rpm carry the core
+  // version alone) keeps the live manifest's client version so the unified
+  // entries it carries forward stay truthful.
+  const coreVersion = versions.coreVersion;
+  const clientVersion = versions.clientVersion ?? live?.clientVersion ?? "";
+
+  step(`Composing installers.json (${installers.length} installer(s))`);
+  // Keep entries this run did not rebuild (keyed by triple+filename).
+  const byKey = new Map<string, InstallersManifest["installers"][number]>();
+  if (live?.coreVersion === coreVersion && live?.clientVersion === clientVersion) {
     for (const e of live.installers) byKey.set(`${e.triple}/${e.filename}`, e);
   }
   const uploads: Array<{
@@ -714,8 +546,12 @@ export async function uploadCoreInstallers(
   }> = [];
   for (const a of installers) {
     const path = await reanchorFile(a.relPath, a.sha256);
-    const key = `${storagePrefix}${version}/${a.triple}/${a.filename}`;
+    // Each asset uploads under its own version namespace (client version for
+    // unified installers, core version for the Linux packages; see
+    // InstallerAsset.version).
+    const key = `${storagePrefix}${a.version}/${a.triple}/${a.filename}`;
     byKey.set(`${a.triple}/${a.filename}`, {
+      kind: a.kind,
       format: a.format,
       triple: a.triple,
       filename: a.filename,
@@ -730,30 +566,34 @@ export async function uploadCoreInstallers(
       size: a.size,
       // Version-less alias so the website links a stable download URL without
       // knowing the version (mirrors android.ts's current/ APK alias).
-      aliasKey: `${storagePrefix}current/${a.triple}/${coreInstallerStableName(a.format, channel)}`,
+      aliasKey: `${storagePrefix}current/${a.triple}/${installerAliasName(a, channel)}`,
     });
   }
 
-  const manifest: CoreInstallersManifest = { version, installers: [...byKey.values()] };
+  const manifest: InstallersManifest = {
+    coreVersion,
+    clientVersion,
+    installers: [...byKey.values()],
+  };
 
   const outDir = join(DIST_DIR, manifestDir);
   await ensureDir(outDir);
-  const manifestPath = join(outDir, "core-installers.json");
+  const manifestPath = join(outDir, "installers.json");
   await Deno.writeTextFile(manifestPath, JSON.stringify(manifest, null, 2));
-  ok(`core-installers.json → ${rel(manifestPath)}`);
+  ok(`installers.json → ${rel(manifestPath)}`);
 
   // Detached Ed25519 signature over the exact manifest bytes (same trust root +
   // shape as client.json.sig), so a consumer can authenticate it before trusting
   // any URL/sha256 it lists.
   const sig = await signEd25519Bytes(env.signingPrivateKey, await Deno.readFile(manifestPath));
-  const sigPath = join(outDir, "core-installers.json.sig");
+  const sigPath = join(outDir, "installers.json.sig");
   await Deno.writeTextFile(sigPath, sig);
 
   if (opts.dryRun) {
     info(colors.yellow(`dry-run: skipping upload of ${uploads.length} installer(s) + manifest`));
     return [];
   }
-  step(`Uploading Core installer(s) to R2 bucket "${env.r2Bucket}"`);
+  step(`Uploading installer(s) to R2 bucket "${env.r2Bucket}"`);
   const ghAssets = await mapPool(uploads, R2_CONCURRENCY, async (u) => {
     info(`uploading ${u.key}  (${humanBytes(u.size)})`);
     await r2Put(env, u.key, u.path, "application/octet-stream");
@@ -761,7 +601,7 @@ export async function uploadCoreInstallers(
     // Mirror to the version-less current/ alias the website links against via a
     // server-side copy (no re-upload). Short cache (via the same header the
     // manifests use); the versioned copy above is the source of truth the signed
-    // core-installers.json names.
+    // installers.json names.
     info(`copying ${u.aliasKey}  (alias)`);
     await r2Copy(env, u.key, u.aliasKey, u.path, "application/octet-stream", "public, max-age=300");
     // u.label is already the per-triple-unique flat name (`<triple>_<filename>`),
@@ -771,18 +611,18 @@ export async function uploadCoreInstallers(
   });
   await r2Put(
     env,
-    `${manifestDir}/core-installers.json`,
+    `${manifestDir}/installers.json`,
     manifestPath,
     "application/json",
     "public, max-age=300",
   );
   await r2Put(
     env,
-    `${manifestDir}/core-installers.json.sig`,
+    `${manifestDir}/installers.json.sig`,
     sigPath,
     "text/plain",
     "public, max-age=300",
   );
-  ok(`https://${env.storageDomain}/${manifestDir}/core-installers.json`);
+  ok(`https://${env.storageDomain}/${manifestDir}/installers.json`);
   return ghAssets;
 }

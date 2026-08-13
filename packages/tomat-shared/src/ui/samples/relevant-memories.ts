@@ -8,7 +8,7 @@ export const relevantMemoriesSamples = {
     memories: [
       {
         memoryId: "1",
-        title: "Installing tomat",
+        title: "Installing Tomat",
         score: 0.92,
         summary: "One-line installer + launch.",
       },
@@ -18,7 +18,7 @@ export const relevantMemoriesSamples = {
   none: { defaultExpanded: true, memories: [] },
   collapsed: {
     defaultExpanded: false,
-    memories: [{ memoryId: "1", title: "Installing tomat", score: 0.92 }],
+    memories: [{ memoryId: "1", title: "Installing Tomat", score: 0.92 }],
   },
   error: {
     defaultExpanded: true,

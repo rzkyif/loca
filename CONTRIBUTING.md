@@ -47,7 +47,7 @@ than a duplicate.
 
 The project distinguishes two kinds of request:
 
-- A **feature request** asks for a new capability that tomat does not have
+- A **feature request** asks for a new capability that Tomat does not have
   today.
 - An **improvement** asks for a refinement to a feature that already exists,
   such as reducing friction, clarifying copy, or adding a missing shortcut.

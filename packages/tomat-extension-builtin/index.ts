@@ -1,4 +1,4 @@
-// Entry module the tomat extension worker imports. Each tool's function is
+// Entry module the Tomat extension worker imports. Each tool's function is
 // declared in tomat.json and exported by name here.
 
 export { download } from "./src/download.ts";

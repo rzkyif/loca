@@ -1,4 +1,4 @@
-// Speech-to-Text catalog: the sherpa-onnx offline-recognizer bundles tomat
+// Speech-to-Text catalog: the sherpa-onnx offline-recognizer bundles Tomat
 // offers, served by the tomat-core-speech sidecar.
 //
 // Sources (verified against the HuggingFace API tree on 2026-06-15): each

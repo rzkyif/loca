@@ -13,6 +13,25 @@ export const coresFieldSamples = {
       { id: "d3", name: "Pixel 8", lastSeenLabel: "last seen 2 hours ago", isMe: false },
     ],
   },
+  // A same-device Core fresh from the installer: no admin password yet, so
+  // codes mint without a prompt and the password section offers to set one.
+  localNoPassword: {
+    draftName: "Local Core",
+    baseUrl: "https://127.0.0.1:7800",
+    isCurrent: true,
+    adminPasswordSet: false,
+    canSetPassword: true,
+    devices: [{ id: "d1", name: "This Mac", lastSeenLabel: "active now", isMe: true }],
+  },
+  // The same Core once a password exists: the section flips to replace mode.
+  localWithPassword: {
+    draftName: "Local Core",
+    baseUrl: "https://127.0.0.1:7800",
+    isCurrent: true,
+    adminPasswordSet: true,
+    canSetPassword: true,
+    devices: [{ id: "d1", name: "This Mac", lastSeenLabel: "active now", isMe: true }],
+  },
   mintedCode: {
     draftName: "Studio Mac",
     baseUrl: "https://192.168.1.20:8787",

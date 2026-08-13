@@ -13,7 +13,7 @@ mod types;
 use crate::commands::*;
 use crate::logging::client_log;
 use crate::state::{AppState, AppStateInner};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex};
 
 #[cfg(desktop)]
@@ -41,9 +41,11 @@ fn new_app_state() -> AppState {
         input_shortcuts: Mutex::new(Vec::new()),
         ptt: Mutex::new(crate::state::PttState::default()),
         region_capture_target: Mutex::new("primary".to_string()),
-        install_in_progress: AtomicBool::new(false),
-        install_last_finished_ms: AtomicI64::new(0),
         spawned_core_pid: AtomicU32::new(0),
+        #[cfg(desktop)]
+        tray_core_item: Mutex::new(None),
+        #[cfg(desktop)]
+        tray_core_running: AtomicBool::new(false),
     }))
 }
 
@@ -184,7 +186,7 @@ pub fn run() {
     #[cfg(desktop)]
     {
         logging::init();
-        log::info!(target: "tomat::boot", "tomat Client starting (channel={})", crate::channel::channel());
+        log::info!(target: "tomat::boot", "Tomat Client starting (channel={})", crate::channel::channel());
     }
 
     // Register the OS keychain as keyring-core's default store before any
@@ -253,8 +255,22 @@ fn run_desktop() {
 
             let toggle_item =
                 MenuItem::with_id(app, "toggle_display", "Hide Display", true, None::<&str>)?;
+            // Start / Stop the core installed on this device. Starts disabled,
+            // saying so, until the webview reports otherwise (see
+            // set_tray_core_state); its label then follows that core's running
+            // state. A tray item cannot be hidden, so "no core here" is a label.
+            let core_item =
+                MenuItem::with_id(app, "core_toggle", NO_CORE_LABEL, false, None::<&str>)?;
             let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&toggle_item, &exit_item])?;
+            let tray_menu = Menu::with_items(app, &[&toggle_item, &core_item, &exit_item])?;
+            {
+                let state: State<AppState> = app.state();
+                let app_state = state.inner().clone();
+                let lock_result = app_state.0.tray_core_item.lock();
+                if let Ok(mut slot) = lock_result {
+                    *slot = Some(core_item);
+                }
+            }
 
             let tray_toggle_item = toggle_item.clone();
             let menu_toggle_item = toggle_item.clone();
@@ -278,9 +294,9 @@ fn run_desktop() {
                         if let Some(state) = app.try_state::<AppState>() {
                             let is_visible = toggle_window(app, &state.0.visible);
                             let _ = tray_toggle_item.set_text(if is_visible {
-                                "Hide tomat"
+                                "Hide Tomat"
                             } else {
-                                "Show tomat"
+                                "Show Tomat"
                             });
                         }
                     }
@@ -290,10 +306,26 @@ fn run_desktop() {
                         if let Some(state) = app.try_state::<AppState>() {
                             let is_visible = toggle_window(app, &state.0.visible);
                             let _ = menu_toggle_item.set_text(if is_visible {
-                                "Hide tomat"
+                                "Hide Tomat"
                             } else {
-                                "Show tomat"
+                                "Show Tomat"
                             });
+                        }
+                    }
+                    // Emit the intent rather than acting on it: the webview owns
+                    // the start/stop flow (it also has to reconnect afterwards),
+                    // so the tray and the CoreBar pill run the same code.
+                    "core_toggle" => {
+                        if let Some(state) = app.try_state::<AppState>() {
+                            let running = state.0.tray_core_running.load(Ordering::SeqCst);
+                            let _ = app.emit(
+                                if running {
+                                    "tray-core-stop"
+                                } else {
+                                    "tray-core-start"
+                                },
+                                (),
+                            );
                         }
                     }
                     "exit" => {
@@ -350,13 +382,15 @@ fn run_desktop() {
             // Pairing / admin
             read_admin_token,
             read_local_core_boot_error,
-            install_local_core,
-            enable_core_behind_proxy,
             local_core_installed,
+            local_core_running,
             local_core_base_url,
             local_sidecar_ports,
             start_local_core,
+            stop_local_core,
             read_launch_prefill,
+            // Tray
+            set_tray_core_state,
             // Client files (settings / cores / snippets) + keychain
             read_client_file,
             write_client_file,
@@ -423,7 +457,7 @@ fn run_mobile() {
                 .ok()
                 .map(|root| root.join("logs"));
             crate::logging::init_with_log_dir(log_dir);
-            log::info!(target: "tomat::boot", "tomat Client starting (channel={})", crate::channel::channel());
+            log::info!(target: "tomat::boot", "Tomat Client starting (channel={})", crate::channel::channel());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

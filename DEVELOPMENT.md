@@ -1,11 +1,11 @@
-# Developing tomat
+# Developing Tomat
 
-This document covers tomat's architecture and how to build and run it from
+This document covers Tomat's architecture and how to build and run it from
 source. For the project's contribution policy, see
 [CONTRIBUTING.md](CONTRIBUTING.md). Each package has its own README with the
 deeper detail; this file stays at the getting-started level.
 
-tomat is a local-first modular AI client. **tomat** runs the LLM,
+Tomat is a local-first modular AI client. **Tomat** runs the LLM,
 speech-to-text, text-to-speech, and tool execution as a long-running service
 (`tomat-core`) that can sit on the same machine as the UI or on a different one
 (e.g. your gaming PC). The desktop client (`tomat-client`) is a small
@@ -97,10 +97,11 @@ install; a build failure surfaces in the dev log and core declines to start.
     libsecret-1-dev patchelf
   ```
 
-- **shellcheck** for linting the shell install scripts (`brew install shellcheck`
-  / `apt install shellcheck`). `deno task lint` runs it over `scripts/**/*.sh`;
-  when it is absent the check skips with a warning locally, but CI installs it so
-  the check is enforced.
+- **shellcheck** for linting the tracked shell scripts, e.g. the installer
+  templates under `scripts/release/templates/` (`brew install shellcheck`
+  / `apt install shellcheck`). `deno task lint` runs it over every tracked
+  `.sh` file; when it is absent the check skips with a warning locally, but CI
+  installs it so the check is enforced.
 
 - **Native installer tooling** (only if a local `deno task release` should
   package the conventional Core/Client installers for the host OS): `pkgbuild` +
@@ -136,25 +137,25 @@ The core listens on `127.0.0.1:7800` and the client UI runs at
 ### Connecting the client to the dev core
 
 `deno task dev` runs the core from source, seeds a dev admin token at
-`~/.tomat/dev/core/.admin-token`, and prints a pairing code. In the client's
-first-run screen choose **"On another computer"**, enter the URL
-`http://127.0.0.1:7800`, and paste the printed code. The pairing persists across
-dev restarts. **Do not** click "On this computer" in dev. That path runs the
-production installer (it looks for a compiled core binary, which dev never
-builds) and would install a stable core over your dev session.
+`~/.tomat/dev/core/.admin-token`, and prints a pairing code. On a reset first
+run the client silently pairs with the dev core on its own (the dev channel
+reports it as an installed local core); the printed URL + code are the manual
+fallback for the welcome remote-connect page (`deno task dev:reset:install`
+exercises that page). The pairing persists across dev restarts.
 
 Each `deno task dev` start also sets a fresh, randomly-generated **admin
 password** on the dev core and prints it in the `[dev]` banner (e.g.
 `dev-1a2b3c4d`). Use it to exercise the password-gated flows under **Cores** in
 Settings: **Generate pairing code** and removing a paired device. It is
 overwritten every run (the stored hash can't be read back), so use the value
-from the latest banner. `--fresh-install` skips this: there the in-app install
-screen sets its own password.
+from the latest banner. `--fresh-install` skips this: it exercises the
+no-password first-boot state, where a password is set later under **Cores** in
+Settings.
 
 ### Building
 
 ```bash
-deno task build         # build everything that changed (core/client/catalog/android) for the latest channel
+deno task build         # build everything that changed (core/client/catalog/android/ios) for the latest channel
 deno task build:stable  # ... for the stable channel
 deno task build:native  # same, but only for the current host triple
 ```
@@ -163,8 +164,10 @@ deno task build:native  # same, but only for the current host triple
 build and skips the rest (tracked by a `dist/.build-state.json` cursor). Run
 `deno task clean` or pass `--force` to rebuild from scratch. It mirrors the
 umbrella `deno task release` item set: core + helpers, the desktop client, the
-model catalog, and the android client (built only when an Android keystore is
-configured in `.env`; otherwise it is skipped with a note). The landing page is
+model catalog, the android client (built only when an Android keystore is
+configured in `.env`; otherwise it is skipped with a note), and the ios client
+(built only when Apple signing is configured in `.env` on a mac with Xcode;
+build-only, the App Store upload happens at release). The landing page is
 NOT part of `build`; it builds on its own via `deno task build:website` and is
 released as part of the umbrella `deno task release` (its release item runs the
 Astro build itself). The granular `build:core` / `build:client` tasks force-build
@@ -273,10 +276,10 @@ The same client builds for iOS from the same Tauri project (the shared
 `osPlatform()`). The iOS app is remote-only, exactly like Android. Distribution
 is **App Store only**: iOS cannot sideload a signed `.ipa`, so there is no
 self-hosted manifest and no OTA self-update (`updater.check` returns null on iOS;
-updates come from the store). Everything below the dev loop is **inert until an
-Apple Developer account + the `APPLE_*` env exist**, mirroring how the macOS
-Developer ID signing is plumbed-but-off (see
-[macos-signing.md](scripts/release/macos-signing.md)).
+updates come from the store). Everything below the dev loop is **secret-driven
+by the `APPLE_*` env**, mirroring the macOS Developer ID signing: absent, the
+build/release paths self-skip with a note; present, they sign and ship with no
+other switch (see [macos-signing.md](scripts/release/macos-signing.md)).
 
 **One-time host toolchain** (macOS only; Apple tooling cannot cross-build):
 
@@ -315,22 +318,21 @@ Tauri `identifier` is not overridden, for the same reason as Android).
 **Signing + release.** A signed `.ipa` needs an Apple Developer account: a Team
 ID plus a signing certificate (`APPLE_TEAM_ID`, `APPLE_SIGNING_IDENTITY` or the
 base64 `APPLE_CERTIFICATE` on CI) and the App Store Connect API key trio
-(`APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH`) to upload to
-TestFlight / the App Store. Without them, `build:client:ios` falls back to an
-unsigned Simulator build and `scripts/release/main.ts` drops the iOS item (like
-it drops android without a keystore).
-
-**iOS stays dormant until you flip one switch**, so it never interferes with
-other development before the account is ready. Today `deno task build` and
-`deno task release` do nothing for iOS (build has no iOS item; release drops it),
-and the CI iOS jobs (the `ios` cross-compile check in `ci.yml` and the `.ipa`
-build on the release runner) are gated behind an **`IOS_ENABLED` repo variable**
-and stay skipped, consuming no macOS runner minutes. Only `dev:ios` is active. To
-turn iOS on once the account lands: add the `APPLE_*` secrets and set the
-`IOS_ENABLED` repo variable to `true`; the same paths then build/sign/upload with
-no code change. The App Store Connect app record + App Review submission are the
-remaining account-side steps (see
-[macos-signing.md](scripts/release/macos-signing.md)).
+(`APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH` locally; on CI the
+`.p8` rides base64 in `APPLE_API_KEY_B64` and the release script materializes
+the file itself) to upload to TestFlight / the App Store. Without them,
+`build:client:ios` falls back to an unsigned Simulator build, `deno task build`
+and `scripts/release/main.ts` drop the iOS item with a note (like android
+without a keystore), and the `.ipa` leg of the CI release skips - so an
+unconfigured checkout builds and releases exactly as if iOS did not exist. With
+them, `deno task build` produces the signed `.ipa` into `dist/ios/` (build-only,
+never uploads) and a release builds + uploads it to App Store Connect; there is
+no separate enable flag. The API key drives Xcode's automatic cloud signing, so
+it needs the Admin role. The App Store Connect app record must exist before the
+first upload, and App Review submission stays manual (see
+[macos-signing.md](scripts/release/macos-signing.md)). The `ios` cross-compile
+check in `ci.yml` needs no secrets and runs on every `main` push, like the
+android job.
 
 **`gen/apple` hygiene.** Same as `gen/android`: treat the generated Xcode project
 as source (commit it, `.gitignore` build output + signing material), with

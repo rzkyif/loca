@@ -14,6 +14,7 @@
   } from "$lib/platform/select";
   import { connectionState } from "$stores/connection.svelte";
   import { coreStatusState } from "$stores/core-status.svelte";
+  import { localCoreState } from "$stores/local-core.svelte";
   import { makeUiContext, setUiContext } from "@tomat/shared/ui/context";
   import { getDefaultSettings } from "@tomat/shared";
   import { settingsState } from "$stores";
@@ -79,6 +80,10 @@
     // Backend core status (core.status frames) feeds the CoreBar alongside the
     // transport state above; same persistent-subscription rationale.
     coreStatusState.attach();
+    // Liveness of the core installed on this device, feeding the tray's Start /
+    // Stop Core item and the CoreBar's Stopped pill. Probes on boot and on every
+    // transport transition; never polls.
+    localCoreState.attach();
     // Android injects the soft-keyboard / safe-area insets natively as CSS
     // variables (see the Android MainActivity). iOS has no such native layer, so
     // the shell reads the safe area from CSS env() (the .platform-ios class in

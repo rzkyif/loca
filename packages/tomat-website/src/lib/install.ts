@@ -1,38 +1,14 @@
-// Install-command logic, shared by the no-JS baseline (InstallGenerator.astro)
-// and the enhanced island (InstallGenerator.svelte) so the two never drift. The
-// command set mirrors the published installers under get.au.tomat.ing/install:
-// env vars sit on the `sh`/`bash` side of the pipe (so the script, not curl,
-// sees them) and as `$env:` lines on Windows PowerShell.
+// Download + how-to logic for the install page, shared by the no-JS baseline
+// (InstallGenerator.astro) and the enhanced island (InstallGenerator.svelte) so
+// the two never drift. Every download is a native installer published under
+// version-less `current/<triple>/<stable-name>` R2 keys: the unified installer
+// (Client + optional Core) on macOS/Windows, the Client AppImage + the Core
+// .deb/.rpm on Linux (the one split platform), and the APK on Android.
 
 export const STORAGE_BASE = "https://get.au.tomat.ing";
 
-export type Target = "client" | "core";
 export type Os = "macos" | "linux" | "windows" | "android";
 export type Channel = "stable" | "latest";
-
-export interface CoreOptions {
-  /** Listen on the network (TOMAT_INSTALL_BIND_ALL) so other machines pair. */
-  bindAll: boolean;
-  /** Run as a background service at login (TOMAT_INSTALL_SERVICE). */
-  service: boolean;
-  /** Served through an HTTPS reverse proxy (TOMAT_INSTALL_BEHIND_PROXY):
-   *  clients then trust the proxy's real certificate when pairing instead of
-   *  pinning the Core's own. Must be set before the first pair. */
-  behindProxy: boolean;
-}
-
-export interface ClientUninstallOptions {
-  /** Keep the Client's settings instead of removing them (--keep-data /
-   *  TOMAT_KEEP_DATA). The paired-core list is always removed regardless, so a
-   *  re-install starts clean and does not reach for a Core that is gone. */
-  keepData: boolean;
-}
-
-export interface CoreUninstallOptions {
-  /** Keep the Core's sessions and memories instead of removing them
-   *  (--keep-data / TOMAT_KEEP_DATA). */
-  keepData: boolean;
-}
 
 export interface OsChoice {
   id: Os;
@@ -40,114 +16,25 @@ export interface OsChoice {
   icon: string;
 }
 
-// Client runs everywhere; the core has no Android build.
-export const CLIENT_OS: OsChoice[] = [
+export const OS_CHOICES: OsChoice[] = [
   { id: "macos", label: "macOS", icon: "i-mdi-apple" },
   { id: "linux", label: "Linux", icon: "i-mdi-linux" },
   { id: "windows", label: "Windows", icon: "i-mdi-microsoft-windows" },
   { id: "android", label: "Android", icon: "i-mdi-android" },
 ];
-export const CORE_OS: OsChoice[] = CLIENT_OS.slice(0, 3);
-
-export function osChoices(target: Target): OsChoice[] {
-  return target === "client" ? CLIENT_OS : CORE_OS;
-}
-
-// Stable is the installer's default (no env var); latest opts in via
-// TOMAT_CHANNEL. The order matches the installer: channel, then bind, then
-// service, then proxy.
-function envVars(channel: Channel, core?: CoreOptions): Array<[string, string]> {
-  const vars: Array<[string, string]> = [];
-  if (channel !== "stable") vars.push(["TOMAT_CHANNEL", channel]);
-  if (core?.bindAll) vars.push(["TOMAT_INSTALL_BIND_ALL", "1"]);
-  if (core && !core.service) vars.push(["TOMAT_INSTALL_SERVICE", "0"]);
-  if (core?.behindProxy) vars.push(["TOMAT_INSTALL_BEHIND_PROXY", "1"]);
-  return vars;
-}
-
-// Env vars ride on the runner's side of the pipe (so the script sees them);
-// `flags` are positional args the script's own arg parser reads, passed through
-// the piped runner as `<runner> -s -- <flag...>` (the uninstall scripts take
-// --keep-data this way, since they read flags, not env vars).
-function shCommand(
-  script: string,
-  runner: "sh" | "bash",
-  vars: Array<[string, string]>,
-  flags: string[] = [],
-): string {
-  const env = vars.map(([k, v]) => `${k}=${v} `).join("");
-  const tail = flags.length ? ` -s -- ${flags.join(" ")}` : "";
-  return `curl -fsSL ${STORAGE_BASE}/install/${script} | ${env}${runner}${tail}`;
-}
-
-function psCommand(script: string, vars: Array<[string, string]>): string {
-  const prefix = vars.map(([k, v]) => `$env:${k}="${v}"; `).join("");
-  return `${prefix}irm ${STORAGE_BASE}/install/${script} | iex`;
-}
-
-/** The one-liner for installing the client. Android has no shell installer
- *  (it is a sideloaded APK, see {@link androidApkUrl}), so it returns "". */
-export function clientCommand(os: Os, channel: Channel): string {
-  if (os === "android") return "";
-  const vars = envVars(channel);
-  if (os === "windows") return psCommand("client.ps1", vars);
-  return shCommand("client.sh", "sh", vars);
-}
-
-/** The one-liner for installing the core, with its options folded in. */
-export function coreCommand(os: Os, channel: Channel, opts: CoreOptions): string {
-  const vars = envVars(channel, opts);
-  if (os === "windows") return psCommand("core.ps1", vars);
-  return shCommand("core.sh", "bash", vars);
-}
-
-/** The one-liner for removing the client, with its keep-data option folded in.
- *  The paired-core list is always removed (so a re-install starts clean); keep-data
- *  only preserves the settings, and passes through as the `--keep-data` flag on
- *  bash and the `TOMAT_KEEP_DATA` env var on Windows (a switch can't cross
- *  `irm | iex`). Android has no script (it is removed like any app, see
- *  {@link androidApkUrl}), so it returns "". */
-export function clientUninstallCommand(
-  os: Os,
-  channel: Channel,
-  opts: ClientUninstallOptions,
-): string {
-  if (os === "android") return "";
-  const vars = envVars(channel);
-  if (os === "windows") {
-    if (opts.keepData) vars.push(["TOMAT_KEEP_DATA", "1"]);
-    return psCommand("client-uninstall.ps1", vars);
-  }
-  return shCommand("client-uninstall.sh", "bash", vars, opts.keepData ? ["--keep-data"] : []);
-}
-
-/** The one-liner for removing the core, with its keep-data option folded in.
- *  Mirrors {@link coreUninstallCommand}'s client twin: keep-data passes through
- *  as the `--keep-data` flag on bash and the `TOMAT_KEEP_DATA` env var on
- *  Windows. */
-export function coreUninstallCommand(os: Os, channel: Channel, opts: CoreUninstallOptions): string {
-  const vars = envVars(channel);
-  if (os === "windows") {
-    if (opts.keepData) vars.push(["TOMAT_KEEP_DATA", "1"]);
-    return psCommand("core-uninstall.ps1", vars);
-  }
-  return shCommand("core-uninstall.sh", "bash", vars, opts.keepData ? ["--keep-data"] : []);
-}
 
 // ---------------------------------------------------------------------------
-// Native installer downloads (the primary CTA)
+// Native installer downloads
 //
-// The conventional double-click installers - macOS `.dmg`/`.pkg`, Windows
-// `.exe`, the Linux Client `.AppImage`, and the Linux Core `.deb`/`.rpm` -
-// published by scripts/release/{client,core-installers}.ts. Each release also
-// mirrors every installer to a version-less
+// Published by scripts/release/{unified-installers,core-installers,client}.ts.
+// Each release mirrors every installer to a version-less
 // `current/<triple>/<stable-name>` R2 key (exactly like {@link androidApkUrl}),
 // so this page links a stable URL without knowing the version. The stable names
-// here are kept in sync with coreInstallerStableName() / clientBundleAlias() on
-// the release side.
+// here are kept in sync with installerAliasName() / clientBundleAlias() on the
+// release side.
 
 export type Arch = "arm64" | "x64";
-export type InstallerFormat = "dmg" | "pkg" | "exe" | "deb" | "rpm" | "appimage";
+export type InstallerFormat = "pkg" | "exe" | "deb" | "rpm" | "appimage";
 
 export interface NativeInstaller {
   os: Os;
@@ -187,177 +74,43 @@ function currentUrl(channel: Channel, triple: string, filename: string): string 
   return `${STORAGE_BASE}/${prefix}current/${triple}/${filename}`;
 }
 
-// The installer formats a given target offers per OS. macOS/Windows are a single
-// double-click file. On Linux the Client ships a single AppImage (the primary,
-// self-updating build the install script installs); the Core has no GUI bundle,
-// so it ships the .deb/.rpm packages for the package manager.
-function formatsFor(target: Target, os: Exclude<Os, "android">): InstallerFormat[] {
-  if (os === "macos") return target === "core" ? ["pkg"] : ["dmg"];
-  if (os === "windows") return ["exe"];
-  return target === "core" ? ["deb", "rpm"] : ["appimage"];
-}
-
-// The version-less stable filename for one installer, matching the release-side
-// alias names (coreInstallerStableName / clientBundleAlias / the dmg alias in
-// client.ts).
-function stableName(target: Target, format: InstallerFormat, channel: Channel): string {
-  const base = target === "core" ? "tomat-core" : "tomat";
-  const suffix = binSuffix(channel);
-  if (format === "exe") return `${base}${suffix}-setup.exe`;
-  // The AppImage alias keeps Tauri's capitalized ".AppImage" extension, so it
-  // can't ride the lowercase `${format}` path (that would 404 against the R2 key).
-  if (format === "appimage") return `${base}${suffix}.AppImage`;
-  return `${base}${suffix}.${format}`;
-}
-
-/** Native double-click installers for a target on an OS, one entry per
- *  arch x format. Android has no installer here (it is a sideloaded APK, see
- *  {@link androidApkUrl}), so it returns []. */
-export function nativeInstallers(target: Target, os: Os, channel: Channel): NativeInstaller[] {
+/** The MAIN download per desktop OS: the unified installer (macOS .pkg /
+ *  Windows .exe, both installing the Client and optionally the Core) or the
+ *  Linux Client AppImage. One entry per arch. Android has no installer here
+ *  (it is a sideloaded APK, see {@link androidApkUrl}), so it returns []. */
+export function appInstallers(os: Os, channel: Channel): NativeInstaller[] {
   if (os === "android") return [];
-  const out: NativeInstaller[] = [];
-  for (const [arch, triple, archLabel] of OS_TRIPLES[os]) {
-    for (const format of formatsFor(target, os)) {
-      out.push({
-        os,
-        arch,
-        format,
-        archLabel,
-        url: currentUrl(channel, triple, stableName(target, format, channel)),
-      });
-    }
-  }
-  return out;
+  const suffix = binSuffix(channel);
+  const format: InstallerFormat = os === "macos" ? "pkg" : os === "windows" ? "exe" : "appimage";
+  const filename =
+    format === "pkg"
+      ? `tomat${suffix}.pkg`
+      : format === "exe"
+        ? `tomat${suffix}-setup.exe`
+        : // Tauri's capitalized ".AppImage" extension is part of the R2 key.
+          `tomat${suffix}.AppImage`;
+  return OS_TRIPLES[os].map(([arch, triple, archLabel]) => ({
+    os,
+    arch,
+    format,
+    archLabel,
+    url: currentUrl(channel, triple, filename),
+  }));
 }
 
-/** The line that runs the piped command, shared by the install-script branch and
- *  the uninstall steps. */
-export const RUN_COMMAND_STEP = "Paste the command above and press Enter.";
-
-/** The opening step of the installer-download branch for a package installer
- *  (macOS/Windows and the Linux Core): open the package. Composed into
- *  {@link installerHowto}; the Linux Client is an AppImage instead, so it does
- *  not use this. */
-export const INSTALLER_OPEN_STEP = "Open the downloaded installer and follow the prompts.";
-
-/** A how-to step. Usually a plain line; the OS security step carries a lead line
- *  plus its own sub-points (the macOS Gatekeeper clear-it walkthrough), so the
- *  generators render it as a nested list rather than one long sentence. */
-export type HowtoStep = string | SecurityStep;
-
-export interface SecurityStep {
-  /** The lead line: what the OS does and why. */
-  text: string;
-  /** Sub-points to clear it, or [] for a one-line warning. */
-  sub: string[];
-}
-
-/** The path-specific steps for the install-script branch (step 1.a): open the
- *  right terminal, then run the piped command. The finishing steps are lifted to
- *  {@link finishHowto} (step 2), shared with the installer branch. */
-export function scriptHowto(os: Os): string[] {
-  return [openTerminalStep(os), RUN_COMMAND_STEP];
-}
-
-/** The path-specific steps for the installer-download branch (step 1.b): open
- *  the downloaded package, then clear the first-run security prompt if the OS has
- *  one. Unlike the script, a downloaded installer is not quarantine-stripped for
- *  you, so the macOS Gatekeeper block and the Windows unknown-publisher warning
- *  are folded in per OS (see {@link installerSecurityStep}). Linux is the
- *  exception: the Client's primary download is the AppImage, which you make
- *  executable and run rather than "install", so it gets its own steps (see
- *  {@link linuxClientInstallerHowto}). The finishing steps are lifted to
- *  {@link finishHowto} (step 2). */
-export function installerHowto(os: Os, target: Target): HowtoStep[] {
-  if (os === "linux" && target === "client") return linuxClientInstallerHowto();
-  const security = installerSecurityStep(os, target);
-  return security ? [INSTALLER_OPEN_STEP, security] : [INSTALLER_OPEN_STEP];
-}
-
-/** The Linux Client installer-download steps. The Client ships as a single
- *  AppImage (the primary, self-updating build): a lead line plus sub-points for
- *  making it executable and running it in place. */
-function linuxClientInstallerHowto(): HowtoStep[] {
-  return [
-    {
-      text: "The AppImage is one portable file that keeps itself up to date. To run it:",
-      sub: [
-        "Make it executable, either from your file manager's properties (allow running it as a program) or with chmod +x on the file.",
-        "Open it from your file manager or run it in a terminal. It runs in place, with no system install.",
-      ],
-    },
-  ];
-}
-
-/** The plain-text finishing steps once either install path completes (step 2),
- *  lifted out of both branches so the shared outcome is stated once. Only the
- *  Core has plain-text finishing steps; the Client's finish carries a link (to
- *  Cores and Pairing), so the generators render it as bespoke markup instead. */
-export function finishHowto(target: Target): string[] {
-  if (target === "core") {
-    return [
-      "When it finishes, it prints a pairing code and the Core runs in the background at login.",
-      "Open a tomat Client on any device and pair it to this Core with that code.",
-    ];
-  }
-  return [];
-}
-
-/** The first-run security prompt an unsigned installer triggers, per OS, or null
- *  when there is none. macOS bundles are ad-hoc signed for now (an Apple
- *  Developer ID is on the way), so Gatekeeper blocks them the first time and you
- *  clear it once in System Settings (returned as a lead line plus sub-points);
- *  Windows SmartScreen warns on the unsigned setup (a one-line note). Only the
- *  installer-download path needs this: the install script strips the quarantine
- *  flag for you. */
-export function installerSecurityStep(os: Os, target: Target): SecurityStep | null {
-  if (os === "macos") {
-    return {
-      text:
-        target === "core"
-          ? "macOS blocks the installer because tomat is not yet signed by an identified Apple developer. That signing is on the way, so this is temporary. To clear it:"
-          : "The first time you open tomat, macOS blocks it because it is not yet signed by an identified Apple developer. That signing is on the way, so this is temporary. To clear it:",
-      sub: [
-        "Open System Settings, then Privacy & Security.",
-        "Scroll to the Security section and choose Open Anyway next to the tomat message.",
-        target === "core"
-          ? "Enter your password to confirm, then run the installer again."
-          : "Enter your password to confirm, then open tomat again.",
-      ],
-    };
-  }
-  if (os === "windows") {
-    return {
-      text: "Windows may warn that the publisher is unknown. Choose More info, then Run anyway.",
-      sub: [],
-    };
-  }
-  return null;
-}
-
-/** Short, user-facing label for an installer format, for the download button. */
-export function formatLabel(format: InstallerFormat): string {
-  switch (format) {
-    case "dmg":
-      return "Disk image (.dmg)";
-    case "pkg":
-      return "Installer (.pkg)";
-    case "exe":
-      return "Installer (.exe)";
-    case "deb":
-      return "Debian (.deb)";
-    case "rpm":
-      return "Red Hat (.rpm)";
-    case "appimage":
-      return "AppImage";
-  }
-}
-
-/** The compact format tag a multi-format download button appends to its arch
- *  label (the Linux Core offers the .deb/.rpm packages). AppImage shows as a
- *  name, not a dotted extension; the packages keep their leading dot. */
-export function formatTag(format: InstallerFormat): string {
-  return format === "appimage" ? "AppImage" : `.${format}`;
+/** The standalone Linux Core packages (.deb/.rpm), the only platform where the
+ *  Core is a separate download (macOS/Windows fold it into the unified
+ *  installer). One entry per format on the single Linux arch. */
+export function linuxCoreInstallers(channel: Channel): NativeInstaller[] {
+  const suffix = binSuffix(channel);
+  const [arch, triple, archLabel] = OS_TRIPLES.linux[0];
+  return (["deb", "rpm"] as const).map((format) => ({
+    os: "linux",
+    arch,
+    format,
+    archLabel,
+    url: currentUrl(channel, triple, `tomat-core${suffix}.${format}`),
+  }));
 }
 
 /** The fixed "newest build" APK alias published per channel by
@@ -369,28 +122,96 @@ export function androidApkUrl(channel: Channel): string {
   return `${STORAGE_BASE}/${prefix}current/android-universal/tomat.apk`;
 }
 
-/** The OS-specific first "how to" step: which terminal to open. Split out from
- *  the rest so the no-JS baseline can CSS-toggle it per OS while rendering the
- *  fixed tail (see {@link uninstallStepsTail}) statically, and the island can
- *  read it reactively. */
-export function openTerminalStep(os: Os): string {
-  return os === "windows"
-    ? "Open PowerShell."
-    : os === "macos"
-      ? "Open Terminal."
-      : "Open your terminal.";
+// ---------------------------------------------------------------------------
+// How-to steps
+
+/** A how-to step. Usually a plain line; a step can carry a lead line plus its
+ *  own sub-points (the macOS Gatekeeper clear-it walkthrough, the AppImage
+ *  run-it walkthrough), which the generators render as a nested list rather
+ *  than one long sentence. */
+export type HowtoStep = string | SubbedStep;
+
+export interface SubbedStep {
+  /** The lead line. */
+  text: string;
+  /** Sub-points, or [] for a one-line note. */
+  sub: string[];
 }
 
-/** The uninstall "how to" steps after the OS-specific opener
- *  ({@link openTerminalStep}): run the command, then a note on what it removes. */
-export function uninstallStepsTail(target: Target): string[] {
+/** The per-OS steps for the downloaded installer. macOS/Windows run the
+ *  unified installer (open it, choose whether the Core comes along, clear the
+ *  first-run security prompt when it appears); the Linux Client is an AppImage
+ *  you run in place. The shared finishing step is {@link finishStep}. */
+export function installerHowto(os: Os): HowtoStep[] {
+  if (os === "linux") {
+    return [
+      {
+        text: "The AppImage is one portable file that keeps itself up to date. To run it:",
+        sub: [
+          "Make it executable, either from your file manager's properties (allow running it as a program) or with chmod +x on the file.",
+          "Open it from your file manager or run it in a terminal. It runs in place, with no system install.",
+        ],
+      },
+    ];
+  }
+  const steps: HowtoStep[] = [
+    "Open the downloaded installer.",
+    "Keep Tomat Core selected to run your models and tools on this computer, and pick its options. Uncheck it only if this device should connect to a Core on another machine.",
+    "Follow the prompts to finish the install.",
+  ];
+  const security = installerSecurityStep(os);
+  if (security) steps.push(security);
+  return steps;
+}
+
+/** The first-run security prompt an unsigned build triggers, per OS, or null
+ *  when there is none. Phrased conditionally: signed builds are rolling out,
+ *  and a signed installer never shows these. */
+export function installerSecurityStep(os: Os): SubbedStep | null {
+  if (os === "macos") {
+    return {
+      text: "If macOS blocks the installer as being from an unidentified developer (signed builds are rolling out), clear it once:",
+      sub: [
+        "Open System Settings, then Privacy & Security.",
+        "Scroll to the Security section and choose Open Anyway next to the Tomat message.",
+        "Enter your password to confirm, then open the installer again.",
+      ],
+    };
+  }
+  if (os === "windows") {
+    return {
+      text: "If Windows warns that the publisher is unknown, choose More info, then Run anyway.",
+      sub: [],
+    };
+  }
+  return null;
+}
+
+/** The shared finishing step: what happens on first launch, per install shape. */
+export function finishStep(os: Os): string {
+  if (os === "linux") {
+    return "Open Tomat. It asks you to connect to a Core: one from the packages below on this machine, or one on another computer.";
+  }
+  return "Open Tomat. If you installed the Core with it, Tomat connects to it on its own; otherwise it asks you to connect to a Core on another computer.";
+}
+
+/** The Linux Core package steps, shown with the .deb/.rpm buttons. */
+export function linuxCoreSteps(channel: Channel): string[] {
   return [
-    RUN_COMMAND_STEP,
-    target === "core"
-      ? "It stops the Core and removes it; use the option above to keep its sessions and memories."
-      : "It removes the app, your paired cores, and your settings; use the option above to keep your settings.",
+    `Install the package with your distribution's package manager (e.g. sudo apt install ./tomat-core${binSuffix(channel)}.deb).`,
+    "It registers the Core as a background service for your user; Tomat connects to it on the next launch.",
   ];
 }
+
+/** The compact format tag a multi-format download button appends to its arch
+ *  label (the Linux Core offers the .deb/.rpm packages). AppImage shows as a
+ *  name, not a dotted extension; the packages keep their leading dot. */
+export function formatTag(format: InstallerFormat): string {
+  return format === "appimage" ? "AppImage" : `.${format}`;
+}
+
+// ---------------------------------------------------------------------------
+// OS / arch detection
 
 /** Best-effort map of a browser's CPU-architecture signal to one of our
  *  {@link Arch} ids, or null when it can't be told. The reliable source is the

@@ -7,7 +7,7 @@ order: 2
 import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
 import Aside from "../../../components/Aside.astro";
 
-tomat can read the agent's replies aloud with **Text-to-Speech**. It is the
+Tomat can read the agent's replies aloud with **Text-to-Speech**. It is the
 counterpart to [Speech-to-Text](/manual/speech/speech-to-text): where one turns
 your speech into a message, this turns the agent's answer into audio, so a
 conversation can be entirely spoken if you want it to be. It is useful when your
@@ -32,7 +32,7 @@ provider takes a base URL, an API key, and a model and voice name instead.
 
 Each local model offers its own set of voices, and some span several languages, so
 the right model depends as much on the voice and languages you want as on raw quality.
-Picking one may need a one-time download, which tomat always asks about first and
+Picking one may need a one-time download, which Tomat always asks about first and
 never fetches in the background.
 
 Once it is on, replies are spoken as they arrive, so spoken output pairs naturally
@@ -41,7 +41,7 @@ talk, the agent answers aloud, and you never touch the keyboard.
 
 ## How It Works
 
-Speaking a reply as it streams means tomat cannot wait for the whole answer before
+Speaking a reply as it streams means Tomat cannot wait for the whole answer before
 it starts. Instead the Client breaks the incoming text into small pieces, roughly a
 sentence at a time, and hands each one to the Core as soon as it is complete. The
 Core's speech service synthesizes that piece into audio and sends the sound back, and

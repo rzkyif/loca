@@ -6,6 +6,7 @@
   import { useUiContext } from "@tomat/shared/ui/context";
   import { coreStatusState, settingsState, viewState } from "../../state";
   import { connectionState } from "$stores/connection.svelte";
+  import { localCoreState } from "$stores/local-core.svelte";
   import { cores } from "$lib/core";
   import { hasAlpha } from "$lib/appearance/color";
   import { isExpanded, expansionState } from "$stores/expansion.svelte";
@@ -48,9 +49,13 @@
     return () => unsub();
   });
 
-  // Merge transport + backend status into the single value the View paints.
+  // Merge transport + backend status into the single value the View paints. The
+  // settled failures come first: each names a different fix, and the ordering
+  // puts the most specific one (we know the core is not even running) on top.
   const status = $derived.by((): DisplayCoreStatus => {
     if (connectionState.unauthorized) return "unauthorized";
+    if (connectionState.stopped) return "stopped";
+    if (connectionState.gaveUp) return "disconnected";
     if (connectionState.state !== "connected") {
       return connectionState.reconnecting ? "reconnecting" : "connecting";
     }
@@ -67,6 +72,18 @@
   // backend snapshot); a transport state has no card.
   const subsystems = $derived(connected ? coreStatusState.snapshot.subsystems : []);
   const queues = $derived(connected ? coreStatusState.snapshot.queues : undefined);
+
+  // Clicking a settled-failure pill is the way out of it: start this device's
+  // core when it is stopped, otherwise resume the parked reconnect loop. The
+  // tray's Start Core item runs the same localCoreState.start().
+  function handleStatusAction(): void {
+    if (connectionState.stopped) {
+      void localCoreState.start();
+      return;
+    }
+    connectionState.retryFromUi();
+    cores().currentClient()?.retryNow();
+  }
 
   // Expansion lives in the shared registry (one id, so it survives the
   // panel-slide remounts and stays in sync across the chat / settings views).
@@ -88,6 +105,7 @@
     {queues}
     {expanded}
     onToggleExpand={() => expansionState.set(CORE_BAR_EXPANSION_ID, !expanded)}
+    onStatusAction={handleStatusAction}
     cores={coreList}
     {currentCoreId}
     onSwitch={(id) => {

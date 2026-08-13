@@ -1,4 +1,4 @@
-// @tomat/model-catalog: the hand-authored source for tomat's local-model
+// @tomat/model-catalog: the hand-authored source for Tomat's local-model
 // catalog. `scripts/release/catalog.ts` consumes buildCatalogPayload(), signs
 // it, and publishes catalog.json. See README.md for the authoring workflow.
 

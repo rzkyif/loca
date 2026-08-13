@@ -6,9 +6,9 @@ order: 3
 
 import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
 
-Because tomat runs real models on real hardware, it is worth being able to see what
+Because Tomat runs real models on real hardware, it is worth being able to see what
 it is using. The **Usage** group is that window: it shows what is running and how
-much space tomat is taking up, split between this device and the Core, so you can
+much space Tomat is taking up, split between this device and the Core, so you can
 tell where the work and the gigabytes are actually going.
 
 <SettingsPanelDemo group="usage" />
@@ -18,7 +18,7 @@ tell where the work and the gigabytes are actually going.
 Each side is reported two ways. **Services** lists the moving parts that are running
 right now, the language model, speech, and the rest, with what each is costing in
 processor and RAM, so a slow reply or a warm fan has an explanation you can point to.
-**Storage** accounts for what tomat keeps on disk: your sessions and memories, the
+**Storage** accounts for what Tomat keeps on disk: your sessions and memories, the
 models you have downloaded, and the rest of its state. Models are usually the bulk of
 it, which is the figure to check when you are deciding whether to clear space.
 
@@ -29,13 +29,13 @@ Seeing both at once is how you tell a busy Core from a busy Client.
 ## How It Works
 
 Nothing here is stored or configured; the group is a live readout, which is why it
-has no settings to change. For Services, tomat asks the operating system about each of
+has no settings to change. For Services, Tomat asks the operating system about each of
 its running parts by process and reads back the processor and memory each is using at
 that moment, the same numbers a system monitor would show, attributed to the specific
-piece of tomat responsible. For Storage, it walks the folders under `~/.tomat` and
+piece of Tomat responsible. For Storage, it walks the folders under `~/.tomat` and
 adds up what it finds, grouping the total into the categories you see. Both are
 measured on demand when you open the group, so the figures are a snapshot of right
-now rather than a running tally tomat has to keep.
+now rather than a running tally Tomat has to keep.
 
-Next, how tomat keeps itself current and how to run more than one build at once:
+Next, how Tomat keeps itself current and how to run more than one build at once:
 [Updates and Channels](/manual/maintenance/updates-and-channels).

@@ -19,21 +19,21 @@ interface Props {
   /** Keep a page out of search results (internal QA surfaces like the gallery). */
   noindex?: boolean;
 }
-// The brand is always lowercase, even leading a title (see AGENTS.md).
-const BRAND = "tomat";
+// The brand as it appears in a title (see AGENTS.md).
+const BRAND = "Tomat";
 // The one-sentence pitch, taken verbatim from the root README's lead line. Used
 // as the default meta/OpenGraph description and the social-share summary.
 const SITE_DESCRIPTION = "Open source local-first modular AI assistant.";
 
 const { title, description = SITE_DESCRIPTION, noindex = false } = Astro.props;
 
-// "<page> · tomat", except the home page (or a bare brand title) which is just
-// "tomat" so it never reads "tomat · tomat".
+// "<page> · Tomat", except the home page (or a bare brand title) which is just
+// "Tomat" so it never reads "Tomat · Tomat".
 const fullTitle = !title || title === BRAND ? BRAND : `${title} · ${BRAND}`;
 
 // Absolute URLs for canonical + social cards. Astro.site is au.tomat.ing.
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
-// The shared social-share card: dark bg-surface with the white tomat mark
+// The shared social-share card: dark bg-surface with the white Tomat mark
 // centered, so it reads at any crop (public/og-image.png, 1200x630).
 const ogImage = new URL("/og-image.png", Astro.site).href;
 
@@ -160,7 +160,7 @@ const manualOrder = groupManual(await getCollection("manual"))
     }
     {
       /* Staged homepage reveal. Marking the document JS-capable lets site.css hide
-        the hero (the "Get tomat" button and the showcase) until the showcase
+        the hero (the "Get Tomat" button and the showcase) until the showcase
         signals it has measured and settled (`main[data-ready]`), so its
         load-time layout settling is never seen as a shift. It also gates the
         install page's data-js generator swap (the Svelte island vs the native

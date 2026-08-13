@@ -173,12 +173,18 @@ jobs:
             if ($dll -and $line -match '^\s+[0-9A-F]+\s+([A-Za-z_?@][^\s]*)\s*$') { $need[$dll] += $Matches[1] }
           }
           foreach ($d in $need.Keys) {
-            $local = Join-Path (Split-Path $exe) $d
-            $path = if (Test-Path $local) { $local } else { (Get-Command $d -ErrorAction SilentlyContinue).Source }
+            # Mirror the loader's search order: the exe's own directory, then
+            # System32, and only then PATH (where the hosted tool caches sit).
+            $path = @((Join-Path (Split-Path $exe) $d), (Join-Path $env:SystemRoot "System32\$d") |
+              Where-Object { Test-Path $_ } | Select-Object -First 1)
+            if (-not $path) { $path = (Get-Command $d -ErrorAction SilentlyContinue).Source }
             if (-not $path) { Write-Host "== $d : NOT FOUND on the loader search path"; continue }
             $names = @()
             foreach ($line in (& $dumpbin /nologo /exports $path)) {
-              if ($line -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(\S+)') { $names += $Matches[1] }
+              # Forwarded exports ("Foo (forwarded to BAR.Baz)") carry no RVA
+              # column; counting them as absent is what made the first run's
+              # output nearly all false positives.
+              if ($line -match '^\s+\d+\s+[0-9A-F]+\s+(?:[0-9A-F]{8}\s+)?(\S+)') { $names += $Matches[1] }
             }
             $missing = @($need[$d] | Where-Object { $names -notcontains $_ })
             $ver = (Get-Item $path).VersionInfo.FileVersion

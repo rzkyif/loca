@@ -25,5 +25,25 @@ fn main() {
         .unwrap_or_else(|| "stable".to_string());
     println!("cargo:rustc-env=LOCA_CHANNEL={channel}");
 
+    // tauri-build embeds a Windows app manifest whose only content is a
+    // dependency on Common Controls v6, which is what makes the loader bind
+    // comctl32 to the WinSxS v6 copy that exports `TaskDialogIndirect` (called
+    // by tauri-runtime-wry's error dialog). It reaches the bin target ONLY:
+    // embed-resource emits `cargo:rustc-link-arg-bins`. So the `cargo test
+    // --lib` harness exe binds comctl32 to the v5.82 copy in System32 instead,
+    // which has no such export, and Windows kills it at load with
+    // STATUS_ENTRYPOINT_NOT_FOUND before a single test runs. Embed the same
+    // dependency into the test binaries. link.exe merges every /MANIFESTINPUT,
+    // so this adds to (never replaces) the manifest rustc supplies.
+    if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-test.manifest");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}",
+            manifest.display()
+        );
+    }
+
     tauri_build::build();
 }

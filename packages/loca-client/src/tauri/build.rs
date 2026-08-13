@@ -32,16 +32,21 @@ fn main() {
     // embed-resource emits `cargo:rustc-link-arg-bins`. So the `cargo test
     // --lib` harness exe binds comctl32 to the v5.82 copy in System32 instead,
     // which has no such export, and Windows kills it at load with
-    // STATUS_ENTRYPOINT_NOT_FOUND before a single test runs. Embed the same
-    // dependency into the test binaries. link.exe merges every /MANIFESTINPUT,
-    // so this adds to (never replaces) the manifest rustc supplies.
+    // STATUS_ENTRYPOINT_NOT_FOUND before a single test runs.
+    //
+    // Declare the same dependency to the linker instead. `rustc-link-arg-tests`
+    // does not cover the lib's unit-test harness (only `tests/*.rs` targets), so
+    // this has to be the unscoped form, which also reaches the bin and the
+    // cdylib. /MANIFESTDEPENDENCY is the shape that stays safe there: it lands
+    // in the side-by-side `<output>.manifest` file link.exe writes by default,
+    // never in the image's resources, so it cannot collide with the RT_MANIFEST
+    // tauri-build already puts in the bin. Executables with no embedded manifest
+    // (every rustc-linked test exe) pick that file up at load.
     if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-test.manifest");
-        println!("cargo:rerun-if-changed={}", manifest.display());
-        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
         println!(
-            "cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}",
-            manifest.display()
+            "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+             name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+             processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
         );
     }
 

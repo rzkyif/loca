@@ -161,6 +161,12 @@ jobs:
           $exe = ($lines | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } |
             Where-Object { $_.executable } | Select-Object -Last 1).executable
           Write-Host "exe: $exe"
+          # The side-by-side manifest build.rs asks link.exe for. Its presence
+          # (and Common-Controls v6 content) is what binds comctl32 to the v6
+          # copy that exports TaskDialogIndirect.
+          $sxs = "$exe.manifest"
+          if (Test-Path $sxs) { Write-Host "manifest: $sxs"; Get-Content $sxs }
+          else { Write-Host "manifest: $sxs NOT WRITTEN" }
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
           $dumpbin = (Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName

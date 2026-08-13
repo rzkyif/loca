@@ -7,35 +7,35 @@
     "correctness": "error"
   },
   "rules": {
-    "tomat/no-em-dash": "error",
-    "tomat/no-builtin-palette-color": "error"
+    "loca/no-em-dash": "error",
+    "loca/no-builtin-palette-color": "error"
   },
   "env": {
     "builtin": true
   },
   "overrides": [
     {
-      "files": ["packages/tomat-core-engine/src/**/*.ts"],
+      "files": ["packages/loca-core-engine/src/**/*.ts"],
       "rules": {
-        "tomat/no-host-import": "error"
+        "loca/no-host-import": "error"
       }
     },
     {
-      "files": ["packages/tomat-core-engine/**/*.test.ts"],
+      "files": ["packages/loca-core-engine/**/*.test.ts"],
       "rules": {
-        "tomat/no-host-import": "off"
+        "loca/no-host-import": "off"
       }
     },
     {
-      "files": ["packages/tomat-client/src/ui/**/*.{ts,tsx}"],
+      "files": ["packages/loca-client/src/ui/**/*.{ts,tsx}"],
       "rules": {
-        "tomat/no-tauri-import": "error"
+        "loca/no-tauri-import": "error"
       }
     },
     {
-      "files": ["packages/tomat-client/src/ui/lib/platform/*.ts"],
+      "files": ["packages/loca-client/src/ui/lib/platform/*.ts"],
       "rules": {
-        "tomat/no-tauri-import": "off"
+        "loca/no-tauri-import": "off"
       }
     }
   ]

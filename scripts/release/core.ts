@@ -1,7 +1,7 @@
-// Release item: tomat-core (deno-compiled) + the four native helper crates
+// Release item: loca-core (deno-compiled) + the four native helper crates
 // (updater, keychain, hwinfo, ptyhost) + the worker .ts files, composed into
 // signed core.json and binaries.json and uploaded to R2. Versioned via
-// CORE_VERSION in packages/tomat-core/src/config.ts.
+// CORE_VERSION in packages/loca-core/src/config.ts.
 
 import { copy } from "@std/fs/copy";
 import { ensureDir } from "@std/fs/ensure-dir";
@@ -16,13 +16,13 @@ import type {
   PinnedTarget,
   Triple,
   UpstreamResolver,
-} from "../../packages/tomat-shared/src/domain/model.ts";
+} from "../../packages/loca-shared/src/domain/model.ts";
 import {
   assetVariants,
   BINARY_KINDS,
   binaryUnavailableOnTriple,
   UPSTREAM_BINARIES,
-} from "../../packages/tomat-shared/src/domain/model.ts";
+} from "../../packages/loca-shared/src/domain/model.ts";
 import {
   type ApplyOpts,
   bumpCoreVersion,
@@ -73,25 +73,25 @@ const ALL_TRIPLES: Triple[] = [
 
 // Worker .ts files shipped alongside the binary (platform-independent).
 // These are NOT bundled into the core binary. At runtime, the core spawns
-// them as Deno subprocesses from ~/.tomat/core/workers/.
+// them as Deno subprocesses from ~/.loca/core/workers/.
 const WORKER_FILES = ["tool-worker.ts"] as const;
 
 const HELPER_CRATES: Array<{
-  name: "tomat-core-keychain" | "tomat-core-updater" | "tomat-core-hwinfo" | "tomat-core-ptyhost";
+  name: "loca-core-keychain" | "loca-core-updater" | "loca-core-hwinfo" | "loca-core-ptyhost";
   crateDir: string;
 }> = [
-  { name: "tomat-core-keychain", crateDir: "packages/tomat-core-keychain" },
-  { name: "tomat-core-updater", crateDir: "packages/tomat-core-updater" },
-  { name: "tomat-core-hwinfo", crateDir: "packages/tomat-core-hwinfo" },
-  { name: "tomat-core-ptyhost", crateDir: "packages/tomat-core-ptyhost" },
+  { name: "loca-core-keychain", crateDir: "packages/loca-core-keychain" },
+  { name: "loca-core-updater", crateDir: "packages/loca-core-updater" },
+  { name: "loca-core-hwinfo", crateDir: "packages/loca-core-hwinfo" },
+  { name: "loca-core-ptyhost", crateDir: "packages/loca-core-ptyhost" },
 ];
 
-// tomat-core-speech is OURS but, unlike the eager helpers, it's consent-gated +
+// loca-core-speech is OURS but, unlike the eager helpers, it's consent-gated +
 // on-demand: built host-only here, packaged with its espeak-ng-data, and pinned
 // into binaries.json (not core.json) so it downloads only when STT/TTS is on.
 const SPEECH_CRATE = {
-  name: "tomat-core-speech",
-  crateDir: "packages/tomat-core-speech",
+  name: "loca-core-speech",
+  crateDir: "packages/loca-core-speech",
 } as const;
 
 // Canonical standalone espeak-ng-data (the Kokoro phonemizer data the sherpa
@@ -101,7 +101,7 @@ const ESPEAK_DATA_URL =
   "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2";
 
 // Pinned sha256 of the espeak-ng-data archive. The URL above is a MUTABLE rolling
-// tag, and these bytes get baked into the tomat-signed speech binary, so the
+// tag, and these bytes get baked into the loca-signed speech binary, so the
 // archive is verified against this hash before unpacking. If upstream legitimately
 // republishes the asset, recompute and update this constant in the same commit.
 const ESPEAK_DATA_SHA256 = "4135ccf82e1f40613491c0874d4945ae9e9c7840933d8e25a6f9e003d9ebf533";
@@ -113,7 +113,7 @@ const MANIFEST_CACHE_CONTROL = "public, max-age=300";
 
 export interface BuildArtifact {
   triple: Triple;
-  name: "tomat-core";
+  name: "loca-core";
   filename: string;
   path: string;
   sha256: string;
@@ -165,14 +165,14 @@ export interface CoreBuildArtifacts {
 // build
 
 // Packages in the core's module graph; only these are copied into the compile
-// workspace. `tomat-core` imports `@tomat/shared`, `@tomat/core-engine`, and
-// `@tomat/model-catalog` via relative paths, so all must be present for
+// workspace. `loca-core` imports `@loca/shared`, `@loca/core-engine`, and
+// `@loca/model-catalog` via relative paths, so all must be present for
 // resolution to stay inside the temp tree.
 const COMPILE_WORKSPACE_PACKAGES = [
-  "tomat-shared",
-  "tomat-core-engine",
-  "tomat-core",
-  "tomat-model-catalog",
+  "loca-shared",
+  "loca-core-engine",
+  "loca-core",
+  "loca-model-catalog",
 ];
 
 /** Isolated workspace for `deno compile`. `deno compile` embeds every npm dep
@@ -186,10 +186,10 @@ const COMPILE_WORKSPACE_PACKAGES = [
  *  repo root and its workspace-wide lock + node_modules) only the packages in
  *  the core's graph, then generate a lock scoped to just those packages. The
  *  result embeds only the core's own graph (~100 MB). Worker ML deps stay out
- *  of `tomat-core`'s import map -- the workers carry their own `npm:` specifiers
+ *  of `loca-core`'s import map -- the workers carry their own `npm:` specifiers
  *  -- so they are never pulled into this scope. */
 async function setupCompileWorkspace(): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "tomat-compile-" });
+  const dir = await Deno.makeTempDir({ prefix: "loca-compile-" });
   await ensureDir(join(dir, "packages"));
   for (const pkg of COMPILE_WORKSPACE_PACKAGES) {
     await copy(join(REPO_ROOT, "packages", pkg), join(dir, "packages", pkg));
@@ -275,7 +275,7 @@ export async function buildAll(triples: Triple[], suffix: string): Promise<Build
       const isWin = triple.includes("windows");
       const exe = isWin ? ".exe" : "";
       for (const [name, entryRelative] of [
-        ["tomat-core", "packages/tomat-core/src/main.ts"],
+        ["loca-core", "packages/loca-core/src/main.ts"],
       ] as const) {
         const filename = `${name}${suffix}${exe}`;
         const outPath = join(DIST_DIR, triple, filename);
@@ -335,7 +335,7 @@ export async function buildHelpers(triples: Triple[], suffix: string): Promise<H
     const exe = isWin ? ".exe" : "";
     for (const { name, crateDir } of HELPER_CRATES) {
       // Cargo always builds the bare crate name; we copy it out under the
-      // channel-suffixed name so latest's tomat-core-keychain-latest coexists.
+      // channel-suffixed name so latest's loca-core-keychain-latest coexists.
       const entryName = `${name}${suffix}`;
       const filename = `${entryName}${exe}`;
       const outDir = join(DIST_DIR, triple);
@@ -376,7 +376,7 @@ export async function buildHelpers(triples: Triple[], suffix: string): Promise<H
  *  mishandles drive-letter absolute paths (a colon reads as a remote `host:file`,
  *  and backslashes break `-C`), so no absolute path is ever handed to it. */
 async function ensureEspeakData(): Promise<string> {
-  const tmp = await Deno.makeTempDir({ prefix: "tomat-espeak-" });
+  const tmp = await Deno.makeTempDir({ prefix: "loca-espeak-" });
   const archiveName = "espeak-ng-data.tar.bz2";
   const archive = join(tmp, archiveName);
   info(`fetching espeak-ng-data`);
@@ -386,7 +386,7 @@ async function ensureEspeakData(): Promise<string> {
   }
   await Deno.writeFile(archive, res.body);
   // Verify against the pinned sha256 BEFORE unpacking: an upstream asset swap or
-  // a release-host MITM must not silently propagate into the tomat-signed speech
+  // a release-host MITM must not silently propagate into the loca-signed speech
   // binary. A legitimate upstream bump updates ESPEAK_DATA_SHA256.
   const { sha256 } = await sha256File(archive);
   if (sha256 !== ESPEAK_DATA_SHA256) {
@@ -438,7 +438,7 @@ async function ensureEspeakData(): Promise<string> {
 // below (the same SHERPA_ONNX_LIB_DIR mechanism the win-arm64 CPU build uses);
 // otherwise the release ships CPU-only for that triple. The staged archive
 // supplies the GPU onnxruntime + provider shared libs, packaged into the tarball
-// so they land in bin/lib/tomat-core-speech.
+// so they land in bin/lib/loca-core-speech.
 const SPEECH_GPU_VARIANTS: Partial<Record<Triple, BinaryVariant[]>> = {
   "x86_64-unknown-linux-gnu": ["cuda"],
 };
@@ -460,7 +460,7 @@ async function* walkFiles(root: string): AsyncGenerator<string> {
   }
 }
 
-/** Build tomat-core-speech for each (host) triple and package it as a `.tar.gz`
+/** Build loca-core-speech for each (host) triple and package it as a `.tar.gz`
  *  of {exe, espeak-ng-data/, shared libs}. The exe inside the archive keeps the
  *  bare kind name the binaries manager's extractor looks for; the archive file
  *  carries the channel suffix (and, for GPU variants, the variant). Always
@@ -472,7 +472,7 @@ async function buildSpeech(triples: Triple[], suffix: string): Promise<SpeechArt
   // skip it rather than fail the whole core build. None are today (windows-arm64
   // links the sherpa lib via SHERPA_ONNX_LIB_DIR in the guest), so this filters
   // nothing.
-  const speechTriples = triples.filter((t) => !binaryUnavailableOnTriple("tomat-core-speech", t));
+  const speechTriples = triples.filter((t) => !binaryUnavailableOnTriple("loca-core-speech", t));
   for (const skipped of triples.filter((t) => !speechTriples.includes(t))) {
     info(colors.yellow(`skipping speech for ${skipped} (marked unavailable)`));
   }
@@ -539,7 +539,7 @@ async function buildSpeechVariant(
   // Stage {exe, espeak-ng-data/, shared libs} and pack a gzip tarball. The
   // in-archive exe must be the bare `<kind>(.exe)` the extractor matches.
   const exeIn = `${SPEECH_CRATE.name}${exe}`;
-  const staging = await Deno.makeTempDir({ prefix: "tomat-speech-" });
+  const staging = await Deno.makeTempDir({ prefix: "loca-speech-" });
   await Deno.copyFile(join(cargoTargetDir(), triple, "release", exeIn), join(staging, exeIn));
   await copy(espeakData, join(staging, "espeak-ng-data"));
   const tarEntries = [exeIn, "espeak-ng-data"];
@@ -608,7 +608,7 @@ async function composeCoreManifest(
   // DECOMPRESSED file, so consumers (self-install + self-updater) gunzip the
   // download then verify the same hash against the real binary/script.
   const binaries = artifacts
-    .filter((a) => a.name === "tomat-core")
+    .filter((a) => a.name === "loca-core")
     .map((a) => ({
       triple: a.triple,
       url: `https://${storageDomain}/${storagePrefix}${version}/${a.triple}/${a.filename}.gz`,
@@ -629,7 +629,7 @@ async function composeCoreManifest(
   }));
 
   // Sign the WHOLE manifest minus the `signature` field. The runtime verifier
-  // (packages/tomat-core/src/update/self-updater.ts) reconstructs the same
+  // (packages/loca-core/src/update/self-updater.ts) reconstructs the same
   // payload by stripping `signature`, so every executed field (binaries,
   // workers, helpers) is authenticated. Do NOT shrink this back to
   // {version,binaries}: that would leave workers[] / helpers[] unsigned.
@@ -663,7 +663,7 @@ interface GitHubRelease {
 async function githubJson(url: string): Promise<unknown> {
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
-    "user-agent": "tomat-release",
+    "user-agent": "loca-release",
   };
   const ghToken = Deno.env.get("GITHUB_TOKEN");
   if (ghToken) headers.authorization = `Bearer ${ghToken}`;
@@ -783,7 +783,7 @@ async function composeBinaryManifest(
   const binaries = {} as Record<BinaryKind, BinaryManifestEntry>;
   for (const kind of BINARY_KINDS) {
     const resolver = UPSTREAM_BINARIES[kind];
-    // Self-hosted kinds (tomat-core-speech) have no upstream resolver; pinned
+    // Self-hosted kinds (loca-core-speech) have no upstream resolver; pinned
     // from this release's own artifacts after the loop.
     if (!resolver) continue;
 
@@ -881,7 +881,7 @@ async function composeBinaryManifest(
 
   // Pin self-hosted binaries (built host-only + uploaded by apply()) on every
   // channel; ours, so there's no upstream release to resolve.
-  binaries["tomat-core-speech"] = speech;
+  binaries["loca-core-speech"] = speech;
 
   // Sign the WHOLE manifest minus `signature` (matching core.json/extension.json),
   // so the monotonic `version` the runtime uses for downgrade refusal is
@@ -955,7 +955,7 @@ const CORE_PACKAGES = [
 const CORE_HASH_INPUTS = packagesHashInputs(CORE_PACKAGES);
 
 // The dist/<triple>/ binaries buildAll + buildHelpers emit for this channel:
-// tomat-core plus the four helpers, each with the channel suffix. The unified
+// loca-core plus the four helpers, each with the channel suffix. The unified
 // build hash-checks these so a wiped or swapped artifact forces a rebuild.
 // Defaults to the host triple; a cross-platform build passes the triples it
 // built so the cursor tracks every arch, not just the host's.
@@ -964,7 +964,7 @@ export function coreOutputs(
   triples: Triple[] = [detectHostTriple()],
 ): string[] {
   const suffix = channelBinSuffix(channel);
-  const names = ["tomat-core", ...HELPER_CRATES.map((h) => h.name)];
+  const names = ["loca-core", ...HELPER_CRATES.map((h) => h.name)];
   return triples.flatMap((triple) => {
     const exe = triple.includes("windows") ? ".exe" : "";
     return names.map((n) => join(DIST_DIR, triple, `${n}${suffix}${exe}`));
@@ -976,7 +976,7 @@ export const coreItem: ReleaseItem = {
   label: "core + helpers",
   scope: "channel",
   packages: CORE_PACKAGES,
-  bumpHint: "packages/tomat-core/src/config.ts (CORE_VERSION)",
+  bumpHint: "packages/loca-core/src/config.ts (CORE_VERSION)",
 
   version: readCoreVersion,
   versionFile: CONFIG_PATH,

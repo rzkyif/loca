@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <!-- viewport-fit=cover lays the page out edge to edge behind the system bars.
+         interactive-widget=overlays-content asks the WebView to leave BOTH
+         viewports full-size when the soft keyboard opens: the keyboard is handled
+         entirely by the natively-injected --keyboard-inset (see MainActivity), so
+         the browser must not also resize/scroll or it would double-count.
+         maximum-scale=1 + user-scalable=no lock the zoom: this is a native app
+         chrome, not a document, so pinch / double-tap zoom (and iOS's auto-zoom
+         when focusing a small input, which strands the UI mid-zoom behind
+         scrollbars) must be disabled. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content"
+    />
+    <title>Loca</title>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

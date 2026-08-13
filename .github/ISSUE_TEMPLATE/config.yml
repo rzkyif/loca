@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Request a new feature
-    url: https://github.com/rzkyif/tomat/discussions/new?category=feature-requests
+    url: https://github.com/rzkyif/loca/discussions/new?category=feature-requests
     about: Describe a new capability you would like to see, with a concrete use case.
   - name: Suggest an improvement
-    url: https://github.com/rzkyif/tomat/discussions/new?category=improvement-suggestions
+    url: https://github.com/rzkyif/loca/discussions/new?category=improvement-suggestions
     about: Propose a refinement to an existing feature.

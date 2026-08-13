@@ -3,13 +3,13 @@
 //
 //   deno task clean                build outputs (dist, target, .svelte-kit, …)
 //   deno task clean --deep         also node_modules + the Deno cache
-//   deno task clean --dev-state    also ~/.tomat/dev (isolated dev channel only)
-//   deno task clean --latest-state   also ~/.tomat/latest (isolated latest channel only)
+//   deno task clean --dev-state    also ~/.loca/dev (isolated dev channel only)
+//   deno task clean --latest-state   also ~/.loca/latest (isolated latest channel only)
 //
-// `--dev-state` / `--latest-state` only ever touch that channel's ~/.tomat/<ch>
-// subtree; a stable install (~/.tomat/stable) and the shared ~/.tomat/models
+// `--dev-state` / `--latest-state` only ever touch that channel's ~/.loca/<ch>
+// subtree; a stable install (~/.loca/stable) and the shared ~/.loca/models
 // are never removed. Channel state nests our binaries by suffix
-// (tomat-core-latest), so build outputs in dist/ never need a per-channel clean.
+// (loca-core-latest), so build outputs in dist/ never need a per-channel clean.
 
 import { parseArgs } from "@std/cli/parse-args";
 import { fromFileUrl, join } from "@std/path";
@@ -19,11 +19,11 @@ const ROOT = fromFileUrl(new URL("..", import.meta.url));
 // Build outputs, relative to the repo root. Every entry is gitignored.
 const ARTIFACTS = [
   "dist",
-  "packages/tomat-website/dist",
-  "packages/tomat-website/.astro",
-  "packages/tomat-website/.wrangler",
-  "packages/tomat-client/build",
-  "packages/tomat-client/.svelte-kit",
+  "packages/loca-website/dist",
+  "packages/loca-website/.astro",
+  "packages/loca-website/.wrangler",
+  "packages/loca-client/build",
+  "packages/loca-client/.svelte-kit",
   "target",
 ];
 
@@ -69,13 +69,13 @@ if (args.deep) {
 }
 
 if (args["dev-state"]) {
-  const devDir = join(homeDir(), ".tomat", "dev");
-  targets.push({ path: devDir, label: "~/.tomat/dev" });
+  const devDir = join(homeDir(), ".loca", "dev");
+  targets.push({ path: devDir, label: "~/.loca/dev" });
 }
 
 if (args["latest-state"]) {
-  const latestDir = join(homeDir(), ".tomat", "latest");
-  targets.push({ path: latestDir, label: "~/.tomat/latest" });
+  const latestDir = join(homeDir(), ".loca", "latest");
+  targets.push({ path: latestDir, label: "~/.loca/latest" });
 }
 
 for (const { path, label } of targets) {

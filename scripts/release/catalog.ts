@@ -1,13 +1,13 @@
-// Release item: the hand-authored @tomat/model-catalog compiled into one signed
+// Release item: the hand-authored @loca/model-catalog compiled into one signed
 // catalog.json (whole-payload-minus-signature, like core.json / extension.json)
-// and uploaded to R2. Versioned via packages/tomat-model-catalog/deno.json;
+// and uploaded to R2. Versioned via packages/loca-model-catalog/deno.json;
 // diffed by content (the generatedAt timestamp is excluded so a re-build alone
 // never counts as a change).
 
 import { ensureDir } from "@std/fs/ensure-dir";
 import { join } from "@std/path";
-import type { ModelCatalog } from "../../packages/tomat-shared/src/domain/catalog.ts";
-import { buildCatalogPayload } from "../../packages/tomat-model-catalog/src/index.ts";
+import type { ModelCatalog } from "../../packages/loca-shared/src/domain/catalog.ts";
+import { buildCatalogPayload } from "../../packages/loca-model-catalog/src/index.ts";
 import {
   type ApplyOpts,
   bumpVersionField,
@@ -36,11 +36,11 @@ export const catalogItem: ReleaseItem = {
   label: "model catalog",
   scope: "channel",
   packages: ["catalog"],
-  bumpHint: "packages/tomat-model-catalog/deno.json (version)",
+  bumpHint: "packages/loca-model-catalog/deno.json (version)",
 
-  version: () => readVersionField(join(REPO_ROOT, "packages/tomat-model-catalog/deno.json")),
-  versionFile: join(REPO_ROOT, "packages/tomat-model-catalog/deno.json"),
-  bumpVersion: () => bumpVersionField(join(REPO_ROOT, "packages/tomat-model-catalog/deno.json")),
+  version: () => readVersionField(join(REPO_ROOT, "packages/loca-model-catalog/deno.json")),
+  versionFile: join(REPO_ROOT, "packages/loca-model-catalog/deno.json"),
+  bumpVersion: () => bumpVersionField(join(REPO_ROOT, "packages/loca-model-catalog/deno.json")),
 
   async sourceHash(_channel: ReleaseChannel): Promise<string> {
     // Hash the catalog content with generatedAt stripped: a fresh build at a

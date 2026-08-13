@@ -1,4 +1,4 @@
-// Companion to the `tomat/no-builtin-palette-color` rule in
+// Companion to the `loca/no-builtin-palette-color` rule in
 // scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
 // same rule for the file types oxlint parses (.ts/.tsx/.mts/.mjs/.svelte).
 // oxlint never sees .astro, plain .css, Markdown, or other tracked text, so a

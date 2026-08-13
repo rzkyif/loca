@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     ? String(args["staging-root"])
     : join(DIST_DIR, "staging");
 
-  console.log(colors.bold(`\ntomat ci-publish: ${channel} channel\n`));
+  console.log(colors.bold(`\nloca ci-publish: ${channel} channel\n`));
 
   step("Loading deploy environment");
   const env = await loadOrSeedEnv();

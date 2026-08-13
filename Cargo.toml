@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-  "packages/tomat-client/src/tauri",
-  "packages/tomat-core-keychain",
-  "packages/tomat-core-updater",
-  "packages/tomat-core-hwinfo",
-  "packages/tomat-core-ptyhost",
-  "packages/tomat-core-speech",
+  "packages/loca-client/src/tauri",
+  "packages/loca-core-keychain",
+  "packages/loca-core-updater",
+  "packages/loca-core-hwinfo",
+  "packages/loca-core-ptyhost",
+  "packages/loca-core-speech",
 ]
 # `reference/` is a local-only, git-ignored area (e.g. old app versions kept for
 # reference); keep anything inside it out of the workspace.
@@ -24,14 +24,14 @@ strip = true
 panic = "abort"
 
 # The keychain/updater helpers ship as tiny standalone binaries, so squeeze size.
-[profile.release.package.tomat-core-keychain]
+[profile.release.package.loca-core-keychain]
 opt-level = "z"
 
-[profile.release.package.tomat-core-updater]
+[profile.release.package.loca-core-updater]
 opt-level = "z"
 
-[profile.release.package.tomat-core-hwinfo]
+[profile.release.package.loca-core-hwinfo]
 opt-level = "z"
 
-[profile.release.package.tomat-core-ptyhost]
+[profile.release.package.loca-core-ptyhost]
 opt-level = "z"

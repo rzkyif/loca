@@ -1,0 +1,59 @@
+---
+title: Updates and Channels
+section: Cores & Maintenance
+order: 4
+---
+
+import Aside from "../../../components/Aside.astro";
+
+Loca keeps itself current so you do not have to track releases by hand. When a new
+release is ready, the app offers to install it, and the Core can stage and apply its
+own update safely, rolling back if something goes wrong rather than leaving you with
+a broken service. You can always download the latest installer to jump straight to
+the newest build.
+
+## Channels
+
+How new a build you run is set by its **channel**. A channel is a track of releases
+that move at different speeds, so you can choose how close to the leading edge you
+want to be:
+
+| Channel    | Pace           | For                       |
+| ---------- | -------------- | ------------------------- |
+| **Stable** | Changes slowly | Everyday use; the default |
+| **Latest** | Moves faster   | Newer features, sooner    |
+| **Dev**    | Bleeding edge  | Development and testing   |
+
+## Running channels side by side
+
+You do not have to choose one channel for good. You can run more than one side by
+side, each with its own separate data under `~/.loca`, so a newer build is fully
+isolated from your everyday setup. Trying **latest** for a week cannot disturb the
+sessions and settings on **stable**, because they never share state.
+
+<Aside type="note">
+  Large model downloads are the exception: they are shared across channels rather than copied, so
+  switching channels does not mean fetching gigabytes again. See [Language
+  Model](/manual/models/language-model).
+</Aside>
+
+## How It Works
+
+An update is never applied on trust. Each release ships with a signature that only
+Loca's release key could have produced, and the Core checks that signature against a
+key built into it before it will touch a downloaded build, so a file that was tampered
+with or came from the wrong place is rejected. Only after that does it stage the new
+version beside the old one and hand off to a tiny helper that swaps them and restarts.
+If the fresh build fails to come up cleanly, the Core notices on the next start and
+puts the previous one back, which is the rollback that keeps a bad update from leaving
+you stranded.
+
+Channels are kept apart by a plainer mechanism: each one is a separate folder under
+`~/.loca`, with its own sessions, settings, and Core. That is the whole reason two
+channels can run at once without colliding. Downloaded models are the one thing parked
+outside any channel's folder, in a shared location, so every channel reaches the same
+multi-gigabyte files instead of each keeping its own copy.
+
+That isolation is what makes a second channel safe to keep around: a place to try what
+is coming next without putting your daily work at risk. If you are taking Loca back
+off instead, see [Uninstalling Loca](/manual/maintenance/uninstalling).

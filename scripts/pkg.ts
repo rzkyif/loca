@@ -14,7 +14,7 @@
 // package prints one `ok` line; a failing one prints the last 20 output lines
 // plus the log path and a rerun command. When the CI env var is set the full
 // output is printed instead (the log file is unreadable in CI). Cap the pool
-// with TOMAT_PKG_CONCURRENCY (defaults to the host's logical core count).
+// with LOCA_PKG_CONCURRENCY (defaults to the host's logical core count).
 //
 // Usage: deno run -A scripts/pkg.ts <verb>
 
@@ -58,7 +58,7 @@ for (const member of members) {
 
 const concurrency = Math.max(
   1,
-  Number(Deno.env.get("TOMAT_PKG_CONCURRENCY")) || navigator.hardwareConcurrency || 4,
+  Number(Deno.env.get("LOCA_PKG_CONCURRENCY")) || navigator.hardwareConcurrency || 4,
 );
 
 // Color only when stdout is a real terminal and NO_COLOR is unset, so piping the

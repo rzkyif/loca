@@ -1,0 +1,42 @@
+---
+title: Appearance
+section: Personalization
+order: 2
+---
+
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+import SettingsFieldDemo from "../../../components/demos/SettingsFieldDemo.svelte";
+
+How Loca looks is yours to set, under **Appearance** in Settings. The group
+gathers everything visual in one place: theme, colors, text size, fonts, and the
+window's size and placement. These are all **Client** settings, so they shape this
+app and travel with it rather than with the Core, as
+[The Settings Panel](/manual/maintenance/settings-panel) explains.
+
+<SettingsPanelDemo group="appearance" />
+
+## Theme and color
+
+Choose a light or dark theme, or let Loca follow your system so it shifts with the
+rest of your machine. Beyond the theme, you can set the base and accent colors
+directly, which is what tints the surfaces and highlights throughout the app.
+
+<SettingsFieldDemo type="color" label="A color field" />
+
+Color is set with a field like this one, the same control the app uses for every
+color setting, so picking an accent here works the way picking any color does
+elsewhere in Settings.
+
+## The chat bubbles
+
+The conversation is where you spend your time, so its bubbles have their own set of
+controls. You can tune the bubble colors, the corner rounding, and the shadow and
+blur, so the chat reads the way you like rather than one fixed style. Small as they
+are, these add up to how the app feels in daily use.
+
+Because every appearance setting is a Client setting, none of this touches the
+Core. Pair this Client with a different Core and your look comes along unchanged;
+change the look and no Core is affected.
+
+Next, the keys that drive Loca without the mouse:
+[Shortcuts](/manual/personalization/shortcuts).

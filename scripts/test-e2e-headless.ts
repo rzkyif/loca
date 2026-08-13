@@ -2,7 +2,7 @@
 // Chromium). Manual only. Not invoked by CI.
 //
 // This lane mounts the real Svelte app in a real Chromium and drives it against
-// a real tomat-core subprocess over TLS, with outbound LLM/STT/TTS/downloads
+// a real loca-core subprocess over TLS, with outbound LLM/STT/TTS/downloads
 // mocked locally. See tests/e2e/headless/README.md for the architecture and the
 // behaviour delta versus the tauri-driver lane.
 //
@@ -12,7 +12,7 @@
 //    opt-in; mirrors the tauri-driver lane.)
 //
 // It also needs a dev install present (the four helper binaries + deno +
-// llama-server symlinked under ~/.tomat/dev/core/bin, produced by `deno task
+// llama-server symlinked under ~/.loca/dev/core/bin, produced by `deno task
 // dev` at least once) and the Rust helper binaries built in target/debug.
 
 import { fromFileUrl, join } from "@std/path";

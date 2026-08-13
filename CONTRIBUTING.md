@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in tomat. This document explains how the project
+Thank you for your interest in loca. This document explains how the project
 accepts contributions and the most useful ways to help.
 
 ## How code reaches the project
@@ -32,7 +32,7 @@ There are three ways to contribute, in roughly increasing order of effort.
 ### 1. Report bugs
 
 Test the application and report anything that does not work as expected. Open a
-[bug report](https://github.com/rzkyif/tomat/issues/new?template=bug-report.yml)
+[bug report](https://github.com/rzkyif/loca/issues/new?template=bug-report.yml)
 and include:
 
 - **Affected section.** Which part of the app the bug occurs in.
@@ -47,15 +47,15 @@ than a duplicate.
 
 The project distinguishes two kinds of request:
 
-- A **feature request** asks for a new capability that Tomat does not have
+- A **feature request** asks for a new capability that Loca does not have
   today.
 - An **improvement** asks for a refinement to a feature that already exists,
   such as reducing friction, clarifying copy, or adding a missing shortcut.
 
 Choose the matching form so the request lands in the right place:
 
-- [Feature requests](https://github.com/rzkyif/tomat/discussions/new?category=feature-requests)
-- [Improvement suggestions](https://github.com/rzkyif/tomat/discussions/new?category=improvement-suggestions)
+- [Feature requests](https://github.com/rzkyif/loca/discussions/new?category=feature-requests)
+- [Improvement suggestions](https://github.com/rzkyif/loca/discussions/new?category=improvement-suggestions)
 
 Describe the problem and the outcome you want. A concrete use case is more
 useful than a proposed implementation.

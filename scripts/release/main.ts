@@ -15,7 +15,7 @@
 //   --help
 
 import { parseArgs } from "@std/cli/parse-args";
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import {
   colors,
   type DeployEnv,
@@ -160,7 +160,7 @@ Flags:
 async function main(): Promise<void> {
   const flags = parseFlags();
   const mode = flags.crossPlatform ? "all targets" : "host only";
-  console.log(colors.bold(`\ntomat release: ${flags.channel} channel (${mode})\n`));
+  console.log(colors.bold(`\nloca release: ${flags.channel} channel (${mode})\n`));
 
   // Branch-aligned release: enforce the git preconditions up front, before any
   // env load or build, so a dirty/misaligned tree fails fast on a pristine tree.

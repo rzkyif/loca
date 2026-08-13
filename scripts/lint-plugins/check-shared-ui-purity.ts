@@ -1,12 +1,12 @@
 // Purity check for the shared UI layer (Tier A0 primitives + Tier A `*View`s).
 // A shared component must have no expectations from its host: it may not import
-// client code (`@tomat/client`, the `$lib`/`$stores`/`$composables` aliases),
-// `@tauri-apps/*`, or the API/network layer (`@tomat/shared/api/*`). Network and
+// client code (`@loca/client`, the `$lib`/`$stores`/`$composables` aliases),
+// `@tauri-apps/*`, or the API/network layer (`@loca/shared/api/*`). Network and
 // platform access is impossible transitively once client imports are banned, so
 // a presentational View renders identically in the client, the website, and a
-// future mobile build. See packages/tomat-shared/src/ui/README.md.
+// future mobile build. See packages/loca-shared/src/ui/README.md.
 //
-// Companion to the oxlint `tomat/no-tauri-import` family (oxlint can't parse
+// Companion to the oxlint `loca/no-tauri-import` family (oxlint can't parse
 // .svelte). Wired into `deno task lint`.
 //
 // Phase 0 ships this in warn mode; Phase 6 flips STRICT to fail the build.
@@ -19,14 +19,14 @@ const STRICT = true;
 // Scan the WHOLE shared UI subtree, not just components/: the `.ts` modules
 // there (context, tokens, the uno preset, sample bundles) are equally part of the
 // single-source layer and a client/tauri/api import in one of them would break
-// the website's rendering just the same. oxlint's tomat/no-tauri-import covers
+// the website's rendering just the same. oxlint's loca/no-tauri-import covers
 // `.ts` too, but only for @tauri-apps; this walker also bans the client aliases +
 // the api layer and is the sole check for `.svelte`.
-const ROOT = fromFileUrl(new URL("../../packages/tomat-shared/src/ui/", import.meta.url));
-const REL = "packages/tomat-shared/src/ui/";
+const ROOT = fromFileUrl(new URL("../../packages/loca-shared/src/ui/", import.meta.url));
+const REL = "packages/loca-shared/src/ui/";
 // Forbidden import sources for a shared presentational component.
 const FORBIDDEN =
-  /(?:from\s+|import\s+)["'](?:@tomat\/client|\$lib|\$stores|\$composables|@tauri-apps\/|@tomat\/shared\/api)/;
+  /(?:from\s+|import\s+)["'](?:@loca\/client|\$lib|\$stores|\$composables|@tauri-apps\/|@loca\/shared\/api)/;
 
 interface Violation {
   file: string;

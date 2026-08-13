@@ -5,12 +5,12 @@
   // branch, so this file imports nothing from @tauri-apps. It renders the REAL
   // +page.svelte app shell, so navigation, boot choreography, chat, settings,
   // etc. are all the production components under test.
-  import "@tomat/shared/ui/styles/base.css";
+  import "@loca/shared/ui/styles/base.css";
   import { onMount } from "svelte";
   import { connectionState } from "$stores/connection.svelte";
   import { coreStatusState } from "$stores/core-status.svelte";
-  import { makeUiContext, setUiContext } from "@tomat/shared/ui/context";
-  import { getDefaultSettings } from "@tomat/shared";
+  import { makeUiContext, setUiContext } from "@loca/shared/ui/context";
+  import { getDefaultSettings } from "@loca/shared";
   import { settingsState } from "$stores";
   import { expansionState, isExpanded } from "$stores/expansion.svelte";
   import { getDuration } from "$lib/appearance/animations";

@@ -4,7 +4,7 @@
 // would reach: the OpenAI-compatible LLM, STT, and TTS endpoints, plus the
 // HuggingFace / storage artifact host used by the model downloader. Core is
 // pointed at this server through settings (llm/stt/tts `provider: "external"`,
-// baseUrl -> here) and the `TOMAT_HF_BASE_URL` / `TOMAT_STORAGE_BASE_URL` env
+// baseUrl -> here) and the `LOCA_HF_BASE_URL` / `LOCA_STORAGE_BASE_URL` env
 // overrides, so no real network is ever touched.
 //
 // The LLM behaviour is scriptable per core instance via `setLlmScript`, so a
@@ -431,7 +431,7 @@ async function handleArtifact(path: string, method: string, res: ServerResponse)
 
   // Synthetic small payload; report the sha256 of exactly the bytes we stream so
   // the integrity check verifies them too.
-  const synthetic = Buffer.from(`tomat-e2e-mock-artifact:${rel}`);
+  const synthetic = Buffer.from(`loca-e2e-mock-artifact:${rel}`);
   const sha = createHash("sha256").update(synthetic).digest("hex");
   res.writeHead(200, {
     "content-length": String(synthetic.length),

@@ -23,21 +23,21 @@ function nsi(overrides: Partial<Parameters<typeof unifiedNsi>[0]> = {}): string 
     clientVersion: "0.1.13",
     payloadDir: "C:\\work\\payload",
     clientExePath: "C:\\work\\client-setup.exe",
-    binName: "tomat-core-latest.exe",
-    outFile: "C:\\work\\tomat-latest-setup-0.1.13.exe",
+    binName: "loca-core-latest.exe",
+    outFile: "C:\\work\\loca-latest-setup-0.1.13.exe",
     hasExtensions: false,
     ...overrides,
   });
 }
 
 Deno.test("names: stable vs channel-suffixed", () => {
-  assertEquals(unifiedInstallerStableName("exe", "stable"), "tomat-setup.exe");
-  assertEquals(unifiedInstallerStableName("exe", "latest"), "tomat-latest-setup.exe");
-  assertEquals(unifiedInstallerStableName("pkg", "stable"), "tomat.pkg");
-  assertEquals(unifiedInstallerStableName("pkg", "latest"), "tomat-latest.pkg");
-  assertEquals(unifiedDisplayName("stable"), "Tomat");
-  assertEquals(unifiedDisplayName("latest"), "Tomat (latest)");
-  assertEquals(coreDisplayName("latest"), "Tomat Core (latest)");
+  assertEquals(unifiedInstallerStableName("exe", "stable"), "loca-setup.exe");
+  assertEquals(unifiedInstallerStableName("exe", "latest"), "loca-latest-setup.exe");
+  assertEquals(unifiedInstallerStableName("pkg", "stable"), "loca.pkg");
+  assertEquals(unifiedInstallerStableName("pkg", "latest"), "loca-latest.pkg");
+  assertEquals(unifiedDisplayName("stable"), "Loca");
+  assertEquals(unifiedDisplayName("latest"), "Loca (latest)");
+  assertEquals(coreDisplayName("latest"), "Loca Core (latest)");
 });
 
 Deno.test("nsi: silent flag surface is parsed in .onInit", () => {
@@ -53,7 +53,7 @@ Deno.test("nsi: silent flag surface is parsed in .onInit", () => {
 
 Deno.test("nsi: client is a required section wrapping the embedded Tauri setup", () => {
   const src = nsi();
-  assertStringIncludes(src, 'Section "Tomat Client (required)" SEC_CLIENT');
+  assertStringIncludes(src, 'Section "Loca Client (required)" SEC_CLIENT');
   // Read-only in the GUI (the required half); /CLIENT=0 still unselects it.
   assertMatch(src, /SEC_CLIENT\n(\s*;[^\n]*\n)*\s*SectionIn RO/);
   assertStringIncludes(src, `ExecWait '"$PLUGINSDIR\\client-setup.exe" /S'`);
@@ -63,12 +63,12 @@ Deno.test("nsi: client is a required section wrapping the embedded Tauri setup",
 
 Deno.test("nsi: core section provisions via install-service and owns the ARP entry", () => {
   const src = nsi();
-  assertStringIncludes(src, 'Section "Tomat Core" SEC_CORE');
+  assertStringIncludes(src, 'Section "Loca Core" SEC_CORE');
   // The umbrella's uninstall.exe owns Add/Remove; install-service must not
   // clobber it back to the PowerShell teardown.
-  assertStringIncludes(src, "set TOMAT_INSTALL_REGISTER_ARP=0&&");
+  assertStringIncludes(src, "set LOCA_INSTALL_REGISTER_ARP=0&&");
   assertStringIncludes(src, 'WriteUninstaller "$INSTDIR\\uninstall.exe"');
-  assertStringIncludes(src, 'DisplayName" "Tomat Core (latest)"');
+  assertStringIncludes(src, 'DisplayName" "Loca Core (latest)"');
   // Background mode avoids nsExec's inherited-pipe hang; service mode keeps the
   // hidden console.
   assertMatch(src, /\$\{If\} \$ServiceFlag == "0"\s*\n\s*ExecWait/);
@@ -114,8 +114,8 @@ Deno.test("distribution: choice tree, required client, hidden setup last", () =>
     clientVersion: "0.1.13",
   });
   const ids = macPkgIds("latest");
-  assertEquals(ids.client, "au.tomat.client-latest");
-  assertEquals(ids.setup, "au.tomat.core-latest.setup");
+  assertEquals(ids.client, "com.rzkyif.loca.client-latest");
+  assertEquals(ids.setup, "com.rzkyif.loca.core-latest.setup");
   // Client is preselected + disabled (required in the GUI; headless core-only
   // re-enables then deselects it via choices XML).
   assertMatch(xml, /<choice id="client"[^>]*start_selected="true" start_enabled="false"/);
@@ -141,8 +141,8 @@ Deno.test("distribution: choice tree, required client, hidden setup last", () =>
 });
 
 Deno.test("mac setup postinstall reads markers, provisions as the console user", () => {
-  const script = macSetupPostinstall("latest", "/usr/local/lib/tomat-latest", "tomat-core-latest");
-  // Marker files -> TOMAT_INSTALL_* env; markers removed after reading.
+  const script = macSetupPostinstall("latest", "/usr/local/lib/loca-latest", "loca-core-latest");
+  // Marker files -> LOCA_INSTALL_* env; markers removed after reading.
   assertStringIncludes(script, 'if [ -f "$PREFIX/opts/service" ]; then SERVICE=1; fi');
   assertStringIncludes(script, 'if [ -f "$PREFIX/opts/lan" ]; then BINDALL=1; fi');
   assertStringIncludes(script, 'if [ -f "$PREFIX/opts/behindproxy" ]; then BEHINDPROXY=1; fi');
@@ -151,7 +151,7 @@ Deno.test("mac setup postinstall reads markers, provisions as the console user",
   assertStringIncludes(script, 'if [ ! -d "$PREFIX/bin" ]; then');
   // install-service runs AS the console user with HOME pinned.
   assertStringIncludes(script, 'sudo -u "$CONSOLE_USER" env HOME="$USER_HOME"');
-  assertStringIncludes(script, 'TOMAT_INSTALL_SERVICE="$SERVICE"');
+  assertStringIncludes(script, 'LOCA_INSTALL_SERVICE="$SERVICE"');
   assertStringIncludes(script, "install-service");
 });
 
@@ -166,17 +166,17 @@ Deno.test("mac uninstall template renders every token", () => {
   ].join("\n");
   const out = renderMacUninstall(template, {
     channel: "latest",
-    prefix: "/usr/local/lib/tomat-latest",
-    appName: "Tomat (latest).app",
-    binName: "tomat-core-latest",
+    prefix: "/usr/local/lib/loca-latest",
+    appName: "Loca (latest).app",
+    binName: "loca-core-latest",
     pkgIds: Object.values(macPkgIds("latest")),
     serviceLabel: macPkgIds("latest").core,
   });
   assertEquals(out.includes("__"), false);
   assertStringIncludes(out, 'CHANNEL="latest"');
-  assertStringIncludes(out, 'APP_NAME="Tomat (latest).app"');
-  assertStringIncludes(out, "au.tomat.core-latest.setup");
-  assertStringIncludes(out, 'SERVICE_LABEL="au.tomat.core-latest"');
+  assertStringIncludes(out, 'APP_NAME="Loca (latest).app"');
+  assertStringIncludes(out, "com.rzkyif.loca.core-latest.setup");
+  assertStringIncludes(out, 'SERVICE_LABEL="com.rzkyif.loca.core-latest"');
 });
 
 Deno.test("the tracked mac uninstaller template carries every token the renderer fills", async () => {
@@ -195,9 +195,9 @@ Deno.test("the tracked mac uninstaller template carries every token the renderer
   }
   const out = renderMacUninstall(template, {
     channel: "stable",
-    prefix: "/usr/local/lib/tomat-stable",
-    appName: "tomat.app",
-    binName: "tomat-core",
+    prefix: "/usr/local/lib/loca-stable",
+    appName: "loca.app",
+    binName: "loca-core",
     pkgIds: Object.values(macPkgIds("stable")),
     serviceLabel: macPkgIds("stable").core,
   });

@@ -1,5 +1,5 @@
 {
-  "name": "tomat-e2e-headless",
+  "name": "loca-e2e-headless",
   "private": true,
   "description": "Opt-in headless integration E2E lane: real core subprocess + real Svelte app in real Chromium. Not wired into the workspace deno.json or CI. See README.md for setup.",
   "type": "module",

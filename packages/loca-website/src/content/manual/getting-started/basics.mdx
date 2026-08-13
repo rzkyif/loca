@@ -1,0 +1,96 @@
+---
+title: The Basics
+section: Getting Started
+order: 2
+---
+
+import ChatDemo from "../../../components/demos/ChatDemo.svelte";
+import CoreBarDemo from "../../../components/demos/CoreBarDemo.svelte";
+import SessionBarDemo from "../../../components/demos/SessionBarDemo.svelte";
+import UserInputDemo from "../../../components/demos/UserInputDemo.svelte";
+
+When you open Loca you land in a **session**: one conversation with the agent.
+You type in the bar at the bottom, and each reply arrives above it. That much is
+familiar from any chat app. This page covers the few things that are particular to
+Loca, the ones worth knowing before everything else falls into place: the two
+programs that make it run, the session you work in, and the ways to put more than
+plain text into a message.
+
+<ChatDemo />
+
+## Core and Client
+
+Loca is built from two programs with a clear division of labor. The **Core** is a
+service that holds your data and does the heavy lifting: it stores sessions, runs
+models, executes tools, and reads your memories. The **Client** is the desktop app
+you see: it draws the conversation, captures what you type, plays audio, and
+otherwise stays thin. Most of this manual makes more sense once you hold that
+split in mind, because nearly every setting belongs to one side or the other.
+
+Because the Core is a separate service, it does not have to live where the Client
+does. The two usually run on the same machine, but a Client can pair with a Core
+on a more powerful desktop and drive it from a laptop. The **Core bar** at the
+bottom of the app tells you which Core you are connected to and how it is doing.
+
+<CoreBarDemo highlightLabel="Core" highlightTarget="[data-region=core-status]" />
+
+## The session you work in
+
+A session is a single conversation, with its own history and its own context, and
+Loca saves every one locally so you can leave it and return later. The bar across
+the top carries the two things you keep an eye on: its title, and a running measure
+of the **context window**, how much of the model's attention the conversation has
+used so far. Loca names a session for you from your first message, so you never
+stop to title it.
+
+<SessionBarDemo
+  scenario="nearFull"
+  label="A session near its context limit"
+  highlightLabel="Context window"
+  highlightTarget="[data-region=context-gauge]"
+/>
+
+The context window is finite, and the bar's fill is your warning that a long
+session is nearing the edge. The fix is rarely to fight a crowded context: when
+what you are asking now has drifted from how the session began, start a fresh one.
+A new session gives the model a clean window and your full prompt its undivided
+attention, and the old session stays saved if you need it. Keeping several short
+sessions, one per thread, beats piling everything into one ever-growing
+conversation.
+
+## Saying more than text
+
+The input bar is a plain text box, but it is also where you pull in files and
+reach for things you have already saved, so it is worth knowing what it can do
+beyond typing.
+
+<UserInputDemo />
+
+- **Attachments.** Attach a file, drop in a screenshot, or capture a region of
+  your screen, and it stages above the bar for review before you send. A document
+  is passed along as text the agent can quote and work from; an image is only read
+  if your model supports vision, so a text-only model cannot see one.
+- **The `#`, `@`, and `/` symbols.** Type one of these and an autocomplete list
+  opens for things you have saved: your [snippets](/manual/tools/snippets) and
+  [memories](/manual/tools/memories). Pick a match and Loca drops its contents
+  into your message without your hands leaving the keyboard.
+- **Dictation.** If you would rather speak than type, the bar can show a
+  microphone for [Speech-to-Text](/manual/speech/speech-to-text), transcribing
+  what you say into the same box.
+
+## How It Works
+
+The two programs talk over a small local network connection: the Client sends
+requests to the Core and streams replies back over a live link, which is why a
+reply can keep arriving even if you switch away and come back. The Client holds no
+conversation state of its own; it renders what the Core reports.
+
+Everything Loca stores lives under `~/.loca` on the machine running the Core:
+your sessions, memories, snippets, downloaded models, and the settings you have
+changed. A session is a plain file on that disk, not a row in someone else's
+database, which is what local-first means in practice. Nothing about a
+conversation leaves that machine unless you point a setting at an **External**
+provider, and Loca tells you when you have.
+
+With the loop in hand, the next chapter is the engine behind every reply:
+[Language Model](/manual/models/language-model).

@@ -13,7 +13,7 @@ import { dirname, fromFileUrl, join, resolve } from "@std/path";
 import { load as loadDotenv } from "@std/dotenv";
 import * as ed from "@noble/ed25519";
 import { AwsClient } from "aws4fetch";
-import { canonicalize } from "../../packages/tomat-shared/src/crypto/canonical.ts";
+import { canonicalize } from "../../packages/loca-shared/src/crypto/canonical.ts";
 import type { BuildEnvironment } from "./drivers/mod.ts";
 // Type-only: artifacts.ts imports values from this module, so a value import
 // here would be a runtime cycle. `import type` is erased, so it is safe.
@@ -26,9 +26,9 @@ import { publishGithubRelease } from "./github-release.ts";
 // paths
 
 export const REPO_ROOT = resolve(dirname(fromFileUrl(import.meta.url)), "../..");
-export const WEBSITE_DIR = join(REPO_ROOT, "packages/tomat-website");
-export const CORE_DIR = join(REPO_ROOT, "packages/tomat-core");
-export const SHARED_DIR = join(REPO_ROOT, "packages/tomat-shared");
+export const WEBSITE_DIR = join(REPO_ROOT, "packages/loca-website");
+export const CORE_DIR = join(REPO_ROOT, "packages/loca-core");
+export const SHARED_DIR = join(REPO_ROOT, "packages/loca-shared");
 export const DIST_DIR = join(REPO_ROOT, "dist");
 export const ENV_PATH = join(REPO_ROOT, ".env");
 export const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
@@ -216,8 +216,8 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
   const raw = await loadDotenv({ envPath: ENV_PATH, export: false });
   const get = (k: string) => raw[k] ?? "";
 
-  let privB64 = get("TOMAT_SIGNING_PRIVATE_KEY_B64");
-  let pubB64 = get("TOMAT_SIGNING_PUBLIC_KEY_B64");
+  let privB64 = get("LOCA_SIGNING_PRIVATE_KEY_B64");
+  let pubB64 = get("LOCA_SIGNING_PUBLIC_KEY_B64");
 
   if (!privB64 && !pubB64) {
     info(`generating new Ed25519 signing keypair`);
@@ -225,8 +225,8 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
     const pk = await ed.getPublicKeyAsync(sk);
     privB64 = encodeBase64(sk);
     pubB64 = encodeBase64(pk);
-    await persistEnvKey("TOMAT_SIGNING_PRIVATE_KEY_B64", privB64);
-    await persistEnvKey("TOMAT_SIGNING_PUBLIC_KEY_B64", pubB64);
+    await persistEnvKey("LOCA_SIGNING_PRIVATE_KEY_B64", privB64);
+    await persistEnvKey("LOCA_SIGNING_PUBLIC_KEY_B64", pubB64);
     ok(`keypair written to .env`);
   } else if (!privB64 || !pubB64) {
     fail(
@@ -259,18 +259,18 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
     signingPublicKey: decodeBase64(pubB64),
     cloudflareApiToken: get("CLOUDFLARE_API_TOKEN"),
     cloudflareAccountId: get("CLOUDFLARE_ACCOUNT_ID"),
-    r2AccessKeyId: get("TOMAT_R2_ACCESS_KEY_ID"),
-    r2SecretAccessKey: get("TOMAT_R2_SECRET_ACCESS_KEY"),
-    websiteDomain: get("TOMAT_WEBSITE_DOMAIN") || "au.tomat.ing",
-    storageDomain: get("TOMAT_STORAGE_DOMAIN") || "get.au.tomat.ing",
-    r2Bucket: get("TOMAT_R2_BUCKET") || "tomat-releases",
+    r2AccessKeyId: get("LOCA_R2_ACCESS_KEY_ID"),
+    r2SecretAccessKey: get("LOCA_R2_SECRET_ACCESS_KEY"),
+    websiteDomain: get("LOCA_WEBSITE_DOMAIN") || "loca.rzkyif.com",
+    storageDomain: get("LOCA_STORAGE_DOMAIN") || "get.loca.rzkyif.com",
+    r2Bucket: get("LOCA_R2_BUCKET") || "loca-releases",
     tauriUpdaterPublicKey: tauriPub,
     tauriUpdaterPrivateKey: tauriPriv,
     tauriUpdaterPassword: get("TAURI_UPDATER_PRIVATE_KEY_PASSWORD"),
-    androidKeystoreB64: get("TOMAT_ANDROID_KEYSTORE_B64"),
-    androidKeystorePassword: get("TOMAT_ANDROID_KEYSTORE_PASSWORD"),
-    androidKeyAlias: get("TOMAT_ANDROID_KEY_ALIAS") || "upload",
-    androidKeyPassword: get("TOMAT_ANDROID_KEY_PASSWORD") || get("TOMAT_ANDROID_KEYSTORE_PASSWORD"),
+    androidKeystoreB64: get("LOCA_ANDROID_KEYSTORE_B64"),
+    androidKeystorePassword: get("LOCA_ANDROID_KEYSTORE_PASSWORD"),
+    androidKeyAlias: get("LOCA_ANDROID_KEY_ALIAS") || "upload",
+    androidKeyPassword: get("LOCA_ANDROID_KEY_PASSWORD") || get("LOCA_ANDROID_KEYSTORE_PASSWORD"),
     appleSigningIdentity: get("APPLE_SIGNING_IDENTITY"),
     appleCertificateB64: get("APPLE_CERTIFICATE"),
     appleCertificatePassword: get("APPLE_CERTIFICATE_PASSWORD"),
@@ -299,9 +299,9 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
  *  entry (build-release-bundle.ts) so the two pipelines build identically. */
 export function envFromProcess(): DeployEnv {
   const get = (k: string) => Deno.env.get(k) ?? "";
-  const pubB64 = get("TOMAT_SIGNING_PUBLIC_KEY_B64");
+  const pubB64 = get("LOCA_SIGNING_PUBLIC_KEY_B64");
   if (!pubB64) {
-    fail(`TOMAT_SIGNING_PUBLIC_KEY_B64 is required (baked into the core binary for verification).`);
+    fail(`LOCA_SIGNING_PUBLIC_KEY_B64 is required (baked into the core binary for verification).`);
   }
   return {
     signingPrivateKey: new Uint8Array(),
@@ -310,16 +310,16 @@ export function envFromProcess(): DeployEnv {
     cloudflareAccountId: "",
     r2AccessKeyId: "",
     r2SecretAccessKey: "",
-    websiteDomain: get("TOMAT_WEBSITE_DOMAIN") || "au.tomat.ing",
-    storageDomain: get("TOMAT_STORAGE_DOMAIN") || "get.au.tomat.ing",
-    r2Bucket: get("TOMAT_R2_BUCKET") || "tomat-releases",
+    websiteDomain: get("LOCA_WEBSITE_DOMAIN") || "loca.rzkyif.com",
+    storageDomain: get("LOCA_STORAGE_DOMAIN") || "get.loca.rzkyif.com",
+    r2Bucket: get("LOCA_R2_BUCKET") || "loca-releases",
     tauriUpdaterPublicKey: get("TAURI_UPDATER_PUBLIC_KEY"),
     tauriUpdaterPrivateKey: get("TAURI_UPDATER_PRIVATE_KEY"),
     tauriUpdaterPassword: get("TAURI_UPDATER_PRIVATE_KEY_PASSWORD"),
-    androidKeystoreB64: get("TOMAT_ANDROID_KEYSTORE_B64"),
-    androidKeystorePassword: get("TOMAT_ANDROID_KEYSTORE_PASSWORD"),
-    androidKeyAlias: get("TOMAT_ANDROID_KEY_ALIAS") || "upload",
-    androidKeyPassword: get("TOMAT_ANDROID_KEY_PASSWORD") || get("TOMAT_ANDROID_KEYSTORE_PASSWORD"),
+    androidKeystoreB64: get("LOCA_ANDROID_KEYSTORE_B64"),
+    androidKeystorePassword: get("LOCA_ANDROID_KEYSTORE_PASSWORD"),
+    androidKeyAlias: get("LOCA_ANDROID_KEY_ALIAS") || "upload",
+    androidKeyPassword: get("LOCA_ANDROID_KEY_PASSWORD") || get("LOCA_ANDROID_KEYSTORE_PASSWORD"),
     appleSigningIdentity: get("APPLE_SIGNING_IDENTITY"),
     appleCertificateB64: get("APPLE_CERTIFICATE"),
     appleCertificatePassword: get("APPLE_CERTIFICATE_PASSWORD"),
@@ -457,7 +457,7 @@ export function stripCoreVersion(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// canonical JSON for signing. Single-sourced in @tomat/shared (imported above)
+// canonical JSON for signing. Single-sourced in @loca/shared (imported above)
 // so the signer here and the core verifiers (binaries/manifest.ts,
 // update/self-updater.ts) recompute byte-identical bytes and can't drift.
 export { canonicalize };
@@ -465,7 +465,7 @@ export { canonicalize };
 // ---------------------------------------------------------------------------
 // host triple detection
 
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 
 export function detectHostTriple(): Triple {
   const os = Deno.build.os;
@@ -496,7 +496,7 @@ export function parseChannelFlag(value: string | undefined): ReleaseChannel {
   return ch;
 }
 
-/** Suffix on Tomat's own binary names: "" for stable, "-latest" otherwise. */
+/** Suffix on Loca's own binary names: "" for stable, "-latest" otherwise. */
 export function channelBinSuffix(channel: ReleaseChannel): string {
   return channel === "stable" ? "" : `-${channel}`;
 }
@@ -588,8 +588,8 @@ export const R2_CONCURRENCY = 4;
 function r2Client(env: DeployEnv): AwsClient {
   if (!env.r2AccessKeyId || !env.r2SecretAccessKey) {
     fail(
-      `R2 S3 credentials missing: set TOMAT_R2_ACCESS_KEY_ID + ` +
-        `TOMAT_R2_SECRET_ACCESS_KEY in .env (an "Object Read & Write" R2 API token).`,
+      `R2 S3 credentials missing: set LOCA_R2_ACCESS_KEY_ID + ` +
+        `LOCA_R2_SECRET_ACCESS_KEY in .env (an "Object Read & Write" R2 API token).`,
     );
   }
   return new AwsClient({
@@ -927,18 +927,18 @@ export async function hashPaths(inputs: HashInput[]): Promise<string> {
 export type PackageKind = "deno" | "rust";
 
 export const PACKAGES: Record<string, { dir: string; kind: PackageKind }> = {
-  shared: { dir: "packages/tomat-shared", kind: "deno" },
-  "core-engine": { dir: "packages/tomat-core-engine", kind: "deno" },
-  core: { dir: "packages/tomat-core", kind: "deno" },
-  client: { dir: "packages/tomat-client", kind: "deno" },
-  website: { dir: "packages/tomat-website", kind: "deno" },
-  extension: { dir: "packages/tomat-extension-builtin", kind: "deno" },
-  catalog: { dir: "packages/tomat-model-catalog", kind: "deno" },
-  "core-updater": { dir: "packages/tomat-core-updater", kind: "rust" },
-  "core-keychain": { dir: "packages/tomat-core-keychain", kind: "rust" },
-  "core-hwinfo": { dir: "packages/tomat-core-hwinfo", kind: "rust" },
-  "core-ptyhost": { dir: "packages/tomat-core-ptyhost", kind: "rust" },
-  "core-speech": { dir: "packages/tomat-core-speech", kind: "rust" },
+  shared: { dir: "packages/loca-shared", kind: "deno" },
+  "core-engine": { dir: "packages/loca-core-engine", kind: "deno" },
+  core: { dir: "packages/loca-core", kind: "deno" },
+  client: { dir: "packages/loca-client", kind: "deno" },
+  website: { dir: "packages/loca-website", kind: "deno" },
+  extension: { dir: "packages/loca-extension-builtin", kind: "deno" },
+  catalog: { dir: "packages/loca-model-catalog", kind: "deno" },
+  "core-updater": { dir: "packages/loca-core-updater", kind: "rust" },
+  "core-keychain": { dir: "packages/loca-core-keychain", kind: "rust" },
+  "core-hwinfo": { dir: "packages/loca-core-hwinfo", kind: "rust" },
+  "core-ptyhost": { dir: "packages/loca-core-ptyhost", kind: "rust" },
+  "core-speech": { dir: "packages/loca-core-speech", kind: "rust" },
 };
 
 /** Source-hash inputs for one package: its source tree + its manifest. */

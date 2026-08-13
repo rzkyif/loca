@@ -1,12 +1,12 @@
 #!/usr/bin/env -S deno run -A
 // Starts the Astro dev server for the website. No staging. Release artifacts
-// (manifests, installers, schemas) live on R2 at get.au.tomat.ing now,
+// (manifests, installers, schemas) live on R2 at get.loca.rzkyif.com now,
 // not on the Worker, so the landing page is fully self-contained.
 
 import { dirname, fromFileUrl, join, resolve } from "@std/path";
 
 const REPO_ROOT = resolve(dirname(fromFileUrl(import.meta.url)), "../..");
-const WEBSITE_DIR = join(REPO_ROOT, "packages/tomat-website");
+const WEBSITE_DIR = join(REPO_ROOT, "packages/loca-website");
 
 // Force Astro's in-process foreground dev server. Astro 7's `astro dev` switches
 // to a detached "background" dev server when it detects an agentic environment

@@ -1,0 +1,305 @@
+---
+// The topology illustration at the top of the install page. Each machine is a
+// device card (DiagramDevice: icon + name centred at its top) that contains its
+// Client / Core role chips (DiagramNode). Exactly three flows
+// connect the chips, forming the chain
+//   Laptop Client - Laptop Core - Phone Client - Gaming PC Core
+// i.e. the Laptop talks to its own Core, and the Phone reaches both the Laptop's
+// Core and the Gaming PC's Core. Every flow runs Client -> Core, so its dot is
+// blue on the way out (a request from the Client) and turns yellow on the way
+// back (the reply from the Core); the dot starts and ends at a chip's centre, so
+// it is fully covered by the (opaque) chips at both ends. Each dot also carries
+// an expanding "ping" halo so the moving flow is easy to spot. A flow starts
+// hidden (opacity 0) until its staggered `begin`, then a `<set>` reveals it: an
+// `animateMotion` parks the element at the SVG origin before it begins, so a
+// delayed flow would otherwise flash a dot at the top-left corner first.
+//
+// Like the home showcase, the figure renders in the INVERTED theme (dark on a
+// light site, light on a dark site): the `--dg-*` aliases below pick the opposite
+// ladder, and the bubble-shadow colour is flipped to match. The connecting links
+// cross both the dark device cards and the light page between them, so they are
+// solid white lines in `mix-blend-mode: difference`, which inverts whatever is
+// behind them (dark line over the light page, light line over a dark card). For
+// that blend to reach the cards, the SVG must NOT be isolated: it carries no
+// z-index and is painted between the cards (before it in source) and the chips
+// (after it), so it blends with the cards yet sits under the chips.
+//
+// The chips are HTML over the SVG; the dots are SMIL, so it all animates with NO
+// JavaScript (the install page must work JS-disabled); prefers-reduced-motion
+// stills it. Two responsive geometries toggle by media query: a wide straight
+// line, and a narrow triangle with the Phone lifted to the apex (all device cards
+// the same height, chips inset equally). Chips sit at percentage positions and
+// each SVG shares its stage's aspect ratio, so dots line up with the chips in both.
+import DiagramDevice from "./DiagramDevice.astro";
+import DiagramNode from "./DiagramNode.astro";
+
+const DUR = "2.6s";
+const KP = "0;1;1;0;0";
+const KT = "0;0.42;0.58;0.97;1";
+// Blue out (Client request), yellow back (Core reply), via the accent bases.
+const FILL = "#3b82f6;#3b82f6;#eab308;#eab308;#3b82f6";
+// The ping halo tracks the same blue->yellow trip as the dot, but in the lighter
+// subcard-BACKGROUND shade of each accent (the chips' `-400` fill, not their
+// stronger text), so the pulse reads as a soft echo of the chip it travels from.
+const PING_FILL = "#60a5fa;#60a5fa;#facc15;#facc15;#60a5fa";
+// Each flow's dot wears a "ping" halo: a translucent disc that expands from the
+// dot's radius and fades to nothing, re-emitting on its own short cycle so it
+// reads as a sonar pulse travelling with the dot. The cycle is shorter than the
+// travel so a few pings emit per trip; the keyframes are just start -> end.
+const PING_DUR = "1.3s";
+const PING_OP = "0.5;0";
+const PING_KT = "0;1";
+
+// Flow paths in each stage's viewBox units, Client centre -> Core centre.
+const lineFlows = [
+  { d: "M11.5,10.54 L28.5,10.54", begin: "0s" },
+  { d: "M53.5,10.54 L28.5,10.54", begin: "0.7s" },
+  { d: "M53.5,10.54 L86,10.54", begin: "1.4s" },
+];
+const triFlows = [
+  { d: "M19,65.92 L43,65.92", begin: "0s" },
+  { d: "M50,21.12 L43,65.92", begin: "0.7s" },
+  { d: "M50,21.12 L79,65.92", begin: "1.4s" },
+];
+---
+
+<figure class="install-diagram not-prose mx-auto w-full max-w-2xl">
+  {/* Wide screens: the device cards on one straight line. */}
+  <div class="dg-stage dg-line">
+    <DiagramDevice icon="i-mdi-laptop" name="Laptop" style="left:2%;top:14%;width:36%;height:72%" />
+    <DiagramDevice
+      icon="i-mdi-cellphone"
+      name="Phone"
+      style="left:45%;top:14%;width:17%;height:72%"
+    />
+    <DiagramDevice
+      icon="i-mdi-desktop-tower"
+      name="Gaming PC"
+      style="left:76%;top:14%;width:20%;height:72%"
+    />
+
+    <svg class="dg-svg" viewBox="0 0 100 17" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      {
+        lineFlows.map((f) => (
+          <path class="dg-link" d={f.d} fill="none" vector-effect="non-scaling-stroke" />
+        ))
+      }
+      {
+        lineFlows.map((f) => (
+          <g class="dg-flow" opacity="0">
+            <animateMotion
+              dur={DUR}
+              begin={f.begin}
+              repeatCount="indefinite"
+              calcMode="linear"
+              keyPoints={KP}
+              keyTimes={KT}
+              path={f.d}
+            />
+            <set attributeName="opacity" to="1" begin={f.begin} fill="freeze" />
+            <circle class="dg-ping" r="0.65" fill="#60a5fa">
+              <animate
+                attributeName="r"
+                dur={PING_DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values="0.65;1.2"
+                keyTimes={PING_KT}
+              />
+              <animate
+                attributeName="opacity"
+                dur={PING_DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={PING_OP}
+                keyTimes={PING_KT}
+              />
+              <animate
+                attributeName="fill"
+                dur={DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={PING_FILL}
+                keyTimes={KT}
+              />
+            </circle>
+            <circle class="dg-dot" r="0.65" fill="#3b82f6">
+              <animate
+                attributeName="fill"
+                dur={DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={FILL}
+                keyTimes={KT}
+              />
+            </circle>
+          </g>
+        ))
+      }
+    </svg>
+
+    <DiagramNode role="client" style="left:11.5%;top:62%" />
+    <DiagramNode role="core" style="left:28.5%;top:62%" />
+    <DiagramNode role="client" style="left:53.5%;top:62%" />
+    <DiagramNode role="core" style="left:86%;top:62%" />
+  </div>
+
+  {/* Narrow screens: the Phone lifts to the apex, forming a triangle. */}
+  <div class="dg-stage dg-tri">
+    <DiagramDevice
+      icon="i-mdi-cellphone"
+      name="Phone"
+      style="left:35%;top:4%;width:30%;height:32%"
+    />
+    <DiagramDevice icon="i-mdi-laptop" name="Laptop" style="left:4%;top:60%;width:54%;height:32%" />
+    <DiagramDevice
+      icon="i-mdi-desktop-tower"
+      name="Gaming PC"
+      style="left:64%;top:60%;width:30%;height:32%"
+    />
+
+    <svg class="dg-svg" viewBox="0 0 100 80" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      {
+        triFlows.map((f) => (
+          <path class="dg-link" d={f.d} fill="none" vector-effect="non-scaling-stroke" />
+        ))
+      }
+      {
+        triFlows.map((f) => (
+          <g class="dg-flow" opacity="0">
+            <animateMotion
+              dur={DUR}
+              begin={f.begin}
+              repeatCount="indefinite"
+              calcMode="linear"
+              keyPoints={KP}
+              keyTimes={KT}
+              path={f.d}
+            />
+            <set attributeName="opacity" to="1" begin={f.begin} fill="freeze" />
+            <circle class="dg-ping" r="1.1" fill="#60a5fa">
+              <animate
+                attributeName="r"
+                dur={PING_DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values="1.1;2"
+                keyTimes={PING_KT}
+              />
+              <animate
+                attributeName="opacity"
+                dur={PING_DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={PING_OP}
+                keyTimes={PING_KT}
+              />
+              <animate
+                attributeName="fill"
+                dur={DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={PING_FILL}
+                keyTimes={KT}
+              />
+            </circle>
+            <circle class="dg-dot" r="1.1" fill="#3b82f6">
+              <animate
+                attributeName="fill"
+                dur={DUR}
+                begin={f.begin}
+                repeatCount="indefinite"
+                values={FILL}
+                keyTimes={KT}
+              />
+            </circle>
+          </g>
+        ))
+      }
+    </svg>
+
+    <DiagramNode role="client" style="left:50%;top:26.4%" />
+    <DiagramNode role="client" style="left:19%;top:82.4%" />
+    <DiagramNode role="core" style="left:43%;top:82.4%" />
+    <DiagramNode role="core" style="left:79%;top:82.4%" />
+  </div>
+
+  <figcaption class="sr-only">
+    An example Loca setup: a Laptop running both a Client and a Core, a Phone running a Client, and
+    a Gaming PC running a Core. The Laptop's Client uses the Laptop's Core, the Phone's Client
+    reaches the Laptop's Core, and the Phone's Client also reaches the Gaming PC's Core.
+  </figcaption>
+</figure>
+
+<style>
+  /* Inverted-theme aliases: pick the opposite ladder to the site (dark tokens on
+     a light site and vice versa), inherited by the device cards and chips. The
+     Client / Core chips share the cards' surface lightness (the `-300` step),
+     just tinted with their accent instead of the neutral. */
+  .install-diagram {
+    --dg-surface: var(--default-d-300);
+    --dg-border: var(--default-d-300);
+    --dg-text: var(--default-d-900);
+    --dg-muted: var(--default-d-600);
+    --dg-client-bg: var(--accent-blue-d-300);
+    --dg-client-fg: var(--accent-blue-d-900);
+    --dg-core-bg: var(--accent-yellow-d-300);
+    --dg-core-fg: var(--accent-yellow-d-900);
+    margin-block: 0;
+  }
+  :global(html.dark) .install-diagram {
+    --dg-surface: var(--default-300);
+    --dg-border: var(--default-300);
+    --dg-text: var(--default-900);
+    --dg-muted: var(--default-600);
+    --dg-client-bg: var(--accent-blue-300);
+    --dg-client-fg: var(--accent-blue-900);
+    --dg-core-bg: var(--accent-yellow-300);
+    --dg-core-fg: var(--accent-yellow-900);
+  }
+
+  .dg-stage {
+    position: relative;
+    width: 100%;
+  }
+  /* Tight aspect ratios so the figure hugs its content height. */
+  .dg-line {
+    aspect-ratio: 100 / 17;
+  }
+  .dg-tri {
+    display: none;
+    aspect-ratio: 100 / 80;
+  }
+  /* Same breakpoint as the rest of the page's `sm:` switches (640px). */
+  @media (max-width: 639px) {
+    .dg-line {
+      display: none;
+    }
+    .dg-tri {
+      display: block;
+    }
+  }
+
+  /* No z-index: the SVG paints after the cards (source order) but is not isolated
+     from them, so the links' difference blend reaches the cards behind. */
+  .dg-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  /* Solid links that invert whatever is behind them, so one stroke reads on both
+     the dark cards and the light page between them. non-scaling-stroke keeps the
+     width identical in both layouts. */
+  .dg-link {
+    stroke: #ffffff;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    mix-blend-mode: difference;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dg-flow {
+      display: none;
+    }
+  }
+</style>

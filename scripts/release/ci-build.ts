@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const hostTriple = detectHostTriple();
   const version = await readCoreVersion();
 
-  console.log(colors.bold(`\ntomat ci-build: ${channel} channel, ${hostTriple}\n`));
+  console.log(colors.bold(`\nloca ci-build: ${channel} channel, ${hostTriple}\n`));
 
   const env = envFromProcess();
   // CI carries the App Store Connect .p8 as base64 (a runner cannot carry a
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       // so it can verify manifests at runtime. Must precede the core build. Only
       // core reads this file, so the android-only leg leaves the tracked copy
       // alone (the APK's trust root is the key pinned in lib/platform/mobile.ts).
-      await writeSigningKeys(Deno.env.get("TOMAT_SIGNING_PUBLIC_KEY_B64")!);
+      await writeSigningKeys(Deno.env.get("LOCA_SIGNING_PUBLIC_KEY_B64")!);
 
       step(`Building core for ${hostTriple}`);
       const coreBuilt = await buildCoreArtifacts([hostTriple], suffix);
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
         fail(
           `--android${
             androidOnly ? "-only" : ""
-          } given but TOMAT_ANDROID_KEYSTORE_B64 is not set in the env.`,
+          } given but LOCA_ANDROID_KEYSTORE_B64 is not set in the env.`,
         );
       }
       const descriptor = await buildAndroidBundle(env, channel);

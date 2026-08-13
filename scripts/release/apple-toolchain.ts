@@ -132,7 +132,7 @@ export async function materializeAppleApiKey(env: DeployEnv): Promise<() => Prom
         `the key id names the materialized AuthKey_<id>.p8.`,
     );
   }
-  const root = await Deno.makeTempDir({ prefix: "tomat-asc-key-" });
+  const root = await Deno.makeTempDir({ prefix: "loca-asc-key-" });
   const keysDir = join(root, "private_keys");
   const priorKeyPath = Deno.env.get("APPLE_API_KEY_PATH");
   const priorKeysDir = Deno.env.get("API_PRIVATE_KEYS_DIR");
@@ -185,9 +185,9 @@ export async function materializeAppleApiKey(env: DeployEnv): Promise<() => Prom
 export async function materializeInstallerKeychain(env: DeployEnv): Promise<() => Promise<void>> {
   if (!env.appleInstallerCertificateB64) return async () => {};
 
-  const root = await Deno.makeTempDir({ prefix: "tomat-installer-kc-" });
+  const root = await Deno.makeTempDir({ prefix: "loca-installer-kc-" });
   const p12Path = join(root, "installer.p12");
-  const keychain = join(root, "tomat-installer.keychain-db");
+  const keychain = join(root, "loca-installer.keychain-db");
   const pw = encodeHex(crypto.getRandomValues(new Uint8Array(32)));
   await Deno.writeFile(p12Path, decodeBase64(env.appleInstallerCertificateB64));
   await Deno.chmod(p12Path, 0o600);

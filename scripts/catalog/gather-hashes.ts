@@ -1,5 +1,5 @@
 // Dev tool: resolve the sha256 of every downloadable file in the
-// `@tomat/model-catalog` source and write it to `src/hashes.generated.ts`.
+// `@loca/model-catalog` source and write it to `src/hashes.generated.ts`.
 // `buildCatalogPayload` stamps these onto the catalog so a model download
 // verifies its bytes against the SIGNED catalog instead of trusting HF's
 // `x-linked-etag` (which a proxy can strip or a non-HF mirror omit).
@@ -12,11 +12,7 @@
 // Usage: deno run -A scripts/catalog/gather-hashes.ts
 
 import { createHash } from "node:crypto";
-import {
-  FAMILIES,
-  STT_CATALOG,
-  TTS_CATALOG,
-} from "../../packages/tomat-model-catalog/src/index.ts";
+import { FAMILIES, STT_CATALOG, TTS_CATALOG } from "../../packages/loca-model-catalog/src/index.ts";
 
 const HF = "https://huggingface.co";
 
@@ -110,7 +106,7 @@ export const FILE_HASHES: Record<string, string> = {
 ${entries}
 };
 `;
-const dest = new URL("../../packages/tomat-model-catalog/src/hashes.generated.ts", import.meta.url);
+const dest = new URL("../../packages/loca-model-catalog/src/hashes.generated.ts", import.meta.url);
 await Deno.writeTextFile(dest, content);
 console.error(`\nwrote ${sorted.length} hashes to hashes.generated.ts; ${missing.length} missing`);
 if (missing.length > 0) {

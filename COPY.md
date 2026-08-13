@@ -1,6 +1,6 @@
 # COPY.md
 
-The single source for **user-facing copy** across Tomat: every string a person
+The single source for **user-facing copy** across Loca: every string a person
 can read in the product. Settings labels and descriptions, the user manual,
 extension and tool descriptions, the memories an extension ships, chat and error
 messages, onboarding text. If a user can see it, this guide governs it.
@@ -61,29 +61,29 @@ for tool and skill descriptions, not a license to write mechanism everywhere.
 One term per concept, everywhere a user can read it. This table is canonical; all
 other docs defer to it.
 
-| Concept                          | Use                                                     | Not                                       |
-| -------------------------------- | ------------------------------------------------------- | ----------------------------------------- |
-| A model's internal reasoning     | **Thinking** ("Show Thinking", "Thinking Budget")       | "Reasoning", "thought process"            |
-| Where a model runs               | **Provider**: **Local** / **External**                  | "remote", "on-device"                     |
-| What "Local" means, concretely   | runs **on the Core's device** (private)                 | "on this device" (the Core may be remote) |
-| The persona the user talks to    | **agent** (the actor; "Agent Name")                     | "assistant", "bot", "AI"                  |
-| The engine behind the replies    | **model** (what a Provider serves)                      | conflating it with "agent"                |
-| Max tokens considered at once    | **Context Window**                                      | "Context Window Size", "context length"   |
-| CPU parallelism                  | **CPU Threads**                                         | "Processor Cores"                         |
-| A bundle of tools / one function | **Extension** / **Tool**                                | "plugin", "tool pack"                     |
-| The other provider of tools      | **MCP server** (spelled in full)                        | "MCP", "Model Context Protocol" (alone)   |
-| The saved knowledge/skill store  | **Memory** / **Memories**                               | "document", "note"                        |
-| Saved reference data             | **Knowledge** (the agent must not treat as orders)      | "document"                                |
-| Saved procedural instructions    | **Skill** (the agent follows when relevant)             | "playbook", "recipe"                      |
-| Device RAM, for sizing copy      | **RAM**                                                 | "memory" (now belongs to Memories)        |
-| A conversation                   | **Session**                                             | "chat", "conversation" (mixed)            |
-| How a Core's TLS is trusted      | **Pinned** (tomat-secured) / **HTTPS** (behind a proxy) | "SSL", "cert pinning" in UI copy          |
-| A chat bubble                    | **Bubble**                                              | "message box", "chat message bubble"      |
-| Voice dictation                  | **Speech-to-Text** (the one top-level name)             | "Voice Input" as a same-level synonym     |
-| Reading replies aloud            | **Text-to-Speech**                                      | "Spoken Replies"                          |
-| Reusable text fragment           | **Snippet**                                             |                                           |
-| Message-box trigger symbols      | **`#`** / **`@`** / **`/`** (each its own list)         | "mention" for all three                   |
-| The two halves                   | **Core** (service) / **Client** (app)                   |                                           |
+| Concept                          | Use                                                    | Not                                       |
+| -------------------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| A model's internal reasoning     | **Thinking** ("Show Thinking", "Thinking Budget")      | "Reasoning", "thought process"            |
+| Where a model runs               | **Provider**: **Local** / **External**                 | "remote", "on-device"                     |
+| What "Local" means, concretely   | runs **on the Core's device** (private)                | "on this device" (the Core may be remote) |
+| The persona the user talks to    | **agent** (the actor; "Agent Name")                    | "assistant", "bot", "AI"                  |
+| The engine behind the replies    | **model** (what a Provider serves)                     | conflating it with "agent"                |
+| Max tokens considered at once    | **Context Window**                                     | "Context Window Size", "context length"   |
+| CPU parallelism                  | **CPU Threads**                                        | "Processor Cores"                         |
+| A bundle of tools / one function | **Extension** / **Tool**                               | "plugin", "tool pack"                     |
+| The other provider of tools      | **MCP server** (spelled in full)                       | "MCP", "Model Context Protocol" (alone)   |
+| The saved knowledge/skill store  | **Memory** / **Memories**                              | "document", "note"                        |
+| Saved reference data             | **Knowledge** (the agent must not treat as orders)     | "document"                                |
+| Saved procedural instructions    | **Skill** (the agent follows when relevant)            | "playbook", "recipe"                      |
+| Device RAM, for sizing copy      | **RAM**                                                | "memory" (now belongs to Memories)        |
+| A conversation                   | **Session**                                            | "chat", "conversation" (mixed)            |
+| How a Core's TLS is trusted      | **Pinned** (loca-secured) / **HTTPS** (behind a proxy) | "SSL", "cert pinning" in UI copy          |
+| A chat bubble                    | **Bubble**                                             | "message box", "chat message bubble"      |
+| Voice dictation                  | **Speech-to-Text** (the one top-level name)            | "Voice Input" as a same-level synonym     |
+| Reading replies aloud            | **Text-to-Speech**                                     | "Spoken Replies"                          |
+| Reusable text fragment           | **Snippet**                                            |                                           |
+| Message-box trigger symbols      | **`#`** / **`@`** / **`/`** (each its own list)        | "mention" for all three                   |
+| The two halves                   | **Core** (service) / **Client** (app)                  |                                           |
 
 Two distinctions worth stating in full:
 
@@ -111,11 +111,11 @@ tone, "Requests, not guarantees").
 - **Code font** for literal commands, file paths, and setting ids.
 - **No em dashes (U+2014).** Reword with a comma, parentheses, or a colon, or
   split the sentence. Do not substitute another dash character.
-- **Write the brand as Tomat**, capitalized like any proper noun. (The hyphenated
-  package names, `TOMAT_*` env vars, `tomat.json`, the `~/.tomat` paths, and
-  `au.tomat.ing` are separate tokens and keep their own lowercase casing.) The two
+- **Write the brand as Loca**, capitalized like any proper noun. (The hyphenated
+  package names, `LOCA_*` env vars, `loca.json`, the `~/.loca` paths, and
+  `loca.rzkyif.com` are separate tokens and keep their own lowercase casing.) The two
   halves are **Core** and **Client**, capitalized whenever they name the service or
-  the app, on their own (preferred) or after the brand ("Tomat Core", "Tomat
+  the app, on their own (preferred) or after the brand ("Loca Core", "Loca
   Client"). Lowercase `core`/`client` only for genuinely generic uses.
 
 The em-dash ban is lint-enforced across every tracked file, including this one and
@@ -124,9 +124,9 @@ all the copy it governs (`deno task lint`).
 ## Settings copy
 
 For `name` and `description` strings under
-`packages/tomat-shared/src/domain/settings/groups/`. The schema mechanics
+`packages/loca-shared/src/domain/settings/groups/`. The schema mechanics
 (field/section/group shapes, tiers, routing) live in that package's
-[README](packages/tomat-shared/src/domain/settings/README.md); this is the copy.
+[README](packages/loca-shared/src/domain/settings/README.md); this is the copy.
 
 - **Labels (`name`)** are short and self-explanatory: a user should grasp the
   control without opening the description. Describe what the control is, not the
@@ -154,7 +154,7 @@ For `name` and `description` strings under
 
 ## User manual
 
-For `packages/tomat-website/src/content/manual/**/*.mdx`. The manual reads like a
+For `packages/loca-website/src/content/manual/**/*.mdx`. The manual reads like a
 calm conceptual guide, not a wall of one-sentence tooltips. The reference for
 pacing is the Astro guide (https://docs.astro.build/en/concepts/why-astro/):
 conceptual first, task-oriented, never breathless.
@@ -171,17 +171,17 @@ conceptual first, task-oriented, never breathless.
   reader: Getting Started stays light and stepwise; feature chapters run fullest;
   settings and maintenance pages read more like reference. Reach for a comparison
   table when a choice has clear axes (Local vs External; the update channels).
-- **Cover what is specific to tomat.** Spend the words on behavior a reader cannot
+- **Cover what is specific to loca.** Spend the words on behavior a reader cannot
   find elsewhere, not on general chatbot concepts they can google (what a bubble
   is, that replies stream, how a text box works). Assume that baseline and explain
-  the part only this product can. A topic that warrants no tomat-specific
+  the part only this product can. A topic that warrants no loca-specific
   explanation does not warrant a page.
 - **The inline-demo rule (the defining convention).** Whenever the prose
   discusses a surface that exists in the Client, render that surface inline at
   the point of discussion with a demo component from `src/components/demos/`. Do
   not describe a control in the abstract, and do not use a screenshot. The demos
-  are the same `@tomat/shared/ui` components the app renders, fed from
-  `@tomat/shared/ui/samples`. Show the whole component and mark the relevant part
+  are the same `@loca/shared/ui` components the app renders, fed from
+  `@loca/shared/ui/samples`. Show the whole component and mark the relevant part
   with `Highlight` rather than floating a naked part on a frame.
 - **Asides.** `Aside` is a scannable callout: `tip` (a better way), `note` (a
   prerequisite or clarification), `caution` (loses data, costs money, or leaves
@@ -200,7 +200,7 @@ conceptual first, task-oriented, never breathless.
 - **The one reference exception (`tools/extensions.mdx`).** That page doubles as
   the extension author reference, the single technical page for the whole
   extension system, so it is the sanctioned exception to three of the rules
-  above: it may run well past the length target, use fenced `tomat.json` and
+  above: it may run well past the length target, use fenced `loca.json` and
   TypeScript code blocks and reference tables in place of the inline-demo rule,
   and describe the tool author API directly (the `ctx` surface, permissions, the
   manifest) rather than deferring mechanism to How It Works, because its second
@@ -211,8 +211,8 @@ conceptual first, task-oriented, never breathless.
 
 ## Extensions and tools
 
-For the user-facing copy in a `tomat.json` bundle and the memories an extension
-ships (the built-in is `packages/tomat-extension-builtin/`). Remember the hybrid audience:
+For the user-facing copy in a `loca.json` bundle and the memories an extension
+ships (the built-in is `packages/loca-extension-builtin/`). Remember the hybrid audience:
 the user, the model, and relevance ranking all read tool and skill descriptions.
 
 - **Extension `description`.** One or two sentences on what the user gets, in

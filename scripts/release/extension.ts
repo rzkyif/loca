@@ -1,14 +1,14 @@
 // Release item: the built-in extension, packed into a gzipped tarball with a
 // signed extension.json manifest (whole-manifest-minus-signature, like
-// core.json). Versioned via packages/tomat-extension-builtin/deno.json. The
+// core.json). Versioned via packages/loca-extension-builtin/deno.json. The
 // dev-only samples extension is never released; it has no release item.
 
 import { ensureDir } from "@std/fs/ensure-dir";
 import { walk } from "@std/fs/walk";
 import { dirname, join, relative } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar";
-import type { BuiltinExtensionManifest } from "../../packages/tomat-shared/src/domain/model.ts";
-import { BUILTIN_EXTENSION_ID } from "../../packages/tomat-shared/src/domain/extension.ts";
+import type { BuiltinExtensionManifest } from "../../packages/loca-shared/src/domain/model.ts";
+import { BUILTIN_EXTENSION_ID } from "../../packages/loca-shared/src/domain/extension.ts";
 import {
   type ApplyOpts,
   bumpVersionField,
@@ -33,7 +33,7 @@ import {
   stripJsonVersion,
 } from "./lib.ts";
 
-const PKG_DIR = join(REPO_ROOT, "packages/tomat-extension-builtin");
+const PKG_DIR = join(REPO_ROOT, "packages/loca-extension-builtin");
 const MANIFEST_CACHE_CONTROL = "public, max-age=300";
 // Dev / VCS / test cruft, plus the lockfile (deno regenerates it on install).
 const EXCLUDE_DIRS = new Set(["node_modules", ".git", "tests"]);
@@ -95,7 +95,7 @@ export const extensionItem: ReleaseItem = {
   label: "built-in extension",
   scope: "channel",
   packages: ["extension"],
-  bumpHint: "packages/tomat-extension-builtin/deno.json (version)",
+  bumpHint: "packages/loca-extension-builtin/deno.json (version)",
 
   version: readExtensionVersion,
   versionFile: join(PKG_DIR, "deno.json"),

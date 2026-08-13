@@ -1,0 +1,373 @@
+---
+title: Extensions
+section: Tools & Knowledge
+order: 2
+---
+
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+import Aside from "../../../components/Aside.astro";
+
+An **extension** is a bundle of [tools](/manual/tools/tools) you install or remove
+as a unit. It is one of the two ways the agent gains new abilities, the other being
+an [MCP server](/manual/tools/mcp). A fresh Core arrives with a built-in extension
+already installed, so the agent has a starting set of abilities to switch on, and
+you add more by installing extensions for the things you want it to do. This page
+is also the reference for writing your own: the first half is for anyone using
+extensions, the second for anyone building one.
+
+## Installing and removing
+
+You install, update, and remove extensions under **Extensions** in Settings.
+Installing one is how you teach the agent new abilities; removing it takes them away
+cleanly, since an extension is a self-contained bundle rather than a loose pile of
+tools. The tools an extension brings then appear in the
+[Tools](/manual/tools/tools) group for you to switch on and set permissions for.
+
+<SettingsPanelDemo group="extensions" />
+
+## More than tools
+
+An extension can ship more than tools. It can also bring its own
+[knowledge and skills](/manual/tools/memories), installed read-only alongside the
+ones you write yourself, so adding an extension can hand the agent a body of
+reference and a set of procedures in one step. That makes an extension a way to
+teach the agent not only new actions but new context to go with them.
+
+<Aside type="caution">
+  An extension's tools act on your behalf, sometimes on the network or with access to files. Install
+  extensions you trust, and read the permissions one declares before you enable its tools.
+</Aside>
+
+## Writing your own
+
+An extension is an open format, not a plugin for a closed system: any host that
+understands a `loca.json` file can load one. That makes writing your own the way to
+give the agent something specific to you, a tool no general-purpose extension would
+ship. You do not need to be a full-time developer to write one; a useful tool is
+often a few lines of TypeScript or JavaScript.
+
+Every extension is a folder with three things:
+
+1. A `loca.json` manifest at the root, the subject of the next section. It names
+   the extension, declares its tools and the permissions each needs, and lists any
+   memories it ships.
+2. Dependencies declared in `deno.json` (or `package.json`) under `imports`. The
+   Core installs them for you and never edits your file. A Deno-native extension
+   needs no `package.json` at all.
+3. An entry module that exports one async function per tool. The Core calls each as
+   `fn(args, ctx)`: `args` are the arguments the model supplied, and `ctx` is the
+   toolkit covered under [What a tool can do](#what-a-tool-can-do).
+
+The best way to learn the shape is to read a working one. The **built-in extension**
+is a spread of everyday tools chosen to cover the common cases, and the
+[samples extension](https://github.com/rzkyif/loca/tree/main/packages/loca-extension-samples)
+is a dev-only showcase with one small single-purpose tool per capability, so you can
+open a single file and copy the piece you need. This page points at a specific
+sample for each thing a tool can do.
+
+## The manifest
+
+`loca.json` is the heart of an extension. Here is a whole one for a single tool
+that counts words in a piece of text:
+
+```json
+{
+  "$schema": "https://get.loca.rzkyif.com/schemas/loca-v1.json",
+  "name": "loca-extension-wordcount",
+  "displayName": "Word Count",
+  "description": "Count the words and characters in a piece of text.",
+  "tools": [
+    {
+      "name": "word_count",
+      "description": "Count the words and characters in a piece of text. Use when the user asks how long something is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "The text to measure." }
+        },
+        "required": ["text"]
+      },
+      "triggers": ["how many words is this", "count the words in this", "how long is this"],
+      "function": "wordCount"
+    }
+  ]
+}
+```
+
+The top-level fields:
+
+| Field         | Required | What it is                                                          |
+| ------------- | -------- | ------------------------------------------------------------------- |
+| `name`        | yes      | The machine name of the extension.                                  |
+| `displayName` | yes      | The name shown in the Extensions list.                              |
+| `description` | yes      | One or two sentences on what the user gets, in the product's voice. |
+| `license`     | no       | An SPDX license id.                                                 |
+| `homepage`    | no       | A link users can open to learn more.                                |
+| `database`    | no       | Set `true` if any tool uses `ctx.db`. Defaults to `false`.          |
+| `tools`       | no       | The tools the extension provides. May be empty (memories-only).     |
+| `memories`    | no       | The knowledge and skills it ships. See below.                       |
+
+The `$schema` line is optional but worth keeping: it points editors at the published
+schema so you get completion and validation while you write. Tool `name` values must
+be unique within one extension.
+
+## Defining a tool
+
+Each entry in `tools` describes one thing the agent can do. Its fields:
+
+| Field             | Required | What it is                                                                                                       |
+| ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `name`            | yes      | A `snake_case` id, unique in the extension. It travels on the wire, so do not rename it to reword a description. |
+| `description`     | yes      | What the tool does, then a short cue for when to use it.                                                         |
+| `parameters`      | yes      | A JSON Schema for the arguments the model supplies. The Core validates against it before your function runs.     |
+| `function`        | yes      | The name of the exported function that runs the tool.                                                            |
+| `triggers`        | no       | Example phrases a user would say, used to rank the tool in.                                                      |
+| `alwaysAvailable` | no       | Skip relevance ranking and offer this tool every turn.                                                           |
+| `platforms`       | no       | Limit the tool to some systems: `darwin`, `windows`, `linux`, `linux_x11`, `linux_wayland`. Empty means all.     |
+| `permissions`     | no       | What the tool is allowed to reach. See [Permissions](#permissions).                                              |
+
+The `description` and `triggers` do double duty: the user reads them when browsing
+tools, and Loca uses them to decide when a tool is relevant to a message, so write
+them as the real phrases a person would say rather than as decoration. Lead the
+description with what the tool does, add a short "Use when..." cue, and put any
+constraints the model must respect (a value range, a required format) in the
+parameter descriptions, where they stay exact. The copy guide covers this in full.
+
+The `function` names an export on your entry module. The Core calls it with the
+validated arguments and the `ctx` toolkit:
+
+```ts
+// index.ts
+import type { ToolContext } from "./types.ts";
+
+export async function wordCount(
+  args: { text: string },
+  ctx: ToolContext,
+): Promise<{ words: number; characters: number }> {
+  const words = args.text.trim().split(/\s+/).filter(Boolean).length;
+  ctx.setProgress(1);
+  return { words, characters: args.text.length };
+}
+```
+
+Whatever the function returns is handed back to the model as the tool's result. If
+it throws, the agent sees the error and can react to it.
+
+<Aside type="note">
+  `ToolContext` is the shape of the `ctx` argument. The samples and the built-in each keep a small
+  local copy in `src/types.ts`, so an extension has no compile-time dependency on a Loca package.
+  Copy that file into your own extension as the source of truth for what `ctx` provides.
+</Aside>
+
+## What a tool can do
+
+Beyond `args`, every tool receives `ctx`, the toolkit the Core injects. A simple tool
+may ignore it; a richer one uses it to report progress, ask the user a question, show
+a result, or reach a capability like the model or the user's memories. The members:
+
+- `ctx.setProgress(progress, label?, description?)` reports how far along the tool is,
+  from `0` to `1`. Call it as work completes so the session shows a live status.
+- `ctx.log(level, message)` writes a line to the Core's log, at `debug`, `info`,
+  `warn`, or `error`.
+- `ctx.signal` is an `AbortSignal` that trips when the user cancels the turn. Check
+  it in long-running work and stop when it fires.
+- `ctx.getChatContext()` returns the message that triggered the tool, the session id,
+  and the user's locale, for a tool that needs to read the surrounding turn.
+
+### Asking the user
+
+`ctx.askUser(questions)` pauses the tool and shows the user a form in the session,
+then resolves with their answers once they respond. Ask several questions at once by
+passing an array; you get back one answer per question, in order. There are five
+kinds of question, chosen by the `kind` field (absent means `choice`):
+
+| Kind     | Shows                                                              | Answer                                         | Sample          |
+| -------- | ------------------------------------------------------------------ | ---------------------------------------------- | --------------- |
+| `choice` | A question with options; single or multiselect, optional free text | The chosen value, or an array when multiselect | `sample_choice` |
+| `diff`   | A before/after change to approve                                   | `"accept"` or `"reject"`                       | `sample_diff`   |
+| `files`  | A list of files to pick from                                       | The chosen path or paths                       | `sample_files`  |
+| `image`  | An image with your own action buttons                              | The chosen action's value                      | `sample_image`  |
+| `table`  | An editable table of rows                                          | The rows as the user edited them               | `sample_table`  |
+
+A `choice` question is the everyday one:
+
+```ts
+const [color] = await ctx.askUser([
+  {
+    question: "Pick a favorite color.",
+    options: [
+      { label: "Red", value: "red" },
+      { label: "Blue", value: "blue" },
+      { label: "Green", value: "green" },
+    ],
+  },
+]);
+```
+
+The call's timeout is paused while the form is open, so a tool can wait on a slow
+human without being killed for taking too long.
+
+### Showing a result
+
+Where `askUser` waits for an answer, `ctx.display` pushes a one-way result into the
+session and returns nothing. Use it to show work as it happens, or to render a result
+the agent does not need to read back. There are four kinds, all demonstrated by
+`sample_display`:
+
+| Call                                      | Renders           |
+| ----------------------------------------- | ----------------- |
+| `ctx.display.markdown(text)`              | A markdown bubble |
+| `ctx.display.image(dataB64, mime, alt?)`  | An image bubble   |
+| `ctx.display.table(columns, rows)`        | A table bubble    |
+| `ctx.display.diff(before, after, title?)` | A diff bubble     |
+
+### Reaching capabilities
+
+The rest of `ctx` reaches capabilities the Core owns. Each is gated: a tool must
+declare the matching permission in `loca.json`, and some also depend on a host
+setting being on. The first use of an ungranted capability pauses on a prompt to the
+user.
+
+| Module               | What it does                                                                                             | Needs                                     | Sample            |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------- |
+| `ctx.memories`       | Read and write the user's [memories](/manual/tools/memories): `list`, `get`, `getFile`, `write`, `edit`  | `memories` permission (`read` or `write`) | `sample_memory`   |
+| `ctx.db`             | A private SQLite database, `query` and `execute`                                                         | `"database": true` in the manifest        | `sample_database` |
+| `ctx.llm`            | One completion from the user's model: `complete({ prompt, systemPrompt?, maxTokens? })`                  | `llm` permission                          | `sample_llm`      |
+| `ctx.tts`            | Synthesize speech from text: `speak(text)`                                                               | `tts` permission and Text-to-Speech on    | `sample_tts`      |
+| `ctx.stt`            | Transcribe audio to text: `transcribe({ dataB64, mime?, language? })`                                    | `stt` permission and Speech-to-Text on    | `sample_stt`      |
+| `ctx.schedulePrompt` | Propose a [scheduled prompt](/manual/conversation/scheduled-prompts) the user reviews before it is saved | Nothing; the confirm form is the gate     | `sample_schedule` |
+
+The private database is the one to reach for when a tool needs to remember something
+across runs. It is provisioned only when you set `"database": true`, is private to the
+extension, and is dropped when the extension is uninstalled:
+
+```ts
+await ctx.db.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT)");
+await ctx.db.execute("INSERT INTO notes (body) VALUES (?)", [args.body]);
+const rows = await ctx.db.query("SELECT body FROM notes ORDER BY id DESC LIMIT 5");
+```
+
+`ctx.schedulePrompt` takes a draft with a `title`, an `instruction` (the prompt sent
+when it fires), a `runMissed` flag, and a `schedule`. The schedule is one of five
+shapes, all in the host's local time: `{ kind: "once", atMs }`,
+`{ kind: "interval", everyMinutes }`,
+`{ kind: "weekly", weekdays, hour, minute }` (with `weekdays` as `0` for Sunday
+through `6` for Saturday), `{ kind: "monthly", day, hour, minute }`, and
+`{ kind: "yearly", month, day, hour, minute }`. A monthly or yearly day past the end
+of a month clamps to its last day.
+
+## Permissions
+
+A tool starts with no access to anything. It declares exactly what it needs under
+`permissions` in its manifest, the user grants each one, and the tool runs with those
+and nothing more, not even what a sibling tool from the same extension was given. Two
+families of permission exist.
+
+The first are OS-level, enforced by the sandbox the tool runs in:
+
+| Permission | Grants                       | Shape                                           |
+| ---------- | ---------------------------- | ----------------------------------------------- |
+| `net`      | Reach a network host         | `{ host, ports, reason }` (`host` may be `"*"`) |
+| `read`     | Read files or folders        | `{ path, reason }`                              |
+| `write`    | Write files or folders       | `{ path, reason }`                              |
+| `run`      | Run an executable            | `{ binary, reason }`                            |
+| `env`      | Read an environment variable | `{ key, reason }`                               |
+| `ffi`      | Load a native library        | `{ reason }`                                    |
+| `sys`      | Reach a system API           | `{ flag, reason }`                              |
+
+Paths may be absolute or use a template that resolves on the host: `$home`,
+`$downloads`, `$models`, `$sessions`, `$extension` (your own install folder), and
+`$env.VAR`. So a tool that saves into the user's Downloads declares:
+
+```jsonc
+"permissions": {
+  "write": [{ "path": "$downloads", "reason": "Save the generated file where you can find it." }],
+  "net": [{ "host": "example.com", "ports": [443], "reason": "Fetch the source document." }]
+}
+```
+
+The second family is the capability modules from the previous section (`memories`,
+`llm`, `tts`, `stt`), which the Core brokers rather than the sandbox. `memories` takes
+an `access` of `read` or `write` (`write` covers reads); the rest are all-or-nothing.
+
+Every permission entry carries a `reason`, the sentence the user reads when deciding
+whether to grant it, so write it as a plain explanation of why the tool needs the
+access. Any entry may also set `"optional": true`, for access a tool can work without.
+
+<Aside type="tip">
+  Ask for the least a tool needs. A tool that fetches one site should name that host, not `"*"`; a
+  tool that reads one folder should name it, not the whole disk. A narrow request is one the user
+  can grant without worry, and it is the difference between a tool people enable and one they leave
+  off.
+</Aside>
+
+## Shipping knowledge and skills
+
+An extension can bundle memories the user gets read-only on install. Declare them in a
+top-level `memories` array, each entry naming a `kind` and a `path` relative to the
+extension root:
+
+```jsonc
+"memories": [
+  { "kind": "knowledge", "path": "memories/loca-overview.md" },
+  { "kind": "skill", "path": "memories/web-research" }
+]
+```
+
+The two kinds differ in shape and in how the agent uses them, the same distinction as
+the memories you [write yourself](/manual/tools/memories):
+
+- **Knowledge** is reference data. The `path` points at a single `.md` file, and its
+  content is given to the agent as data it must not treat as instructions.
+- **Skill** is a procedure the agent follows when relevant. The `path` points at a
+  folder holding a `SKILL.md`, plus any reference files it needs. The folder matches
+  Anthropic's Agent Skills format, so a community skill drops in unchanged, and the
+  agent reaches its bundled files on demand.
+
+A path must stay inside the extension: no absolute paths, no `..` segments. The
+manifest schema rejects anything that would escape the install folder. The samples
+extension ships one of each as a worked example.
+
+## Testing and publishing
+
+Because the Core calls each tool as a plain `fn(args, ctx)`, you can test one by
+handing it a mock `ctx`. Stub only the fields the tool touches and let the rest reject,
+so an accidental call is loud rather than silent, then assert the tool's behavior:
+progress ends at `1`, it stops when `ctx.signal` fires, and it never reaches a resource
+it did not declare. The samples and built-in extensions both keep co-located
+`*.test.ts` files built this way, so they run wherever `deno test` does with no running
+Core. They are the pattern to copy.
+
+To share an extension, publish it to npm with a name that starts `loca-extension-`
+(a convention) and `"keywords": ["loca-extension"]`. Loca finds extensions by that
+keyword, so yours then shows up in the in-app marketplace for anyone to `Download`
+from Settings.
+
+## How It Works
+
+Extensions are distributed the same way as ordinary software packages. Loca finds
+them on the public package registry by the keyword that marks a package as a Loca
+extension, downloads the one you chose as a single archive, and checks it against the
+registry's own checksum before unpacking, so a corrupted or tampered download is
+caught rather than installed. It then resolves and locks the extension's dependencies
+and records a fingerprint of the installed files. That fingerprint is what lets Loca
+notice later if an extension's files have changed unexpectedly, and hold off running
+them until you confirm.
+
+Every tool call runs in its own sandboxed worker process that starts with access to
+nothing. Loca spawns it with exactly the permissions that tool declared and you
+granted, expanding the path templates to real locations, and gives a sibling tool from
+the same extension its own separate grants. This is why a tool cannot quietly reach a
+network host or a file it never declared: the access was never handed to its process.
+When a tool calls `askUser` or a capability it has not yet been granted, the worker
+pauses and surfaces the request to you in the session, and continues only once you
+answer.
+
+The built-in extension is the one exception to downloading. It ships with Loca and is
+installed on first boot from a copy the installer already placed on disk, verified
+against a signature, with no network call at all. That is deliberate: a fresh Core sets
+itself up completely offline and reaches out only when you choose to install something
+more.
+
+The other provider of tools is a program Loca talks to rather than a bundle it
+installs: [MCP Servers](/manual/tools/mcp).

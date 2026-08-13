@@ -1,0 +1,39 @@
+{
+  "name": "@loca/website",
+  "version": "0.1.17",
+  "exports": {},
+  "tasks": {
+    "dev": "ASTRO_DEV_BACKGROUND=1 deno run -A npm:astro@^7 dev",
+    "check": "deno run -A npm:astro@^7 sync && deno run -A npm:svelte-check@^4 --tsconfig ./tsconfig.json --output human",
+    "build": "deno run -A npm:astro@^7 build",
+    "preview": "deno run -A npm:wrangler@^4 dev",
+    "deploy": "deno run -A npm:wrangler@^4 deploy"
+  },
+  "imports": {
+    "astro": "npm:astro@^7",
+    "astro/config": "npm:astro@^7/config",
+    "@astrojs/check": "npm:@astrojs/check@^0.9.9",
+    "@astrojs/mdx": "npm:@astrojs/mdx@^7",
+    "@astrojs/svelte": "npm:@astrojs/svelte@^9",
+    "astro-seo": "npm:astro-seo@^0.8.4",
+    "svelte": "npm:svelte@^5.56.2",
+    "unocss": "npm:unocss@^66.7.0",
+    "@unocss/astro": "npm:@unocss/astro@^66.7.0",
+    "@unocss/extractor-svelte": "npm:@unocss/extractor-svelte@^66.7.0",
+    "@unocss/reset": "npm:@unocss/reset@^66.7.0",
+    "@iconify/json": "npm:@iconify/json@^2.2.483",
+    "@loca/shared": "../loca-shared/src/index.ts",
+    "@loca/shared/": "../loca-shared/src/",
+    "gsap": "npm:gsap@^3.13.0",
+    "diff": "npm:diff@^8.0.2",
+    "marked": "npm:marked@^18.0.5",
+    "marked-highlight": "npm:marked-highlight@^2.2.4",
+    "dompurify": "npm:dompurify@^3.4.8",
+    "highlight.js": "npm:highlight.js@^11.11.1",
+    "highlight.js/": "npm:/highlight.js@^11.11.1/",
+    "zod": "npm:zod@^4.4.3"
+  },
+  "compilerOptions": {
+    "types": ["npm:astro@^7/client"]
+  }
+}

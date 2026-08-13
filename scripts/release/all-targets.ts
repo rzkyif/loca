@@ -15,8 +15,8 @@
 // (the manifests tolerate a partial platform set, so a partial run publishes
 // what it built and a later run fills the gaps).
 
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
-import { TRIPLES } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
+import { TRIPLES } from "../../packages/loca-shared/src/domain/model.ts";
 import { colors, info } from "./lib.ts";
 import type { BuildEnvironment } from "./drivers/mod.ts";
 

@@ -15,7 +15,7 @@
 
 import { dirname, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { BinaryVariant, Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { BinaryVariant, Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import type {
   BuildArtifact,
   CoreBuildArtifacts,
@@ -37,7 +37,7 @@ export interface ArtifactRecord {
   kind: "core" | "helper" | "speech";
   triple: Triple;
   filename: string;
-  relPath: string; // relative to dist/, e.g. "aarch64-apple-darwin/tomat-core"
+  relPath: string; // relative to dist/, e.g. "aarch64-apple-darwin/loca-core"
   sha256: string;
   size: number;
   entryName?: string; // helpers only: the channel-suffixed manifest name
@@ -158,7 +158,7 @@ export async function mergeCoreBundles(
       if (rec.kind === "core") {
         artifacts.push({
           triple: rec.triple,
-          name: "tomat-core",
+          name: "loca-core",
           filename: rec.filename,
           path,
           sha256: rec.sha256,
@@ -209,7 +209,7 @@ export interface ClientDescriptor {
   /** Tauri updater platform key (<os>-<arch>), e.g. "darwin-aarch64". */
   tauriKey: string;
   filename: string;
-  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/Tomat.app.tar.gz"
+  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/Loca.app.tar.gz"
   sigRelPath: string; // dist-relative path to the Tauri .sig sidecar
   sha256: string;
   size: number;
@@ -220,7 +220,7 @@ export interface ClientDescriptor {
 export interface AndroidApkRecord {
   abi: string; // android.json key, e.g. "android-arm64"
   filename: string;
-  relPath: string; // dist-relative, e.g. "android/android-arm64/tomat.apk"
+  relPath: string; // dist-relative, e.g. "android/android-arm64/loca.apk"
   sha256: string;
   size: number;
 }

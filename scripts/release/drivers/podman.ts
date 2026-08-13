@@ -8,24 +8,24 @@
 // linuxdeploy bundles that .so closure into the AppImage. See the Containerfile for
 // the toolchain + sysroot setup and the magic-patched AppImage tooling.
 //
-// Device-specific config comes from .env (TOMAT_PODMAN_* / TOMAT_LINUX_BUILD_*,
+// Device-specific config comes from .env (LOCA_PODMAN_* / LOCA_LINUX_BUILD_*,
 // promoted into the process env by loadDriverEnv; see .env.example). Read lazily
-// so .env is loaded first. Until TOMAT_PODMAN_MACHINE is set, available() returns
+// so .env is loaded first. Until LOCA_PODMAN_MACHINE is set, available() returns
 // false and the driver is skipped.
 function cfg() {
   return {
     // `podman machine list` -> the NAME column.
-    machine: Deno.env.get("TOMAT_PODMAN_MACHINE") ?? "",
+    machine: Deno.env.get("LOCA_PODMAN_MACHINE") ?? "",
     // Image tag built from drivers/linux/Containerfile (see its header for the
     // `podman build` command). Must contain deno + the Rust linux targets + the
     // Tauri Linux deps + sherpa build deps.
-    image: Deno.env.get("TOMAT_LINUX_BUILD_IMAGE") ?? "tomat-linux-build:latest",
+    image: Deno.env.get("LOCA_LINUX_BUILD_IMAGE") ?? "loca-linux-build:latest",
   };
 }
 
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { Triple } from "../../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../../packages/loca-shared/src/domain/model.ts";
 import {
   type ArtifactBundle,
   type ClientDescriptor,
@@ -212,7 +212,7 @@ export const podmanLinuxDriver: BuildEnvironment = {
         // the image), not the container's arm64 one. Scoped to the client build, so
         // the core build still sees the real host arch. See the Containerfile.
         "-e",
-        "TOMAT_FAKE_X86=1",
+        "LOCA_FAKE_X86=1",
         // The Linux AppImage carries a Tauri updater .sig like every other desktop
         // installer, so the minisign private key transits here (the Ed25519
         // manifest key + R2 creds never leave the host). Empty password -> "".
@@ -220,7 +220,7 @@ export const podmanLinuxDriver: BuildEnvironment = {
         // names from the container env; buildClient re-derives TAURI_SIGNING_PRIVATE_KEY
         // from them for the bundler. Matches the Windows driver + .env.
         "-e",
-        `TOMAT_SIGNING_PUBLIC_KEY_B64=${req.secrets.signingPublicKeyB64}`,
+        `LOCA_SIGNING_PUBLIC_KEY_B64=${req.secrets.signingPublicKeyB64}`,
         "-e",
         `TAURI_UPDATER_PUBLIC_KEY=${req.secrets.tauriPublicKey}`,
         "-e",

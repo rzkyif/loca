@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  Canonical loca app-icon master: a dark charcoal disc (the dark-mode bg-surface
+  shade, oklch(0.205) over the neutral base = #171717) with the white loca ring
+  centred on top and padded, so the charcoal shows both around the ring and
+  through its centre hole. Full-bleed circle: desktop platforms draw it as-is (a
+  round icon, the preferred shape wherever the OS lets us choose); Android masks
+  it to the launcher shape over a matching #171717 adaptive background; iOS
+  flattens it onto #171717 into its own squircle. Rasterize to icon-master.png and
+  feed it to `tauri icon` to regenerate every platform variant under this
+  directory. Keep #171717 in sync with the Android adaptive background color in
+  gen/android/app/src/main/res/values/ic_launcher_background.xml.
+-->
+<svg
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  version="1.1"
+  xmlns="http://www.w3.org/2000/svg"
+  style="fill-rule: evenodd; clip-rule: evenodd; stroke-linejoin: round; stroke-miterlimit: 2"
+>
+  <circle cx="512" cy="512" r="510" style="fill: #171717" />
+  <g transform="translate(512 512) scale(0.85) translate(-512 -512)">
+    <g transform="matrix(1.969231,0,0,1.969231,7.876923,7.876923)">
+      <path
+        d="M256,48C370.798,48 464,141.202 464,256C464,370.798 370.798,464 256,464C141.202,464 48,370.798 48,256C48,141.202 141.202,48 256,48ZM256,100C169.901,100 100,169.901 100,256C100,342.099 169.901,204 256,204C342.099,204 412,342.099 412,256C412,169.901 342.099,100 256,100Z"
+        style="fill: white"
+      />
+    </g>
+  </g>
+</svg>

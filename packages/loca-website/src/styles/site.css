@@ -1,0 +1,856 @@
+/* Website-only styles layered on top of the shared design tokens (base.css).
+   The shared file owns the palette and component visuals; this owns
+   site-structural concerns (scroll-snap sections, the horizontal showcase, the
+   page-to-page slide, the expandable) that have no client equivalent. Keep
+   design-system values out of here. */
+
+html,
+body {
+  min-height: 100dvh;
+}
+
+/* Always reserve the vertical scrollbar's gutter, so centered page content does
+   not shift sideways when navigating between a tall (scrolling) page and a short
+   one. Applies on every page for a consistent content width. Also disable
+   overscroll globally so manual articles (and every other page) never rubber-band
+   or trigger scroll chaining at their edges.
+
+   `overflow-x: clip` is the page-wide safety net: if any descendant overflows
+   horizontally (a long unbreakable code line, a wide table, a tall prev/next
+   title), it is clipped at the viewport edge instead of widening the page and
+   pushing fixed chrome (the navbar) off-axis. `clip` (not `hidden`) keeps the
+   document a non-scroll-container, so it does not coerce overflow-y to `auto`
+   and the sticky outline sidebar + window-scroll fades keep working. */
+html {
+  scrollbar-gutter: stable;
+  overscroll-behavior: none;
+  overflow-x: clip;
+}
+
+/* Allow the native `<details>` open/close to animate its height by letting the
+   `auto` keyword interpolate (progressive: browsers without support snap). */
+:root {
+  interpolate-size: allow-keywords;
+}
+
+/* Height of the sticky top chrome (pre-release banner + 3.5rem navbar), consumed
+   by every offset that hangs off the bottom of the chrome. These values are the
+   first-paint / no-JS fallback: one banner line on wider screens, two on narrow
+   ones where the notice wraps. BaseLayout's measure script overrides this with
+   the exact rendered height once JS runs (and on resize). */
+:root {
+  --chrome-h: 6rem;
+}
+@media (min-width: 768px) {
+  :root {
+    --chrome-h: 5rem;
+  }
+}
+
+/* Install page: show exactly one generator. With JS off, the native-HTML
+   baseline (InstallGenerator.astro) is the live control; with JS, the Svelte
+   island (InstallGenerator.svelte) takes over. data-js is set on <html> before
+   first paint (BaseLayout), so neither flashes. This is the one place the site
+   deliberately keeps a no-JS path: installing must never be JS-gated. */
+html[data-js] [data-nojs-fallback] {
+  display: none;
+}
+html:not([data-js]) [data-js-enhanced] {
+  display: none;
+}
+
+/* Website-only bubble drop shadow default: invert the shared default so the
+   shadow is WHITE in light mode and BLACK in dark mode (base.css ships the
+   opposite, black-on-light / white-on-dark, which the client keeps). This file is
+   never imported by the client, so the override is the site's alone. Flipping the
+   two :root tokens recolors every bubble shadow on the site; the theme-flip
+   capture reads these values, so flipped renditions stay consistent (a
+   light-rendered bubble is white, a dark-rendered one black, on either side of
+   the flip). */
+:root {
+  --bubble-shadow-color-light: #ffffffff;
+  --bubble-shadow-color-dark: #000000ff;
+}
+
+/* Promote a non-bubble card that wears the BubbleShadow halo onto its own
+   compositing layer, the same reason Bubble.svelte promotes its body: under a
+   transformed showcase ancestor WebKit's backdrop-filter samples the foreground
+   instead of the true backdrop, so without this the halo would blur the card's
+   own content. Mirrors Bubble's scoped `.bubble-body-promote`. */
+.bubble-promote {
+  transform: translateZ(0);
+}
+
+/* Website-only flat-border replacement for the bubble blur halo. The gallery and
+   manual pages stack hundreds of bubbles, and each one's `.bubble-halo` runs a live
+   `backdrop-filter: blur()` that re-samples the backdrop every frame, which
+   overheats the machine. Over these frames' near-solid surface that blur reads as a
+   thick, hard-edged translucent band exactly one shadow-distance wide: it blurs the
+   white (light rendition) or black (dark rendition) drop-shadow glow plus the
+   focus-grid dots, then cuts off sharply where the blur stops. So on frames carrying
+   `.flat-shadow` we drop the halo entirely and repaint `.bubble-shadow` as that same
+   band: a hard `box-shadow` ring (spread, zero blur, so it follows the bubble's
+   rounded per-side radii) one `--bubble-shadow-distance` wide, in a translucent color
+   matched to the live look by pixel measurement (rgba alpha ~0.13). The color tracks
+   the bubble's own drop shadow (white for a light rendition, black for a dark one):
+   the two tokens join the theme-flip pair list in uno.config.ts exactly like
+   `--bubble-shadow-color-*`, so a light rendition rings white and a dark one black on
+   either side of the flip. Applied to the gallery + manual frames; the homepage
+   showcase frames keep the live halo for now. */
+:root {
+  --bubble-flat-shadow-light: rgba(255, 255, 255, 0.13);
+  --bubble-flat-shadow-dark: rgba(0, 0, 0, 0.13);
+}
+.flat-shadow .bubble-halo {
+  display: none;
+}
+.flat-shadow .bubble-shadow {
+  box-shadow: 0 0 0 var(--bubble-shadow-distance) var(--bubble-flat-shadow-light);
+}
+.dark .flat-shadow .bubble-shadow {
+  box-shadow: 0 0 0 var(--bubble-shadow-distance) var(--bubble-flat-shadow-dark);
+}
+
+/* MessageStackView edge-fade alignment (website frames only). The View positions
+   its fades at `top: var(--bubble-shadow-distance)` on the assumption the bubble
+   strip sits one shadow-distance below the host top; measured, the strip sits AT
+   the host top, so the fade rides one shadow-distance too low - over the row's
+   bottom shadow gutter / border instead of the bubble. The live blur halo masked
+   that in the client; the flat-shadow ring on these frames makes it obvious. Pin
+   the fade to the host box (= the bubble body), leaving the shadow gutter as a
+   clean top + bottom margin. Scoped to `.flat-shadow`, so the client component is
+   untouched. */
+.flat-shadow .stack-fade-left,
+.flat-shadow .stack-fade-right {
+  top: 0 !important;
+  bottom: 0 !important;
+  height: auto !important;
+}
+
+/* Stack-demo sizing (gallery). The shared View's host is `w-fit`, so a handful of
+   short collapsed bubbles fit the wide row and never clip - the edge fade then
+   hints at hidden content that is actually fully visible. Force the host narrower
+   than its content for the multi-bubble samples so the row truly overflows and
+   clips, making the fade honest. `> div` is the MessageStackView host. */
+.stack-demo-narrow > div {
+  width: 16rem;
+}
+/* The "scrolled into the middle" sample needs BOTH ends hidden, which on a live
+   page is a mid-scroll position no static page can script. Centering the
+   overflowing row clips both ends equally instead, so both fades are truthful. */
+.stack-demo-center [role="presentation"] {
+  justify-content: center;
+}
+
+/* Scale-to-fit for inline manual demos (the showcase mechanism, applied to a
+   static demo). A demo with a `designWidth` renders its View at that fixed width;
+   wireDemoScale (ManualLayout) measures the column and `zoom`s the whole unit
+   down to fit. Before the script runs, the cap keeps a wide demo from overflowing
+   the column (it reflows for one frame, never spills off-screen); the script then
+   removes the cap and applies the zoom. zoom (not a transform) so the demo's
+   layout box shrinks for real, leaving no transformed subtree to bloat the page's
+   view-transition snapshot. No `overflow: hidden`, so a Highlight overlay that
+   sits just outside its content is never clipped. */
+.demo-scale {
+  width: 100%;
+}
+.demo-scale-box {
+  margin-inline: auto;
+}
+.demo-scale:not([data-scaled]) .demo-scale-inner {
+  max-width: 100%;
+}
+
+/* The shared chat/settings components cap their widths to the app window via
+   `100vw` (the client runs in a fixed 700px window). In a demo the viewport is
+   the browser, not that window, so on a phone those caps collapse to the screen
+   width and clip the fixed-width (620px) design before the scale transform can
+   shrink it as a unit. Re-pin every viewport cap to the 700px window inside a
+   `.demo-frame`, so the demo renders at the real app proportions and the
+   transform alone fits it to the column. Scoped to `.demo-frame` so real bubbles
+   elsewhere keep the live cap. (The homepage showcase frames carry the same
+   class, so this one rule covers both surfaces.) */
+.demo-frame .bubble-body {
+  max-width: calc(700px - 5rem);
+}
+.demo-frame .max-w-\[calc\(100vw-5rem\)\] {
+  max-width: calc(700px - 5rem);
+}
+.demo-frame .max-w-\[calc\(100vw-135px\)\] {
+  max-width: calc(700px - 135px);
+}
+.demo-frame .max-w-\[calc\(100vw-80px\)\] {
+  max-width: calc(700px - 80px);
+}
+
+/* Base text color for a flipped rendition. The app sets `text-default-800` on its
+   chat root; the website <body> sets the same, but that resolves to the WEBSITE
+   theme and inherits into the frame as an already-computed color, which the
+   flip's variable swap can't reach. So neutral surfaces that rely on inherited
+   text (the composer textarea, tool rows) would keep the page's theme. Re-assert
+   the app's base text color on the frame from the (swapped) ladder, mirroring the
+   `text-default-800` utility (base + `.dark`) so the right slot is picked in each
+   site theme; bubbles and controls that set their own color still override it. */
+.demo-frame {
+  color: var(--default-800);
+}
+html.dark .demo-frame {
+  color: var(--default-d-800);
+}
+
+/* Native control palette for the flip. The flip swaps the color ladders without
+   toggling `.dark`, so `color-scheme` (which base.css keys on `.dark`) can't
+   follow it: a light site renders the demo DARK, a dark site renders it LIGHT.
+   Re-assert the opposite-of-site scheme on the frame so the date/time picker
+   glyphs (and native scrollbars) match the rendition they sit in. */
+.demo-frame {
+  color-scheme: dark;
+}
+html.dark .demo-frame {
+  color-scheme: light;
+}
+
+/* The double-flip (manual demo frames): the inner content wrapper is `.demo-unflip`,
+   so its ladder is restored to the website theme while the frame chrome and dots
+   stay flipped. Re-assert the base text color here too, from the restored ladder,
+   so inherited text follows the website theme instead of the frame's flipped color
+   set above. */
+.demo-unflip {
+  color: var(--default-800);
+}
+html.dark .demo-unflip {
+  color: var(--default-d-800);
+}
+/* The inner double-flip subtree is back on the website theme, so its native
+   controls follow the site scheme again. */
+.demo-unflip {
+  color-scheme: light;
+}
+html.dark .demo-unflip {
+  color-scheme: dark;
+}
+
+/* Manual prose colors. UnoCSS `presetTypography` ships a cool, slate-tinted gray
+   palette for `.prose` (so table line separators, list bullets/numbers, and rules
+   read as a bluish gray). Re-point its `--un-prose-*` variables at our neutral
+   `--default-*` ladder so the manual matches the rest of the site and the
+   client's own markdown styling (which borders tables with `--default-200` and
+   lets list markers inherit the body text color). Scoped to `.manual-article`
+   (the only place `.prose` lives) so the two-class selector also outranks the
+   `.dark .dark:prose-invert` remap in dark mode, with no stylesheet-order
+   reliance. */
+.manual-article .prose {
+  --un-prose-body: var(--default-700);
+  --un-prose-headings: var(--default-900);
+  --un-prose-lead: var(--default-600);
+  --un-prose-links: var(--default-900);
+  --un-prose-bold: var(--default-900);
+  --un-prose-counters: var(--default-700);
+  --un-prose-bullets: var(--default-700);
+  --un-prose-hr: var(--default-300);
+  --un-prose-captions: var(--default-500);
+  --un-prose-code: var(--default-900);
+  --un-prose-th-borders: var(--default-300);
+  --un-prose-td-borders: var(--default-200);
+}
+.dark .manual-article .prose {
+  --un-prose-body: var(--default-d-700);
+  --un-prose-headings: var(--default-d-900);
+  --un-prose-lead: var(--default-d-500);
+  --un-prose-links: var(--default-d-900);
+  --un-prose-bold: var(--default-d-900);
+  --un-prose-counters: var(--default-d-700);
+  --un-prose-bullets: var(--default-d-700);
+  --un-prose-hr: var(--default-d-300);
+  --un-prose-captions: var(--default-d-500);
+  --un-prose-code: var(--default-d-900);
+  --un-prose-th-borders: var(--default-d-300);
+  --un-prose-td-borders: var(--default-d-200);
+}
+
+/* Inline code in the manual: render it as the client's inline-code pill (the
+   settings tool-detail style, `bg-surface-inset` fill + `text-default-800` +
+   `rounded-small` + `px-1.5 py-0.5` + `font-mono`) rather than
+   presetTypography's backtick-wrapped mono text, so `ctx.db` in the prose reads
+   like the same token does in the app. Scoped to `:not(pre) > code` so it never
+   touches the fenced code blocks (Shiki's `.astro-code`, a `pre > code`), which
+   keep their own dark syntax-highlighted surface. `bg-surface-inset` resolves to
+   `--default-200`, so it uses the same light/dark `--default-*` pair as the prose
+   colors above. */
+.manual-article .prose :not(pre) > code {
+  background-color: var(--default-200);
+  color: var(--default-800);
+  border-radius: var(--rounded-small);
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  font-weight: 400;
+  overflow-wrap: break-word;
+}
+/* presetTypography wraps inline code in literal backticks via pseudo-elements;
+   drop them now that the pill provides the affordance. */
+.manual-article .prose :not(pre) > code::before,
+.manual-article .prose :not(pre) > code::after {
+  content: none;
+}
+.dark .manual-article .prose :not(pre) > code {
+  background-color: var(--default-d-200);
+  color: var(--default-d-800);
+}
+
+/* An Aside card now sits at `bg-surface` lightness (a `-50` fill), so the pill
+   keeps its `bg-surface-inset` (`-200`) level from above and still reads as
+   recessed against the card, no lift needed. On the colored asides, retint the
+   pill to the card's accent by pointing `--default-base` at the accent base:
+   every `var(--default-*)` in the pill re-resolves to that hue, both background
+   and text, exactly the ladder-retint the client's accent bubbles use (see
+   Bubble.svelte). `note` (a neutral `info` card) keeps the gray ladder. */
+.manual-article .prose .manual-aside-tip :not(pre) > code {
+  --default-base: var(--accent-green-base);
+}
+.manual-article .prose .manual-aside-caution :not(pre) > code {
+  --default-base: var(--accent-yellow-base);
+}
+
+/* Smooth in-page anchor jumps, disabled for reduced motion. Deliberately NOT on
+   the vertical scroll-snap container: mandatory snap re-aligns on scroll-end on
+   its own, and a global smooth behavior only makes that settle look sluggish. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(a[href^="#"]) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Trim the half-leading off the showcase caption text so the VISIBLE gaps match
+   the CSS gaps. Each line box is taller than its letters (line-height > glyph
+   height); untrimmed, that extra space inflates the title->description gap more
+   than the description->bar gap, so two equal `gap-1`s look unequal. Trimming to
+   the cap height (top) and the font's text edge (bottom) makes each block hug its
+   letters, so the title->description and description->bar gaps read identically.
+   The bottom edge is `text`, NOT `alphabetic`: alphabetic ends at the baseline,
+   which clips descenders (the tails of p/q/g/y) on the last line; `text` ends at
+   the font descent, so descenders are kept while the bottom leading is still
+   trimmed. Progressive enhancement: browsers without text-box-trim keep the
+   leading. */
+[data-caption] > h2,
+[data-caption] > p {
+  text-box-trim: trim-both;
+  text-box-edge: cap text;
+}
+
+/* Hide the scrollbar on a scroller that is still fully swipe/drag scrollable
+   (the horizontal feature track). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Fade the showcase track's left/right edges into the page background, so the
+   peeking neighbour stages dissolve cleanly instead of being cut at a hard edge.
+   Deliberately an OVERLAY (a gradient painted in front of the edges, fading from
+   bg-surface to transparent) rather than a `mask` on the track: a mask on the
+   bubbles' ancestor breaks their `backdrop-filter` halo in WebKit (the halo
+   stops sampling its backdrop and the frost + drop shadow vanish). The overlay
+   is not an ancestor of the bubbles, so it leaves the halo untouched, and being
+   pointer-events-none it does not intercept the demos' click/scroll handling. */
+.edge-fade-overlay {
+  position: absolute;
+  inset-block: 0;
+  width: 2.5rem;
+  z-index: 30;
+  pointer-events: none;
+}
+.edge-fade-overlay-left {
+  left: 0;
+  background: linear-gradient(to right, var(--default-50), transparent);
+}
+.edge-fade-overlay-right {
+  right: 0;
+  background: linear-gradient(to left, var(--default-50), transparent);
+}
+html.dark .edge-fade-overlay-left {
+  background: linear-gradient(to right, var(--default-d-50), transparent);
+}
+html.dark .edge-fade-overlay-right {
+  background: linear-gradient(to left, var(--default-d-50), transparent);
+}
+
+/* Dim an off-centre showcase stage by painting a translucent surface-colored
+   scrim OVER its panel, fading it toward the page background. Deliberately an
+   overlay, NOT `opacity` on the panel: opacity < 1 on the bubbles' ancestor
+   establishes a backdrop root in WebKit and kills their `backdrop-filter` halo,
+   and a stage born off-centre (opacity < 1) has its halo established broken and
+   never recovers on centring, so only the first (born-centred) stage kept its
+   blur. The scrim is a sibling of the demo frame, so every stage keeps its halo;
+   the centred stage's scrim is transparent (opacity 0). Its own opacity is safe
+   because the scrim is not an ancestor of any bubble. Sits above the demo +
+   caption (z-10) but below the click cover (z-20) and edge fades (z-30). */
+.stage-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: var(--default-50);
+  transition: opacity 200ms;
+}
+html.dark .stage-dim {
+  background: var(--default-d-50);
+}
+
+/* Focus grid: a faint dotted grid in the bg-surface-inset color, painted on top of
+   the host's flat bg-surface. The class name is deliberately effect-agnostic so the
+   pattern can change without renaming every call site. The dots are painted as
+   `background-image` and tinted by `--focus-grid` (the geometry and the dotted-line
+   technique are documented on the shared rule below), with the edge fade the only
+   thing on the mask. It sits behind its content (z-index -1, over the surface but
+   under everything in flow) so the showcase's backdrop-blur borders have texture to
+   blur instead of a flat fill. Each layer fills its positioned parent and fades out
+   before its edges on all four sides (the fade is INSET: fully opaque in the middle,
+   transparent by the boundary, never a hard cut at the border); the two gradients
+   intersect so the corners fall off together. Both are plain absolute, in-flow
+   elements (no fixed positioning or viewport math), so they re-measure correctly
+   across Astro view transitions. `.focus-grid-stage` lives inside each homepage
+   showcase stage's demo footprint (capped to the content width and centered so it
+   backs only that stage's demo and not the caption text, dims with the panel, and
+   scrolls along with it); `.focus-grid-manual` fills the article column on manual
+   pages. */
+.focus-grid-stage,
+.focus-grid-manual,
+.focus-grid-frame {
+  /* Dotted grid: two tiled radial-gradient dot layers paint the grid LINES as rows
+     of dots (cell interiors stay empty). The first layer tiles one dot every `--step`
+     across and every `--cell` down (the horizontal lines); the second swaps the axes
+     (the vertical lines). `--step` = `--cell` / 4 so each cell side carries 5 dots
+     counting both intersection endpoints, and the half-tile background offsets land
+     both lattices on a shared 0 origin so their dots meet exactly at every
+     intersection. `--dot` is the dot radius. */
+  --cell: 1.5rem;
+  --step: calc(var(--cell) / 4);
+  --dot: 0.75px;
+}
+.focus-grid-stage,
+.focus-grid-manual {
+  pointer-events: none;
+  z-index: -1;
+  position: absolute;
+  inset: 0;
+  --focus-grid: var(--default-200);
+  --fade: 4rem;
+  background-image:
+    radial-gradient(circle, var(--focus-grid) var(--dot), transparent var(--dot)),
+    radial-gradient(circle, var(--focus-grid) var(--dot), transparent var(--dot));
+  background-size:
+    var(--step) var(--cell),
+    var(--cell) var(--step);
+  background-position:
+    calc(var(--step) / 2) calc(var(--cell) / 2),
+    calc(var(--cell) / 2) calc(var(--step) / 2);
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    );
+  mask-composite: intersect;
+}
+html.dark .focus-grid-stage,
+html.dark .focus-grid-manual {
+  --focus-grid: var(--default-d-200);
+}
+
+/* Focus grid painted inside an inline demo / gallery frame, over its surface fill
+   and under the rendered View: a descendant always paints above its ancestor's
+   background, and the View sits in a `z-10` wrapper above this `z-0` layer. It
+   lives inside `.demo-frame`, so `--default-200`
+   is swapped by the theme flip and the dots track the rendition's (inverted)
+   theme automatically; the `html.dark` branch picks the dark slot, which the flip
+   has likewise swapped. A short edge fade keeps the grid off the border. The mask
+   is on this layer alone (never an ancestor of the bubbles), so it can't break
+   their backdrop-filter halo. */
+.focus-grid-frame {
+  pointer-events: none;
+  z-index: 0;
+  position: absolute;
+  inset: 0;
+  --focus-grid: var(--default-200);
+  --fade: 1.5rem;
+  background-image:
+    radial-gradient(circle, var(--focus-grid) var(--dot), transparent var(--dot)),
+    radial-gradient(circle, var(--focus-grid) var(--dot), transparent var(--dot));
+  background-size:
+    var(--step) var(--cell),
+    var(--cell) var(--step);
+  background-position:
+    calc(var(--step) / 2) calc(var(--cell) / 2),
+    calc(var(--cell) / 2) calc(var(--step) / 2);
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade),
+      #000 calc(100% - var(--fade)),
+      transparent
+    );
+  mask-composite: intersect;
+}
+html.dark .focus-grid-frame {
+  --focus-grid: var(--default-d-200);
+}
+
+/* Cap each stage's grid to the install-card / caption width (max-w-xl) and
+   center it (inset 0 + a definite width lets the auto margins center it), so the
+   dots line up under the demo rather than spanning its full footprint. */
+.focus-grid-stage {
+  width: min(100%, 36rem);
+  margin-inline: auto;
+}
+
+/* Gallery card adjustments (the `.gallery-frame` cards in components/gallery).
+   A NARROW masonry tile is far narrower than the 700px window the `.demo-frame`
+   re-pins above assume, so a component sized for that window would spill past the
+   tile. On narrow tiles cap every re-pinned width to 100% of the card, so the
+   component shrinks to the card (and its own inner `overflow-x-auto`/`-clip`
+   scrolls). A plain `max-width: 100%` (not `min(design, 100%)`) keeps the cap
+   non-circular, so a bubble's body and its drop-shadow layer (a sibling sized to
+   the same `w-fit` wrapper) stay the same width. WIDE shell rows are NOT capped
+   here: they keep the faithful `.demo-frame` 700px-window proportions, where the
+   background and shadow already agree. The extra class outranks `.demo-frame`. */
+.demo-frame.gallery-frame-narrow .bubble-body,
+.demo-frame.gallery-frame-narrow .max-w-\[calc\(100vw-5rem\)\],
+.demo-frame.gallery-frame-narrow .max-w-\[calc\(100vw-135px\)\],
+.demo-frame.gallery-frame-narrow .max-w-\[calc\(100vw-80px\)\] {
+  max-width: 100%;
+}
+
+/* A modal/popover shown in a backdrop card centers in the card; cap it to the
+   card height MINUS a 4rem gutter (2rem top + bottom) with internal scroll, so a
+   tall state (a long deletions list, many downloads) is never clipped by the
+   card's overflow-hidden AND every modal keeps clear vertical breathing room on
+   the grid. `calc(100% - 4rem)` also caps a modal whose own height would fill the
+   card (e.g. ShareModal's `h-[70vh]` on a tall desktop viewport), which a plain
+   `max-height: 100%` would let fill edge to edge. */
+.gallery-frame [role="dialog"] {
+  max-height: calc(100% - 4rem);
+  overflow-y: auto;
+}
+
+/* The gallery renders to static HTML (no `client:*`), so a Popover popup (the
+   ColorPicker, the Popover primitive) never runs its client-side anchor
+   measurement and would stay at its pre-measurement default of
+   `visibility: hidden`. Reveal it and pin it to a fixed spot inside the card so
+   the component is still visible for QA. The selector matches ONLY an un-measured
+   popup (its inline `visibility: hidden`); a measured one (were the gallery ever
+   hydrated again) overwrites that style, and a Modal dialog is never hidden, so
+   neither is affected. */
+.gallery-frame [role="dialog"][style*="visibility: hidden"] {
+  visibility: visible !important;
+  left: 50% !important;
+  top: 4rem !important;
+  transform: translateX(-50%) !important;
+}
+
+/* The mobile snippet-autocomplete sheet pins itself with
+   `bottom: calc(100dvh - anchorTop)`, which assumes the frame fills the viewport
+   (true on a phone, false for a gallery phone frame, so `dvh` overshoots and the
+   sheet drifts up off the frame and clips). Inside a gallery frame re-pin it to
+   the frame's own bottom edge with absolute positioning, so it sits over the
+   composer the way it does on a real phone. Matches the sheet's distinctive
+   top-rounded class, never the desktop popover (`rounded-large`). */
+.gallery-frame .fixed.rounded-t-large {
+  position: absolute;
+  bottom: 0 !important;
+}
+
+/* Show the focus grid behind a modal instead of the modal's own blur scrim: the
+   gallery renders overlays on the grid (no special dimmed backdrop), so neutralize
+   the shared Modal/Popover scrim layer (`bg-black/20 backdrop-blur`) inside a
+   gallery card only. The selector matches that layer's two classes exactly, never
+   the `.focus-grid-frame` (which carries neither), so the grid stays. */
+.demo-frame.gallery-frame .bg-black\/20.backdrop-blur {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Page-wide vertical scroll fade for the gallery: the scrolling cards dissolve
+   into the page background (bg-surface) at the top (below the sticky navbar) and
+   bottom, rather than ending at a hard edge. An OVERLAY gradient, not a `mask` on
+   the page (a mask on the bubbles' ancestor breaks their backdrop-filter halo in
+   WebKit), and pointer-events-none so it never blocks the cards' header links.
+   Mirrors `.edge-fade-overlay`'s light/dark color handling. */
+.gallery-scroll-fade {
+  position: fixed;
+  inset-inline: 0;
+  height: 2.5rem;
+  z-index: 30;
+  pointer-events: none;
+}
+.gallery-scroll-fade-top {
+  top: var(--chrome-h);
+  background: linear-gradient(to bottom, var(--default-50), transparent);
+}
+.gallery-scroll-fade-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--default-50), transparent);
+}
+html.dark .gallery-scroll-fade-top {
+  background: linear-gradient(to bottom, var(--default-d-50), transparent);
+}
+html.dark .gallery-scroll-fade-bottom {
+  background: linear-gradient(to top, var(--default-d-50), transparent);
+}
+
+/* Manual outline scroll-hover reveal, driven by a JS-toggled class instead of
+   the shared `.loca-scroll-hover:hover` rule. WebKit/Chromium do not repaint a
+   custom scrollbar thumb when only the container's `:hover` state flips, so the
+   thumb appears/disappears a beat late (and only once the cursor crosses the
+   track). An explicit class mutation forces the style recalc that repaints the
+   thumb in step with the pointer. Mirrors the shared reveal colors; the always
+   present 5px track means toggling the thumb color never reflows. The `:hover`
+   rule still applies as a no-JS fallback. */
+#manual-outline-scroll.is-scroll-hovered::-webkit-scrollbar-thumb {
+  background: var(--default-200);
+}
+html.dark #manual-outline-scroll.is-scroll-hovered::-webkit-scrollbar-thumb {
+  background: var(--default-d-200);
+}
+
+/* Expandable (native <details>): a chevron that rotates from pointing right to
+   pointing down on open, and an open/close height animation, both pure CSS.
+   Mirrors the app's Expandable look (chevron + subtle body reveal). */
+.expandable > summary {
+  list-style: none;
+}
+.expandable > summary::-webkit-details-marker {
+  display: none;
+}
+.expandable-chevron {
+  transition: rotate 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+details[open] > summary .expandable-chevron {
+  rotate: 90deg;
+}
+.expandable::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition:
+    block-size 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    content-visibility 200ms allow-discrete;
+}
+.expandable[open]::details-content {
+  block-size: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .expandable-chevron,
+  .expandable::details-content {
+    transition: none;
+  }
+}
+
+/* Page-to-page slide. The direction is set on <html data-vt-dir> by the script
+   in BaseLayout. Crossing the navbar's top-level pages slides the whole page
+   root horizontally on desktop (forward = a later page in the navbar, back =
+   earlier) and vertically on mobile (page-up/page-down, the burger list being
+   vertical). Moving between manual subsections slides vertically along the
+   outline order (up = a lower item, down = a higher one); only the article is
+   named for that case, so the outline sidebar stays put while the content
+   slides. The top chrome is
+   transition:persist'd, so it never slides. Falls back to the default cross-fade
+   with no JS or reduced motion. */
+
+/* Lift the persisted top chrome (pre-release banner + navbar) into its own
+   view-transition group so it is not captured into the sliding `root` snapshot:
+   with the same name on every page it morphs in place (no movement), keeping the
+   bar fixed while the page slides. */
+.vt-chrome {
+  view-transition-name: vt-chrome;
+}
+
+/* Name the article only while sliding vertically, so home <-> manual still
+   slides the whole root horizontally (the article has no name then). */
+html[data-vt-dir="up"] .manual-article,
+html[data-vt-dir="down"] .manual-article {
+  view-transition-name: vt-article;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-vt-dir="forward"]::view-transition-old(root) {
+    animation: vt-out-left 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="forward"]::view-transition-new(root) {
+    animation: vt-in-right 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="back"]::view-transition-old(root) {
+    animation: vt-out-right 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="back"]::view-transition-new(root) {
+    animation: vt-in-left 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  /* Mobile navbar-page crossing: slide the whole page vertically (the article is
+     not named for page-up/page-down, so it travels with the rest of root). */
+  html[data-vt-dir="page-up"]::view-transition-old(root) {
+    animation: vt-out-up 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="page-up"]::view-transition-new(root) {
+    animation: vt-in-up 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="page-down"]::view-transition-old(root) {
+    animation: vt-out-down 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="page-down"]::view-transition-new(root) {
+    animation: vt-in-down 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="up"]::view-transition-old(vt-article) {
+    animation: vt-out-up 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="up"]::view-transition-new(vt-article) {
+    animation: vt-in-up 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="down"]::view-transition-old(vt-article) {
+    animation: vt-out-down 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  html[data-vt-dir="down"]::view-transition-new(vt-article) {
+    animation: vt-in-down 260ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+}
+/* The slide travels a full group extent (100% of the snapshot: the viewport for
+   `root`, the article box for `vt-article`), so the old page clears completely
+   and the new one arrives from fully off-screen, matching the client's full
+   panel slide. No fade: the 100% travel already moves it entirely out of view. */
+@keyframes vt-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes vt-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes vt-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes vt-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes vt-out-up {
+  to {
+    transform: translateY(-100%);
+  }
+}
+@keyframes vt-in-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes vt-out-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes vt-in-down {
+  from {
+    transform: translateY(-100%);
+  }
+}
+
+/* Minimal syntax highlighting for the showcase's demo code panes (website-only
+   editor chrome). highlight.js emits `hljs-*` token classes; we tint a handful
+   of them from the shared accent ladder so the colors stay coherent and track
+   light/dark. The base text color comes from the pane's own `text-default-*`. */
+.demo-code .hljs-comment {
+  color: var(--default-500);
+  font-style: italic;
+}
+.demo-code .hljs-keyword,
+.demo-code .hljs-literal,
+.demo-code .hljs-built_in {
+  color: var(--accent-purple-600);
+}
+.demo-code .hljs-string {
+  color: var(--accent-green-600);
+}
+.demo-code .hljs-number {
+  color: var(--accent-blue-600);
+}
+.demo-code .hljs-title,
+.demo-code .hljs-title.function_,
+.demo-code .hljs-attr,
+.demo-code .hljs-property {
+  color: var(--accent-blue-600);
+}
+html.dark .demo-code .hljs-comment {
+  color: var(--default-d-500);
+}
+html.dark .demo-code .hljs-keyword,
+html.dark .demo-code .hljs-literal,
+html.dark .demo-code .hljs-built_in {
+  color: var(--accent-purple-d-600);
+}
+html.dark .demo-code .hljs-string {
+  color: var(--accent-green-d-600);
+}
+html.dark .demo-code .hljs-number {
+  color: var(--accent-blue-d-600);
+}
+html.dark .demo-code .hljs-title,
+html.dark .demo-code .hljs-title.function_,
+html.dark .demo-code .hljs-attr,
+html.dark .demo-code .hljs-property {
+  color: var(--accent-blue-d-600);
+}

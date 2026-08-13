@@ -13,9 +13,9 @@
 // delegates provisioning to the binary's own `install-service`.
 //
 // Headless surface (documented in the manual's installing article):
-//   Windows: tomat-setup.exe /S [/CLIENT=0|1] [/CORE=0|1] [/SERVICE=0|1]
+//   Windows: loca-setup.exe /S [/CLIENT=0|1] [/CORE=0|1] [/SERVICE=0|1]
 //            [/BINDALL=0|1] [/BEHINDPROXY=0|1]
-//   macOS:   sudo installer -pkg tomat.pkg -target /
+//   macOS:   sudo installer -pkg loca.pkg -target /
 //            [-applyChoiceChangesXML choices.xml]
 //   Uninstall (Windows Core entry): uninstall.exe /S [/KEEPDATA] [/PURGEMODELS]
 //   Uninstall (macOS): sudo <prefix>/uninstall.sh [--keep-data]
@@ -27,8 +27,8 @@
 
 import { basename, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
-import { BUILTIN_EXTENSION_ID } from "../../packages/tomat-shared/src/domain/extension.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
+import { BUILTIN_EXTENSION_ID } from "../../packages/loca-shared/src/domain/extension.ts";
 import type { BuildArtifact, CoreBuildArtifacts, HelperArtifact, WorkerArtifact } from "./core.ts";
 import {
   assemblePayload,
@@ -67,30 +67,30 @@ export interface UnifiedInstallerOpts {
  *  website's lib/install.ts. */
 export function unifiedInstallerStableName(format: "exe" | "pkg", channel: ReleaseChannel): string {
   const suffix = channelBinSuffix(channel);
-  return format === "exe" ? `tomat${suffix}-setup.exe` : `tomat${suffix}.pkg`;
+  return format === "exe" ? `loca${suffix}-setup.exe` : `loca${suffix}.pkg`;
 }
 
 /** The human display names, matching the Client's parenthesized channel
- *  convention ("Tomat (latest)"): never the raw -latest suffix. */
+ *  convention ("Loca (latest)"): never the raw -latest suffix. */
 export function unifiedDisplayName(channel: ReleaseChannel): string {
-  return channel === "stable" ? "Tomat" : `Tomat (${channel})`;
+  return channel === "stable" ? "Loca" : `Loca (${channel})`;
 }
 export function coreDisplayName(channel: ReleaseChannel): string {
-  return channel === "stable" ? "Tomat Core" : `Tomat Core (${channel})`;
+  return channel === "stable" ? "Loca Core" : `Loca Core (${channel})`;
 }
 
 /** The neutral system prefix the macOS pkg stages the Core payload under; the
- *  setup postinstall copies it into the console user's ~/.tomat/<channel>/core. */
+ *  setup postinstall copies it into the console user's ~/.loca/<channel>/core. */
 function macInstallPrefix(channel: ReleaseChannel): string {
   const suffix = channelBinSuffix(channel);
-  return `/usr/local/lib/tomat${suffix || "-stable"}`;
+  return `/usr/local/lib/loca${suffix || "-stable"}`;
 }
 
 // ---------------------------------------------------------------------------
 // offline built-in extension plant (best effort)
 
 /** Stage the live published built-in extension into `<root>/extensions/` as the
- *  planted `.tomat-extension-builtin.{tgz,json}` pair, so install-service's
+ *  planted `.loca-extension-builtin.{tgz,json}` pair, so install-service's
  *  bootstrap finds them on disk and skips its install-time fetch (the install
  *  lands fully offline). Best effort: any failure just means bootstrap fetches
  *  as usual, and core re-verifies the Ed25519 signature offline either way. The
@@ -170,7 +170,7 @@ export async function materializeCorePayload(
     `${channelManifestDir(channel)}/core.json?fresh=${Date.now()}`,
   );
   if (!manifest) fail(`no live core.json for ${channel}; release the core first`);
-  const work = await Deno.makeTempDir({ prefix: "tomat-core-payload-" });
+  const work = await Deno.makeTempDir({ prefix: "loca-core-payload-" });
 
   const download = async (url: string, sha256: string, exec = false): Promise<string> => {
     const name = basename(new URL(url).pathname).replace(/\.gz$/, "");
@@ -214,7 +214,7 @@ export async function materializeCorePayload(
   const artifacts: BuildArtifact[] = [
     {
       triple,
-      name: "tomat-core",
+      name: "loca-core",
       filename: basename(binPath),
       path: binPath,
       sha256: bin.sha256,
@@ -260,7 +260,7 @@ export async function buildWindowsUnified(
   }
   const { channel, triple, env, clientVersion } = opts;
   const suffix = channelBinSuffix(channel);
-  const work = await Deno.makeTempDir({ prefix: "tomat-unified-nsis-" });
+  const work = await Deno.makeTempDir({ prefix: "loca-unified-nsis-" });
   const payload = join(work, "payload");
   const { binName } = await assemblePayload(built, triple, channel, payload);
   const hasExtensions = await stageBuiltinExtension(payload, env, channel);
@@ -269,8 +269,8 @@ export async function buildWindowsUnified(
   const clientExe = join(work, "client-setup.exe");
   await Deno.copyFile(join(DIST_DIR, clientExeDistRelPath), clientExe);
 
-  const nsi = join(work, "tomat.nsi");
-  const outFile = join(work, `tomat${suffix}-setup-${clientVersion}.exe`);
+  const nsi = join(work, "loca.nsi");
+  const outFile = join(work, `loca${suffix}-setup-${clientVersion}.exe`);
   await Deno.writeTextFile(
     nsi,
     unifiedNsi({
@@ -316,7 +316,7 @@ export interface UnifiedNsiOpts {
  *  The Client section runs the embedded Tauri per-user setup silently; the
  *  Client keeps its own Add/Remove entry + uninstaller, and the in-app updater
  *  keeps updating it. The Core section lays the payload down and provisions
- *  via the binary's own install-service, with TOMAT_INSTALL_REGISTER_ARP=0:
+ *  via the binary's own install-service, with LOCA_INSTALL_REGISTER_ARP=0:
  *  THIS installer's uninstall.exe owns the Core's Add/Remove entry (written
  *  below), and the skip keeps install-service re-runs from clobbering it.
  *
@@ -341,8 +341,8 @@ export function unifiedNsi(o: UnifiedNsiOpts): string {
 Name "${displayName}"
 OutFile "${o.outFile}"
 RequestExecutionLevel user
-InstallDir "$PROFILE\\.tomat\\${channel}\\core"
-!define UNINST_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\tomat-core${suffix}"
+InstallDir "$PROFILE\\.loca\\${channel}\\core"
+!define UNINST_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\loca-core${suffix}"
 
 Var ServiceCheckbox
 Var BindAllCheckbox
@@ -358,13 +358,13 @@ Var PurgeModelsFlag
 Page custom CoreOptionsPage CoreOptionsPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "${displayName} is installed"
-!define MUI_FINISHPAGE_TEXT "Open Tomat from the Start Menu to get started."
+!define MUI_FINISHPAGE_TEXT "Open Loca from the Start Menu to get started."
 !insertmacro MUI_PAGE_FINISH
 UninstPage custom un.OptionsPage un.OptionsPageLeave
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
-Section "Tomat Client (required)" SEC_CLIENT
+Section "Loca Client (required)" SEC_CLIENT
   ; Read-only on the components page: the Client is the required half in the
   ; GUI. RO only locks the checkbox; the silent /CLIENT=0 UnselectSection in
   ; .onInit still works for a core-only headless install.
@@ -379,7 +379,7 @@ Section "Tomat Client (required)" SEC_CLIENT
   DetailPrint "client setup exited $0"
 SectionEnd
 
-Section "Tomat Core" SEC_CORE
+Section "Loca Core" SEC_CORE
   SetOutPath "$INSTDIR\\bin"
   File /r "${join(o.payloadDir, "bin")}\\*"
   SetOutPath "$INSTDIR\\workers"
@@ -387,14 +387,14 @@ Section "Tomat Core" SEC_CORE
 ${extensionsBlock}  WriteUninstaller "$INSTDIR\\uninstall.exe"
   WriteRegStr HKCU "\${UNINST_KEY}" "DisplayName" "${coreName}"
   WriteRegStr HKCU "\${UNINST_KEY}" "DisplayVersion" "${o.coreVersion}"
-  WriteRegStr HKCU "\${UNINST_KEY}" "Publisher" "Tomat"
+  WriteRegStr HKCU "\${UNINST_KEY}" "Publisher" "Loca"
   WriteRegStr HKCU "\${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "\${UNINST_KEY}" "UninstallString" '"$INSTDIR\\uninstall.exe"'
   WriteRegStr HKCU "\${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\\uninstall.exe" /S'
   WriteRegDWORD HKCU "\${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "\${UNINST_KEY}" "NoRepair" 1
   ; Provision + start via the binary's own subcommand (bootstrap, service or
-  ; background launch). TOMAT_INSTALL_REGISTER_ARP=0: the entry written above
+  ; background launch). LOCA_INSTALL_REGISTER_ARP=0: the entry written above
   ; owns Add/Remove, see the module comment.
   ; Background mode must NOT run under nsExec: nsExec reads the command's
   ; output through a pipe, the detached core that install-service leaves
@@ -405,9 +405,9 @@ ${extensionsBlock}  WriteUninstaller "$INSTDIR\\uninstall.exe"
   ; Scheduler starts the core out-of-tree, so no long-lived process ever holds
   ; the pipe.
   \${If} $ServiceFlag == "0"
-    ExecWait 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& set TOMAT_INSTALL_SERVICE=$ServiceFlag&& set TOMAT_INSTALL_BIND_ALL=$BindAllFlag&& set TOMAT_INSTALL_BEHIND_PROXY=$BehindProxyFlag&& set TOMAT_INSTALL_REGISTER_ARP=0&& "$INSTDIR\\bin\\${binName}" install-service' $0
+    ExecWait 'cmd.exe /c set LOCA_CHANNEL=${channel}&& set LOCA_INSTALL_SERVICE=$ServiceFlag&& set LOCA_INSTALL_BIND_ALL=$BindAllFlag&& set LOCA_INSTALL_BEHIND_PROXY=$BehindProxyFlag&& set LOCA_INSTALL_REGISTER_ARP=0&& "$INSTDIR\\bin\\${binName}" install-service' $0
   \${Else}
-    nsExec::Exec 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& set TOMAT_INSTALL_SERVICE=$ServiceFlag&& set TOMAT_INSTALL_BIND_ALL=$BindAllFlag&& set TOMAT_INSTALL_BEHIND_PROXY=$BehindProxyFlag&& set TOMAT_INSTALL_REGISTER_ARP=0&& "$INSTDIR\\bin\\${binName}" install-service'
+    nsExec::Exec 'cmd.exe /c set LOCA_CHANNEL=${channel}&& set LOCA_INSTALL_SERVICE=$ServiceFlag&& set LOCA_INSTALL_BIND_ALL=$BindAllFlag&& set LOCA_INSTALL_BEHIND_PROXY=$BehindProxyFlag&& set LOCA_INSTALL_REGISTER_ARP=0&& "$INSTDIR\\bin\\${binName}" install-service'
     Pop $0
   \${EndIf}
   DetailPrint "install-service exited $0"
@@ -511,11 +511,11 @@ Function un.OptionsPage
   \${EndIf}
   \${NSD_CreateCheckbox} 0 10u 100% 12u "Keep my settings and data"
   Pop $KeepDataCheckbox
-  \${NSD_CreateLabel} 10u 24u -10u 20u "Sessions, memories, and settings under $PROFILE\\.tomat\\${channel}\\core."
+  \${NSD_CreateLabel} 10u 24u -10u 20u "Sessions, memories, and settings under $PROFILE\\.loca\\${channel}\\core."
   Pop $0
   \${NSD_CreateCheckbox} 0 52u 100% 12u "Also remove downloaded models"
   Pop $PurgeModelsCheckbox
-  \${NSD_CreateLabel} 10u 66u -10u 20u "Models under $PROFILE\\.tomat\\models are shared across channels and kept by default."
+  \${NSD_CreateLabel} 10u 66u -10u 20u "Models under $PROFILE\\.loca\\models are shared across channels and kept by default."
   Pop $0
   nsDialogs::Show
 FunctionEnd
@@ -543,7 +543,7 @@ Section "Uninstall"
   \${If} $PurgeModelsFlag == "1"
     StrCpy $R9 "$R9 --purge-models"
   \${EndIf}
-  nsExec::Exec 'cmd.exe /c set TOMAT_CHANNEL=${channel}&& "$INSTDIR\\bin\\${binName}" $R9'
+  nsExec::Exec 'cmd.exe /c set LOCA_CHANNEL=${channel}&& "$INSTDIR\\bin\\${binName}" $R9'
   Pop $0
   DeleteRegKey HKCU "\${UNINST_KEY}"
   ; $INSTDIR doubles as the Core's DATA root (settings, sessions, memories), so
@@ -579,9 +579,9 @@ export function macPkgIds(channel: ReleaseChannel): {
   setup: string;
 } {
   const suffix = channelBinSuffix(channel);
-  const core = `au.tomat.core${suffix}`;
+  const core = `com.rzkyif.loca.core${suffix}`;
   return {
-    client: `au.tomat.client${suffix}`,
+    client: `com.rzkyif.loca.client${suffix}`,
     core,
     optService: `${core}.opt-service`,
     optLan: `${core}.opt-lan`,
@@ -643,7 +643,7 @@ export async function buildMacUnified(
   const suffix = channelBinSuffix(channel);
   const ids = macPkgIds(channel);
   const prefix = macInstallPrefix(channel);
-  const work = await Deno.makeTempDir({ prefix: "tomat-unified-pkg-" });
+  const work = await Deno.makeTempDir({ prefix: "loca-unified-pkg-" });
   const appPath = await findMacApp(triple);
   const appName = basename(appPath);
 
@@ -694,7 +694,7 @@ export async function buildMacUnified(
 
   // Option markers: one file each under <prefix>/opts/. Selecting the choice
   // installs the marker; the setup postinstall translates markers into the
-  // TOMAT_INSTALL_* env, so the GUI checkboxes and a headless
+  // LOCA_INSTALL_* env, so the GUI checkboxes and a headless
   // -applyChoiceChangesXML run share one mechanism.
   for (const [name, id] of [
     ["service", ids.optService],
@@ -744,7 +744,7 @@ export async function buildMacUnified(
     distXml,
     unifiedDistributionXml({ channel, coreVersion, clientVersion }),
   );
-  const unsigned = join(work, `tomat${suffix}-${clientVersion}-unsigned.pkg`);
+  const unsigned = join(work, `loca${suffix}-${clientVersion}-unsigned.pkg`);
   await run(["productbuild", "--distribution", distXml, "--package-path", work, unsigned]);
 
   // Same Installer-identity signing + notarization path as any pkg: productsign
@@ -756,7 +756,7 @@ export async function buildMacUnified(
   if (env.appleInstallerSigningIdentity) {
     const cleanupKeychain = await materializeInstallerKeychain(env);
     try {
-      finalPkg = join(work, `tomat${suffix}-${clientVersion}-signed.pkg`);
+      finalPkg = join(work, `loca${suffix}-${clientVersion}-signed.pkg`);
       await run(["productsign", "--sign", env.appleInstallerSigningIdentity, unsigned, finalPkg]);
       await notarizePkg(finalPkg, env);
     } finally {
@@ -773,7 +773,7 @@ export async function buildMacUnified(
     info(colors.yellow(`APPLE_INSTALLER_SIGNING_IDENTITY unset; shipping an unsigned .pkg`));
   }
   // Name the published artifact stably (drop the -signed/-unsigned suffix).
-  const published = join(work, `tomat${suffix}-${clientVersion}.pkg`);
+  const published = join(work, `loca${suffix}-${clientVersion}.pkg`);
   await Deno.rename(finalPkg, published);
   return [await record(published, triple, "unified", "pkg", clientVersion)];
 }
@@ -803,7 +803,7 @@ export function renderMacUninstall(
 /** The setup component's postinstall: runs as root AFTER every payload
  *  component, reads the option markers the selected choices dropped under
  *  <prefix>/opts/, copies the Core payload into the console user's
- *  ~/.tomat/<channel>/core, and provisions via the binary's own
+ *  ~/.loca/<channel>/core, and provisions via the binary's own
  *  install-service as that user. Exported for tests. */
 export function macSetupPostinstall(
   channel: ReleaseChannel,
@@ -838,7 +838,7 @@ if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
 fi
 # sed, not awk '{print $2}': a home dir containing spaces must survive whole.
 USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | sed 's/^[^ ]* //')"
-DEST="$USER_HOME/.tomat/${channel}/core"
+DEST="$USER_HOME/.loca/${channel}/core"
 mkdir -p "$DEST/bin" "$DEST/workers"
 cp -R "$PREFIX/bin/." "$DEST/bin/"
 cp -R "$PREFIX/workers/." "$DEST/workers/"
@@ -846,15 +846,15 @@ if [ -d "$PREFIX/extensions" ]; then
   mkdir -p "$DEST/extensions"
   cp -R "$PREFIX/extensions/." "$DEST/extensions/"
 fi
-chown -R "$CONSOLE_USER" "$USER_HOME/.tomat/${channel}"
-# On a first-ever install the mkdir above created ~/.tomat itself as root; the
+chown -R "$CONSOLE_USER" "$USER_HOME/.loca/${channel}"
+# On a first-ever install the mkdir above created ~/.loca itself as root; the
 # user's install-service must be able to create the shared models dir in it.
-chown "$CONSOLE_USER" "$USER_HOME/.tomat"
+chown "$CONSOLE_USER" "$USER_HOME/.loca"
 # Run install-service AS the console user with HOME pinned to their home: sudo's
 # env_reset would otherwise leave HOME as root's, so the LaunchAgent plist +
 # admin token would land in /var/root instead of the user home. The env prefix
 # guarantees the vars reach the child regardless of the sudoers setenv policy.
-sudo -u "$CONSOLE_USER" env HOME="$USER_HOME" TOMAT_CHANNEL="${channel}" TOMAT_INSTALL_SERVICE="$SERVICE" TOMAT_INSTALL_BIND_ALL="$BINDALL" TOMAT_INSTALL_BEHIND_PROXY="$BEHINDPROXY" "$DEST/bin/${binName}" install-service || true
+sudo -u "$CONSOLE_USER" env HOME="$USER_HOME" LOCA_CHANNEL="${channel}" LOCA_INSTALL_SERVICE="$SERVICE" LOCA_INSTALL_BIND_ALL="$BINDALL" LOCA_INSTALL_BEHIND_PROXY="$BEHINDPROXY" "$DEST/bin/${binName}" install-service || true
 exit 0
 `;
 }
@@ -897,10 +897,10 @@ export function unifiedDistributionXml(o: {
     </line>
     <line choice="core-setup"/>
   </choices-outline>
-  <choice id="client" title="Tomat Client" description="The Tomat app, installed into Applications." start_selected="true" start_enabled="false">
+  <choice id="client" title="Loca Client" description="The Loca app, installed into Applications." start_selected="true" start_enabled="false">
     <pkg-ref id="${ids.client}"/>
   </choice>
-  <choice id="core" title="Tomat Core" description="The service that runs your models and tools on this computer. Uncheck it to connect the Client to a Core on another computer instead." start_selected="true">
+  <choice id="core" title="Loca Core" description="The service that runs your models and tools on this computer. Uncheck it to connect the Client to a Core on another computer instead." start_selected="true">
     <pkg-ref id="${ids.core}"/>
   </choice>
   <choice id="core-service" title="Keep the Core running in the background" description="Starts the Core at login so it is always ready. When off, the Client starts it on demand." start_selected="true" enabled="choices.core.selected" selected="choices.core.selected &amp;&amp; choices['core-service'].selected">

@@ -2,17 +2,17 @@
 //
 // Channel handling mirrors build-client.ts:
 //   - The channel is written to the Tauri crate's `channel` file, which build.rs
-//     bakes into the shipped APK via `option_env!("TOMAT_CHANNEL")` in channel.rs
-//     (its runtime default -> the channel's app-data dir, tomat-client-<channel>
+//     bakes into the shipped APK via `option_env!("LOCA_CHANNEL")` in channel.rs
+//     (its runtime default -> the channel's app-data dir, loca-client-<channel>
 //     secret store). A file rather than the build env because a persistent Gradle
 //     daemon pins whatever channel it first started with.
 //   - For non-stable channels we pass a `--config` override for a distinct
 //     productName, which names the APK. The on-device app LABEL is not productName:
 //     it is `@string/app_name`, generated per channel by resValue() in
-//     gen/android/app/build.gradle.kts off TOMAT_CHANNEL, because Tauri writes
+//     gen/android/app/build.gradle.kts off LOCA_CHANNEL, because Tauri writes
 //     res/values/strings.xml only at `tauri android init`, never on a build.
 //     The distinct applicationId that lets stable + latest install side by side is
-//     likewise applied by gradle via an applicationIdSuffix keyed off TOMAT_CHANNEL,
+//     likewise applied by gradle via an applicationIdSuffix keyed off LOCA_CHANNEL,
 //     NOT by overriding the Tauri `identifier`: the identifier drives the
 //     MainActivity's java package path, which is fixed at `tauri android init` time,
 //     so overriding it makes Tauri look for a package dir that does not exist.
@@ -41,10 +41,10 @@ if (!["stable", "dev", "latest"].includes(channel)) {
 }
 
 // Bake the channel for channel.rs (via build.rs). A persistent Gradle daemon
-// pins whatever TOMAT_CHANNEL it first started with, so the ambient env can't be
+// pins whatever LOCA_CHANNEL it first started with, so the ambient env can't be
 // trusted to reach the cargo compile; the on-disk file is the deterministic
 // source (see build.rs).
-await Deno.writeTextFile(join(ROOT, "packages/tomat-client/src/tauri/channel"), channel);
+await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), channel);
 
 // Non-stable channels get a distinct on-device label so they read as separate
 // apps; the distinct applicationId (for side-by-side install) is added by gradle's
@@ -52,7 +52,7 @@ await Deno.writeTextFile(join(ROOT, "packages/tomat-client/src/tauri/channel"), 
 // header note). Tauri deep-merges this over tauri.conf.json + tauri.android.conf.json.
 const override: Record<string, unknown> = {};
 if (channel !== "stable") {
-  override.productName = `Tomat (${channel})`;
+  override.productName = `Loca (${channel})`;
 }
 
 // Invoke the Tauri CLI directly (not via `deno task ... --`) so `--config`
@@ -65,8 +65,8 @@ if (Object.keys(override).length > 0) {
 
 const cmd = new Deno.Command("deno", {
   args: tauriArgs,
-  cwd: join(ROOT, "packages/tomat-client"),
-  env: { ...Deno.env.toObject(), ...resolveAndroidEnv(), TOMAT_CHANNEL: channel },
+  cwd: join(ROOT, "packages/loca-client"),
+  env: { ...Deno.env.toObject(), ...resolveAndroidEnv(), LOCA_CHANNEL: channel },
   stdout: "inherit",
   stderr: "inherit",
 });

@@ -1,11 +1,11 @@
 #!/usr/bin/env -S deno run -A
-// build:catalog: validate the hand-authored @tomat/model-catalog families and
+// build:catalog: validate the hand-authored @loca/model-catalog families and
 // write an UNSIGNED catalog.json to dist/ for local inspection. No keys, no
 // upload. Use `deno task release` to sign + publish.
 
 import { fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import { buildCatalogPayload } from "../../packages/tomat-model-catalog/src/index.ts";
+import { buildCatalogPayload } from "../../packages/loca-model-catalog/src/index.ts";
 
 const REPO_ROOT = fromFileUrl(new URL("../..", import.meta.url));
 const OUT = join(REPO_ROOT, "dist", "catalog.unsigned.json");

@@ -1,0 +1,39 @@
+---
+import Alert from "@loca/shared/ui/components/primitives/Alert.svelte";
+
+// A documentation callout: tip, note, or caution. It renders the app's own shared
+// Alert primitive (a filled accent surface + icon), so a manual callout looks
+// exactly like an in-app notice and cannot drift from it. This is website-only
+// doc chrome (the manual uses callouts; the app has no "tip" concept), but it is
+// built from the shared component, so the styling stays single-source. The body
+// is markdown, since MDX parses the children.
+interface Props {
+  type?: "tip" | "note" | "caution";
+  title?: string;
+}
+const { type = "note", title } = Astro.props;
+
+// Map each callout to a shared Alert variant. tip overrides the icon to a
+// lightbulb (Alert's "success" default is a checkmark, which reads as "done"
+// rather than "tip"); note and caution use the variant's own icon.
+const map = {
+  note: { variant: "info" as const, icon: undefined, label: "Note" },
+  tip: {
+    variant: "success" as const,
+    icon: "i-material-symbols-lightbulb-outline-rounded",
+    label: "Tip",
+  },
+  caution: { variant: "warning" as const, icon: undefined, label: "Caution" },
+}[type];
+---
+
+<Alert
+  variant={map.variant}
+  icon={map.icon}
+  surface="filled"
+  align="start"
+  class={`manual-aside-${type} my-6 [&_a]:underline [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0`}
+>
+  <p class="font-semibold">{title ?? map.label}</p>
+  <slot />
+</Alert>

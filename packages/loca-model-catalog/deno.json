@@ -1,0 +1,13 @@
+{
+  "name": "@loca/model-catalog",
+  "version": "0.1.2",
+  "tasks": {
+    "check": "deno check src/index.ts"
+  },
+  "exports": "./src/index.ts",
+  "imports": {
+    "@loca/shared": "../loca-shared/src/index.ts",
+    "zod": "npm:zod@^4.4.3",
+    "@std/assert": "jsr:@std/assert@^1.0.0"
+  }
+}

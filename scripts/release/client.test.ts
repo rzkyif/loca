@@ -6,7 +6,7 @@
 
 import { assertEquals } from "@std/assert";
 
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import { appleSigningEnv, injectWindowsSigning } from "./client.ts";
 import type { DeployEnv } from "./lib.ts";
 

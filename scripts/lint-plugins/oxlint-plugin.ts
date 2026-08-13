@@ -1,5 +1,5 @@
-// Local oxlint plugin housing Tomat's custom lint rules. Registered via
-// `jsPlugins` in the root `.oxlintrc.json` under the `tomat/` namespace.
+// Local oxlint plugin housing Loca's custom lint rules. Registered via
+// `jsPlugins` in the root `.oxlintrc.json` under the `loca/` namespace.
 //
 // Rules:
 //   - no-tauri-import: forbid direct `@tauri-apps/*` imports. The Svelte client
@@ -105,12 +105,12 @@ const noTauriImport = {
 };
 
 const HOST_IMPORT_MESSAGE =
-  "@tomat/core-engine must stay runtime-agnostic. This module is host-specific " +
+  "@loca/core-engine must stay runtime-agnostic. This module is host-specific " +
   "(native SQLite, Tauri, or Node). Reach it through the injected Host " +
   "(host.fs / host.openDb / host.secureStore / host.config) instead; the runtime " +
-  "wiring belongs in @tomat/core, not the engine.";
+  "wiring belongs in @loca/core, not the engine.";
 const DENO_GLOBAL_MESSAGE =
-  "@tomat/core-engine must stay runtime-agnostic: the Deno global is not " +
+  "@loca/core-engine must stay runtime-agnostic: the Deno global is not " +
   "available in a webview. Reach files/env/time through the injected Host " +
   "(host.fs / host.config / host.now) instead. (Test files are exempt.)";
 
@@ -143,7 +143,7 @@ function isGlobalThisDeno(node: AstNode | null | undefined): boolean {
     : p?.type === "Identifier" && p.name === "Deno";
 }
 
-// Keeps `@tomat/core-engine` importable in a non-Deno (webview) runtime: bans
+// Keeps `@loca/core-engine` importable in a non-Deno (webview) runtime: bans
 // host-coupled imports and every way of reaching the raw `Deno` global. Enabled
 // only for the engine's non-test source via `overrides` in .oxlintrc.json.
 // Coverage: `Deno.x` (object check), `globalThis.Deno`/`globalThis["Deno"]`
@@ -226,7 +226,7 @@ const noBuiltinPaletteColor = {
 };
 
 export default {
-  meta: { name: "tomat" },
+  meta: { name: "loca" },
   rules: {
     "no-tauri-import": noTauriImport,
     "no-host-import": noHostImport,

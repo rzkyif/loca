@@ -67,7 +67,7 @@ jobs:
       # needs the real ptyhost binary; build it first and force the test to FAIL
       # rather than skip if the binary is somehow absent, since it is the drift
       # tripwire for deno version bumps.
-      - run: cargo build -p tomat-core-ptyhost
+      - run: cargo build -p loca-core-ptyhost
 
       # In-source TS tests, split one step per package so a hang localizes to a
       # single step in the log: the aggregate `deno task test:js` fans out through
@@ -77,27 +77,27 @@ jobs:
       # job budget. The cargo test suite runs in the `rs` matrix; E2E (WebdriverIO
       # + tauri-driver under tests/e2e/) is not run in CI (see tests/e2e/README.md).
       - name: "test:js (shared)"
-        run: deno task --cwd packages/tomat-shared test:js
+        run: deno task --cwd packages/loca-shared test:js
         timeout-minutes: 3
       - name: "test:js (core-engine)"
-        run: deno task --cwd packages/tomat-core-engine test:js
+        run: deno task --cwd packages/loca-core-engine test:js
         timeout-minutes: 3
-      # TOMAT_REQUIRE_PTYHOST makes the prompt-live-probe (the deno-bump drift
+      # LOCA_REQUIRE_PTYHOST makes the prompt-live-probe (the deno-bump drift
       # tripwire) fail rather than skip; it lives in core and uses the binary built
       # above.
       - name: "test:js (core)"
-        run: deno task --cwd packages/tomat-core test:js
+        run: deno task --cwd packages/loca-core test:js
         timeout-minutes: 3
         env:
-          TOMAT_REQUIRE_PTYHOST: "1"
+          LOCA_REQUIRE_PTYHOST: "1"
       - name: "test:js (client)"
-        run: deno task --cwd packages/tomat-client test:js
+        run: deno task --cwd packages/loca-client test:js
         timeout-minutes: 3
       - name: "test:js (extension-builtin)"
-        run: deno task --cwd packages/tomat-extension-builtin test:js
+        run: deno task --cwd packages/loca-extension-builtin test:js
         timeout-minutes: 3
       - name: "test:js (extension-samples)"
-        run: deno task --cwd packages/tomat-extension-samples test:js
+        run: deno task --cwd packages/loca-extension-samples test:js
         timeout-minutes: 3
 
   # Rust pipeline: clippy (the single Rust compile-check - `--all-targets` is a
@@ -145,23 +145,23 @@ jobs:
           shared-key: rs-${{ matrix.os }}
       # --locked fails if any Cargo.lock would change, so a drifted lock can't
       # pass CI (the signed helper binaries are built from these locks).
-      - run: cargo clippy --locked --manifest-path packages/tomat-client/src/tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/tomat-client/src/tauri/Cargo.toml --lib
-      - run: cargo clippy --locked --manifest-path packages/tomat-core-keychain/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/tomat-core-keychain/Cargo.toml
-      - run: cargo clippy --locked --manifest-path packages/tomat-core-updater/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/tomat-core-updater/Cargo.toml
-      - run: cargo clippy --locked --manifest-path packages/tomat-core-ptyhost/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/tomat-core-ptyhost/Cargo.toml
+      - run: cargo clippy --locked --manifest-path packages/loca-client/src/tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path packages/loca-client/src/tauri/Cargo.toml --lib
+      - run: cargo clippy --locked --manifest-path packages/loca-core-keychain/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path packages/loca-core-keychain/Cargo.toml
+      - run: cargo clippy --locked --manifest-path packages/loca-core-updater/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path packages/loca-core-updater/Cargo.toml
+      - run: cargo clippy --locked --manifest-path packages/loca-core-ptyhost/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path packages/loca-core-ptyhost/Cargo.toml
       # core-hwinfo and core-speech are Linux-only checks (they were previously
       # covered on Linux only, inside the old monolithic job).
-      - run: cargo clippy --locked --manifest-path packages/tomat-core-hwinfo/Cargo.toml --all-targets -- -D warnings
+      - run: cargo clippy --locked --manifest-path packages/loca-core-hwinfo/Cargo.toml --all-targets -- -D warnings
         if: runner.os == 'Linux'
-      - run: cargo test --locked --manifest-path packages/tomat-core-hwinfo/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/loca-core-hwinfo/Cargo.toml
         if: runner.os == 'Linux'
-      - run: cargo clippy --locked --manifest-path packages/tomat-core-speech/Cargo.toml --all-targets -- -D warnings
+      - run: cargo clippy --locked --manifest-path packages/loca-core-speech/Cargo.toml --all-targets -- -D warnings
         if: runner.os == 'Linux'
-      - run: cargo test --locked --manifest-path packages/tomat-core-speech/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/loca-core-speech/Cargo.toml
         if: runner.os == 'Linux'
 
   # Android build check. The Tauri shell's mobile cfg (#[cfg(mobile)] /
@@ -228,13 +228,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('packages/tomat-client/src/tauri/gen/android/**/*.gradle*', 'packages/tomat-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/tomat-client/src/tauri/gen/android/gradle.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('packages/loca-client/src/tauri/gen/android/**/*.gradle*', 'packages/loca-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/loca-client/src/tauri/gen/android/gradle.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
       # Single ABI + debug: compiles the Rust android cfg, generates the wry Kotlin,
       # and runs the gradle Kotlin compile (where a metadata mismatch fails).
       - name: Android APK build (aarch64, debug)
-        working-directory: packages/tomat-client
+        working-directory: packages/loca-client
         run: |
           export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           export ANDROID_NDK_HOME="$NDK_HOME"
@@ -261,5 +261,5 @@ jobs:
       - name: iOS cargo check (aarch64-apple-ios)
         run: |
           cargo check --locked \
-            --manifest-path packages/tomat-client/src/tauri/Cargo.toml \
+            --manifest-path packages/loca-client/src/tauri/Cargo.toml \
             --target aarch64-apple-ios

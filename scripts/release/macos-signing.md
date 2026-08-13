@@ -90,13 +90,13 @@ builds the `apple-darwin` triples.
    `APPLE_INSTALLER_CERTIFICATE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_API_KEY`,
    `APPLE_API_ISSUER`, and `APPLE_API_KEY_B64` (base64 of the `.p8`; the
    CI-side form of `APPLE_API_KEY_PATH`). See the required-secrets list in
-   [packages/tomat-website/README.md](../../packages/tomat-website/README.md).
+   [packages/loca-website/README.md](../../packages/loca-website/README.md).
 
 6. **Verify end to end** on a clean Mac (ideally a fresh user account):
    - Download the unified `.pkg` **via a browser** (so it gets the quarantine
      xattr) and confirm it opens with no Gatekeeper "unidentified developer" /
      "damaged" warning.
-   - `spctl -a -vvv /Applications/Tomat.app` reports `accepted` with
+   - `spctl -a -vvv /Applications/Loca.app` reports `accepted` with
      `source=Notarized Developer ID`.
    - Grant microphone + screen-recording, trigger a self-update, and confirm the
      grants persist (a stable identity is the reason to sign beyond first-open
@@ -140,7 +140,7 @@ while the env is absent.
 
 - **Always available:** `deno task dev:ios` boots the dev Core and launches the
   app on the iOS Simulator (mirrors `dev:android`, clean Ctrl+C teardown
-  included). `deno task --cwd packages/tomat-client init:ios` generates
+  included). `deno task --cwd packages/loca-client init:ios` generates
   `gen/apple` (commit it as source, like `gen/android`). `deno task check:ios`
   compiles the shell for `aarch64-apple-ios`; the CI `ios` job runs the same
   check on every `main` push (compile-only, no secrets).
@@ -166,18 +166,18 @@ upload` or an `xcodebuild -exportArchive` upload destination (note in
 - **Architecture constraint:** iOS cannot run a local Core (no persistent
   background service); the iOS Client pairs to a Core on another device only. The
   mobile platform impl
-  ([mobile.ts](../../packages/tomat-client/src/ui/lib/platform/mobile.ts)) already
+  ([mobile.ts](../../packages/loca-client/src/ui/lib/platform/mobile.ts)) already
   returns false/null across the local-core surface, and `updater.check` returns
   null on iOS (the App Store owns updates; there is no OTA self-host).
 - **Keychain is iOS-ready:** the Apple native keyring store is cfg-gated for
   `macos` + `ios`
-  ([keychain.rs:82](../../packages/tomat-client/src/tauri/src/commands/keychain.rs#L82),
-  and the same in the `tomat-core-keychain` helper).
+  ([keychain.rs:82](../../packages/loca-client/src/tauri/src/commands/keychain.rs#L82),
+  and the same in the `loca-core-keychain` helper).
 - **`gen/apple` customizations** (hand-applied after `init:ios`, like the Android
   manifest edits): `Info.plist` usage strings (`NSMicrophoneUsageDescription`,
   `NSLocalNetworkUsageDescription`) + an App Transport Security
   `NSAllowsLocalNetworking` exception for the LAN/dev Core, and a channel xcconfig
-  that suffixes the bundle id off `TOMAT_CHANNEL` (the iOS analogue of gradle's
+  that suffixes the bundle id off `LOCA_CHANNEL` (the iOS analogue of gradle's
   `applicationIdSuffix`).
 - **Distribution:** App Store only (the DMA alternative-marketplace path still
   needs the membership and is EU-only). `iosItem` mirrors `androidItem` but

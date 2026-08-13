@@ -1,4 +1,4 @@
-// Release item: published JSON schemas (currently just tomat-v1.json) uploaded
+// Release item: published JSON schemas (currently just loca-v1.json) uploaded
 // to R2 under schemas/. Channel-independent. apply() byte-compares each file
 // against R2 so an unchanged schema isn't re-uploaded.
 
@@ -25,14 +25,14 @@ import {
 
 const SCHEMAS: Array<{ src: string; r2Key: string }> = [
   {
-    src: "packages/tomat-shared/src/tomat-json-schema.json",
-    r2Key: "schemas/tomat-v1.json",
+    src: "packages/loca-shared/src/loca-json-schema.json",
+    r2Key: "schemas/loca-v1.json",
   },
 ];
 
 // The published schema's own `version` field is the release version for this
 // item (it travels with the artifact). Bump it there to ship a new schema.
-const VERSION_SRC = "packages/tomat-shared/src/tomat-json-schema.json";
+const VERSION_SRC = "packages/loca-shared/src/loca-json-schema.json";
 
 const SCHEMA_CACHE_CONTROL = "public, max-age=3600";
 

@@ -19,7 +19,7 @@ import process from "node:process";
 let driver: ChildProcess | undefined;
 
 const tauriBinary =
-  process.env.TOMAT_TAURI_BIN ?? "packages/tomat-client/src/tauri/target/debug/tomat";
+  process.env.LOCA_TAURI_BIN ?? "packages/loca-client/src/tauri/target/debug/loca";
 
 export const config: WebdriverIO.Config = {
   hostname: "127.0.0.1",

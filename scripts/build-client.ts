@@ -2,9 +2,9 @@
 //
 // Channel handling:
 //   - The channel is written to the Tauri crate's `channel` file, which build.rs
-//     bakes into the shipped bundle via `option_env!("TOMAT_CHANNEL")` in
-//     channel.rs (its runtime default → ~/.tomat/<channel>/client,
-//     tomat-client-<channel> keychain).
+//     bakes into the shipped bundle via `option_env!("LOCA_CHANNEL")` in
+//     channel.rs (its runtime default → ~/.loca/<channel>/client,
+//     loca-client-<channel> keychain).
 //   - For non-stable channels we pass a `tauri build --config <json>` override
 //     so the app gets a distinct productName + bundle identifier + updater
 //     endpoint, letting stable and latest coexist as separate installed apps.
@@ -19,7 +19,7 @@ import { fromFileUrl, join } from "@std/path";
 const ROOT = fromFileUrl(new URL("..", import.meta.url));
 
 // Must match the base tauri.conf.json updater host (stable's endpoint).
-const STORAGE_BASE = "https://get.au.tomat.ing";
+const STORAGE_BASE = "https://get.loca.rzkyif.com";
 
 const args = parseArgs(Deno.args, {
   string: ["channel", "target", "bundles"],
@@ -34,9 +34,9 @@ if (!["stable", "dev", "latest"].includes(channel)) {
 }
 
 // Bake the channel for channel.rs (via build.rs). Desktop builds inherit
-// TOMAT_CHANNEL at runtime, but a shipped bundle has no such env, so the on-disk
+// LOCA_CHANNEL at runtime, but a shipped bundle has no such env, so the on-disk
 // file is the deterministic source the compile reads (see build.rs).
-await Deno.writeTextFile(join(ROOT, "packages/tomat-client/src/tauri/channel"), channel);
+await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), channel);
 
 // Optional cross-arch target(s): the all-targets release builds the host's second
 // arch (e.g. x86_64-apple-darwin on an arm64 mac) and, in a build environment,
@@ -80,8 +80,8 @@ if (Deno.build.os === "windows") {
 // needs. Tauri deep-merges this over tauri.conf.json.
 const override: Record<string, unknown> = {};
 if (channel !== "stable") {
-  override.productName = `Tomat (${channel})`;
-  override.identifier = `au.tomat.ing.${channel}`;
+  override.productName = `Loca (${channel})`;
+  override.identifier = `com.rzkyif.loca.${channel}`;
   override.plugins = {
     updater: {
       endpoints: [`${STORAGE_BASE}/manifests/${channel}/client.json`],
@@ -107,8 +107,8 @@ if (Object.keys(override).length > 0) {
 
 const cmd = new Deno.Command("deno", {
   args: tauriArgs,
-  cwd: join(ROOT, "packages/tomat-client"),
-  env: { ...Deno.env.toObject(), TOMAT_CHANNEL: channel },
+  cwd: join(ROOT, "packages/loca-client"),
+  env: { ...Deno.env.toObject(), LOCA_CHANNEL: channel },
   stdout: "inherit",
   stderr: "inherit",
 });

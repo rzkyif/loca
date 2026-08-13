@@ -8,12 +8,12 @@
 //
 // SCAFFOLD STATUS: the drivers exist but are not yet wired into the live
 // resolution in all-targets.ts, because they need machine-specific config (the
-// TOMAT_WIN_* / TOMAT_PODMAN_* / TOMAT_LINUX_BUILD_* keys in .env, read via
+// LOCA_WIN_* / LOCA_PODMAN_* / LOCA_LINUX_BUILD_* keys in .env, read via
 // cfg() in podman.ts / windows.ts; see .env.example). Once those are filled,
 // activation is: register the drivers here and have all-targets.ts route each
 // non-host triple to its driver via withEnvironment().
 
-import type { Triple } from "../../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../../packages/loca-shared/src/domain/model.ts";
 import type { ArtifactBundle, ClientDescriptor } from "../artifacts.ts";
 import type { ReleaseChannel } from "../lib.ts";
 

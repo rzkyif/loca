@@ -1,7 +1,7 @@
 # Headless integration E2E
 
 This lane drives the **real Svelte app** in a **real Chromium** (vitest browser
-mode + Playwright) talking over real HTTP+WS+TLS to a **real `tomat-core`
+mode + Playwright) talking over real HTTP+WS+TLS to a **real `loca-core`
 subprocess**, with every outbound dependency (LLM, STT, TTS, model/binary
 downloads) mocked locally. It is the fast, deterministic, cross-platform
 counterpart to the `tauri-driver` lane (`../tauri-driver/`), and is where the
@@ -20,7 +20,7 @@ npx playwright install chromium
 
 You also need a dev install present once (`deno task dev` at least once), which
 stages the four helper binaries plus `deno` and `llama-server` under
-`~/.tomat/dev/core/bin`, and the Rust helpers built into `target/debug`. The
+`~/.loca/dev/core/bin`, and the Rust helpers built into `target/debug`. The
 harness symlinks these into each throwaway test core so its boot-time checks
 pass and the chat composer enables.
 
@@ -30,7 +30,7 @@ pass and the chat composer enables.
 deno task test:e2e:headless                 # from the repo root
 # or, from this dir:
 npx vitest run
-TOMAT_E2E_CORE_LOGS=1 npx vitest run        # surface the spawned core's logs
+LOCA_E2E_CORE_LOGS=1 npx vitest run        # surface the spawned core's logs
 ```
 
 ## How it works
@@ -45,8 +45,8 @@ TOMAT_E2E_CORE_LOGS=1 npx vitest run        # surface the spawned core's logs
  └───────────────────────────┘              └──────────────────────────────────┘
 ```
 
-- **`harness/core-process.ts`** spawns a `tomat-core` subprocess in a throwaway
-  `TOMAT_CORE_HOME` tempdir on the `dev` channel (in-memory catalog, no signed
+- **`harness/core-process.ts`** spawns a `loca-core` subprocess in a throwaway
+  `LOCA_CORE_HOME` tempdir on the `dev` channel (in-memory catalog, no signed
   fetch), seeds settings pointing LLM/STT at the mock and TTS off (so no native
   sidecars spawn), symlinks the required + sidecar binaries, points the test
   models dir at the shared real cache, and computes the core's real SPKI pin.
@@ -95,7 +95,7 @@ tests + the `tauri-driver` smoke lane + manual `deno task dev`:
 - **end-to-end VAD/mic capture**: `@ricky0123/vad-web` (Silero) loads its model
   from `baseAssetPath: "/vad/"` (not served by the headless vite root) and needs
   a real speech sample to fire, so a non-flaky end-to-end VAD spec isn't viable
-  here. The tomat-owned STT seam (the transcription request -> external mock) is
+  here. The loca-owned STT seam (the transcription request -> external mock) is
   covered in `stt.test.ts`; VAD firing is left to manual `deno task dev`.
 
 ## Phase 0 feasibility (proven)
@@ -142,7 +142,7 @@ are sensible future depth, not yet built.
 Two feature areas are covered at the unit layer rather than here, by design:
 
 - **dual-model routing**: the secondary-endpoint resolution is unit-tested
-  (`tomat-core/src/services/endpoint-resolver.test.ts`). The complexity
+  (`loca-core/src/services/endpoint-resolver.test.ts`). The complexity
   classifier that auto-picks a route only runs for turns carrying NO route, but
   the WS schema defaults a frame's route to `"default"` and every current caller
   pins one, so the classifier is not reachable from the client boundary.

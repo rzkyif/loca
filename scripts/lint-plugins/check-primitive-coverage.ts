@@ -1,6 +1,6 @@
 // Coverage check for shared primitives (A0). Every primitives/*.svelte must:
 //   1. be listed in the gallery registry (GALLERY_PRIMITIVES),
-//   2. have a sample bundle in @tomat/shared/ui/samples/primitives.ts
+//   2. have a sample bundle in @loca/shared/ui/samples/primitives.ts
 //      (PRIMITIVE_SAMPLES), and
 //   3. actually be rendered by the primitives section (a `P.<Name>` card in
 //      Primitives.svelte), so a registered-but-unrendered primitive cannot slip
@@ -12,14 +12,14 @@
 
 import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";
-import { GALLERY_PRIMITIVES } from "../../packages/tomat-website/src/components/gallery/registry.ts";
-import { PRIMITIVE_SAMPLES } from "../../packages/tomat-shared/src/ui/samples/primitives.ts";
+import { GALLERY_PRIMITIVES } from "../../packages/loca-website/src/components/gallery/registry.ts";
+import { PRIMITIVE_SAMPLES } from "../../packages/loca-shared/src/ui/samples/primitives.ts";
 
 const STRICT_GALLERY = true;
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));
-const PRIMITIVES_DIR = `${ROOT}packages/tomat-shared/src/ui/components/primitives/`;
-const PRIMITIVES_RENDERER = `${ROOT}packages/tomat-website/src/components/gallery/Primitives.svelte`;
+const PRIMITIVES_DIR = `${ROOT}packages/loca-shared/src/ui/components/primitives/`;
+const PRIMITIVES_RENDERER = `${ROOT}packages/loca-website/src/components/gallery/Primitives.svelte`;
 
 const onDisk = new Set<string>();
 for await (const e of walk(PRIMITIVES_DIR, { exts: [".svelte"], includeDirs: false })) {
@@ -40,7 +40,7 @@ for (const name of onDisk) {
   }
   if (!(name in PRIMITIVE_SAMPLES)) {
     problems.push(
-      `${name}: no samples in @tomat/shared/ui/samples/primitives.ts (PRIMITIVE_SAMPLES)`,
+      `${name}: no samples in @loca/shared/ui/samples/primitives.ts (PRIMITIVE_SAMPLES)`,
     );
   }
   if (!new RegExp(`\\bP\\.${name}\\b`).test(rendererSrc)) {

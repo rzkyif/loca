@@ -9,11 +9,11 @@
 // core download.
 //
 // Every package delegates provisioning to the core binary's own install
-// subcommands (packages/tomat-core/src/install): the post-install hook runs
-// `tomat-core install-service` (admin token, built-in extension plant, launchd
-// / systemd-user / Scheduled Task) and removal runs `tomat-core
+// subcommands (packages/loca-core/src/install): the post-install hook runs
+// `loca-core install-service` (admin token, built-in extension plant, launchd
+// / systemd-user / Scheduled Task) and removal runs `loca-core
 // uninstall-service`. Because the runtime state lives per-user under
-// ~/.tomat/<channel>/core, the post-install hooks resolve the target user and
+// ~/.loca/<channel>/core, the post-install hooks resolve the target user and
 // install into their home (a root pkg / deb postinstall targeting a
 // user-domain service).
 //
@@ -25,7 +25,7 @@
 
 import { basename, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import type { CoreBuildArtifacts } from "./core.ts";
 import { reanchorFile } from "./artifacts.ts";
 import {
@@ -65,7 +65,7 @@ export interface InstallerAsset {
   triple: Triple;
   version: string;
   filename: string;
-  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/tomat-0.1.5.pkg"
+  relPath: string; // dist-relative, e.g. "aarch64-apple-darwin/loca-0.1.5.pkg"
   sha256: string;
   size: number;
 }
@@ -86,7 +86,7 @@ export function coreInstallerStableName(
   channel: ReleaseChannel,
 ): string {
   const suffix = channelBinSuffix(channel);
-  return `tomat-core${suffix}.${format}`;
+  return `loca-core${suffix}.${format}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ export async function have(bin: string): Promise<boolean> {
 
 /** Stage the core binary + matching helpers + workers into `<root>/{bin,workers}`
  *  using the channel-suffixed on-disk names the runtime expects. Returns the
- *  installed binary's basename (e.g. tomat-core-latest[.exe]). Shared by the
+ *  installed binary's basename (e.g. loca-core-latest[.exe]). Shared by the
  *  Linux packages here and the unified installers (unified-installers.ts). */
 export async function assemblePayload(
   built: CoreBuildArtifacts,
@@ -147,7 +147,7 @@ export async function assemblePayload(
 
   const core = built.artifacts.find((a) => a.triple === triple);
   if (!core) throw new Error(`no core binary for ${triple}`);
-  const binName = `tomat-core${suffix}${exe}`;
+  const binName = `loca-core${suffix}${exe}`;
   await Deno.copyFile(core.path, join(binDir, binName));
 
   for (const h of built.helpers) {
@@ -283,8 +283,8 @@ async function buildDeb(
   if (!(await have("dpkg-deb"))) throw new Error("dpkg-deb not available");
   const { version, channel, triple } = opts;
   const suffix = channelBinSuffix(channel);
-  const pkgName = `tomat-core${suffix}`;
-  const work = await Deno.makeTempDir({ prefix: "tomat-core-deb-" });
+  const pkgName = `loca-core${suffix}`;
+  const work = await Deno.makeTempDir({ prefix: "loca-core-deb-" });
   const debRoot = join(work, pkgName);
   const prefix = `/usr/lib/${pkgName}`;
   const { binName } = await assemblePayload(built, triple, channel, join(debRoot, prefix.slice(1)));
@@ -294,8 +294,8 @@ async function buildDeb(
   await Deno.writeTextFile(
     join(debian, "control"),
     `Package: ${pkgName}\nVersion: ${version}\nArchitecture: ${debArch(triple)}\n` +
-      `Maintainer: Tomat <noreply@au.tomat.ing>\nSection: utils\nPriority: optional\n` +
-      `Description: Tomat Core - the local-first AI client service\n`,
+      `Maintainer: Loca <noreply@rzkyif.com>\nSection: utils\nPriority: optional\n` +
+      `Description: Loca Core - the local-first AI client service\n`,
   );
   const postinst = join(debian, "postinst");
   const prerm = join(debian, "prerm");
@@ -331,8 +331,8 @@ async function buildRpm(
   if (!(await have("rpmbuild"))) throw new Error("rpmbuild not available");
   const { version, channel, triple } = opts;
   const suffix = channelBinSuffix(channel);
-  const pkgName = `tomat-core${suffix}`;
-  const work = await Deno.makeTempDir({ prefix: "tomat-core-rpm-" });
+  const pkgName = `loca-core${suffix}`;
+  const work = await Deno.makeTempDir({ prefix: "loca-core-rpm-" });
   const prefix = `/usr/lib/${pkgName}`;
   const buildroot = join(work, "buildroot");
   const { binName } = await assemblePayload(
@@ -360,9 +360,9 @@ async function buildRpm(
     // debug_package nil suppresses the debuginfo subpackage. The core binary is
     // shipped gzipped (see above) so brp never touches it either way.
     `%global __os_install_post %{nil}\n%global debug_package %{nil}\n\n` +
-      `Name: ${pkgName}\nVersion: ${version}\nRelease: 1\nSummary: Tomat Core service\n` +
+      `Name: ${pkgName}\nVersion: ${version}\nRelease: 1\nSummary: Loca Core service\n` +
       `License: proprietary\nBuildArch: ${rpmArch(triple)}\n\n` +
-      `%description\ntomat Core - the local-first AI client service.\n\n` +
+      `%description\nloca Core - the local-first AI client service.\n\n` +
       `%files\n${prefix}\n\n` +
       `%post\n${linuxPostBody(channel, prefix, binName, { gunzipCore: true })}\n\n` +
       `%preun\n${linuxPreunBody(channel, prefix, binName)}\n`,
@@ -390,7 +390,7 @@ async function buildRpm(
 
 // The install/removal bodies are shared between the deb maintainer scripts and
 // the rpm scriptlets. They resolve the invoking user (packages install as root),
-// copy the payload into that user's ~/.tomat/<channel>/core, and run the
+// copy the payload into that user's ~/.loca/<channel>/core, and run the
 // binary's own service subcommands as that user.
 function linuxPostBody(
   channel: ReleaseChannel,
@@ -407,15 +407,15 @@ if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
   echo "no target user; skipping per-user service registration" >&2
 else
   USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-  DEST="$USER_HOME/.tomat/${channel}/core"
+  DEST="$USER_HOME/.loca/${channel}/core"
   mkdir -p "$DEST/bin" "$DEST/workers"
   cp -R "${prefix}/bin/." "$DEST/bin/"${gunzip}
   cp -R "${prefix}/workers/." "$DEST/workers/"
-  chown -R "$TARGET_USER" "$USER_HOME/.tomat/${channel}"
-  # On a first-ever install the mkdir above created ~/.tomat itself as root; the
+  chown -R "$TARGET_USER" "$USER_HOME/.loca/${channel}"
+  # On a first-ever install the mkdir above created ~/.loca itself as root; the
   # user's install-service must be able to create the shared models dir in it.
-  chown "$TARGET_USER" "$USER_HOME/.tomat"
-  su - "$TARGET_USER" -c "TOMAT_CHANNEL=${channel} '$DEST/bin/${binName}' install-service" || true
+  chown "$TARGET_USER" "$USER_HOME/.loca"
+  su - "$TARGET_USER" -c "LOCA_CHANNEL=${channel} '$DEST/bin/${binName}' install-service" || true
 fi`;
 }
 export function linuxPreunBody(
@@ -427,7 +427,7 @@ export function linuxPreunBody(
   // Only tear down on a genuine removal, never on upgrade. dpkg runs prerm with
   // "remove" on removal and "upgrade" on upgrade; rpm runs %preun with 0 on the
   // final erase and 1 on upgrade. Running uninstall-service on upgrade would wipe
-  // ~/.tomat/<channel>/core (sessions, memories, keychain master key) on every
+  // ~/.loca/<channel>/core (sessions, memories, keychain master key) on every
   // version bump; on upgrade the new package's postinst re-runs the idempotent
   // install-service instead, which preserves that data.
   //
@@ -441,8 +441,8 @@ remove|0)
   TARGET_USER="\${SUDO_USER:-$(logname 2>/dev/null || true)}"
   if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
     USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-    DEST="$USER_HOME/.tomat/${channel}/core"
-    su - "$TARGET_USER" -c "TOMAT_CHANNEL=${channel} '$DEST/bin/${binName}' uninstall-service${flags}" || true
+    DEST="$USER_HOME/.loca/${channel}/core"
+    su - "$TARGET_USER" -c "LOCA_CHANNEL=${channel} '$DEST/bin/${binName}' uninstall-service${flags}" || true
   fi
   ;;
 esac`;
@@ -450,7 +450,7 @@ esac`;
 export function linuxPostrmBody(channel: ReleaseChannel): string {
   // dpkg -P (purge) removes the data `apt remove` kept. The package payload -
   // the core binary included - is already gone by postrm, so this is a plain
-  // rm -rf of the per-user channel core dir; the shared ~/.tomat/models dir is
+  // rm -rf of the per-user channel core dir; the shared ~/.loca/models dir is
   // always kept, and the keychain master key may linger (the binary that could
   // clear it is gone) - both documented in the manual's uninstalling article.
   return `case "$1" in
@@ -458,8 +458,8 @@ purge)
   TARGET_USER="\${SUDO_USER:-$(logname 2>/dev/null || true)}"
   if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ]; then
     USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-    rm -rf "$USER_HOME/.tomat/${channel}/core"
-    rmdir "$USER_HOME/.tomat/${channel}" 2>/dev/null || true
+    rm -rf "$USER_HOME/.loca/${channel}/core"
+    rmdir "$USER_HOME/.loca/${channel}" 2>/dev/null || true
   fi
   ;;
 esac`;
@@ -500,7 +500,7 @@ export interface InstallersManifest {
 export function installerAliasName(a: InstallerAsset, channel: ReleaseChannel): string {
   if (a.kind === "core") return coreInstallerStableName(a.format, channel);
   const suffix = channelBinSuffix(channel);
-  return a.format === "exe" ? `tomat${suffix}-setup.exe` : `tomat${suffix}.pkg`;
+  return a.format === "exe" ? `loca${suffix}-setup.exe` : `loca${suffix}.pkg`;
 }
 
 /** Upload every built installer (the unified Windows .exe / macOS .pkg and the

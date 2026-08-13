@@ -16,32 +16,32 @@
 // Each build command must source vcvars (see buildCore); a non-interactive SSH
 // shell has no MSVC environment otherwise.
 //
-// Device-specific config comes from .env (TOMAT_WIN_*, promoted into the process
+// Device-specific config comes from .env (LOCA_WIN_*, promoted into the process
 // env by loadDriverEnv; see .env.example). Read lazily so .env is loaded first.
 // Until the VM name + SSH host + SSH user are set, available() returns false and
 // the driver is skipped.
 function cfg() {
   return {
     // `utmctl list` -> the VM name (or its UUID).
-    vmName: Deno.env.get("TOMAT_WIN_VM_NAME") ?? "",
+    vmName: Deno.env.get("LOCA_WIN_VM_NAME") ?? "",
     // Path to utmctl (bundled inside UTM.app). Adjust if UTM is elsewhere.
-    utmctl: Deno.env.get("TOMAT_WIN_UTMCTL") ?? "/Applications/UTM.app/Contents/MacOS/utmctl",
+    utmctl: Deno.env.get("LOCA_WIN_UTMCTL") ?? "/Applications/UTM.app/Contents/MacOS/utmctl",
     // SSH reachability of the guest once booted. NOTE: the host is typically a
     // DHCP-assigned LAN address (bridged), so it can change across reboots; pin a
     // DHCP reservation or use the guest hostname for stability. user is the
     // Windows account name.
     ssh: {
-      host: Deno.env.get("TOMAT_WIN_SSH_HOST") ?? "",
-      user: Deno.env.get("TOMAT_WIN_SSH_USER") ?? "",
-      port: Number(Deno.env.get("TOMAT_WIN_SSH_PORT") ?? "22"),
-      identityFile: Deno.env.get("TOMAT_WIN_SSH_IDENTITY_FILE") ?? "",
+      host: Deno.env.get("LOCA_WIN_SSH_HOST") ?? "",
+      user: Deno.env.get("LOCA_WIN_SSH_USER") ?? "",
+      port: Number(Deno.env.get("LOCA_WIN_SSH_PORT") ?? "22"),
+      identityFile: Deno.env.get("LOCA_WIN_SSH_IDENTITY_FILE") ?? "",
     },
     // Where the repo is available inside the guest (a UTM shared folder is ideal;
     // otherwise rsync/scp the tree here first) and where builds write.
-    guestRepo: Deno.env.get("TOMAT_WIN_GUEST_REPO") ?? "C:\\work",
+    guestRepo: Deno.env.get("LOCA_WIN_GUEST_REPO") ?? "C:\\work",
     // Path to vcvarsall.bat (VS Build Tools). Sourced per build to load MSVC.
     vcvarsall:
-      Deno.env.get("TOMAT_WIN_VCVARSALL") ??
+      Deno.env.get("LOCA_WIN_VCVARSALL") ??
       "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat",
   };
 }
@@ -53,7 +53,7 @@ const BOOT_TIMEOUT_SEC = 180;
 
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { Triple } from "../../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../../packages/loca-shared/src/domain/model.ts";
 import {
   type ArtifactBundle,
   type ClientDescriptor,
@@ -128,15 +128,15 @@ async function scpToGuest(hostPath: string, guestPath: string): Promise<number> 
 async function syncSource(): Promise<void> {
   step(`syncing source to ${cfg().vmName}`);
   const repoFwd = cfg().guestRepo.replace(/\\/g, "/");
-  const tgz = await Deno.makeTempFile({ prefix: "tomat-src-", suffix: ".tgz" });
+  const tgz = await Deno.makeTempFile({ prefix: "loca-src-", suffix: ".tgz" });
   try {
     await packSourceTarball(tgz);
     if ((await ssh(`if not exist ${cfg().guestRepo} mkdir ${cfg().guestRepo}`)) !== 0) {
       throw new Error(`could not create ${cfg().guestRepo} in the guest`);
     }
-    if ((await scpToGuest(tgz, `${repoFwd}/tomat-src.tgz`)) !== 0)
+    if ((await scpToGuest(tgz, `${repoFwd}/loca-src.tgz`)) !== 0)
       throw new Error(`scp source to guest failed`);
-    if ((await ssh(`cd /d ${cfg().guestRepo} & tar -xf tomat-src.tgz`)) !== 0) {
+    if ((await ssh(`cd /d ${cfg().guestRepo} & tar -xf loca-src.tgz`)) !== 0) {
       throw new Error(`extracting source in the guest failed`);
     }
     // Sweep any stale macOS AppleDouble (`._*`) files a prior sync left behind:
@@ -283,7 +283,7 @@ export const windowsUtmDriver: BuildEnvironment = {
     // password (empty value -> cmd clears the var -> envFromProcess reads "").
     const s = req.secrets;
     const secretEnv =
-      `set "TOMAT_SIGNING_PUBLIC_KEY_B64=${s.signingPublicKeyB64}" & ` +
+      `set "LOCA_SIGNING_PUBLIC_KEY_B64=${s.signingPublicKeyB64}" & ` +
       `set "TAURI_UPDATER_PUBLIC_KEY=${s.tauriPublicKey}" & ` +
       `set "TAURI_UPDATER_PRIVATE_KEY=${s.tauriPrivateKey}" & ` +
       `set "TAURI_UPDATER_PRIVATE_KEY_PASSWORD=${s.tauriPassword}" & `;

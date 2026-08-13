@@ -1,10 +1,10 @@
 // Tier 1: speech-to-text. Exercises the real client -> core transcription path
-// (the tomat-owned part of STT) against the external STT mock, which returns a
+// (the loca-owned part of STT) against the external STT mock, which returns a
 // deterministic transcript so the test is reliable.
 //
 // Note on simulating speech: the mic-capture + voice-activity detection is
-// @ricky0123/vad-web (Silero), a third-party lib, not Tomat code. Driving Silero
-// from synthetic audio is unreliable; the deterministic seam Tomat owns is the
+// @ricky0123/vad-web (Silero), a third-party lib, not Loca code. Driving Silero
+// from synthetic audio is unreliable; the deterministic seam Loca owns is the
 // transcription request, which we drive here with canned WAV bytes (the mock
 // ignores the audio and returns a fixed transcript). To also exercise VAD end to
 // end, feed a real speech WAV via Chromium's --use-file-for-fake-audio-capture.

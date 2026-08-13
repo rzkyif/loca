@@ -1,5 +1,5 @@
 // Coverage check for shared `*View` components. Every View must:
-//   1. have NON-EMPTY named samples in @tomat/shared/ui/samples (the SAMPLES
+//   1. have NON-EMPTY named samples in @loca/shared/ui/samples (the SAMPLES
 //      registry) - at least one scenario, so the card is never blank,
 //   2. be listed in the gallery registry (GALLERY_VIEWS) AND actually rendered
 //      by the gallery (a `SAMPLES.<Name>` reference in Gallery.svelte or
@@ -7,7 +7,7 @@
 //   3. be wrapped by at least one client component, or composed by another
 //      shared View (the single-source rule: a View only the website uses is a
 //      re-implementation in disguise).
-// See packages/tomat-shared/src/ui/README.md and packages/tomat-website/AGENTS.md.
+// See packages/loca-shared/src/ui/README.md and packages/loca-website/AGENTS.md.
 //
 // The renderer is hand-authored (one card block per View), not a blind iteration
 // of the registry, so listing a View in GALLERY_VIEWS is not enough: this walker
@@ -27,15 +27,15 @@ import { fromFileUrl } from "@std/path";
 import {
   EMBEDDED_VIEWS,
   GALLERY_VIEWS,
-} from "../../packages/tomat-website/src/components/gallery/registry.ts";
-import { SAMPLES } from "../../packages/tomat-shared/src/ui/samples/index.ts";
+} from "../../packages/loca-website/src/components/gallery/registry.ts";
+import { SAMPLES } from "../../packages/loca-shared/src/ui/samples/index.ts";
 
 const STRICT = true;
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));
-const VIEWS_DIR = `${ROOT}packages/tomat-shared/src/ui/components/`;
-const GALLERY_DIR = `${ROOT}packages/tomat-website/src/components/gallery/`;
-const CLIENT_COMPONENTS = `${ROOT}packages/tomat-client/src/ui/components/`;
+const VIEWS_DIR = `${ROOT}packages/loca-shared/src/ui/components/`;
+const GALLERY_DIR = `${ROOT}packages/loca-website/src/components/gallery/`;
+const CLIENT_COMPONENTS = `${ROOT}packages/loca-client/src/ui/components/`;
 
 async function viewNames(): Promise<string[]> {
   const names: string[] = [];
@@ -113,7 +113,7 @@ for (const v of views) {
   // a key-existence check yet render zero cards).
   const bundle = sampleBundles[v];
   if (!bundle) {
-    problems.push(`${v}: no samples in @tomat/shared/ui/samples (add to SAMPLES)`);
+    problems.push(`${v}: no samples in @loca/shared/ui/samples (add to SAMPLES)`);
   } else if (Object.keys(bundle).length === 0) {
     problems.push(`${v}: its SAMPLES bundle is empty (add at least one scenario)`);
   }
@@ -147,15 +147,13 @@ for (const v of views) {
 const onDiskViews = new Set(views);
 for (const v of galleryViews) {
   if (!onDiskViews.has(v)) {
-    problems.push(
-      `${v}: in GALLERY_VIEWS but no @tomat/shared/ui/components/**/${v}.svelte exists`,
-    );
+    problems.push(`${v}: in GALLERY_VIEWS but no @loca/shared/ui/components/**/${v}.svelte exists`);
   }
 }
 for (const parent of Object.values(EMBEDDED_VIEWS)) {
   if (!onDiskViews.has(parent)) {
     problems.push(
-      `${parent}: named as an EMBEDDED_VIEWS parent but no @tomat/shared/ui/components/**/${parent}.svelte exists`,
+      `${parent}: named as an EMBEDDED_VIEWS parent but no @loca/shared/ui/components/**/${parent}.svelte exists`,
     );
   }
 }

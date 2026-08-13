@@ -1,4 +1,4 @@
-// Companion to the `tomat/no-tauri-import` rule in
+// Companion to the `loca/no-tauri-import` rule in
 // scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
 // same rule for .ts files. oxlint doesn't parse .svelte
 // files, so any @tauri-apps import inside a `<script>` block slips through.
@@ -11,7 +11,7 @@ import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";
 
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
-const ROOT = fromFileUrl(new URL("../../packages/tomat-client/src/ui/", import.meta.url));
+const ROOT = fromFileUrl(new URL("../../packages/loca-client/src/ui/", import.meta.url));
 // The platform layer (tauri.ts desktop impl, mobile.ts android impl, plus their
 // shared helpers and the selection bootstrap) is the one place allowed to import
 // @tauri-apps/* directly; everything else routes through the Platform interface.
@@ -39,7 +39,7 @@ async function scan(): Promise<Violation[]> {
     for (let i = 0; i < lines.length; i++) {
       if (IMPORT_RE.test(lines[i])) {
         violations.push({
-          file: rel.slice(ROOT.length - "packages/tomat-client/src/ui/".length),
+          file: rel.slice(ROOT.length - "packages/loca-client/src/ui/".length),
           lineNumber: i + 1,
           line: lines[i].trim(),
         });

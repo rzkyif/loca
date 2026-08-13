@@ -5,7 +5,7 @@
 // tests/e2e/tauri-driver/README.md and don't invest further until upstream
 // fixes land.
 
-describe("Tomat: app boots", () => {
+describe("Loca: app boots", () => {
   it("renders the main window", async () => {
     // wdio injects $ and browser globally under Mocha. The TS compiler
     // doesn't see them; we cast where needed.

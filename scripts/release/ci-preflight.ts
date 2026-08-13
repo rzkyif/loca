@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     { string: ["channel"] },
   );
   const channel = parseChannelFlag(args.channel);
-  console.log(colors.bold(`\ntomat ci-preflight: ${channel} channel\n`));
+  console.log(colors.bold(`\nloca ci-preflight: ${channel} channel\n`));
 
   step("Diffing release items against the R2 cursor");
   const env = envFromProcess();

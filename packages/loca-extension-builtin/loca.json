@@ -1,0 +1,711 @@
+{
+  "$schema": "https://get.loca.rzkyif.com/schemas/loca-v1.json",
+  "name": "loca-extension-builtin",
+  "displayName": "Built-In",
+  "description": "The everyday starter tools that come with Loca: search the web and read pages, do math, check the date and time, download files, open links, keep memories, and schedule prompts.",
+  "license": "MIT",
+  "homepage": "https://loca.rzkyif.com",
+  "tools": [
+    {
+      "name": "download_url",
+      "description": "Download a file from a URL into the user's Downloads folder. Use when the user asks to save or grab a file from a link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute http(s) URL of the file to download."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Optional filename for the saved file. Defaults to the last segment of the URL."
+          }
+        },
+        "required": ["url"]
+      },
+      "triggers": [
+        "download https://example.com/file.zip",
+        "save that file to my downloads",
+        "grab the pdf from this link",
+        "fetch this archive for me",
+        "download this file",
+        "save this link as a file",
+        "download that installer",
+        "get me the file at this url",
+        "put this download in my downloads folder"
+      ],
+      "function": "download",
+      "permissions": {
+        "net": [
+          {
+            "host": "*",
+            "ports": [80, 443],
+            "reason": "Download from arbitrary http(s) URL"
+          }
+        ],
+        "read": [
+          {
+            "path": "$downloads",
+            "reason": "Check the Downloads folder for existing files and pick a non-clobbering name"
+          }
+        ],
+        "write": [
+          {
+            "path": "$downloads",
+            "reason": "Write the downloaded file"
+          }
+        ],
+        "env": [
+          {
+            "key": "XDG_DOWNLOAD_DIR",
+            "reason": "Honor the user's preferred Downloads folder (Linux/XDG)",
+            "optional": true
+          },
+          {
+            "key": "HOME",
+            "reason": "Resolve ~/Downloads fallback",
+            "optional": true
+          },
+          {
+            "key": "USERPROFILE",
+            "reason": "Resolve %USERPROFILE%\\Downloads on Windows",
+            "optional": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "open_website",
+      "description": "Open a web URL in the user's default browser. Use when the user asks to visit, open, or go to a website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute http:// or https:// URL to open."
+          }
+        },
+        "required": ["url"]
+      },
+      "triggers": [
+        "open https://news.ycombinator.com",
+        "take me to the github page",
+        "visit example.com",
+        "go to the docs website",
+        "open this link in my browser",
+        "pull up the wikipedia page for cats",
+        "launch this website",
+        "open that url",
+        "browse to this site"
+      ],
+      "function": "open",
+      "alwaysAvailable": true,
+      "permissions": {
+        "run": [
+          {
+            "binary": "open",
+            "reason": "Hand the URL off to macOS's `open` command"
+          },
+          {
+            "binary": "xdg-open",
+            "reason": "Hand the URL off to Linux's `xdg-open`"
+          },
+          {
+            "binary": "rundll32",
+            "reason": "Hand the URL off to Windows's default protocol handler"
+          }
+        ]
+      }
+    },
+    {
+      "name": "open_app",
+      "description": "Open one or more apps on the user's computer by name. Use when the user asks to launch, open, or start apps like a calculator or a browser.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "apps": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "App names to launch, e.g. [\"Calculator\", \"Brave Browser\"]. Use the app's display name on macOS, its name or executable on Windows, or its desktop id on Linux."
+          }
+        },
+        "required": ["apps"]
+      },
+      "triggers": [
+        "open the calculator",
+        "launch brave and spotify",
+        "start the terminal",
+        "open my notes app",
+        "open spotify",
+        "launch the app",
+        "start up my code editor",
+        "fire up slack",
+        "can you open my browser"
+      ],
+      "function": "openApp",
+      "alwaysAvailable": true,
+      "permissions": {
+        "run": [
+          {
+            "binary": "open",
+            "reason": "Launch the app on macOS with `open -a`"
+          },
+          {
+            "binary": "cmd",
+            "reason": "Launch the app on Windows with `start`"
+          },
+          {
+            "binary": "gtk-launch",
+            "reason": "Launch the app on Linux by its desktop id"
+          },
+          {
+            "binary": "xdg-open",
+            "reason": "Fall back to Linux's default launcher"
+          }
+        ]
+      }
+    },
+    {
+      "name": "open_file",
+      "description": "Open a file on the user's computer, in a chosen app or the default one. Use when the user asks to open a document, image, or other file, for example a saved report in a specific editor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the file to open."
+          },
+          "appName": {
+            "type": "string",
+            "description": "App to open the file with, e.g. \"Preview\". Omit to use the system default app. On Linux a named app is not supported and the default app is used."
+          }
+        },
+        "required": ["path"]
+      },
+      "triggers": [
+        "open this pdf",
+        "open the report in preview",
+        "open that spreadsheet in excel",
+        "open my notes file in the editor",
+        "open the file at this path",
+        "open this document",
+        "open that image",
+        "open the file for me"
+      ],
+      "function": "openFile",
+      "alwaysAvailable": true,
+      "permissions": {
+        "run": [
+          {
+            "binary": "open",
+            "reason": "Open the file on macOS with `open`"
+          },
+          {
+            "binary": "cmd",
+            "reason": "Open the file on Windows with `start`"
+          },
+          {
+            "binary": "xdg-open",
+            "reason": "Open the file on Linux with the default app"
+          }
+        ],
+        "read": [
+          {
+            "path": "/",
+            "reason": "Open any file you point Loca at, wherever it lives on your computer"
+          },
+          {
+            "path": "$home",
+            "reason": "Open files in your home folder (this is the grant that reaches files on Windows)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "get_window_layout",
+      "description": "Read the current position and size of open app windows. Use when the user wants to remember or note their current window layout so it can be restored later. Loca may not be able to read every window; this depends on your operating system.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "triggers": [
+        "remember my current window layout",
+        "save where my windows are",
+        "note the current screen arrangement",
+        "capture how my windows are positioned",
+        "record my current window setup",
+        "save my current workspace layout",
+        "remember how my screen is arranged right now"
+      ],
+      "function": "getWindowLayout",
+      "platforms": ["darwin", "windows", "linux_x11"],
+      "permissions": {
+        "run": [
+          {
+            "binary": "osascript",
+            "reason": "Read window positions on macOS"
+          },
+          {
+            "binary": "powershell",
+            "reason": "Read window positions on Windows"
+          },
+          {
+            "binary": "wmctrl",
+            "reason": "Read window positions on Linux (X11)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "set_window_layout",
+      "description": "Move and resize open app windows to given positions. Use when the user wants to restore a remembered window layout. Loca may not be able to move every window; this depends on your operating system.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "app": { "type": "string", "description": "App or window owner name to move." },
+                "x": { "type": "integer", "description": "Left edge in screen pixels." },
+                "y": { "type": "integer", "description": "Top edge in screen pixels." },
+                "width": { "type": "integer", "description": "Width in pixels." },
+                "height": { "type": "integer", "description": "Height in pixels." }
+              },
+              "required": ["app", "x", "y", "width", "height"]
+            },
+            "description": "Target position and size for each window."
+          }
+        },
+        "required": ["windows"]
+      },
+      "triggers": [
+        "restore my window layout",
+        "put my windows back where they were",
+        "arrange the windows like before",
+        "move my windows back to the saved layout",
+        "set up my windows like last time",
+        "reposition the windows to my saved arrangement"
+      ],
+      "function": "setWindowLayout",
+      "platforms": ["darwin", "windows", "linux_x11"],
+      "permissions": {
+        "run": [
+          {
+            "binary": "osascript",
+            "reason": "Move and resize windows on macOS"
+          },
+          {
+            "binary": "powershell",
+            "reason": "Move and resize windows on Windows"
+          },
+          {
+            "binary": "wmctrl",
+            "reason": "Move and resize windows on Linux (X11)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "list_memories",
+      "description": "List the user's memories by title, kind, and short summary. Use to discover what the user has saved when the relevant-memory summaries do not already cover it, then read_memory the one you need.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "triggers": [
+        "what memories do I have",
+        "list my saved notes",
+        "which skills are available",
+        "do I have a memory about this",
+        "show me all my memories",
+        "what have I asked you to remember",
+        "what do you know about me",
+        "what notes have I saved",
+        "list everything you remember"
+      ],
+      "function": "listMemories",
+      "permissions": {
+        "memories": [
+          {
+            "access": "read",
+            "reason": "List the titles and summaries of your memories"
+          }
+        ]
+      }
+    },
+    {
+      "name": "write_memory",
+      "description": "Create a memory, or replace an existing one's content. Memories are notes the user keeps in Loca; for a small change to an existing memory, prefer edit_memory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Memory title. Creates the memory if no memory with this title exists."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full markdown content for the memory. Replaces any existing content."
+          }
+        },
+        "required": ["title", "content"]
+      },
+      "triggers": [
+        "remember that I like my hair yellow",
+        "remember that my sister's birthday is in june",
+        "remember my wifi password is hunter2",
+        "note that I prefer tea over coffee",
+        "keep a note that I parked on level 3",
+        "write a memory about this",
+        "save these notes as a memory",
+        "create a new memory called shopping list",
+        "replace the contents of my notes memory",
+        "store this for later",
+        "make a note of this so you don't forget"
+      ],
+      "function": "writeMemory",
+      "permissions": {
+        "memories": [
+          {
+            "access": "write",
+            "reason": "Create the memory or replace its content"
+          }
+        ]
+      }
+    },
+    {
+      "name": "edit_memory",
+      "description": "Change part of a memory by replacing one exact passage. Use for a small edit to an existing memory. The text to find must appear exactly once, so include enough surrounding context to make it unique.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the memory to edit."
+          },
+          "find": {
+            "type": "string",
+            "description": "Exact text to find. Must match exactly one place in the memory."
+          },
+          "replace": {
+            "type": "string",
+            "description": "Replacement text. May be empty to delete the found text."
+          }
+        },
+        "required": ["title", "find", "replace"]
+      },
+      "triggers": [
+        "update the meeting time in my notes memory",
+        "fix the typo in that memory",
+        "change the deadline in my plan memory",
+        "add milk to my shopping list memory",
+        "update what you remember about my schedule",
+        "correct the address in my contacts memory",
+        "remove that line from my notes memory",
+        "change my remembered coffee order",
+        "actually, remember it's green not yellow"
+      ],
+      "function": "editMemory",
+      "permissions": {
+        "memories": [
+          {
+            "access": "write",
+            "reason": "Apply the find/replace edit to the memory"
+          }
+        ]
+      }
+    },
+    {
+      "name": "read_memory",
+      "description": "Read the full content of one of the user's memories by title. Use when you need what a memory says to answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the memory to read."
+          }
+        },
+        "required": ["title"]
+      },
+      "triggers": [
+        "do you remember the thing I said to you last time",
+        "do you remember my wifi password",
+        "what did I tell you to remember about the project",
+        "recall what I told you earlier",
+        "read my meeting notes memory",
+        "what does my plan memory say",
+        "look at the shopping list memory",
+        "check the notes I saved",
+        "what did I say about my preferences"
+      ],
+      "function": "readMemory",
+      "permissions": {
+        "memories": [
+          {
+            "access": "read",
+            "reason": "Read the memory's content"
+          }
+        ]
+      }
+    },
+    {
+      "name": "read_skill_file",
+      "description": "Read a bundled reference file that ships alongside a skill. Use when a skill's instructions point you to one of its files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the skill the file belongs to."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the bundled file to read (as listed by the skill)."
+          }
+        },
+        "required": ["title", "name"]
+      },
+      "triggers": [
+        "read the template file from that skill",
+        "open the skill's reference file",
+        "show me the bundled checklist",
+        "read the reference doc that skill mentioned",
+        "load the file that skill points to"
+      ],
+      "function": "readSkillFile",
+      "permissions": {
+        "memories": [
+          {
+            "access": "read",
+            "reason": "Read the skill's bundled file"
+          }
+        ]
+      }
+    },
+    {
+      "name": "schedule_prompt",
+      "description": "Propose a prompt for Loca to run on a schedule. At each scheduled time, Loca starts an automated session and sends the instruction. The user reviews and can edit the proposal before it is saved, so fill in your best suggestion. Times are the user's local time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short name for the scheduled prompt, also used as the session title when it fires."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "The prompt to send when the schedule fires. Write it as a request from the user, e.g. \"Summarize the headlines from my feeds memory.\""
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["once", "interval", "weekly", "monthly", "yearly"],
+            "description": "When the prompt repeats: once at a date-time, every N minutes, on weekdays at a time, monthly on a day, or yearly on a date."
+          },
+          "at": {
+            "type": "string",
+            "description": "For kind \"once\": local date-time formatted \"YYYY-MM-DD HH:MM\"."
+          },
+          "everyMinutes": {
+            "type": "integer",
+            "description": "For kind \"interval\": minutes between runs, 1 or more."
+          },
+          "weekdays": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "For kind \"weekly\": weekdays to run on, 0 (Sunday) to 6 (Saturday)."
+          },
+          "month": {
+            "type": "integer",
+            "description": "For kind \"yearly\": month to run in, 1 to 12."
+          },
+          "day": {
+            "type": "integer",
+            "description": "For kinds \"monthly\" and \"yearly\": day of the month, 1 to 31 (clamped to shorter months)."
+          },
+          "hour": {
+            "type": "integer",
+            "description": "For kinds \"weekly\", \"monthly\", and \"yearly\": hour to run at, 0 to 23."
+          },
+          "minute": {
+            "type": "integer",
+            "default": 0,
+            "description": "For kinds \"weekly\", \"monthly\", and \"yearly\": minute to run at, 0 to 59."
+          },
+          "runMissed": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, a run missed while Loca was off is made up once on the next start."
+          }
+        },
+        "required": ["title", "instruction", "kind"]
+      },
+      "triggers": [
+        "remind me every monday at 9am to fill in the timesheet",
+        "every morning give me a summary of my notes",
+        "schedule a prompt for tomorrow at 8",
+        "check the news once every hour",
+        "remind me to take a break every 30 minutes",
+        "set up a daily standup summary",
+        "run this every week",
+        "schedule a reminder for friday afternoon"
+      ],
+      "function": "schedulePrompt",
+      "permissions": {}
+    },
+    {
+      "name": "show_memory",
+      "description": "Show a memory to the user in the chat. Use when the user wants to see a memory itself rather than have it summarized.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the memory to show."
+          }
+        },
+        "required": ["title"]
+      },
+      "triggers": [
+        "show me my meeting notes memory",
+        "display the shopping list",
+        "open my plan memory in the chat",
+        "let me see that memory",
+        "pull up my notes memory",
+        "show me what's in my ideas memory"
+      ],
+      "function": "showMemory",
+      "permissions": {
+        "memories": [
+          {
+            "access": "read",
+            "reason": "Read the memory to display it"
+          }
+        ]
+      }
+    },
+    {
+      "name": "get_datetime",
+      "description": "Get the current date and time in the user's local timezone, including the weekday and UTC offset. Use to anchor relative dates like \"tomorrow\" or \"next friday\" instead of guessing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "triggers": [
+        "what time is it",
+        "what's today's date",
+        "what day is it tomorrow",
+        "current date and time",
+        "what's the date today",
+        "what day of the week is it",
+        "what time is it right now",
+        "how many days until friday"
+      ],
+      "function": "getDatetime",
+      "alwaysAvailable": true,
+      "permissions": {}
+    },
+    {
+      "name": "calculator",
+      "description": "Evaluate a math expression and return the exact result. Supports arithmetic, comparisons, and functions like sqrt, sin, cos, log, min, max. Use for any calculation instead of doing the math yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "The expression to evaluate, e.g. \"(2 + 3) * sqrt(16)\"."
+          }
+        },
+        "required": ["expression"]
+      },
+      "triggers": [
+        "calculate 15% of 2400",
+        "what is 2 to the power of 20",
+        "how much is 144 divided by 12",
+        "evaluate this expression",
+        "what's the square root of 5041",
+        "what is 45 times 89",
+        "work out the tip on a 60 dollar bill",
+        "add these numbers up for me"
+      ],
+      "function": "calculator",
+      "alwaysAvailable": true,
+      "permissions": {}
+    },
+    {
+      "name": "fetch_webpage",
+      "description": "Fetch a web page and return its readable text content. Use to read an article, a docs page, or any URL the user mentions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute http(s) URL of the page to read."
+          }
+        },
+        "required": ["url"]
+      },
+      "triggers": [
+        "read this article for me",
+        "summarize https://example.com/post",
+        "what does this page say",
+        "open the link and tell me the gist",
+        "read the contents of this url",
+        "summarize this webpage",
+        "what's on this page",
+        "get the text from this article"
+      ],
+      "function": "fetchWebpage",
+      "permissions": {
+        "net": [
+          {
+            "host": "*",
+            "ports": [80, 443],
+            "reason": "Fetch the page the user asked to read"
+          }
+        ]
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web (via DuckDuckGo) and return the top results. Use when the user asks about something current or outside your knowledge, then follow up with fetch_webpage to read a result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query."
+          },
+          "maxResults": {
+            "type": "integer",
+            "default": 5,
+            "description": "How many results to return, 1 to 10."
+          }
+        },
+        "required": ["query"]
+      },
+      "triggers": [
+        "search the web for deno 2 release notes",
+        "look up the weather in amsterdam",
+        "find recent news about this",
+        "search for how tall the eiffel tower is",
+        "google the best pizza in town",
+        "what's the latest on this topic",
+        "look this up online",
+        "find information about quantum computing"
+      ],
+      "function": "webSearch",
+      "permissions": {
+        "net": [
+          {
+            "host": "html.duckduckgo.com",
+            "ports": [443],
+            "reason": "Query DuckDuckGo's HTML search endpoint"
+          }
+        ]
+      }
+    }
+  ]
+}

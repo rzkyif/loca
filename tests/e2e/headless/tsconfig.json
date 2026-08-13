@@ -17,14 +17,14 @@
     "types": ["@vitest/browser/providers/playwright"],
     "baseUrl": ".",
     "paths": {
-      "@client/*": ["../../../packages/tomat-client/src/ui/*"],
-      "@tomat/shared": ["../../../packages/tomat-shared/src/index.ts"],
-      "@tomat/shared/ui/*": ["../../../packages/tomat-shared/src/ui/*"],
-      "$lib/*": ["../../../packages/tomat-client/src/ui/lib/*"],
-      "$components/*": ["../../../packages/tomat-client/src/ui/components/*"],
-      "$composables/*": ["../../../packages/tomat-client/src/ui/composables/*"],
-      "$stores/*": ["../../../packages/tomat-client/src/ui/state/*"],
-      "$app/environment": ["../../../packages/tomat-client/src/ui/test/app-environment.ts"],
+      "@client/*": ["../../../packages/loca-client/src/ui/*"],
+      "@loca/shared": ["../../../packages/loca-shared/src/index.ts"],
+      "@loca/shared/ui/*": ["../../../packages/loca-shared/src/ui/*"],
+      "$lib/*": ["../../../packages/loca-client/src/ui/lib/*"],
+      "$components/*": ["../../../packages/loca-client/src/ui/components/*"],
+      "$composables/*": ["../../../packages/loca-client/src/ui/composables/*"],
+      "$stores/*": ["../../../packages/loca-client/src/ui/state/*"],
+      "$app/environment": ["../../../packages/loca-client/src/ui/test/app-environment.ts"],
       "@std/assert": ["./harness/std-assert-shim.ts"]
     }
   },

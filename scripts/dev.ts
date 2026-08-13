@@ -1,5 +1,5 @@
-// Boots tomat-core (deno watch) and tomat-client (tauri dev) together on the
-// "dev" install channel, so all state lives under ~/.tomat/dev/ and never
+// Boots loca-core (deno watch) and loca-client (tauri dev) together on the
+// "dev" install channel, so all state lives under ~/.loca/dev/ and never
 // touches a stable install. Seeds a dev admin token (the from-source core
 // never mints one; only the installer does), sets a fresh dev admin password
 // each run (for the password-gated remote flows), and prints a ready-to-use
@@ -8,17 +8,17 @@
 
 import { fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import { SEEDED_EXTENSIONS } from "@tomat/shared";
-import { computeDevManifest } from "../packages/tomat-core/src/extensions/seeded-manifest.ts";
+import { SEEDED_EXTENSIONS } from "@loca/shared";
+import { computeDevManifest } from "../packages/loca-core/src/extensions/seeded-manifest.ts";
 
 const ROOT = fromFileUrl(new URL("..", import.meta.url));
 
-// Dev runs on the "dev" install channel (~/.tomat/dev/{core,client}). Both
-// children inherit TOMAT_CHANNEL so core and the Tauri client agree on the
+// Dev runs on the "dev" install channel (~/.loca/dev/{core,client}). Both
+// children inherit LOCA_CHANNEL so core and the Tauri client agree on the
 // isolated location + keychain namespace.
-const CHANNEL_ENV = { TOMAT_CHANNEL: "dev" };
+const CHANNEL_ENV = { LOCA_CHANNEL: "dev" };
 // The dev core binds the dev-channel port (stable base 7800 + dev offset 20,
-// see packages/tomat-core/src/paths.ts) and serves the API over TLS with a
+// see packages/loca-core/src/paths.ts) and serves the API over TLS with a
 // self-signed cert. The dev task trusts that cert for loopback via
 // --unsafely-ignore-certificate-errors=127.0.0.1 (set in deno.json), so these
 // HTTPS calls to the local core succeed without a public CA.
@@ -32,7 +32,7 @@ function homeDir(): string {
   return home;
 }
 
-const DEV_CORE_DIR = join(homeDir(), ".tomat", "dev", "core");
+const DEV_CORE_DIR = join(homeDir(), ".loca", "dev", "core");
 const ADMIN_TOKEN_FILE = join(DEV_CORE_DIR, ".admin-token");
 
 // Dev seeded-extension manifests. There is no published manifests/dev/extension.json,
@@ -41,7 +41,7 @@ const ADMIN_TOKEN_FILE = join(DEV_CORE_DIR, ".admin-token");
 // core reads. The version carries a content hash so any edit reads as "Update
 // available" after a check; "Update" then reinstalls the codebase copy. The
 // version formula is reused from computeDevManifest() in
-// packages/tomat-core/src/extensions/seeded-manifest.ts (no duplication).
+// packages/loca-core/src/extensions/seeded-manifest.ts (no duplication).
 const SEEDED_SRC_DIRS = SEEDED_EXTENSIONS.map((e) => join(ROOT, "packages", e.dir));
 
 function devManifestPath(id: string): string {
@@ -79,10 +79,10 @@ async function startDevExtensionManifest(): Promise<void> {
 // The dev client's data root. --reset wipes it whole (see resetClientSettings):
 // cores.json (the paired-cores registry, whose absence sends the next boot back
 // through core management, see the boot gate in
-// packages/tomat-client/src/ui/routes/+page.svelte), settings.json, snippets/,
+// packages/loca-client/src/ui/routes/+page.svelte), settings.json, snippets/,
 // keychain.json (the dev file-backed bearer-token store), and logs. None of it
 // needs downloading, so nothing here is preserved.
-const DEV_CLIENT_DIR = join(homeDir(), ".tomat", "dev", "client");
+const DEV_CLIENT_DIR = join(homeDir(), ".loca", "dev", "client");
 
 // --reset is a denylist, not an allowlist: it deletes EVERYTHING under the dev
 // core dir EXCEPT these names, so the next boot starts from a clean slate
@@ -92,10 +92,10 @@ const DEV_CLIENT_DIR = join(homeDir(), ".tomat", "dev", "client");
 // exactly how tools.enabled lingered across resets). The two preserved entries
 // are pure download/build artifacts that are expensive to re-acquire and hold
 // no user state:
-//   - bin/        the sidecar binaries (llama-server, tomat-core-speech + its
+//   - bin/        the sidecar binaries (llama-server, loca-core-speech + its
 //                 fetched espeak-ng-data, the cargo-built helpers) and deno.
 //   - deno-cache/ the downloaded deno/npm dependency cache.
-// ~/.tomat/models lives outside the channel root and so is never touched.
+// ~/.loca/models lives outside the channel root and so is never touched.
 // A future download-only cache added under the core dir belongs in this set.
 const CORE_RESET_PRESERVE = new Set(["bin", "deno-cache"]);
 
@@ -107,7 +107,7 @@ const CORE_RESET_PRESERVE = new Set(["bin", "deno-cache"]);
 //                   built-in extension (dev:reset / dev:reset:install).
 //  --fresh-install  make the client report no local core, so first boot shows
 //                   the welcome remote-connect page instead of silently pairing
-//                   with the dev core. Sets TOMAT_DEV_FRESH_INSTALL for the
+//                   with the dev core. Sets LOCA_DEV_FRESH_INSTALL for the
 //                   client (read by the Tauri pairing commands) and skips the
 //                   remote prefill so that page starts blank
 //                   (dev:reset:install).
@@ -116,7 +116,7 @@ const FRESH_INSTALL = Deno.args.includes("--fresh-install");
 // --android / --ios run the mobile client (`tauri android|ios dev`) against this
 // dev core instead of the desktop client. The mobile WebView runs on an
 // emulator/simulator/device, so the core must be reachable off-loopback
-// (TOMAT_CORE_HOST=0.0.0.0 below) and the onboarding prefill is passed through
+// (LOCA_CORE_HOST=0.0.0.0 below) and the onboarding prefill is passed through
 // Vite env (mobile has no launch argv).
 const ANDROID = Deno.args.includes("--android");
 const IOS = Deno.args.includes("--ios");
@@ -145,7 +145,7 @@ function color(code: string, s: string): string {
 
 // Compact wall-clock HH:MM:SS.mmm. dev.ts is the single timestamp authority for
 // the multiplexed console: children emit bare messages (core skips its own
-// timestamp via TOMAT_LOG_NO_TIME) and this stamp is prepended to every line.
+// timestamp via LOCA_LOG_NO_TIME) and this stamp is prepended to every line.
 function stamp(): string {
   const d = new Date();
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
@@ -317,7 +317,7 @@ function devLog(msg: string): void {
 }
 
 // Generate (once) and return the dev core's admin token. The from-source core
-// never writes ~/.tomat/dev/core/.admin-token itself, so without this the
+// never writes ~/.loca/dev/core/.admin-token itself, so without this the
 // client could not mint a pairing code against it. Written only when absent,
 // so an existing pairing keeps working across dev restarts.
 async function ensureAdminToken(): Promise<string> {
@@ -470,7 +470,7 @@ async function resetClientSettings(): Promise<void> {
 // from the current schema (editing schema.sql in place only reaches a fresh db,
 // since the migration runner skips a version the db already has and CREATE TABLE
 // IF NOT EXISTS never adds a column to an existing table; see
-// packages/tomat-core/src/db/migrate.ts), and dropping the seed markers
+// packages/loca-core/src/db/migrate.ts), and dropping the seed markers
 // re-stages the seeded extensions against that fresh db. Must run before core
 // spawns and opens the db.
 async function resetCoreState(): Promise<void> {
@@ -544,8 +544,8 @@ async function reclaimVitePort(): Promise<void> {
 }
 
 const VITE_CACHE_DIRS = [
-  join(ROOT, "packages", "tomat-client", ".vite"),
-  join(ROOT, "packages", "tomat-client", "node_modules", ".vite"),
+  join(ROOT, "packages", "loca-client", ".vite"),
+  join(ROOT, "packages", "loca-client", "node_modules", ".vite"),
 ];
 
 // A `deps_temp_*` dir inside a Vite cache marks a dependency optimization that
@@ -711,10 +711,10 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 // ("-dev"). All four build + run on every platform (ptyhost uses a ConPTY on
 // Windows, a PTY on unix).
 const HELPER_CRATES = [
-  "tomat-core-keychain",
-  "tomat-core-updater",
-  "tomat-core-hwinfo",
-  "tomat-core-ptyhost",
+  "loca-core-keychain",
+  "loca-core-updater",
+  "loca-core-hwinfo",
+  "loca-core-ptyhost",
 ];
 
 async function provisionHelpers(): Promise<void> {
@@ -757,18 +757,18 @@ async function provisionHelpers(): Promise<void> {
 const ESPEAK_DATA_URL =
   "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2";
 
-// Build + stage the tomat-core-speech sidecar (Whisper STT + Kokoro TTS) into
+// Build + stage the loca-core-speech sidecar (Whisper STT + Kokoro TTS) into
 // the dev bin dir. Production downloads it from the signed binaries manifest and
 // extracts espeak-ng-data alongside; dev has no such download (it is self-hosted,
 // so devManifest skips it). Unlike the small helper crates, this one statically
 // links the sherpa-onnx ONNX runtime (a heavy build), so we build it ONCE rather
 // than on every dev start - on unix the symlink follows a later manual
-// `cargo build -p tomat-core-speech`; delete the staged binary to force a rebuild
+// `cargo build -p loca-core-speech`; delete the staged binary to force a rebuild
 // here. Sidecar binaries are NOT channel-suffixed (binaryName() = the bare name).
 async function provisionSpeechSidecar(): Promise<void> {
   const exe = Deno.build.os === "windows" ? ".exe" : "";
   const binDir = join(DEV_CORE_DIR, "bin");
-  const dest = join(binDir, `tomat-core-speech${exe}`);
+  const dest = join(binDir, `loca-core-speech${exe}`);
   try {
     let staged = false;
     try {
@@ -776,7 +776,7 @@ async function provisionSpeechSidecar(): Promise<void> {
       // a `cargo clean` or an interleaved mobile cross-build) reads as NOT staged
       // and forces a rebuild - lstat would see the dead link and wrongly skip it,
       // leaving the dev core with a missing binary the speech manifest can't
-      // resolve (STT/TTS then show a stuck "tomat-core-speech" pending download).
+      // resolve (STT/TTS then show a stuck "loca-core-speech" pending download).
       await Deno.stat(dest);
       staged = true;
     } catch {
@@ -784,7 +784,7 @@ async function provisionSpeechSidecar(): Promise<void> {
     }
     if (!staged) {
       const out = await new Deno.Command("cargo", {
-        args: ["build", "-p", "tomat-core-speech"],
+        args: ["build", "-p", "loca-core-speech"],
         stdout: "piped",
         stderr: "piped",
       }).output();
@@ -794,15 +794,15 @@ async function provisionSpeechSidecar(): Promise<void> {
         return;
       }
       await ensureDir(binDir);
-      const built = join(ROOT, "target", "debug", `tomat-core-speech${exe}`);
+      const built = join(ROOT, "target", "debug", `loca-core-speech${exe}`);
       // Clear a stale (possibly dangling) link first: symlink/copy fail if dest
       // already exists, which it does when we're re-staging over a dead link.
       await Deno.remove(dest).catch(() => {});
       if (Deno.build.os === "windows") await Deno.copyFile(built, dest);
       else await Deno.symlink(built, dest);
-      devLog("built + linked tomat-core-speech sidecar into the dev bin dir");
+      devLog("built + linked loca-core-speech sidecar into the dev bin dir");
     }
-    await ensureEspeakData(join(binDir, "lib", "tomat-core-speech"));
+    await ensureEspeakData(join(binDir, "lib", "loca-core-speech"));
   } catch (err) {
     devLog(`could not provision speech sidecar (${err instanceof Error ? err.message : err})`);
   }
@@ -858,30 +858,30 @@ if (!CLIENT_ONLY) {
     spawn(
       "core",
       "36",
-      ["deno", "run", "--watch", "--allow-all", "packages/tomat-core/src/main.ts"],
+      ["deno", "run", "--watch", "--allow-all", "packages/loca-core/src/main.ts"],
       undefined,
       // Worker .ts files live in the source tree during dev so edits hot-
       // reload via --watch. Without this override, paths().workersDir would
-      // point at ~/.tomat/dev/core/workers (an empty dir in dev).
+      // point at ~/.loca/dev/core/workers (an empty dir in dev).
       {
         ...CHANNEL_ENV,
         // For mobile dev the emulator/simulator/device reaches the host core
         // over the network, so bind every interface (loopback-only would be
         // unreachable). The self-signed cert is still pinned at pairing, so this
         // only widens reachability, not trust.
-        ...(MOBILE ? { TOMAT_CORE_HOST: "0.0.0.0" } : {}),
-        TOMAT_WORKERS_DIR: `${ROOT}packages/tomat-core/src/workers`,
+        ...(MOBILE ? { LOCA_CORE_HOST: "0.0.0.0" } : {}),
+        LOCA_WORKERS_DIR: `${ROOT}packages/loca-core/src/workers`,
         // Core runs under `deno run --watch`. On a file change the watcher sends
         // SIGTERM and waits for the program to wind down so it can re-run the
         // module in-process. This flag tells core's SIGTERM handler to skip its
         // Deno.exit(0) (which would hard-kill the watcher and end the dev session)
         // and instead let the event loop drain for the restart. See main.ts.
-        TOMAT_DEV_WATCH: "1",
+        LOCA_DEV_WATCH: "1",
         // dev.ts owns the timestamp + badge column, so core emits bare console
         // lines (no ISO timestamp). Its stderr is piped here (not a TTY), so force
         // color on so level coloring survives.
-        TOMAT_LOG_NO_TIME: "1",
-        ...(useColor ? { TOMAT_LOG_COLOR: "1" } : {}),
+        LOCA_LOG_NO_TIME: "1",
+        ...(useColor ? { LOCA_LOG_COLOR: "1" } : {}),
       },
     ),
   );
@@ -891,11 +891,11 @@ await reclaimVitePort();
 await clearStaleViteCache();
 
 // Bake the dev channel for channel.rs (via the Tauri crate's build.rs). Desktop
-// picks up TOMAT_CHANNEL at runtime, but a mobile build runs cargo inside
+// picks up LOCA_CHANNEL at runtime, but a mobile build runs cargo inside
 // Xcode's script phase / the Gradle daemon, neither of which forwards the env to
 // the compile - so the on-disk `channel` file is the deterministic source. Write
 // it before the client (and its cargo build) spawns.
-await Deno.writeTextFile(join(ROOT, "packages/tomat-client/src/tauri/channel"), "dev");
+await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), "dev");
 
 // Mint the pairing code before spawning the client so it can be forwarded as a
 // launch argument. The core boots in parallel during the health poll inside.
@@ -994,21 +994,21 @@ if (MOBILE) {
 // don't spawn the client into a tearing-down session.
 if (!shuttingDown) {
   // The Tauri CLI builds vite + cargo before the app binary runs and emits its
-  // first "Tomat Client starting" line, and that build chatter is filtered out
+  // first "Loca Client starting" line, and that build chatter is filtered out
   // here. Emit a synthetic client line up front (mirroring the client's fern
   // format) so the console shows the client is building; it stays the latest
   // client message until the binary starts (or a build error leaks through
   // pipe()). Written directly like devLog, so it bypasses formatChildLine.
-  console.log(`${linePrefix("client", "35")}${levelLine("info", "boot", "Tomat Client building")}`);
+  console.log(`${linePrefix("client", "35")}${levelLine("info", "boot", "Loca Client building")}`);
   children.push(
-    spawn("client", "35", clientCmd, `${ROOT}packages/tomat-client`, {
+    spawn("client", "35", clientCmd, `${ROOT}packages/loca-client`, {
       ...CHANNEL_ENV,
       // dev.ts owns the timestamp + badge column and the client's stdout is
       // piped here (not a TTY), so the client emits bare lines and forces color
       // on, exactly like the core spawn above.
-      TOMAT_LOG_NO_TIME: "1",
-      ...(useColor ? { TOMAT_LOG_COLOR: "1" } : {}),
-      ...(FRESH_INSTALL ? { TOMAT_DEV_FRESH_INSTALL: "1" } : {}),
+      LOCA_LOG_NO_TIME: "1",
+      ...(useColor ? { LOCA_LOG_COLOR: "1" } : {}),
+      ...(FRESH_INSTALL ? { LOCA_DEV_FRESH_INSTALL: "1" } : {}),
       ...clientPrefillEnv,
     }),
   );

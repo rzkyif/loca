@@ -10,7 +10,7 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import { linuxPostrmBody, linuxPreunBody } from "./core-installers.ts";
 
 Deno.test("linuxPreunBody only tears down on removal, not upgrade", () => {
-  const body = linuxPreunBody("stable", "/usr/lib/tomat-core", "tomat-core");
+  const body = linuxPreunBody("stable", "/usr/lib/loca-core", "loca-core");
   // The removal-only guard: dpkg "remove" and rpm 0 both match; "upgrade"/1 fall
   // through with no branch, so the wipe never runs on a version bump.
   assertStringIncludes(body, 'case "$1" in');
@@ -22,10 +22,10 @@ Deno.test("linuxPreunBody only tears down on removal, not upgrade", () => {
 });
 
 Deno.test("linuxPreunBody keepData (deb prerm) stops the service but keeps data", () => {
-  const body = linuxPreunBody("stable", "/usr/lib/tomat-core", "tomat-core", { keepData: true });
+  const body = linuxPreunBody("stable", "/usr/lib/loca-core", "loca-core", { keepData: true });
   assertStringIncludes(body, "uninstall-service --keep-data");
   // rpm's %preun (no keepData) keeps the full teardown: its erase IS the purge.
-  const rpmBody = linuxPreunBody("stable", "/usr/lib/tomat-core", "tomat-core");
+  const rpmBody = linuxPreunBody("stable", "/usr/lib/loca-core", "loca-core");
   assertEquals(rpmBody.includes("--keep-data"), false);
 });
 
@@ -33,9 +33,9 @@ Deno.test("linuxPostrmBody wipes the channel core dir only on purge", () => {
   const body = linuxPostrmBody("latest");
   assertStringIncludes(body, 'case "$1" in');
   assertStringIncludes(body, "purge)");
-  assertStringIncludes(body, '.tomat/latest/core"');
+  assertStringIncludes(body, '.loca/latest/core"');
   // The wipe is inside the purge branch, and the shared models dir is untouched.
   const beforeCase = body.slice(0, body.indexOf('case "$1" in'));
   assertEquals(beforeCase.includes("rm -rf"), false);
-  assertEquals(body.includes(".tomat/models"), false);
+  assertEquals(body.includes(".loca/models"), false);
 });

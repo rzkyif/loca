@@ -1,0 +1,155 @@
+---
+title: Cores and Pairing
+section: Cores & Maintenance
+order: 2
+---
+
+import CoreBarDemo from "../../../components/demos/CoreBarDemo.svelte";
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+import Aside from "../../../components/Aside.astro";
+
+The **Core** is the service that does Loca's work, and the **Client** is the app
+you look at, as [The Basics](/manual/getting-started/basics) introduces. They usually
+sit on the same machine, installed together and connected on first launch. But the
+Core does not have to live where the Client does, and once you separate them a few
+things follow: how to run a Core elsewhere, how a Client connects to one, and how you
+move between more than one.
+
+## Running a Core elsewhere
+
+Putting the Core on a more powerful computer lets the heavy model run there while you
+sit at a laptop. On the machine that will run it, download the
+[installer](/install) for its operating system and keep **Loca Core** selected,
+along with the option that matters for a remote Core: **Allow other devices on
+this network to pair**. By default a Core only listens to its own machine, so
+nothing else on the network can reach it; that option is what opens it up. The
+**Keep the Core running in the background** option installs it as a service so it
+starts on its own and is always there to connect to.
+
+On Linux the Core is its own `.deb`/`.rpm` package, which installs loopback-only;
+to open it to your network, set `server.bindHost` to `0.0.0.0` in the Core's
+`~/.loca/latest/core/settings.json` and restart it. On macOS and Windows, a
+server with no screen uses the same installer headless, with the network option
+as a flag; see [headless installs](/manual/getting-started/installing).
+
+Match the **channel** to the one you run on the Client (see
+[Updates and Channels](/manual/maintenance/updates-and-channels)). Then get a
+one-time **pairing code** from the new Core: open Loca on that machine and choose
+**Generate Pairing Code** under **Cores** in Settings, or on a headless machine
+run the Core binary's `mint-code` subcommand
+(`~/.loca/latest/core/bin/loca-core-latest mint-code`). Enter the code in the
+Client that should connect.
+
+<Aside type="caution">
+  Allowing access from other devices opens the Core to your local network. Only do this on a network
+  you trust; pairing still requires the one-time code, but the Core is reachable to anything that
+  can route to it.
+</Aside>
+
+## Serving a Core over HTTPS
+
+By default the link between a Client and a Core is secured by Loca itself. The Core
+presents its own certificate, and the Client records ("pins") that exact certificate
+at pairing, so it recognizes the Core every time and refuses an impostor. This needs
+nothing from you and works anywhere, including a Core reachable only by its address on
+your network.
+
+Some setups instead put a Core behind a reverse proxy that already serves HTTPS with a
+certificate from a public authority, for example Cloudflare or Caddy on a public
+domain. There the Client never sees the Core's own certificate, only the proxy's, so
+the pinning above cannot apply. For that case the Core has a setting,
+`server.behindProxy`, that you turn on so the Client validates the proxy's public
+certificate the way a browser does instead of pinning. It is off by default and set on
+the Core's machine: at install time with the headless installer's behind-proxy flag
+(see [headless installs](/manual/getting-started/installing)), or later in its
+`settings.json` alongside the network options (or via the
+`LOCA_CORE_BEHIND_PROXY` environment variable). It is never set from the app, so a
+paired device can never change how the Core is trusted. The Client detects the mode by itself
+during pairing and marks each Core **Pinned** or **HTTPS** under **Cores** in Settings;
+there is nothing to set on the Client. Set it before you pair: the setting decides how
+each device trusts the Core at pairing, so a device paired the other way stops
+connecting until you pair it again.
+
+<Aside type="caution">
+  A reverse proxy that serves HTTPS can read the traffic that passes through it, including your
+  messages. Turn `server.behindProxy` on only for a proxy you run or trust. To keep the connection
+  secured end to end instead, reach the Core through a pass-through tunnel (such as Tailscale or
+  WireGuard) that carries its own connection unchanged: pinning keeps working and you set nothing.
+</Aside>
+
+## Pairing
+
+A Client connects to a Core by **pairing**. The Core mints a short code; in the
+Client you add a Core by its address and enter that code once. The Client captures
+the Core's identity at that moment and stores the trust securely, so it reconnects on
+its own every time without you re-entering anything. The code is needed only for that
+first introduction; afterward pairing is a one-time step rather than a login you
+repeat.
+
+To pair an _additional_ device later, you do not have to go back to the Core's
+machine. From a Client that is already paired, open the Core under **Cores** in
+Settings and choose **Generate Pairing Code**; enter the **admin password** and
+the Client mints a fresh code to type on the new device. The same password lets
+you remove a device you no longer want from that Core's list of paired devices.
+You set the admin password in the same place: on the machine running the Core,
+open it under **Cores** in Settings and choose **Set Admin Password**. Until one
+is set, that same-machine Client can still mint codes on its own, but other
+devices cannot.
+
+## More than one Core
+
+You can pair a single Client with several Cores and switch between them. A common
+setup is a laptop and a more powerful desktop: you carry the Client and point it at
+whichever Core you want to do the work. The **Core bar** pinned at the bottom of the
+app always shows which Core you are connected to and how it is doing, and lets you
+switch from one place. The status reads at a glance: getting ready, ready, busy with
+work, updating, or having trouble.
+
+<CoreBarDemo scenario="busy" highlightLabel="Status" highlightTarget="[data-region=core-status]" />
+
+Select the status to expand the bar into a panel. While it is busy it shows what is
+working and waiting; when something has gone wrong it names each part that is affected
+and the exact problem, so you can tell whether it is the language model, speech, or
+something else, and what to fix.
+
+<CoreBarDemo scenario="errorExpanded" />
+
+The Client connects to one Core at a time, but the work you start does not stop when
+you look away. You can begin a chat on one Core, switch to another, and come back to
+find the first one right where you left it, the reply still arriving and a question it
+asked still waiting. The only thing that clears that waiting work is restarting the
+Core itself.
+
+## Managing Cores
+
+Switch Cores from the Core bar for a quick change. For the full set, manage your
+paired Cores under **Cores** in Settings, where you can add a new one, rename one, or
+remove one. This is the counterpart to pairing: where pairing introduces a Core, this
+group is where your introduced Cores live.
+
+<SettingsPanelDemo group="cores" />
+
+## How It Works
+
+Pairing has to do two things at once: prove you typed the right code, and make sure
+you are talking to the real Core and not something impersonating it on the network.
+Loca handles both with a short exchange built around the one-time code. The Client
+and the Core each run a calculation from the code and trade the results; only if both
+started from the same code do they agree, so a wrong code fails outright, and the code
+itself never crosses the network in a form anyone could replay. In the same step the
+Client records the Core's identity, so from then on it can tell it is reconnecting to
+the same Core and refuse a stand-in. That identity is normally the Core's own
+certificate; a Core served over HTTPS behind a proxy is instead trusted by the proxy's
+public certificate, chosen during this same exchange so a mismatch still fails
+(see [Serving a Core over HTTPS](#serving-a-core-over-https)).
+
+What you get out of a successful pairing is a long-lived key the Client stores in your
+operating system's keychain, the secure place the OS keeps passwords. Every later
+request carries that key, which is why you pair once and never sign in again, and why
+removing a device is a matter of revoking its key rather than changing a shared
+password. The admin password is separate: it is what authorizes minting new codes
+from an already-paired Client, so you can add devices without returning to the Core's
+machine.
+
+Next, keeping an eye on what the Core is using:
+[Usage](/manual/maintenance/usage).

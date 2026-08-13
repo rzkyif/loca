@@ -8210,7 +8210,7 @@
       "npm:aws4fetch@^1.0.20"
     ],
     "members": {
-      "packages/tomat-client": {
+      "packages/loca-client": {
         "dependencies": [
           "npm:@iconify/json@^2.2.483",
           "npm:@ricky0123/vad-web@^0.0.30",
@@ -8252,7 +8252,7 @@
           "npm:vitest@^4.1.8"
         ]
       },
-      "packages/tomat-core": {
+      "packages/loca-core": {
         "dependencies": [
           "jsr:@db/sqlite@0.12",
           "jsr:@noble/ed25519@3",
@@ -8278,7 +8278,7 @@
           "npm:zod@^4.4.3"
         ]
       },
-      "packages/tomat-core-engine": {
+      "packages/loca-core-engine": {
         "dependencies": [
           "jsr:@std/assert@1",
           "jsr:@std/encoding@1",
@@ -8290,7 +8290,7 @@
           "npm:zod@^4.4.3"
         ]
       },
-      "packages/tomat-extension-builtin": {
+      "packages/loca-extension-builtin": {
         "dependencies": [
           "jsr:@std/assert@1",
           "npm:@mozilla/readability@0.6",
@@ -8299,18 +8299,18 @@
           "npm:mime-types@^3.0.2"
         ]
       },
-      "packages/tomat-extension-samples": {
+      "packages/loca-extension-samples": {
         "dependencies": [
           "jsr:@std/assert@1"
         ]
       },
-      "packages/tomat-model-catalog": {
+      "packages/loca-model-catalog": {
         "dependencies": [
           "jsr:@std/assert@1",
           "npm:zod@^4.4.3"
         ]
       },
-      "packages/tomat-shared": {
+      "packages/loca-shared": {
         "dependencies": [
           "jsr:@std/assert@1",
           "npm:@iconify/json@^2.2.483",
@@ -8327,7 +8327,7 @@
           "npm:zod@^4.4.3"
         ]
       },
-      "packages/tomat-website": {
+      "packages/loca-website": {
         "dependencies": [
           "npm:@astrojs/check@~0.9.9",
           "npm:@astrojs/mdx@7",

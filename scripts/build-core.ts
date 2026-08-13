@@ -1,4 +1,4 @@
-// Builds the tomat-core binary + the four native helper crates (updater,
+// Builds the loca-core binary + the four native helper crates (updater,
 // keychain, hwinfo, ptyhost) for one or more triples, into dist/<triple>/ with
 // channel-suffixed names.
 //
@@ -15,7 +15,7 @@
 //   --target=<triple>         triple(s) to build; repeatable/csv (default host)
 
 import { parseArgs } from "@std/cli/parse-args";
-import type { Triple } from "../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../packages/loca-shared/src/domain/model.ts";
 import { ALL_TRIPLES, buildAll, buildHelpers } from "./release/core.ts";
 import { channelBinSuffix, fail, parseChannelFlag } from "./release/lib.ts";
 

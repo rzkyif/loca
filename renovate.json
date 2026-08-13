@@ -11,7 +11,7 @@
       "enabled": false
     },
     {
-      "description": "tomat-core-updater depends on `time = 0.3` directly, but the whole Rust workspace shares one Cargo.lock and tauri caps its transitive `time` at <0.3.52. Without this, Renovate keeps trying to bump the shared `time` to 0.3.52+ and the Cargo.lock artifact update fails against tauri's requirement. Cap it until tauri relaxes the bound (then remove this rule).",
+      "description": "loca-core-updater depends on `time = 0.3` directly, but the whole Rust workspace shares one Cargo.lock and tauri caps its transitive `time` at <0.3.52. Without this, Renovate keeps trying to bump the shared `time` to 0.3.52+ and the Cargo.lock artifact update fails against tauri's requirement. Cap it until tauri relaxes the bound (then remove this rule).",
       "matchManagers": ["cargo"],
       "matchPackageNames": ["time"],
       "allowedVersions": "<0.3.52"

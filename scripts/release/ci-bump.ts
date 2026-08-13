@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   );
   const channel = parseChannelFlag(args.channel);
   const dryRun = args["dry-run"];
-  console.log(colors.bold(`\ntomat ci-bump: ${channel} channel\n`));
+  console.log(colors.bold(`\nloca ci-bump: ${channel} channel\n`));
 
   if (channel !== "latest") {
     ok(`nothing to bump on the ${channel} channel (promotions carry bumped versions)`);

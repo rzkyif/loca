@@ -6,8 +6,8 @@ import { e2eCommands } from "./harness/commands.ts";
 
 // Resolve workspace source dirs relative to this config.
 const p = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
-const CLIENT_UI = p("../../../packages/tomat-client/src/ui");
-const SHARED_SRC = p("../../../packages/tomat-shared/src");
+const CLIENT_UI = p("../../../packages/loca-client/src/ui");
+const SHARED_SRC = p("../../../packages/loca-shared/src");
 
 export default defineConfig({
   plugins: [svelte({ preprocess: vitePreprocess() })],
@@ -18,9 +18,9 @@ export default defineConfig({
       // @client is the harness's handle on client UI internals.
       { find: "@client", replacement: CLIENT_UI },
       // Mirror the client's svelte.config / vitest aliases. ui subpath BEFORE
-      // the bare-root exact match so "@tomat/shared/ui/x" maps into the dir.
-      { find: "@tomat/shared/ui", replacement: `${SHARED_SRC}/ui` },
-      { find: /^@tomat\/shared$/, replacement: `${SHARED_SRC}/index.ts` },
+      // the bare-root exact match so "@loca/shared/ui/x" maps into the dir.
+      { find: "@loca/shared/ui", replacement: `${SHARED_SRC}/ui` },
+      { find: /^@loca\/shared$/, replacement: `${SHARED_SRC}/index.ts` },
       { find: "$lib", replacement: `${CLIENT_UI}/lib` },
       { find: "$components", replacement: `${CLIENT_UI}/components` },
       { find: "$composables", replacement: `${CLIENT_UI}/composables` },

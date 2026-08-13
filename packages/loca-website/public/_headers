@@ -1,0 +1,10 @@
+# Security headers for the landing page (Cloudflare static assets honor this
+# file). The site is a static marketing page with no user content, so these are
+# safe to apply broadly. Release artifacts are served from the R2 origin
+# (get.loca.rzkyif.com), which is configured separately.
+/*
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'

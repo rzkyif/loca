@@ -1,4 +1,4 @@
-# Tomat test suite
+# Loca test suite
 
 Tests live co-located with source as `*.test.ts`. E2E specs are opt-in and live
 under `tests/e2e/` (two lanes: a headless integration lane and a tauri-driver
@@ -25,9 +25,9 @@ CI.
 | Task                          | What it runs                                                                                                                                                                |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deno task test`              | All tests across every package (Deno test + vitest + cargo test).                                                                                                           |
-| `deno task test:core`         | Just `tomat-core`.                                                                                                                                                          |
-| `deno task test:shared`       | Just `tomat-shared`.                                                                                                                                                        |
-| `deno task test:client`       | Vitest against the Svelte 5 UI + the Tauri crate's `cargo test` (`packages/tomat-client`).                                                                                  |
+| `deno task test:core`         | Just `loca-core`.                                                                                                                                                           |
+| `deno task test:shared`       | Just `loca-shared`.                                                                                                                                                         |
+| `deno task test:client`       | Vitest against the Svelte 5 UI + the Tauri crate's `cargo test` (`packages/loca-client`).                                                                                   |
 | `deno task test:<crate>`      | `cargo test` for one Rust crate, e.g. `test:core-keychain`, `test:core-updater`.                                                                                            |
 | `deno task test:e2e:headless` | Headless integration E2E (real app in Chromium <-> real core over TLS, deps mocked). Manual only, primary lane. See [tests/e2e/headless/README.md](e2e/headless/README.md). |
 | `deno task test:e2e`          | tauri-driver smoke (real Tauri shell via WebdriverIO). Manual only, thin native lane. See [tests/e2e/tauri-driver/README.md](e2e/tauri-driver/README.md).                   |
@@ -45,7 +45,7 @@ detail is still printed in full. See "Gate output" in
 ```
 packages/<pkg>/src/foo.test.ts           # co-located test
 packages/<pkg>/src/foo.tmp.test.ts       # scratch test (gitignored)
-packages/tomat-core/tests/
+packages/loca-core/tests/
   fixtures/sidecars/http-stub.ts         # reusable fake sidecar
   fixtures/openai/*.sse                  # recorded SSE for llmProvider tests
   helpers/db.ts                          # setupTestEnv(): tempdir DB harness
@@ -70,7 +70,7 @@ app boot; the co-located unit + component suites are the everyday tools.
 
 - **Headless integration** (`test:e2e:headless`, the primary lane) mounts the
   real Svelte app in a real Chromium and drives it over real HTTP+WS+TLS against
-  a real spawned `tomat-core`, with every outbound dependency (LLM/STT/TTS,
+  a real spawned `loca-core`, with every outbound dependency (LLM/STT/TTS,
   model + binary downloads) mocked locally. It is fast, deterministic, and
   cross-platform, and is where happy-path coverage lives. The harness is a
   library so specs read at a high level (`launchApp(...)` + page objects).
@@ -87,7 +87,7 @@ cannot be faithfully unit-tested (a wrong-code PAKE rejection, a provider error
 mid-stream, a dropped-and-recovered connection). Any sad path with a faithful
 seam belongs in a co-located unit/component test, not here.
 
-## Writing tests against `tomat-core`
+## Writing tests against `loca-core`
 
 Any test that touches the DB or service singletons should look like this:
 
@@ -110,7 +110,7 @@ Deno.test("AuthService.mintPairingCode: returns 6-digit code", async () => {
 
 What `setupTestEnv()` does:
 
-1. Creates a tempdir, points `TOMAT_CORE_HOME` at it.
+1. Creates a tempdir, points `LOCA_CORE_HOME` at it.
 2. Opens a fresh SQLite DB and runs migrations.
 3. Inserts a synthetic logger setup (console-only, no rotating file handler).
 4. The returned `teardown()` closes the DB, resets every module-level singleton
@@ -157,11 +157,11 @@ const endpoint = {
 
 HuggingFace, npm registry, signed manifests: same pattern, inject a fake at the
 HTTP boundary. Recorded SSE responses go under
-`packages/tomat-core/tests/fixtures/openai/*.sse`.
+`packages/loca-core/tests/fixtures/openai/*.sse`.
 
 ## Sidecar fixtures
 
-The fake server at `packages/tomat-core/tests/fixtures/sidecars/http-stub.ts` is
+The fake server at `packages/loca-core/tests/fixtures/sidecars/http-stub.ts` is
 a 10-line Deno script that binds `127.0.0.1:<port>` and serves a 200 on every
 path, matching the readiness contract every sidecar promises. To stand a
 sidecar-shaped subprocess up in a test:
@@ -220,8 +220,8 @@ Gotchas:
 ## Writing Rust tests
 
 Inline `#[cfg(test)] mod tests` for unit tests. The `KeychainStore` trait in
-both `tomat-core-keychain/src/main.rs` and
-`packages/tomat-client/src/tauri/src/commands/keychain.rs` is the pattern for
+both `loca-core-keychain/src/main.rs` and
+`packages/loca-client/src/tauri/src/commands/keychain.rs` is the pattern for
 any test that would otherwise touch a platform API: define a small trait, ship a
 `Real*` impl that wraps the real crate, and ship an `InMemory*` test impl. The
 same pattern works for filesystem (write to a tempdir under `env::temp_dir()`),

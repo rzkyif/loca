@@ -1,0 +1,37 @@
+/* Client-only rules. The design system (color ladders, bubble visuals,
+   roundedness, range/scrollbar chrome, fonts) lives in
+   @loca/shared/ui/styles/base.css, imported just before this file in
+   +layout.svelte. Only rules specific to the transparent Tauri window and the
+   SvelteKit app shell belong here. */
+
+html,
+body {
+  /* The window-show/hide animation translates content off-viewport. Without
+     this clamp, the browser would surface horizontal/vertical scrollbars on
+     body to let the user scroll to the temporarily-off-screen UI. */
+  overflow: hidden;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* iOS safe-area insets. Android injects --safe-area-inset-* natively from
+   MainActivity; iOS has no such layer, so map the vars to the WebView's native
+   env() values (exposed by viewport-fit=cover in app.html). Gated on the
+   .platform-ios class (added in +layout.svelte) so it never overrides Android's
+   injected values, where env() is unsupported and would read 0. --keyboard-inset
+   is set from the visual viewport in +layout.svelte. */
+.platform-ios {
+  --safe-area-inset-top: env(safe-area-inset-top);
+  --safe-area-inset-right: env(safe-area-inset-right);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --safe-area-inset-left: env(safe-area-inset-left);
+}
+
+/* One-frame cursor cache buster applied by clickthrough.ts when the window
+   resumes capturing mouse events; see forceCursorRefresh there. */
+.cursor-refresh,
+.cursor-refresh * {
+  cursor: default !important;
+}

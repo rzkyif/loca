@@ -1,0 +1,13 @@
+{
+  "name": "loca-extension-samples",
+  "version": "0.1.0",
+  "tasks": {
+    "check": "deno check index.ts",
+    "test:js": "deno test --allow-all --no-check --quiet --reporter=dot",
+    "test": "deno task test:js"
+  },
+  "exports": "./index.ts",
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.0"
+  }
+}

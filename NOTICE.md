@@ -1,27 +1,27 @@
 # Notice
 
-Tomat is licensed under [AGPL-3.0-only](LICENSE). It incorporates and/or
+Loca is licensed under [AGPL-3.0-only](LICENSE). It incorporates and/or
 distributes the following third-party components. Each is licensed separately;
 please consult the upstream project for its full license text.
 
 ## Binaries downloaded at runtime
 
-`tomat-core` fetches these compiled binaries from the Tomat CDN on first use.
+`loca-core` fetches these compiled binaries from the Loca CDN on first use.
 They are not part of this repository.
 
 | Component                                           | Upstream                                   | License          |
 | --------------------------------------------------- | ------------------------------------------ | ---------------- |
 | llama.cpp (`llama-server`)                          | <https://github.com/ggml-org/llama.cpp>    | MIT              |
 | ggml (shared libraries shipped with `llama-server`) | <https://github.com/ggml-org/ggml>         | MIT              |
-| sherpa-onnx (`tomat-core-speech`)                   | <https://github.com/k2-fsa/sherpa-onnx>    | Apache-2.0       |
+| sherpa-onnx (`loca-core-speech`)                    | <https://github.com/k2-fsa/sherpa-onnx>    | Apache-2.0       |
 | ONNX Runtime (statically linked into the above)     | <https://github.com/microsoft/onnxruntime> | MIT              |
-| espeak-ng + data (bundled with `tomat-core-speech`) | <https://github.com/espeak-ng/espeak-ng>   | GPL-3.0-or-later |
+| espeak-ng + data (bundled with `loca-core-speech`)  | <https://github.com/espeak-ng/espeak-ng>   | GPL-3.0-or-later |
 | Deno runtime (`deno`)                               | <https://github.com/denoland/deno>         | MIT              |
 
-The `tomat-core-speech` binary statically links espeak-ng, which is licensed
+The `loca-core-speech` binary statically links espeak-ng, which is licensed
 under GPL-3.0-or-later. As required by that license, the corresponding source
 for espeak-ng is available at <https://github.com/espeak-ng/espeak-ng>, at the
-revision bundled by sherpa-onnx 1.13.2 (the version Tomat builds against). Tomat
+revision bundled by sherpa-onnx 1.13.2 (the version Loca builds against). Loca
 does not modify espeak-ng.
 
 LLM, speech-to-text, and text-to-speech model weights are also downloaded at
@@ -30,7 +30,7 @@ time.
 
 ## Bundled with the desktop client
 
-These ship inside the `tomat-client` application bundle.
+These ship inside the `loca-client` application bundle.
 
 | Component                                     | Upstream                                   | License |
 | --------------------------------------------- | ------------------------------------------ | ------- |
@@ -40,8 +40,8 @@ These ship inside the `tomat-client` application bundle.
 
 ## Application dependencies
 
-`tomat-core` and `tomat-client` bundle npm and JSR packages into their compiled
-output; `tomat-client` and `tomat-core-keychain` additionally link Rust crates.
+`loca-core` and `loca-client` bundle npm and JSR packages into their compiled
+output; `loca-client` and `loca-core-keychain` additionally link Rust crates.
 All are declared in the per-package `deno.json` and `Cargo.toml` files. The most
 significant are:
 

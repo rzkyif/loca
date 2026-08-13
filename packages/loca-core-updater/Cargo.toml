@@ -1,0 +1,17 @@
+[package]
+name = "loca-core-updater"
+version = "0.1.0"
+edition = "2021"
+description = "Self-update swap helper for loca-core. Spawned by core's self-updater to wait for core to exit, atomically rename a staged binary over the running one (renaming the old binary aside on Windows), then relaunch core detached. Standalone binary so the swap survives the parent exiting; pure-Rust deps keep it tiny and cross-compilable."
+publish = false
+
+[dependencies]
+serde_json = "1"
+time = { version = "0.3", features = ["formatting"] }
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"

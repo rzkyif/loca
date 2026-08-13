@@ -1,0 +1,50 @@
+---
+title: Dual Model
+section: Models
+order: 2
+---
+
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+
+A fast Local model answers most things well, but the occasional hard question wants
+a stronger one. **Dual Model** lets you keep both without choosing up front: simple
+messages stay on your fast default model, and only the complex ones are routed to a
+stronger secondary model. Loca makes that call per message, so you never switch by
+hand.
+
+<SettingsPanelDemo group="dualModel" />
+
+## How the choice is made
+
+Before answering, Loca checks how involved your message is and routes it
+accordingly. That check is itself a prompt, the **Complexity Check**, which lives
+in the same [Prompts](/manual/conversation/system-prompt) group as your system
+prompt, so you can see and adjust the rule that decides what counts as complex. A
+short, factual question stays on the fast model; a multi-step or open-ended one
+goes to the stronger one.
+
+The point is to spend the stronger model only where it earns its keep. Simple turns
+stay fast and cheap on your default model, while the hard turns get the capability
+they need, without you watching the conversation to decide which is which.
+
+## When to use it
+
+Dual Model pays off when your two models differ enough to be worth choosing
+between: a quick Local model for everyday replies paired with a more capable one,
+Local or External, for the hard cases. If you only run a single model, there is
+nothing to route to, and you can leave this off.
+
+## How It Works
+
+The complexity check is a small extra turn that runs before the real one. Loca
+sends your message to a model with the Complexity Check prompt, which asks for a
+single quick judgment of how involved the request is, and reads the answer as a
+score. That score decides which model handles the actual reply: below the line it
+stays on your default, above it the turn is handed to the secondary model. Because
+the judgment happens per message, a single session can move back and forth between
+the two models turn by turn, spending the heavier one only when a message warrants
+it.
+
+With your models settled, the next chapters cover the other things that shape a
+reply, starting with talking to Loca by voice:
+[Speech-to-Text](/manual/speech/speech-to-text).

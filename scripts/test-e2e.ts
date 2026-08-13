@@ -6,7 +6,7 @@
 //
 // One-time setup the agent / dev must complete before this runs cleanly:
 //   1. cargo install tauri-driver --locked
-//   2. deno task build:client          # produces packages/tomat-client/...debug/tomat
+//   2. deno task build:client          # produces packages/loca-client/...debug/loca
 //   3. cd tests/e2e/tauri-driver && npm i @wdio/cli @wdio/local-runner @wdio/mocha-framework @wdio/spec-reporter webdriverio
 //      (kept out of the workspace deno.json so E2E stays opt-in)
 //

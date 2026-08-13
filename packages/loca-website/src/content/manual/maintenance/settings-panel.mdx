@@ -1,0 +1,47 @@
+---
+title: The Settings Panel
+section: Cores & Maintenance
+order: 1
+---
+
+import SettingsSidebarDemo from "../../../components/demos/SettingsSidebarDemo.svelte";
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+
+Everything you can configure in Loca lives in one settings panel, grouped by
+concern in a sidebar down the side. Most of the chapters in this manual end at a
+group in this panel, so knowing how it is laid out, and where each setting is
+actually stored, makes the rest easier to navigate.
+
+<SettingsSidebarDemo />
+
+## Groups and search
+
+Pick a group in the sidebar to see its settings, or search to jump straight to one
+by name when you know what you want but not where it lives. The panel stays
+uncluttered on purpose: most descriptions sit behind a small info button, so a
+group shows its controls plainly and reveals the detail only when you ask for it.
+
+<SettingsPanelDemo />
+
+This is the same panel every `Settings` link in this manual points into; the demos
+throughout are individual groups from it, rendered exactly as they appear here.
+
+## Where settings live
+
+Settings split between the two halves of Loca, and the panel tells you which side
+each one is on. Some settings belong to this **Client**, like how the app looks;
+others belong to the **Core** that does the work, like which model answers you. A
+badge on each group marks the side a setting is saved on.
+
+That distinction is not cosmetic. A Client setting travels with this app, so it
+follows you to a different Core; a Core setting lives with the Core, so it is the
+same no matter which Client connects. It is the same split described in
+[The Basics](/manual/getting-started/basics), made visible at the point you change
+something.
+
+Only the values you actually change are stored, so a fresh install starts from
+clean defaults and your settings file stays small, holding your decisions rather
+than a copy of every default.
+
+The rest of this chapter covers the housekeeping around the app, starting with the
+Core that does its work: [Cores and Pairing](/manual/maintenance/cores).

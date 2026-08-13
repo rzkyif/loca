@@ -76,12 +76,12 @@ async function manifestAssets(
 
 function releaseBody(channel: ReleaseChannel, items: GithubReleaseInput["items"]): string {
   const lines = [
-    `Automated **${channel}** channel release, mirrored from the R2 distribution (\`get.au.tomat.ing\`).\n`,
+    `Automated **${channel}** channel release, mirrored from the R2 distribution (\`get.loca.rzkyif.com\`).\n`,
     `Published items:`,
     "",
     ...items.map((i) => `- ${i.label} v${i.version}`),
     "",
-    `Follow the installation instructions at https://au.tomat.ing/install/`,
+    `Follow the installation instructions at https://loca.rzkyif.com/install/`,
   ];
   return lines.join("\n");
 }
@@ -94,7 +94,7 @@ export async function publishGithubRelease(
   step(`Mirroring to the rolling "${channel}" GitHub Release`);
 
   const tag = channel; // "latest" | "stable"
-  const title = `Tomat ${channel}`;
+  const title = `Loca ${channel}`;
   const sha = await targetSha();
   const body = releaseBody(channel, input.items);
 
@@ -171,12 +171,12 @@ export async function publishGithubRelease(
 
   // GitHub keys a release asset by its FILENAME, and `path#label` only sets a
   // display label - the stored name stays the file's basename. Several artifacts
-  // share a basename across triples (tomat-core-latest.gz, tomat-latest.app.tar.gz,
+  // share a basename across triples (loca-core-latest.gz, loca-latest.app.tar.gz,
   // ...), so uploading them directly makes gh clobber same-named files in parallel
   // and 404. Stage each under its already-unique flat name (a.name) so every
   // uploaded filename is distinct.
   info(`attaching ${assets.length} asset(s) to ${tag}`);
-  const uploadDir = await Deno.makeTempDir({ prefix: "tomat-ghrel-" });
+  const uploadDir = await Deno.makeTempDir({ prefix: "loca-ghrel-" });
   const uploadFiles: string[] = [];
   for (const a of assets) {
     const staged = join(uploadDir, a.name);

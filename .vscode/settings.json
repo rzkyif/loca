@@ -1,11 +1,11 @@
 {
   "deno.enablePaths": [
-    "packages/tomat-shared",
-    "packages/tomat-core-engine",
-    "packages/tomat-core",
-    "packages/tomat-extension-builtin",
-    "packages/tomat-extension-samples",
-    "packages/tomat-model-catalog",
+    "packages/loca-shared",
+    "packages/loca-core-engine",
+    "packages/loca-core",
+    "packages/loca-extension-builtin",
+    "packages/loca-extension-samples",
+    "packages/loca-model-catalog",
     "scripts"
   ],
   "deno.lint": false,

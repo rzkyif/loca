@@ -1,0 +1,28 @@
+# Cloudflare Workers configuration for the loca-website.
+#
+# Static-assets-only deploy: no Worker script, just the built Astro output
+# served directly by Cloudflare's Static Assets runtime. The R2 bucket
+# holding compiled binaries (get.loca.rzkyif.com) is configured separately as
+# a Public Bucket on its own custom domain; it does NOT route through this
+# Worker (zero-cost direct fetch).
+#
+# Custom domain `loca.rzkyif.com` is attached via the `routes` array below.
+# This requires `wrangler` to be authenticated against an account that
+# owns the `loca.ing` zone (run `wrangler login` once).
+
+name = "loca-website"
+compatibility_date = "2026-05-20"
+
+# Attach loca.rzkyif.com as a Custom Domain. Cloudflare manages the DNS
+# record automatically; you only need the zone in your CF account.
+# `routes` MUST be top-level (not inside [assets]). TOML scoping rules
+# would otherwise place it under the preceding [assets] header, where
+# wrangler ignores it with a warning.
+routes = [{ pattern = "loca.rzkyif.com", custom_domain = true }]
+
+[assets]
+# Astro builds into ./dist; wrangler serves every file from there at the
+# corresponding URL path. SPA-style fallback is off, so 404s render Astro's
+# 404 page (when we add one) rather than rewriting to index.html.
+directory = "./dist"
+not_found_handling = "404-page"

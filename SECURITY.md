@@ -1,8 +1,8 @@
 # Security Policy
 
-Tomat is a local-first desktop app: a Deno service (`tomat-core`) that owns all
+Loca is a local-first desktop app: a Deno service (`loca-core`) that owns all
 state and compute, paired with a deliberately thin Tauri + Svelte client
-(`tomat-client`), plus helper binaries, a bundled extension, and a Cloudflare/R2
+(`loca-client`), plus helper binaries, a bundled extension, and a Cloudflare/R2
 distribution site. The interesting attack surface is binary and model
 provenance, secret handling, the local HTTPS/WSS API, multi-client pairing auth,
 and the third-party tool sandbox. This document describes the security posture,
@@ -11,7 +11,7 @@ the trust boundaries we rely on, and the limitations we knowingly accept.
 ## Reporting a vulnerability
 
 Please **do not** open a public issue for security-sensitive reports. Instead,
-email the maintainer at [security@au.tomat.ing](mailto:security@au.tomat.ing).
+email the maintainer at [rizky@rzkyif.com](mailto:rizky@rzkyif.com).
 Include:
 
 - A description of the issue and the impact you believe it has.
@@ -125,7 +125,7 @@ core or flow into a sidecar argument), and external base-URL fields must be
 HTTPS or loopback HTTP. `server.bindHost` is deliberately **not** a schema
 setting: a paired client must never be able to widen the core's network exposure
 over the API, so the bind interface can only be changed by editing
-`settings.json` on disk or via the `TOMAT_CORE_HOST` env var.
+`settings.json` on disk or via the `LOCA_CORE_HOST` env var.
 
 **Binary, model, and self-update provenance.** The helper-binary manifest
 (`binaries.json`) and the core self-update manifest (`core.json`) are
@@ -154,7 +154,7 @@ npm lifecycle scripts never execute; tools install default-disabled and
 ungranted; and worker stdout/stderr are size-capped.
 
 **Sidecars.** `llama-server` (chat plus a second instance for embeddings) and
-`tomat-core-speech` (Speech-to-Text + Text-to-Speech) are spawned without a
+`loca-core-speech` (Speech-to-Text + Text-to-Speech) are spawned without a
 shell and inherit only an allowlist of OS-essential environment variables (not
 the core's full environment, which can carry operator secrets like
 `GITHUB_TOKEN`). The llama.cpp web UI is only enabled when the server binds
@@ -229,7 +229,7 @@ gitignored `.env`; only public keys are committed.
   still allows a broad `https:` (no live XSS chain makes this exploitable today,
   and core traffic bypasses the webview via the Rust net layer anyway), the
   `convert_file_to_markdown` command is not path-restricted, the fs capability
-  spans `~/.tomat/**`, and the signed binary manifest does not yet bind the
+  spans `~/.loca/**`, and the signed binary manifest does not yet bind the
   release channel or a monotonic timestamp (a replay would require a compromised
   CDN or TLS MITM, and the core's own downgrade guard rejects older versions).
   These are tracked hardening items.
@@ -239,11 +239,11 @@ gitignored `.env`; only public keys are committed.
 - Keep `server.bindHost` at `127.0.0.1` unless you specifically need LAN
   pairing. Traffic is TLS-encrypted and pinned either way, but widening the bind
   still exposes the pairing and health endpoints to the network. Changing it
-  requires editing `settings.json` on disk (or `TOMAT_CORE_HOST`); it cannot be
+  requires editing `settings.json` on disk (or `LOCA_CORE_HOST`); it cannot be
   changed over the API.
 - Grant extension permissions as narrowly as possible. Be especially cautious
   with `run`, `ffi`, and broad `read`/`write` paths.
-- Back up `~/.tomat/<channel>/core/.master-key` if it exists (the
+- Back up `~/.loca/<channel>/core/.master-key` if it exists (the
   keychain-sealed path needs no backup); losing it loses all stored secrets.
 - Prefer the secrets vault over plaintext values in `settings.json` for API
   keys.
@@ -254,7 +254,7 @@ gitignored `.env`; only public keys are committed.
 In-scope:
 
 - The Tauri host (Rust) and its commands, capabilities, and CSP.
-- The `tomat-core` Deno service and its HTTP and WebSocket surface.
+- The `loca-core` Deno service and its HTTP and WebSocket surface.
 - The binary and model download and verification flow (Ed25519-signed
   manifests).
 - Secret handling (API keys in the vault / OS keychain).

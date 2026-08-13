@@ -1,6 +1,6 @@
 # External dependencies (break-glass reference)
 
-Tomat's model catalog and its manifest / update / binary-download paths depend
+Loca's model catalog and its manifest / update / binary-download paths depend
 on third-party services and providers whose download URLs, API response shapes,
 HTTP headers, and asset names are outside our control. When one of them changes,
 a build or a user download breaks. This file is the map to fix it fast.
@@ -26,8 +26,8 @@ Reading each row:
 ### HuggingFace resolve URL
 
 - **Used for:** every model weight / mmproj / speech-model download.
-- **Code:** [sources.ts:49](packages/tomat-core/src/downloads/sources.ts#L49)
-  builds the URL; [manager.ts](packages/tomat-core/src/downloads/manager.ts)
+- **Code:** [sources.ts:49](packages/loca-core/src/downloads/sources.ts#L49)
+  builds the URL; [manager.ts](packages/loca-core/src/downloads/manager.ts)
   runs the download.
 - **Assumes:**
   `https://huggingface.co/{user}/{repo}/resolve/{branch}/{file}?download=true`
@@ -41,9 +41,9 @@ Reading each row:
 - **Used for:** probing a download's size before fetching, and verifying its
   sha256 against HF + TLS.
 - **Code:**
-  [sources.ts:66-122](packages/tomat-core/src/downloads/sources.ts#L66-L122)
+  [sources.ts:66-122](packages/loca-core/src/downloads/sources.ts#L66-L122)
   reads `x-linked-size` (falling back to `content-length`);
-  [manager.ts:694-716](packages/tomat-core/src/downloads/manager.ts#L694-L716)
+  [manager.ts:694-716](packages/loca-core/src/downloads/manager.ts#L694-L716)
   reads `x-linked-etag` (falling back to `etag`) for the LFS content sha256.
 - **Assumes:** the resolve endpoint 302-redirects and exposes `x-linked-size` /
   `x-linked-etag` on the HEAD response.
@@ -61,7 +61,7 @@ Reading each row:
 - **Fails as:** `deno run -A scripts/catalog/gather-hashes.ts` errors or pins
   wrong / missing hashes.
 - **Fix:** see the Content hashes section of the
-  [model-catalog README](packages/tomat-model-catalog/README.md); update the
+  [model-catalog README](packages/loca-model-catalog/README.md); update the
   fetch + shape in `gather-hashes.ts`.
 
 ### GGUF header format (curation time)
@@ -79,7 +79,7 @@ Reading each row:
 
 - **Used for:** which quants exist for each LLM family.
 - **Code:**
-  [packages/tomat-model-catalog/src/families/](packages/tomat-model-catalog/src/families/).
+  [packages/loca-model-catalog/src/families/](packages/loca-model-catalog/src/families/).
 - **Assumes:** `@unsloth/<repo>/main/<Model>-<QUANT>.gguf` and `mmproj-F16.gguf`
   naming on the `main` branch.
 - **Fails as:** a download 404s, or the file is missing at curation time.
@@ -89,8 +89,8 @@ Reading each row:
 ### csukuangfj sherpa-onnx STT/TTS repos + file roles
 
 - **Used for:** speech-to-text and text-to-speech model files.
-- **Code:** [stt.ts](packages/tomat-model-catalog/src/stt.ts),
-  [tts.ts](packages/tomat-model-catalog/src/tts.ts).
+- **Code:** [stt.ts](packages/loca-model-catalog/src/stt.ts),
+  [tts.ts](packages/loca-model-catalog/src/tts.ts).
 - **Assumes:** per-family repo names and file roles (whisper:
   encoder/decoder/tokens; kokoro: model/voices/tokens; etc.) and the int8 / fp16
   / fp32 quant naming.
@@ -101,8 +101,8 @@ Reading each row:
 ### Artificial Analysis intelligence-index scores
 
 - **Used for:** ranking models in the fit engine (Smallest / Half / Full).
-- **Code:** `packages/tomat-model-catalog/src/families/*` (hand-entered values),
-  `packages/tomat-model-catalog/src/fit.ts` (the `intelligence-index` selector).
+- **Code:** `packages/loca-model-catalog/src/families/*` (hand-entered values),
+  `packages/loca-model-catalog/src/fit.ts` (the `intelligence-index` selector).
 - **Assumes:** the `intelligence-index` metric keeps existing at
   <https://artificialanalysis.ai>. Values are hand-entered, not fetched at
   runtime, so nothing breaks live; the risk is stale or discontinued scores.
@@ -116,10 +116,10 @@ Reading each row:
 
 - **Used for:** the `llama-server` sidecar (chat + embeddings).
 - **Code:**
-  [model.ts:101-129](packages/tomat-shared/src/domain/model.ts#L101-L129)
+  [model.ts:101-129](packages/loca-shared/src/domain/model.ts#L101-L129)
   (`UPSTREAM_BINARIES`, the single source of truth for repo + per-triple asset
   patterns),
-  [upstream-resolver.ts:100-129](packages/tomat-core/src/binaries/upstream-resolver.ts#L100-L129).
+  [upstream-resolver.ts:100-129](packages/loca-core/src/binaries/upstream-resolver.ts#L100-L129).
 - **Assumes:** `api.github.com/repos/ggml-org/llama.cpp/releases/latest` returns
   `{ tag_name, assets[] }`, and the asset is named `llama-{tag}-bin-<platform>`
   per the `assets` map.
@@ -130,19 +130,19 @@ Reading each row:
 
 - **Used for:** running tool workers under a pinned runtime.
 - **Code:**
-  [model.ts:113-128](packages/tomat-shared/src/domain/model.ts#L113-L128).
+  [model.ts:113-128](packages/loca-shared/src/domain/model.ts#L113-L128).
 - **Assumes:** `releases/tags/v2.8.2` exists with `deno-{triple}.zip` assets.
 - **Fails as:** worker runtime download fails if the tag / assets vanish.
 - **Fix:** bump `pinnedTag` deliberately, then **re-run the live-probe test**
-  ([prompt-live-probe.test.ts](packages/tomat-core/src/extensions/prompt-live-probe.test.ts))
+  ([prompt-live-probe.test.ts](packages/loca-core/src/extensions/prompt-live-probe.test.ts))
   because tool-permission prompts are parsed from this version's prompt wording
-  ([prompt-parser.ts](packages/tomat-core/src/extensions/prompt-parser.ts)).
+  ([prompt-parser.ts](packages/loca-core/src/extensions/prompt-parser.ts)).
 
 ### GitHub release JSON shape + rate-limiting
 
 - **Used for:** resolving every upstream sidecar (the two above).
 - **Code:**
-  [upstream-resolver.ts:22-94](packages/tomat-core/src/binaries/upstream-resolver.ts#L22-L94).
+  [upstream-resolver.ts:22-94](packages/loca-core/src/binaries/upstream-resolver.ts#L22-L94).
 - **Assumes:** the `GitHubRelease` / `GitHubReleaseAsset` shape, and that
   `assets[].digest` is `sha256:...` (required to install on the latest channel).
   Unauthenticated GitHub is rate-limited (~60/hr); `GITHUB_TOKEN` raises it and
@@ -155,7 +155,7 @@ Reading each row:
 ### espeak-ng-data (mutable rolling tag)
 
 - **Used for:** the text-to-speech phonemizer data packed into
-  `tomat-core-speech` at release time.
+  `loca-core-speech` at release time.
 - **Code:** `scripts/release/core.ts` (`ESPEAK_DATA_SHA256`).
 - **Assumes:**
   `github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2`
@@ -169,14 +169,14 @@ Reading each row:
 ### Archive formats
 
 - **Used for:** extracting downloaded sidecars.
-- **Code:** [binaries/manager.ts](packages/tomat-core/src/binaries/manager.ts).
-- **Assumes:** `.tar.gz` (llama.cpp, tomat-core-speech) and `.zip` (deno,
+- **Code:** [binaries/manager.ts](packages/loca-core/src/binaries/manager.ts).
+- **Assumes:** `.tar.gz` (llama.cpp, loca-core-speech) and `.zip` (deno,
   Windows llama) layouts with the executable + shared libs as documented in
-  [sidecars/README.md](packages/tomat-core/src/sidecars/README.md).
+  [sidecars/README.md](packages/loca-core/src/sidecars/README.md).
 - **Fails as:** extraction finds no executable / missing libs after a download.
 - **Fix:** adjust the extraction layout in `binaries/manager.ts`.
 
-## 3. Tomat distribution (Cloudflare R2) + trust root
+## 3. Loca distribution (Cloudflare R2) + trust root
 
 These are ours, not third-party, but the hostname / path layout and the signing
 key are hard contracts between the release scripts and every installed core, so
@@ -185,31 +185,31 @@ they belong on the same map.
 ### R2 storage host + manifest paths
 
 - **Used for:** fetching every signed manifest and release artifact.
-- **Code:** [config.ts:17-47](packages/tomat-core/src/config.ts#L17-L47).
+- **Code:** [config.ts:17-47](packages/loca-core/src/config.ts#L17-L47).
 - **Assumes:**
-  `get.au.tomat.ing/{manifests/<channel>/}{core,binaries,extension,catalog}.json`
+  `get.loca.rzkyif.com/{manifests/<channel>/}{core,binaries,extension,catalog}.json`
   (stable is bare; latest/dev nest under the channel).
 - **Fails as:** all update / catalog / extension fetches fail.
 - **Fix:** all hardcoded hosts live in `config.ts`; changing them is a one-file
   edit. R2 / Cloudflare setup is in the
-  [website README](packages/tomat-website/README.md).
+  [website README](packages/loca-website/README.md).
 
 ### Ed25519 trust root
 
 - **Used for:** verifying every signed manifest and the model catalog.
 - **Code:** public key in
-  [data/signing-keys.json](packages/tomat-core/data/signing-keys.json), verified
-  in [self-updater.ts](packages/tomat-core/src/update/self-updater.ts),
-  [binaries/manifest.ts](packages/tomat-core/src/binaries/manifest.ts),
-  [extensions/seeded-manifest.ts](packages/tomat-core/src/extensions/seeded-manifest.ts),
-  and [models/catalog.ts](packages/tomat-core/src/models/catalog.ts).
+  [data/signing-keys.json](packages/loca-core/data/signing-keys.json), verified
+  in [self-updater.ts](packages/loca-core/src/update/self-updater.ts),
+  [binaries/manifest.ts](packages/loca-core/src/binaries/manifest.ts),
+  [extensions/seeded-manifest.ts](packages/loca-core/src/extensions/seeded-manifest.ts),
+  and [models/catalog.ts](packages/loca-core/src/models/catalog.ts).
 - **Assumes:** the committed public key matches the private key that signs
   releases; signatures cover the whole payload minus the `signature` field,
   canonicalized.
 - **Fails as:** `signature_invalid` on update / catalog load across the board.
 - **Fix:** the signing flow and trust root are documented in the
-  [update README](packages/tomat-core/src/update/README.md) and the
-  [website README](packages/tomat-website/README.md). Listed here only so the
+  [update README](packages/loca-core/src/update/README.md) and the
+  [website README](packages/loca-website/README.md). Listed here only so the
   cross-cutting verification path is discoverable from one place.
 
 ### Android APK self-update (`android.json` + Java keystore)
@@ -218,14 +218,14 @@ they belong on the same map.
   Android support, so this path is bespoke).
 - **Code:** manifest published by
   [release/android.ts](scripts/release/android.ts); verified + installed by
-  [mobile.ts](packages/tomat-client/src/ui/lib/platform/mobile.ts)
+  [mobile.ts](packages/loca-client/src/ui/lib/platform/mobile.ts)
   (`checkAndroidUpdate`), which checks `android.json.sig` (Ed25519, same public
   key as above) and the per-ABI `sha256` before handing the APK to Android's
   package installer.
 - **Assumes:**
-  `get.au.tomat.ing/{manifests/<channel>/}android.json` (+ `.sig`) and the APK at
-  `{channel-prefix}/v<ver>/<abi>/tomat.apk`. The APK is signed by a Java keystore
-  (base64 in `.env` as `TOMAT_ANDROID_KEYSTORE_B64`); Android rejects an update
+  `get.loca.rzkyif.com/{manifests/<channel>/}android.json` (+ `.sig`) and the APK at
+  `{channel-prefix}/v<ver>/<abi>/loca.apk`. The APK is signed by a Java keystore
+  (base64 in `.env` as `LOCA_ANDROID_KEYSTORE_B64`); Android rejects an update
   not signed by the same key as the install, so a keystore change breaks
   upgrades for already-installed users.
 - **Fails as:** the in-app updater silently returns "no update" (signature or

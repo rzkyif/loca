@@ -8,7 +8,7 @@
 #
 # Build it (from the repo root):
 #
-#   podman build --platform linux/arm64 -t tomat-linux-build:latest \
+#   podman build --platform linux/arm64 -t loca-linux-build:latest \
 #     -f scripts/release/drivers/linux/Containerfile scripts/release/drivers/linux
 #
 # The driver bind-mounts the repo at /work and runs scripts/build-release-bundle.ts
@@ -147,14 +147,14 @@ RUN mkdir -p /opt/tauri-cache/tauri \
 # override, so on this arm64 host it would grab the container's arm64 libs (or fail
 # when an x86_64-only file like libayatana-appindicator3.so.1 / the webkit2gtk-4.1
 # helper binaries are absent). Two image-side fixes give it the x86_64 view:
-#   (1) a `uname` shim reporting x86_64 when TOMAT_FAKE_X86=1 (the client build sets
+#   (1) a `uname` shim reporting x86_64 when LOCA_FAKE_X86=1 (the client build sets
 #       it - drivers/podman.ts - so core builds still see the real host arch);
 #   (2) every sysroot x86_64 lib symlinked into the standard multiarch path, WITHOUT
 #       clobbering what's already there (the core build's amd64-multiarch dbus .pc +
 #       .so stay), so appindicator/webkit-helpers/gtk/gdk-pixbuf all resolve there.
 # The plugin's pkg-config lookups are pointed at the sysroot via PKG_CONFIG_PATH in
 # the same per-run env.
-RUN printf '#!/bin/sh\nif [ "$TOMAT_FAKE_X86" = "1" ]; then case "$1" in -m|-i|-p) echo x86_64; exit 0;; esac; fi\nexec /bin/uname "$@"\n' \
+RUN printf '#!/bin/sh\nif [ "$LOCA_FAKE_X86" = "1" ]; then case "$1" in -m|-i|-p) echo x86_64; exit 0;; esac; fi\nexec /bin/uname "$@"\n' \
       > /usr/local/bin/uname \
   && chmod +x /usr/local/bin/uname \
   && for f in /opt/amd64-sysroot/usr/lib/x86_64-linux-gnu/*; do \
@@ -179,7 +179,7 @@ RUN printf '#!/bin/sh\nif [ "$TOMAT_FAKE_X86" = "1" ]; then case "$1" in -m|-i|-
 # simply ignores it. No CUDA toolkit is installed: the archive bundles the GPU
 # onnxruntime + provider .so files, which the cross toolchain links (x86_64 libs
 # for the x64 target) and which load CUDA at runtime on the user's machine. The
-# version MUST match sherpa-onnx in packages/tomat-core-speech/Cargo.toml (and
+# version MUST match sherpa-onnx in packages/loca-core-speech/Cargo.toml (and
 # the CI + windows-provision staging). Baked into the image, so the ~200 MB
 # archive is fetched once at image-build time, not per release run.
 ARG SHERPA_CUDA_VERSION=1.13.3

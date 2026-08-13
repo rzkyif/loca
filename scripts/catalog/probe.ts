@@ -1,5 +1,5 @@
 // Dev tool: probe Unsloth GGUF repos for the data needed to author a
-// `@tomat/model-catalog` family file. For each repo it lists the quant files +
+// `@loca/model-catalog` family file. For each repo it lists the quant files +
 // sizes + mmproj, and range-reads one GGUF header to extract the architecture
 // fields (block/embedding/head counts, head_dim, context length) used by the
 // on-device fit engine's KV-cache math.

@@ -34,7 +34,7 @@ export const websiteItem: ReleaseItem = {
   label: "landing page",
   scope: "shared",
   packages: ["website", "shared"],
-  bumpHint: "packages/tomat-website/deno.json (version)",
+  bumpHint: "packages/loca-website/deno.json (version)",
 
   version: () => readVersionField(join(WEBSITE_DIR, "deno.json")),
   versionFile: join(WEBSITE_DIR, "deno.json"),

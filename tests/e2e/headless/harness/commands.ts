@@ -63,7 +63,7 @@ export async function bringCoreBack(_ctx: unknown, id: string): Promise<void> {
   await cores.get(id)?.restart();
 }
 
-/** Does a path (relative to the core's TOMAT_CORE_HOME) exist? Used to assert a
+/** Does a path (relative to the core's LOCA_CORE_HOME) exist? Used to assert a
  *  download landed. Note the shared models dir resolves to <home>/models. */
 export function coreFileExists(_ctx: unknown, id: string, relPath: string): boolean {
   const core = cores.get(id);

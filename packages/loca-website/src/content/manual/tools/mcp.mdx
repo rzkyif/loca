@@ -1,0 +1,65 @@
+---
+title: MCP Servers
+section: Tools & Knowledge
+order: 3
+---
+
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+import Aside from "../../../components/Aside.astro";
+
+An **MCP server** is the second way tools reach the agent. Where an
+[extension](/manual/tools/extensions) is a bundle Loca installs, an MCP server is a
+separate program that already speaks the Model Context Protocol, and Loca connects
+to it as a provider. If a service you use ships an MCP server, connecting it hands
+its abilities to the agent without anyone packaging them as a Loca extension first.
+
+## Connecting a server
+
+You add and manage servers under **MCP Servers** in Settings. A server connects one
+of two ways:
+
+- A **local command** that Loca runs on your machine, talking to it directly. This
+  is the common case for a server distributed as a program you install.
+- A **remote URL** that Loca reaches over the network, for a server that is already
+  running somewhere you can connect to.
+
+<SettingsPanelDemo group="mcp" />
+
+Once a server is connected, Loca reads what it offers and folds each piece into the
+place you would expect it, so there is nothing new to learn about using it.
+
+## What a server brings
+
+A server can offer three kinds of thing, and each shows up where its Loca
+counterpart already lives:
+
+- **Tools** appear in the [Tools](/manual/tools/tools) group right next to your
+  extension tools, with the same on/off control, the same permissions, and the same
+  relevance ranking. To the agent a tool is a tool, no matter which provider it came
+  from.
+- **Prompts** become `/` commands you trigger in the message box, the same `/` list
+  snippets and commands use. You enable the prompts you want per server, so only the
+  ones you choose show up.
+- **Resources** are `@`-referenceable, sitting in the same `@` list as your
+  memories. Naming one drops its content into your message as reference data.
+
+<Aside type="caution">
+  A local MCP server runs as a program on your machine and a remote one acts on your behalf over the
+  network. Connect servers you trust, the same care you give to installing an extension.
+</Aside>
+
+## How It Works
+
+Loca plays the client side of the Model Context Protocol, a shared language for
+handing tools and data to an agent. For a local server it launches the command you
+gave and talks to it over the program's own input and output streams; for a remote
+one it opens a network connection to the URL, using whatever sign-in the server
+requires, from nothing at all to a token or a full authorization flow. Either way,
+the first thing Loca does on connecting is ask the server to list what it offers,
+and it folds those tools into the very same shortlist that ranks your extension
+tools. That shared list is the whole trick: because an MCP tool and an extension
+tool look identical to the agent by the time it picks one, everything else in this
+manual about tools applies to both without exception.
+
+With both kinds of provider covered, the next chapter is your saved knowledge,
+starting with [Memories](/manual/tools/memories).

@@ -23,7 +23,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { Triple } from "../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../packages/loca-shared/src/domain/model.ts";
 import { bundleCoreArtifacts, writeBundle, writeClientDescriptor } from "./release/artifacts.ts";
 import { ALL_TRIPLES, buildCoreArtifacts } from "./release/core.ts";
 import { buildClientBundle } from "./release/client.ts";

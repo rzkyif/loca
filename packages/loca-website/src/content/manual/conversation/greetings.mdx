@@ -1,0 +1,46 @@
+---
+title: Greetings
+section: Conversation & Automation
+order: 2
+---
+
+import SettingsPanelDemo from "../../../components/demos/SettingsPanelDemo.svelte";
+
+A **greeting** is a prompt Loca runs for you when the app comes up, so you open to
+something useful instead of a blank session. Where a
+[scheduled prompt](/manual/conversation/scheduled-prompts) fires on a clock, a
+greeting fires when you arrive: on launch, and optionally each time you bring the
+window back from hidden. That makes it the right tool for whatever you want to see
+first: a summary of the day ahead, an overnight digest, a reminder of where you
+left off.
+
+## Configuring greetings
+
+Turn greetings on under **Greetings** in Settings and choose when they fire. You
+can greet only when Loca opens itself at login, on every launch, or every time the
+window is shown, so a greeting can stay a once-a-day event or meet you each time you
+call the window up with a shortcut. A cooldown sets the least time between
+greetings, so bringing the window back twice in quick succession still greets you at
+most once.
+
+<SettingsPanelDemo group="greetings" />
+
+You set the instruction Loca follows and the title its session takes, with the
+current date and time filled in for you, so a greeting can say "what is on for
+today" and mean the actual today. The result is an ordinary session: you read it,
+reply, and carry on from there.
+
+## How It Works
+
+A greeting lives on the Client, because the Client is what knows when the app has
+come up. On launch, and on each window reveal when you have chosen to greet then,
+once it is connected to a Core the Client checks whether greetings are on and
+whether this moment matches your trigger, then sends your greeting text as the
+opening message of a fresh session. It holds to your cooldown, so a burst of shows
+cannot open a burst of sessions. The date and time are substituted into that text
+right before it is sent, so the model receives the real moment rather than a
+placeholder. From the Core's side it is an ordinary turn, which is why a greeting
+can do anything a normal message can, including reaching for tools and memories.
+
+Next, a prompt that runs on a clock rather than at launch:
+[Scheduled Prompts](/manual/conversation/scheduled-prompts).

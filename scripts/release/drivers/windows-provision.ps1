@@ -1,4 +1,4 @@
-# Provisions a Windows-on-ARM guest to build tomat-core + helpers + speech for
+# Provisions a Windows-on-ARM guest to build loca-core + helpers + speech for
 # BOTH Windows triples (aarch64- and x86_64-pc-windows-msvc), driven by
 # scripts/release/drivers/windows.ts.
 #
@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 
 # Pins. Deno: the build runtime (its denort is embedded into the core binary).
 $DenoVersion = "2.9.0"
-# Sherpa: must match packages/tomat-core-speech/Cargo.toml's sherpa-onnx version.
+# Sherpa: must match packages/loca-core-speech/Cargo.toml's sherpa-onnx version.
 $SherpaVersion = "1.13.3"
 $SherpaLibName = "sherpa-onnx-v$SherpaVersion-win-arm64-static-MT-Release-lib"
 $SherpaRoot = "C:\sherpa-onnx-libs"

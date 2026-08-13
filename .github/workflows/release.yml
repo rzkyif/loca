@@ -29,12 +29,12 @@ name: Release
 # `main -> latest` promotion. Stable is a promotion of already-bumped versions, so
 # its bump job is a no-op.
 #
-# Required repo secrets: TOMAT_SIGNING_PRIVATE_KEY_B64, TOMAT_SIGNING_PUBLIC_KEY_B64,
+# Required repo secrets: LOCA_SIGNING_PRIVATE_KEY_B64, LOCA_SIGNING_PUBLIC_KEY_B64,
 # TAURI_UPDATER_PUBLIC_KEY, TAURI_UPDATER_PRIVATE_KEY, TAURI_UPDATER_PRIVATE_KEY_PASSWORD,
-# TOMAT_ANDROID_KEYSTORE_B64, TOMAT_ANDROID_KEYSTORE_PASSWORD, TOMAT_ANDROID_KEY_ALIAS,
-# TOMAT_ANDROID_KEY_PASSWORD, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
-# TOMAT_R2_ACCESS_KEY_ID, TOMAT_R2_SECRET_ACCESS_KEY, TOMAT_R2_BUCKET,
-# TOMAT_STORAGE_DOMAIN.
+# LOCA_ANDROID_KEYSTORE_B64, LOCA_ANDROID_KEYSTORE_PASSWORD, LOCA_ANDROID_KEY_ALIAS,
+# LOCA_ANDROID_KEY_PASSWORD, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
+# LOCA_R2_ACCESS_KEY_ID, LOCA_R2_SECRET_ACCESS_KEY, LOCA_R2_BUCKET,
+# LOCA_STORAGE_DOMAIN.
 #
 # Optional Apple secrets (macOS build runners only; every one may be empty and
 # the affected artifact just downgrades - ad-hoc client, unsigned .pkg, iOS
@@ -84,8 +84,8 @@ jobs:
       - name: Plan against the R2 cursor
         id: plan
         env:
-          TOMAT_SIGNING_PUBLIC_KEY_B64: ${{ secrets.TOMAT_SIGNING_PUBLIC_KEY_B64 }}
-          TOMAT_STORAGE_DOMAIN: ${{ secrets.TOMAT_STORAGE_DOMAIN }}
+          LOCA_SIGNING_PUBLIC_KEY_B64: ${{ secrets.LOCA_SIGNING_PUBLIC_KEY_B64 }}
+          LOCA_STORAGE_DOMAIN: ${{ secrets.LOCA_STORAGE_DOMAIN }}
         run: deno task release:ci-preflight --channel=${{ steps.ch.outputs.channel }}
 
   # One native runner per desktop triple, plus a dedicated Android leg (the APK
@@ -194,7 +194,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('packages/tomat-client/src/tauri/gen/android/**/*.gradle*', 'packages/tomat-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/tomat-client/src/tauri/gen/android/gradle.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('packages/loca-client/src/tauri/gen/android/**/*.gradle*', 'packages/loca-client/src/tauri/gen/android/gradle/wrapper/gradle-wrapper.properties', 'packages/loca-client/src/tauri/gen/android/gradle.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
 
@@ -216,7 +216,7 @@ jobs:
       # sherpa-onnx-sys's prebuilt download map omits win-arm64, so stage the
       # upstream win-arm64 static lib and point SHERPA_ONNX_LIB_DIR at it (the CI
       # counterpart to windows-provision.ps1's guest setup). The version pin must
-      # match sherpa-onnx in packages/tomat-core-speech/Cargo.toml.
+      # match sherpa-onnx in packages/loca-core-speech/Cargo.toml.
       - name: Stage sherpa-onnx win-arm64 lib (win-arm64)
         if: matrix.id == 'windows-arm64'
         shell: pwsh
@@ -243,7 +243,7 @@ jobs:
       # the win-x64 CUDA archive omits onnxruntime.lib, so MSVC can't link the
       # shared build (see SPEECH_GPU_VARIANTS in scripts/release/core.ts). If the
       # lib isn't found this warns and skips, so the leg still ships CPU speech.
-      # Version must match sherpa-onnx in packages/tomat-core-speech/Cargo.toml.
+      # Version must match sherpa-onnx in packages/loca-core-speech/Cargo.toml.
       - name: Stage sherpa-onnx CUDA lib (linux-x64)
         if: matrix.id == 'linux-x64'
         shell: bash
@@ -320,14 +320,14 @@ jobs:
           # Public key is baked into the core binary; the Tauri minisign key signs
           # the desktop bundle; the Android keystore signs the APK. The Ed25519
           # PRIVATE manifest key is deliberately NOT provided to build runners.
-          TOMAT_SIGNING_PUBLIC_KEY_B64: ${{ secrets.TOMAT_SIGNING_PUBLIC_KEY_B64 }}
+          LOCA_SIGNING_PUBLIC_KEY_B64: ${{ secrets.LOCA_SIGNING_PUBLIC_KEY_B64 }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_UPDATER_PRIVATE_KEY }}
           TAURI_UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_UPDATER_PRIVATE_KEY_PASSWORD }}
-          TOMAT_ANDROID_KEYSTORE_B64: ${{ secrets.TOMAT_ANDROID_KEYSTORE_B64 }}
-          TOMAT_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TOMAT_ANDROID_KEYSTORE_PASSWORD }}
-          TOMAT_ANDROID_KEY_ALIAS: ${{ secrets.TOMAT_ANDROID_KEY_ALIAS }}
-          TOMAT_ANDROID_KEY_PASSWORD: ${{ secrets.TOMAT_ANDROID_KEY_PASSWORD }}
+          LOCA_ANDROID_KEYSTORE_B64: ${{ secrets.LOCA_ANDROID_KEYSTORE_B64 }}
+          LOCA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LOCA_ANDROID_KEYSTORE_PASSWORD }}
+          LOCA_ANDROID_KEY_ALIAS: ${{ secrets.LOCA_ANDROID_KEY_ALIAS }}
+          LOCA_ANDROID_KEY_PASSWORD: ${{ secrets.LOCA_ANDROID_KEY_PASSWORD }}
           # Apple signing + App Store Connect (macOS client signing/notarization,
           # the macOS .pkg installer productsign, and the iOS .ipa build/upload). All
           # optional: any empty secret just downgrades that artifact with a note.
@@ -419,24 +419,24 @@ jobs:
       # Secrets pass through env (masked in logs), not the script body.
       - name: Write .env from secrets
         env:
-          TOMAT_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TOMAT_SIGNING_PRIVATE_KEY_B64 }}
-          TOMAT_SIGNING_PUBLIC_KEY_B64: ${{ secrets.TOMAT_SIGNING_PUBLIC_KEY_B64 }}
+          LOCA_SIGNING_PRIVATE_KEY_B64: ${{ secrets.LOCA_SIGNING_PRIVATE_KEY_B64 }}
+          LOCA_SIGNING_PUBLIC_KEY_B64: ${{ secrets.LOCA_SIGNING_PUBLIC_KEY_B64 }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TOMAT_R2_ACCESS_KEY_ID: ${{ secrets.TOMAT_R2_ACCESS_KEY_ID }}
-          TOMAT_R2_SECRET_ACCESS_KEY: ${{ secrets.TOMAT_R2_SECRET_ACCESS_KEY }}
-          TOMAT_R2_BUCKET: ${{ secrets.TOMAT_R2_BUCKET }}
-          TOMAT_STORAGE_DOMAIN: ${{ secrets.TOMAT_STORAGE_DOMAIN }}
+          LOCA_R2_ACCESS_KEY_ID: ${{ secrets.LOCA_R2_ACCESS_KEY_ID }}
+          LOCA_R2_SECRET_ACCESS_KEY: ${{ secrets.LOCA_R2_SECRET_ACCESS_KEY }}
+          LOCA_R2_BUCKET: ${{ secrets.LOCA_R2_BUCKET }}
+          LOCA_STORAGE_DOMAIN: ${{ secrets.LOCA_STORAGE_DOMAIN }}
         run: |
           {
-            echo "TOMAT_SIGNING_PRIVATE_KEY_B64=$TOMAT_SIGNING_PRIVATE_KEY_B64"
-            echo "TOMAT_SIGNING_PUBLIC_KEY_B64=$TOMAT_SIGNING_PUBLIC_KEY_B64"
+            echo "LOCA_SIGNING_PRIVATE_KEY_B64=$LOCA_SIGNING_PRIVATE_KEY_B64"
+            echo "LOCA_SIGNING_PUBLIC_KEY_B64=$LOCA_SIGNING_PUBLIC_KEY_B64"
             echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID"
             echo "CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
-            echo "TOMAT_R2_ACCESS_KEY_ID=$TOMAT_R2_ACCESS_KEY_ID"
-            echo "TOMAT_R2_SECRET_ACCESS_KEY=$TOMAT_R2_SECRET_ACCESS_KEY"
-            echo "TOMAT_R2_BUCKET=$TOMAT_R2_BUCKET"
-            echo "TOMAT_STORAGE_DOMAIN=$TOMAT_STORAGE_DOMAIN"
+            echo "LOCA_R2_ACCESS_KEY_ID=$LOCA_R2_ACCESS_KEY_ID"
+            echo "LOCA_R2_SECRET_ACCESS_KEY=$LOCA_R2_SECRET_ACCESS_KEY"
+            echo "LOCA_R2_BUCKET=$LOCA_R2_BUCKET"
+            echo "LOCA_STORAGE_DOMAIN=$LOCA_STORAGE_DOMAIN"
           } > .env
 
       - name: Publish to R2 + GitHub Release
@@ -487,26 +487,26 @@ jobs:
       # to read + write the shared release-state cursor.
       - name: Write .env from secrets
         env:
-          TOMAT_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TOMAT_SIGNING_PRIVATE_KEY_B64 }}
-          TOMAT_SIGNING_PUBLIC_KEY_B64: ${{ secrets.TOMAT_SIGNING_PUBLIC_KEY_B64 }}
+          LOCA_SIGNING_PRIVATE_KEY_B64: ${{ secrets.LOCA_SIGNING_PRIVATE_KEY_B64 }}
+          LOCA_SIGNING_PUBLIC_KEY_B64: ${{ secrets.LOCA_SIGNING_PUBLIC_KEY_B64 }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TOMAT_R2_BUCKET: ${{ secrets.TOMAT_R2_BUCKET }}
-          TOMAT_STORAGE_DOMAIN: ${{ secrets.TOMAT_STORAGE_DOMAIN }}
+          LOCA_R2_BUCKET: ${{ secrets.LOCA_R2_BUCKET }}
+          LOCA_STORAGE_DOMAIN: ${{ secrets.LOCA_STORAGE_DOMAIN }}
         run: |
           {
-            echo "TOMAT_SIGNING_PRIVATE_KEY_B64=$TOMAT_SIGNING_PRIVATE_KEY_B64"
-            echo "TOMAT_SIGNING_PUBLIC_KEY_B64=$TOMAT_SIGNING_PUBLIC_KEY_B64"
+            echo "LOCA_SIGNING_PRIVATE_KEY_B64=$LOCA_SIGNING_PRIVATE_KEY_B64"
+            echo "LOCA_SIGNING_PUBLIC_KEY_B64=$LOCA_SIGNING_PUBLIC_KEY_B64"
             echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID"
             echo "CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
-            echo "TOMAT_R2_BUCKET=$TOMAT_R2_BUCKET"
-            echo "TOMAT_STORAGE_DOMAIN=$TOMAT_STORAGE_DOMAIN"
+            echo "LOCA_R2_BUCKET=$LOCA_R2_BUCKET"
+            echo "LOCA_STORAGE_DOMAIN=$LOCA_STORAGE_DOMAIN"
           } > .env
 
       - name: Configure git identity
         run: |
-          git config user.name "tomat-release[bot]"
-          git config user.email "tomat-release[bot]@users.noreply.github.com"
+          git config user.name "loca-release[bot]"
+          git config user.email "loca-release[bot]@users.noreply.github.com"
 
       - name: Bump versions, commit to main
         run: deno task release:ci-bump --channel=${{ github.ref_name }}

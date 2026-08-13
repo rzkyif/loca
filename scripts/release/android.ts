@@ -47,7 +47,7 @@ import {
 // ---------------------------------------------------------------------------
 // paths
 
-const TAURI_DIR = join(REPO_ROOT, "packages/tomat-client/src/tauri");
+const TAURI_DIR = join(REPO_ROOT, "packages/loca-client/src/tauri");
 const TAURI_CONF_PATH = join(TAURI_DIR, "tauri.conf.json");
 const GEN_ANDROID_DIR = join(TAURI_DIR, "gen/android");
 const APK_OUT_DIR = join(GEN_ANDROID_DIR, "app/build/outputs/apk");
@@ -110,7 +110,7 @@ async function readAndroidVersion(): Promise<string> {
 async function materializeKeystore(env: DeployEnv): Promise<() => Promise<void>> {
   if (!env.androidKeystoreB64) {
     fail(
-      `TOMAT_ANDROID_KEYSTORE_B64 is not set in .env; cannot sign the release ` +
+      `LOCA_ANDROID_KEYSTORE_B64 is not set in .env; cannot sign the release ` +
         `APK. Generate a keystore with keytool and base64-encode it into .env ` +
         `(see DEVELOPMENT.md).`,
     );
@@ -163,7 +163,7 @@ async function buildAndroid(channel: ReleaseChannel): Promise<void> {
     cwd: REPO_ROOT,
     stdout: "inherit",
     stderr: "inherit",
-    env: { ...Deno.env.toObject(), TOMAT_CHANNEL: channel },
+    env: { ...Deno.env.toObject(), LOCA_CHANNEL: channel },
   });
   const { code } = await cmd.output();
   if (code !== 0) fail(`build-android.ts (${channel}) exited ${code}`);
@@ -197,7 +197,7 @@ function composeAndroidManifest(
 ): AndroidManifest {
   return {
     version,
-    notes: `Tomat ${version}`,
+    notes: `Loca ${version}`,
     pub_date: new Date().toISOString(),
     abis,
   };
@@ -228,7 +228,7 @@ export const androidItem: ReleaseItem = {
   label: "android client",
   scope: "channel",
   packages: ANDROID_PACKAGES,
-  bumpHint: "packages/tomat-client/src/tauri/tauri.conf.json (version)",
+  bumpHint: "packages/loca-client/src/tauri/tauri.conf.json (version)",
 
   version: readAndroidVersion,
   versionFile: TAURI_CONF_PATH,
@@ -340,13 +340,13 @@ export async function composeAndUploadAndroid(
   for (const a of descriptor.apks) {
     // Re-anchor + verify the APK bytes against the descriptor's sha256.
     const path = await reanchorFile(a.relPath, a.sha256);
-    const key = `${storagePrefix}${version}/${a.abi}/tomat.apk`;
+    const key = `${storagePrefix}${version}/${a.abi}/loca.apk`;
     abis[a.abi] = { url: `https://${env.storageDomain}/${key}`, sha256: a.sha256 };
     uploads.push({
       abi: a.abi,
       path,
       key,
-      aliasKey: `${storagePrefix}current/${a.abi}/tomat.apk`,
+      aliasKey: `${storagePrefix}current/${a.abi}/loca.apk`,
       size: a.size,
     });
   }
@@ -374,7 +374,7 @@ export async function composeAndUploadAndroid(
     info(`uploading ${u.key}  (${humanBytes(u.size)})`);
     await r2Put(env, u.key, u.path, "application/vnd.android.package-archive");
     opts.recordVersionedKey?.(u.key);
-    opts.recordReleaseAsset?.(u.path, `android-${u.abi}_tomat.apk`);
+    opts.recordReleaseAsset?.(u.path, `android-${u.abi}_loca.apk`);
 
     // Mirror each APK to a version-less "current" alias so the install page can
     // link a stable download URL without knowing the version, via a server-side

@@ -54,13 +54,13 @@ export async function withEnvironment<T>(env: BuildEnvironment, fn: () => Promis
     await env.ensureUp();
     return await fn();
   } finally {
-    // TOMAT_KEEP_BUILD_ENVS leaves environments this run started RUNNING after it
+    // LOCA_KEEP_BUILD_ENVS leaves environments this run started RUNNING after it
     // finishes, so a sequence of local builds reuses one warm VM/machine instead
     // of booting + tearing down each time (much faster iteration). The caller is
     // then responsible for stopping them. Off by default: a normal release
     // restores prior state.
     if (keepEnvsAlive()) {
-      info(colors.yellow(`leaving ${env.id} running (TOMAT_KEEP_BUILD_ENVS)`));
+      info(colors.yellow(`leaving ${env.id} running (LOCA_KEEP_BUILD_ENVS)`));
       started.delete(env);
     } else {
       try {
@@ -80,6 +80,6 @@ export async function withEnvironment<T>(env: BuildEnvironment, fn: () => Promis
 }
 
 function keepEnvsAlive(): boolean {
-  const v = Deno.env.get("TOMAT_KEEP_BUILD_ENVS");
+  const v = Deno.env.get("LOCA_KEEP_BUILD_ENVS");
   return v === "1" || v === "true";
 }

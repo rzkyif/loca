@@ -34,7 +34,7 @@ aligned. Does not touch the local working tree.`);
 
   const channel = parseChannelFlag(args.channel);
   const { source, target } = remoteTransfer(channel);
-  console.log(colors.bold(`\ntomat remote-release: ${channel} channel (${target} <- ${source})\n`));
+  console.log(colors.bold(`\nloca remote-release: ${channel} channel (${target} <- ${source})\n`));
 
   await fastForwardRemote(channel);
 

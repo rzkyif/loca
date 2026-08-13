@@ -82,7 +82,7 @@ Deno.test("stripCoreVersion: differing CORE_VERSION normalize the same", () => {
 });
 
 Deno.test("hashPaths transform: a version-only bump does not change the hash", async () => {
-  const dir = await Deno.makeTempDir({ prefix: "tomat-hashpaths-" });
+  const dir = await Deno.makeTempDir({ prefix: "loca-hashpaths-" });
   try {
     const file = join(dir, "deno.json");
     await Deno.writeTextFile(file, `{\n  "version": "0.1.0",\n  "x": 1\n}\n`);

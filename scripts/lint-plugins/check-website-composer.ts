@@ -22,8 +22,8 @@ import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";
 
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
-const ROOT = fromFileUrl(new URL("../../packages/tomat-website/src/", import.meta.url));
-const REL = "packages/tomat-website/src/";
+const ROOT = fromFileUrl(new URL("../../packages/loca-website/src/", import.meta.url));
+const REL = "packages/loca-website/src/";
 
 // Composition-deciding props: the client's live-override seams.
 const FORBIDDEN = ["belowContent", "showVoice", "showLeftGroup", "contentOverride", "rightSlot"];

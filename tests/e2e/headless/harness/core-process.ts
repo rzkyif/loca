@@ -1,6 +1,6 @@
-// Spawn + supervise a real tomat-core subprocess for one E2E scenario (Node).
+// Spawn + supervise a real loca-core subprocess for one E2E scenario (Node).
 //
-// Each scenario gets a throwaway TOMAT_CORE_HOME tempdir, the dev channel (so
+// Each scenario gets a throwaway LOCA_CORE_HOME tempdir, the dev channel (so
 // the model catalog is built in-memory with no signed fetch), the four native
 // helper binaries symlinked from target/debug (so core's boot-time presence
 // check passes without a source skip), and settings that point every outbound
@@ -206,26 +206,26 @@ async function waitHealthy(baseUrl: string, timeoutMs = 30_000): Promise<void> {
 }
 
 // Spawn the core subprocess on a fixed home + port, piping stderr into `logs`
-// (and echoing it when TOMAT_E2E_CORE_LOGS is set). Shared by startCore and
+// (and echoing it when LOCA_E2E_CORE_LOGS is set). Shared by startCore and
 // restart so a brought-back core captures logs the same way.
 function spawnCore(home: string, port: number, mockBaseUrl: string, logs: LogRing): ChildProcess {
   const child = spawn("deno", ["run", "-A", CORE_ENTRY], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      TOMAT_CORE_HOME: home,
-      TOMAT_CHANNEL: "dev",
-      TOMAT_CORE_PORT: String(port),
-      TOMAT_CORE_HOST: "127.0.0.1",
+      LOCA_CORE_HOME: home,
+      LOCA_CHANNEL: "dev",
+      LOCA_CORE_PORT: String(port),
+      LOCA_CORE_HOST: "127.0.0.1",
       // The tool-worker entry lives in source (no self-update stages it here).
-      TOMAT_WORKERS_DIR: WORKERS_DIR,
+      LOCA_WORKERS_DIR: WORKERS_DIR,
       // Route catalog / manifest / HF downloads at the mock (see config.ts).
-      TOMAT_STORAGE_BASE_URL: mockBaseUrl,
-      TOMAT_HF_BASE_URL: mockBaseUrl,
+      LOCA_STORAGE_BASE_URL: mockBaseUrl,
+      LOCA_HF_BASE_URL: mockBaseUrl,
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
-  const echo = !!process.env.TOMAT_E2E_CORE_LOGS;
+  const echo = !!process.env.LOCA_E2E_CORE_LOGS;
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk: string) => {
     logs.push(chunk);
@@ -255,7 +255,7 @@ export async function startCore(opts: ScenarioOptions = {}): Promise<CoreInstanc
   const mock = await startMockServices();
   if (opts.llm) mock.setLlmScript(opts.llm);
 
-  const home = mkdtempSync(join(tmpdir(), "tomat-e2e-"));
+  const home = mkdtempSync(join(tmpdir(), "loca-e2e-"));
   const settings = { ...defaultSettings(mock.baseUrl), ...opts.settings };
   seedHome(home, settings, opts);
 

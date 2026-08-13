@@ -40,7 +40,7 @@ import {
 // ---------------------------------------------------------------------------
 // paths
 
-const TAURI_DIR = join(REPO_ROOT, "packages/tomat-client/src/tauri");
+const TAURI_DIR = join(REPO_ROOT, "packages/loca-client/src/tauri");
 const TAURI_CONF_PATH = join(TAURI_DIR, "tauri.conf.json");
 const GEN_APPLE_DIR = join(TAURI_DIR, "gen/apple");
 
@@ -64,7 +64,7 @@ async function buildIos(env: DeployEnv, channel: ReleaseChannel): Promise<void> 
     // resolveAppleEnv matters locally: the APPLE_* values live in .env (loaded
     // with export: false), so without it build-ios.ts would see no APPLE_TEAM_ID
     // and silently fall back to an unsigned Simulator build.
-    env: { ...Deno.env.toObject(), TOMAT_CHANNEL: channel, ...resolveAppleEnv(env) },
+    env: { ...Deno.env.toObject(), LOCA_CHANNEL: channel, ...resolveAppleEnv(env) },
   });
   const { code } = await cmd.output();
   if (code !== 0) fail(`build-ios.ts (${channel}) exited ${code}`);
@@ -74,7 +74,7 @@ async function buildIos(env: DeployEnv, channel: ReleaseChannel): Promise<void> 
 async function findIpa(): Promise<{ path: string; filename: string; size: number }> {
   if (!(await exists(GEN_APPLE_DIR))) {
     fail(
-      `no gen/apple dir at ${rel(GEN_APPLE_DIR)} (run \`deno task --cwd packages/tomat-client init:ios\` first)`,
+      `no gen/apple dir at ${rel(GEN_APPLE_DIR)} (run \`deno task --cwd packages/loca-client init:ios\` first)`,
     );
   }
   for await (const entry of walk(GEN_APPLE_DIR, { exts: [".ipa"], includeDirs: false })) {
@@ -106,7 +106,7 @@ async function uploadToAppStoreConnect(env: DeployEnv, ipaPath: string): Promise
   // ~/.appstoreconnect/private_keys, ...) or via API_PRIVATE_KEYS_DIR, and only
   // under the canonical AuthKey_<keyid>.p8 name. Stage a canonical copy in a
   // temp dir so the upload works wherever (and however named) the key lives.
-  const keysRoot = await Deno.makeTempDir({ prefix: "tomat-altool-key-" });
+  const keysRoot = await Deno.makeTempDir({ prefix: "loca-altool-key-" });
   const keysDir = join(keysRoot, "private_keys");
   await ensureDir(keysDir);
   const p8Copy = join(keysDir, `AuthKey_${env.appleApiKey}.p8`);
@@ -192,7 +192,7 @@ export const iosItem: ReleaseItem = {
   label: "ios client",
   scope: "channel",
   packages: IOS_PACKAGES,
-  bumpHint: "packages/tomat-client/src/tauri/tauri.conf.json (version)",
+  bumpHint: "packages/loca-client/src/tauri/tauri.conf.json (version)",
 
   version: readIosVersion,
   versionFile: TAURI_CONF_PATH,

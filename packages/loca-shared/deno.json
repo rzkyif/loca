@@ -1,0 +1,52 @@
+{
+  "name": "@loca/shared",
+  "version": "0.1.0",
+  "tasks": {
+    "check": "deno check src/index.ts",
+    "test:js": "deno test --no-check --quiet --reporter=dot",
+    "test": "deno task test:js"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./api/http": "./src/api/http.ts",
+    "./api/ws": "./src/api/ws.ts",
+    "./api/errors": "./src/api/errors.ts",
+    "./domain/session": "./src/domain/session.ts",
+    "./domain/extension": "./src/domain/extension.ts",
+    "./domain/model": "./src/domain/model.ts",
+    "./domain/settings": "./src/domain/settings/index.ts",
+    "./domain/settings/engine": "./src/domain/settings/engine.ts",
+    "./domain/settings/types": "./src/domain/settings/types.ts",
+    "./domain/quick-controls": "./src/domain/quick-controls.ts",
+    "./validation/loca-json": "./src/validation/loca-json.ts",
+    "./validation/pairing": "./src/validation/pairing.ts",
+    "./validation/chat": "./src/validation/chat.ts",
+    "./validation/session": "./src/validation/session.ts",
+    "./crypto/pake": "./src/crypto/pake.ts",
+    "./crypto/signature": "./src/crypto/signature.ts",
+    "./ui/uno-preset": "./src/ui/uno-preset.ts",
+    "./ui/color": "./src/ui/color.ts",
+    "./ui/context": "./src/ui/context.ts",
+    "./ui/types": "./src/ui/types.ts",
+    "./ui/merge": "./src/ui/merge.ts",
+    "./ui/animations": "./src/ui/animations.ts",
+    "./ui/samples": "./src/ui/samples/index.ts",
+    "./ui/styles/base.css": "./src/ui/styles/base.css"
+  },
+  "imports": {
+    "zod": "npm:zod@^4.4.3",
+    "diff": "npm:diff@^8.0.2",
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@noble/curves": "npm:@noble/curves@^2.2.0",
+    "@noble/hashes": "npm:@noble/hashes@^2.2.0",
+    "svelte": "npm:svelte@^5.56.2",
+    "unocss": "npm:unocss@^66.7.0",
+    "@unocss/extractor-svelte": "npm:@unocss/extractor-svelte@^66.7.0",
+    "@iconify/json": "npm:@iconify/json@^2.2.483",
+    "dompurify": "npm:dompurify@^3.4.8",
+    "marked": "npm:marked@^18.0.5",
+    "marked-highlight": "npm:marked-highlight@^2.2.4",
+    "highlight.js": "npm:highlight.js@^11.11.1",
+    "highlight.js/": "npm:/highlight.js@^11.11.1/"
+  }
+}

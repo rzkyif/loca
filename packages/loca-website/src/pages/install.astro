@@ -1,0 +1,59 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import InstallGeneratorStatic from "../components/InstallGenerator.astro";
+import InstallGenerator from "../components/InstallGenerator.svelte";
+---
+
+<BaseLayout title="Install" description="Download the Loca installer for your operating system.">
+  <main class="mx-auto w-full max-w-2xl px-4 pt-6 pb-10 flex flex-col gap-6">
+    <h1 class="text-2xl font-semibold text-default-900">Install Loca</h1>
+
+    {
+      /* The generator works with no JS (the native baseline below); the island
+        mounts the enhanced version over it. The data-js gate (site.css) shows
+        exactly one, with no flash because data-js is set before first paint. */
+    }
+    <div data-nojs-fallback>
+      <InstallGeneratorStatic />
+    </div>
+    <div data-js-enhanced>
+      <InstallGenerator client:load />
+    </div>
+  </main>
+
+  {
+    /* Soft scroll fades, fixed to the viewport (mirrors the manual + the app's
+      settings panel): the top one fades in once scrolled away from the top, the
+      bottom one stays while content remains below the fold. */
+  }
+  <div
+    id="install-fade-top"
+    aria-hidden="true"
+    class="pointer-events-none fixed left-0 right-0 top-[var(--chrome-h)] z-40 h-6 bg-gradient-to-b from-default-50 to-transparent opacity-0 transition-opacity duration-100"
+  >
+  </div>
+  <div
+    id="install-fade-bottom"
+    aria-hidden="true"
+    class="pointer-events-none fixed bottom-0 left-0 right-0 z-40 h-6 bg-gradient-to-t from-default-50 to-transparent opacity-0 transition-opacity duration-100"
+  >
+  </div>
+</BaseLayout>
+
+<script>
+  // Toggle the viewport scroll fades from the window scroll position: the top
+  // fade once scrolled past the navbar, the bottom fade while content remains
+  // below the fold. Runs on load and on every view-transition navigation.
+  function syncInstallFades() {
+    const top = document.getElementById("install-fade-top");
+    const bottom = document.getElementById("install-fade-bottom");
+    if (!top || !bottom) return;
+    const y = window.scrollY;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    top.style.opacity = y > 4 ? "1" : "0";
+    bottom.style.opacity = y < max - 4 ? "1" : "0";
+  }
+  document.addEventListener("astro:page-load", syncInstallFades);
+  window.addEventListener("scroll", syncInstallFades, { passive: true });
+  window.addEventListener("resize", syncInstallFades);
+</script>

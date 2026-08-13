@@ -1,8 +1,0 @@
-<!--
-  app_name (launcher label) and main_activity_title are NOT declared here: they
-  are generated per channel by resValue() in app/build.gradle.kts, so dev and
-  latest read "Tomat (dev)" / "Tomat (latest)". Declaring them here too would be
-  a duplicate-resource build error.
--->
-<resources>
-</resources>

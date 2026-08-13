@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { launchApp, type AppHandle } from "../../harness/app.ts";
 import { sessionsState } from "@client/state/sessions.svelte";
 import { cores } from "@client/lib/core/cores.ts";
-import type { AssistantMessage } from "@tomat/shared";
+import type { AssistantMessage } from "@loca/shared";
 
 let app: AppHandle | undefined;
 afterEach(async () => {

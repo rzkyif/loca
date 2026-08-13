@@ -1,4 +1,4 @@
-// Companion to the `tomat/no-em-dash` rule in
+// Companion to the `loca/no-em-dash` rule in
 // scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
 // same rule for the file types oxlint parses (.ts/.tsx/.mts/.mjs/.svelte).
 // oxlint never sees Markdown, Rust, toml, json, yml, css, or shell scripts, so

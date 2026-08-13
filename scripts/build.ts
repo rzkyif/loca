@@ -35,7 +35,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { ensureDir } from "@std/fs/ensure-dir";
 import { load as loadDotenv } from "@std/dotenv";
 import { join } from "@std/path";
-import type { Triple } from "../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../packages/loca-shared/src/domain/model.ts";
 import {
   channelBinSuffix,
   colors,
@@ -242,7 +242,7 @@ function buildables(
 async function androidKeystoreConfigured(): Promise<boolean> {
   if (!(await exists(ENV_PATH))) return false;
   const raw = await loadDotenv({ envPath: ENV_PATH, export: false });
-  return !!raw["TOMAT_ANDROID_KEYSTORE_B64"];
+  return !!raw["LOCA_ANDROID_KEYSTORE_B64"];
 }
 
 /** The DeployEnv for the android item, or null (with a note) to skip it. Android
@@ -337,7 +337,7 @@ async function runBuildable(b: Buildable): Promise<void> {
 async function main(): Promise<void> {
   const flags = parseFlags();
   const mode = flags.crossPlatform ? "all targets" : "host only";
-  console.log(colors.bold(`\ntomat build: ${flags.channel} channel (${mode})\n`));
+  console.log(colors.bold(`\nloca build: ${flags.channel} channel (${mode})\n`));
 
   // Cross-platform passes the build environments; the core item routes each
   // triple to the host or a driver (started on demand, stopped after), same as

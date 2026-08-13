@@ -2,12 +2,12 @@
 // Tauri updater key, uploaded to R2, and merged into client.json. Tauri can't
 // cross-compile across OSes for signing reasons, so this is host-only: each
 // platform publishes its own bundle and the merge preserves the others at the
-// same version. Versioned via packages/tomat-client/src/tauri/tauri.conf.json.
+// same version. Versioned via packages/loca-client/src/tauri/tauri.conf.json.
 
 import { ensureDir } from "@std/fs/ensure-dir";
 import { encodeBase64 } from "@std/encoding/base64";
 import { join } from "@std/path";
-import type { Triple } from "../../packages/tomat-shared/src/domain/model.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import { type ClientDescriptor, reanchorFile } from "./artifacts.ts";
 import {
   buildLinuxCoreInstallers,
@@ -58,7 +58,7 @@ import {
 // ---------------------------------------------------------------------------
 // paths
 
-const TAURI_DIR = join(REPO_ROOT, "packages/tomat-client/src/tauri");
+const TAURI_DIR = join(REPO_ROOT, "packages/loca-client/src/tauri");
 const TAURI_CONF_PATH = join(TAURI_DIR, "tauri.conf.json");
 const TAURI_BUNDLE_OUT = join(REPO_ROOT, "target/release/bundle");
 // Legacy placeholder, kept for forks that still ship it.
@@ -144,7 +144,7 @@ async function buildClient(
   triple?: Triple,
   bundles?: string[],
 ): Promise<void> {
-  // Drive build-client.ts directly with the channel so it bakes TOMAT_CHANNEL
+  // Drive build-client.ts directly with the channel so it bakes LOCA_CHANNEL
   // + applies the per-channel app-identity config override. `triple` cross-builds
   // the host's other arch; `bundles` narrows the bundle targets (the Linux
   // cross-build passes just "appimage" - the AppImage is the sole Linux client
@@ -386,13 +386,13 @@ function clientBundleAlias(
   suffix: string,
 ): string | undefined {
   if (triple.endsWith("unknown-linux-gnu")) {
-    return `${storagePrefix}current/${triple}/tomat${suffix}.AppImage`;
+    return `${storagePrefix}current/${triple}/loca${suffix}.AppImage`;
   }
   return undefined;
 }
 
 /** A non-stable channel's productName carries the channel-suffixed DISPLAY name
- *  ("Tomat (latest)"), which Tauri bakes verbatim - spaces and parens included -
+ *  ("Loca (latest)"), which Tauri bakes verbatim - spaces and parens included -
  *  into the built bundle filename. That filename becomes the R2 object key AND
  *  the `url` in client.json the updater fetches, so a raw space/paren would land
  *  in the CDN URL and break the download. Strip the " (channel)" wrapper back to
@@ -456,7 +456,7 @@ export async function composeAndUploadClient(
 
   const manifest: ClientManifest = {
     version,
-    notes: `Tomat ${version}`,
+    notes: `Loca ${version}`,
     pub_date: new Date().toISOString(),
     platforms,
   };
@@ -585,7 +585,7 @@ export const clientItem: ReleaseItem = {
   label: "desktop client + installers",
   scope: "channel",
   packages: CLIENT_PACKAGES,
-  bumpHint: "packages/tomat-client/src/tauri/tauri.conf.json (version)",
+  bumpHint: "packages/loca-client/src/tauri/tauri.conf.json (version)",
 
   version: readClientVersion,
   versionFile: TAURI_CONF_PATH,

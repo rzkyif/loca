@@ -4,24 +4,24 @@ target
 dist
 .svelte-kit
 
-# Build / generated (under packages/tomat-client/)
-packages/tomat-client/build
-packages/tomat-client/.svelte-kit
-packages/tomat-client/.vite
-packages/tomat-client/package
-packages/tomat-client/static/vad
+# Build / generated (under packages/loca-client/)
+packages/loca-client/build
+packages/loca-client/.svelte-kit
+packages/loca-client/.vite
+packages/loca-client/package
+packages/loca-client/static/vad
 
-# Build / generated (under packages/tomat-website/)
-packages/tomat-website/dist
-packages/tomat-website/.astro
-packages/tomat-website/.wrangler
-packages/tomat-website/public/release-state.json
+# Build / generated (under packages/loca-website/)
+packages/loca-website/dist
+packages/loca-website/.astro
+packages/loca-website/.wrangler
+packages/loca-website/public/release-state.json
 
 # Deno
 .deno-cache
 
 # Tauri-generated schemas
-packages/tomat-client/src/tauri/gen/schemas
+packages/loca-client/src/tauri/gen/schemas
 
 # Env
 .env

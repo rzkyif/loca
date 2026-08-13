@@ -10,7 +10,7 @@
 //     closes. A Tier C may optionally declare `composes: [ViewNames]` (each a
 //     galleried View it actually imports) and/or `orchestratorOf: [children]` to
 //     document how it is covered; declarations are validated when present.
-// See packages/tomat-shared/src/ui/README.md.
+// See packages/loca-shared/src/ui/README.md.
 //
 // Wired into `deno task lint`. The base classification checks are always strict.
 // The gallery-coverage contract (raw-markup cap / composes-when-declared /
@@ -21,7 +21,7 @@ import { fromFileUrl } from "@std/path";
 import {
   EMBEDDED_VIEWS,
   GALLERY_VIEWS,
-} from "../../packages/tomat-website/src/components/gallery/registry.ts";
+} from "../../packages/loca-website/src/components/gallery/registry.ts";
 
 const STRICT_GALLERY = true;
 // A Tier-C orchestrator may keep a few raw layout wrappers, but once it carries
@@ -32,9 +32,9 @@ const STRICT_GALLERY = true;
 const RAW_LEAF_CAP = 4;
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));
-const COMPONENTS = `${ROOT}packages/tomat-client/src/ui/components/`;
+const COMPONENTS = `${ROOT}packages/loca-client/src/ui/components/`;
 const MANIFEST = `${COMPONENTS}.tiers.json`;
-const SHARED_COMPONENTS = `${ROOT}packages/tomat-shared/src/ui/components/`;
+const SHARED_COMPONENTS = `${ROOT}packages/loca-shared/src/ui/components/`;
 
 type Entry = {
   tier: "A0" | "A" | "B" | "C";
@@ -130,7 +130,7 @@ for (const [f, entry] of Object.entries(manifest.components)) {
       problems.push(`${f}: tier B must set "wraps" (the View it wraps)`);
     } else if (!sharedViews.has(entry.wraps)) {
       problems.push(
-        `${f}: wraps "${entry.wraps}" but no @tomat/shared/ui/components/**/${entry.wraps}.svelte exists`,
+        `${f}: wraps "${entry.wraps}" but no @loca/shared/ui/components/**/${entry.wraps}.svelte exists`,
       );
     } else if (!galleryViews.has(entry.wraps)) {
       galleryProblems.push(

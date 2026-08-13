@@ -5,10 +5,10 @@ runner. Both are **manual only and never run in CI**; the co-located unit +
 component suites are the everyday tools. Reach for a lane only when a change
 spans the client/core wire or the full app boot.
 
-| Lane                               | Directory                                 | Runs                          | Use it for                                                                                                                                                                                       |
-| ---------------------------------- | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **headless integration** (primary) | [`headless/`](headless/README.md)         | `deno task test:e2e:headless` | The full product behaviour of client <-> core: real Svelte app in real Chromium over real HTTP+WS+TLS to a real spawned `tomat-core`, outbound deps mocked. Fast, deterministic, cross-platform. |
-| **tauri-driver smoke** (thin)      | [`tauri-driver/`](tauri-driver/README.md) | `deno task test:e2e`          | Only what headless cannot: the native WebView engine, the Rust `net` transport (rustls SPKI pinning), and OS-native calls. Slow, platform-specific.                                              |
+| Lane                               | Directory                                 | Runs                          | Use it for                                                                                                                                                                                      |
+| ---------------------------------- | ----------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **headless integration** (primary) | [`headless/`](headless/README.md)         | `deno task test:e2e:headless` | The full product behaviour of client <-> core: real Svelte app in real Chromium over real HTTP+WS+TLS to a real spawned `loca-core`, outbound deps mocked. Fast, deterministic, cross-platform. |
+| **tauri-driver smoke** (thin)      | [`tauri-driver/`](tauri-driver/README.md) | `deno task test:e2e`          | Only what headless cannot: the native WebView engine, the Rust `net` transport (rustls SPKI pinning), and OS-native calls. Slow, platform-specific.                                             |
 
 The two are complementary: headless owns the breadth of happy-path coverage; the
 tauri-driver lane is a thin smoke test for the native seams headless stubs out.

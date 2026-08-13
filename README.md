@@ -1,18 +1,18 @@
 <p align="center">
-<img src="./packages/tomat-client/static/tomat.svg" width="100"/>
+<img src="./packages/loca-client/static/loca.svg" width="100"/>
 </p>
 
 <p align="center">
-  <a href="https://github.com/rzkyif/tomat/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rzkyif/tomat/ci.yml?branch=main&label=CI&logo=github"/></a>
-  <a href="https://github.com/rzkyif/tomat/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/rzkyif/tomat?include_prereleases&display_name=tag&sort=semver&label=release"/></a>
+  <a href="https://github.com/rzkyif/loca/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rzkyif/loca/ci.yml?branch=main&label=CI&logo=github"/></a>
+  <a href="https://github.com/rzkyif/loca/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/rzkyif/loca?include_prereleases&display_name=tag&sort=semver&label=release"/></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"/></a>
 </p>
 
-# Tomat
+# Loca
 
-**Open source local-first modular AI assistant.**
+**Open source local AI assistant.**
 
-Tomat takes care of all the hassle in running a complete state-of-the-art local
+Loca takes care of all the hassle in running a complete state-of-the-art local
 AI assistant on your PC, with speech-to-text, LLM inference, text-to-speech, and
 a bunch of other quality of life features.
 
@@ -32,7 +32,7 @@ a bunch of other quality of life features.
 ## Getting Started
 
 The latest client can be downloaded from the official website at
-[au.tomat.ing](https://au.tomat.ing).
+[loca.rzkyif.com](https://loca.rzkyif.com).
 
 ## Contributing
 

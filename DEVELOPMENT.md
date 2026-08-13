@@ -1,24 +1,24 @@
-# Developing Tomat
+# Developing Loca
 
-This document covers Tomat's architecture and how to build and run it from
+This document covers Loca's architecture and how to build and run it from
 source. For the project's contribution policy, see
 [CONTRIBUTING.md](CONTRIBUTING.md). Each package has its own README with the
 deeper detail; this file stays at the getting-started level.
 
-Tomat is a local-first modular AI client. **Tomat** runs the LLM,
+Loca is a local-first modular AI client. **Loca** runs the LLM,
 speech-to-text, text-to-speech, and tool execution as a long-running service
-(`tomat-core`) that can sit on the same machine as the UI or on a different one
-(e.g. your gaming PC). The desktop client (`tomat-client`) is a small
+(`loca-core`) that can sit on the same machine as the UI or on a different one
+(e.g. your gaming PC). The desktop client (`loca-client`) is a small
 Svelte+Tauri app that talks to one or more paired cores over an HTTP+WS API.
 
 ## Architecture at a glance
 
 ```mermaid
 flowchart TD
-    client["tomat-client (Tauri+Svelte): window, capture, audio, VAD, global shortcuts, paired-cores UI"]
-    core["tomat-core (Deno service): sessions, chat, tools, TTS/STT, model/binary mgmt, pairing"]
+    client["loca-client (Tauri+Svelte): window, capture, audio, VAD, global shortcuts, paired-cores UI"]
+    core["loca-core (Deno service): sessions, chat, tools, TTS/STT, model/binary mgmt, pairing"]
     llama["llama-server (chat + a 2nd instance for embeddings)"]
-    speech["tomat-core-speech (Speech-to-Text + Text-to-Speech)"]
+    speech["loca-core-speech (Speech-to-Text + Text-to-Speech)"]
     workers["tool workers (Deno): one per extension, permission-flagged"]
 
     client -->|HTTP+WS bearer| core
@@ -29,26 +29,26 @@ flowchart TD
 
 **Packages** (each links to its own README for layout and internals):
 
-- [`packages/tomat-shared/`](packages/tomat-shared/README.md): TypeScript
-  types + Zod schemas (API contract, `tomat.json` schema, WS frame discriminated
+- [`packages/loca-shared/`](packages/loca-shared/README.md): TypeScript
+  types + Zod schemas (API contract, `loca.json` schema, WS frame discriminated
   unions).
-- [`packages/tomat-core/`](packages/tomat-core/README.md): Deno service that
+- [`packages/loca-core/`](packages/loca-core/README.md): Deno service that
   hosts the engine and owns the runtime/OS-bound layer: HTTPS/WSS transport, TLS +
   pairing, sidecar supervision, npm-based extension installation, self-update.
-- [`packages/tomat-core-engine/`](packages/tomat-core-engine/README.md):
+- [`packages/loca-core-engine/`](packages/loca-core-engine/README.md):
   runtime-agnostic heart of core (sessions, chat/LLM streaming, settings,
   memories + relevance, external STT/TTS, remote MCP) behind a `Host` abstraction,
   so the same source runs in the Deno service and, later, the mobile webview.
-- [`packages/tomat-core-updater/`](packages/tomat-core-updater/README.md):
+- [`packages/loca-core-updater/`](packages/loca-core-updater/README.md):
   standalone Rust binary that swaps in a staged core build during self-update,
   then restarts core.
-- [`packages/tomat-core-keychain/`](packages/tomat-core-keychain/README.md):
+- [`packages/loca-core-keychain/`](packages/loca-core-keychain/README.md):
   native Rust helper that stores the core's master key in the OS keychain over a
   stdio protocol.
-- [`packages/tomat-core-hwinfo/`](packages/tomat-core-hwinfo/README.md): native
+- [`packages/loca-core-hwinfo/`](packages/loca-core-hwinfo/README.md): native
   Rust helper that reports RAM, physical cores, and GPU/VRAM for the on-device
   model fit engine.
-- [`packages/tomat-core-ptyhost/`](packages/tomat-core-ptyhost/README.md):
+- [`packages/loca-core-ptyhost/`](packages/loca-core-ptyhost/README.md):
   native Rust helper that runs a tool worker under a pseudo-terminal (a unix PTY,
   or a ConPTY on Windows) so Deno's runtime permission prompts can pause the tool
   and be answered from chat. On Windows the worker protocol rides a loopback
@@ -62,20 +62,20 @@ workers without permission prompts). `deno task dev` builds them from source and
 links them into the dev bin dir before core boots, so dev matches a real
 install; a build failure surfaces in the dev log and core declines to start.
 
-- [`packages/tomat-client/`](packages/tomat-client/README.md): Tauri 2 + Svelte
+- [`packages/loca-client/`](packages/loca-client/README.md): Tauri 2 + Svelte
   5 + Vite + UnoCSS desktop UI.
-- [`packages/tomat-model-catalog/`](packages/tomat-model-catalog/README.md):
+- [`packages/loca-model-catalog/`](packages/loca-model-catalog/README.md):
   hand-authored source for the signed model catalog that drives the model
   pickers in Settings.
-- [`packages/tomat-extension-builtin/`](packages/tomat-extension-builtin/README.md):
+- [`packages/loca-extension-builtin/`](packages/loca-extension-builtin/README.md):
   the extension bundled with core; also a reference implementation of the
-  `tomat.json` format and the extension author docs.
-- [`packages/tomat-extension-samples/`](packages/tomat-extension-samples/README.md):
-  dev-only capability showcase exercising the full `tomat.json` surface; not
+  `loca.json` format and the extension author docs.
+- [`packages/loca-extension-samples/`](packages/loca-extension-samples/README.md):
+  dev-only capability showcase exercising the full `loca.json` surface; not
   released to production, only codebase-installed in the dev environment.
-- [`packages/tomat-website/`](packages/tomat-website/README.md): Astro site
-  behind `au.tomat.ing` (landing page only), plus the release + deploy pipeline
-  for the artifacts served from `get.au.tomat.ing`.
+- [`packages/loca-website/`](packages/loca-website/README.md): Astro site
+  behind `loca.rzkyif.com` (landing page only), plus the release + deploy pipeline
+  for the artifacts served from `get.loca.rzkyif.com`.
 
 ## Setup
 
@@ -84,7 +84,7 @@ install; a build failure surfaces in the dev log and core declines to start.
 - **Deno 2.8+** (`brew install deno` / `winget install DenoLand.Deno` / see
   https://deno.com/).
 - **Rust toolchain** for building the Tauri shell and the core-keychain helper
-  (`packages/tomat-client/src/tauri/rust-toolchain.toml` pins the version).
+  (`packages/loca-client/src/tauri/rust-toolchain.toml` pins the version).
 - **Cargo + Tauri 2 prerequisites**: see
   https://v2.tauri.app/start/prerequisites/. On Debian/Ubuntu the full set
   (Tauri/webkit, PipeWire + ALSA for capture/audio, libsecret for the keychain
@@ -137,7 +137,7 @@ The core listens on `127.0.0.1:7800` and the client UI runs at
 ### Connecting the client to the dev core
 
 `deno task dev` runs the core from source, seeds a dev admin token at
-`~/.tomat/dev/core/.admin-token`, and prints a pairing code. On a reset first
+`~/.loca/dev/core/.admin-token`, and prints a pairing code. On a reset first
 run the client silently pairs with the dev core on its own (the dev channel
 reports it as an installed local core); the printed URL + code are the manual
 fallback for the welcome remote-connect page (`deno task dev:reset:install`
@@ -172,7 +172,7 @@ NOT part of `build`; it builds on its own via `deno task build:website` and is
 released as part of the umbrella `deno task release` (its release item runs the
 Astro build itself). The granular `build:core` / `build:client` tasks force-build
 a single component. Releasing the built artifacts is covered in
-[packages/tomat-website/README.md](packages/tomat-website/README.md).
+[packages/loca-website/README.md](packages/loca-website/README.md).
 
 ### Working on one package
 
@@ -183,7 +183,7 @@ reachable two ways:
 
 ```bash
 deno task check:core            # run one package's verb from the repo root (<verb>:<pkg>)
-cd packages/tomat-core && deno task check   # or from inside the package
+cd packages/loca-core && deno task check   # or from inside the package
 ```
 
 `dev:core`, `dev:client`, and `dev:website` start a single component's dev loop.
@@ -193,7 +193,7 @@ there is no separate Vite-only verb to confuse with `dev:website`. The five Rust
 helper crates expose cargo-wrapper verbs (`lint`/`fmt`/`test`/`build`; clippy is
 their compile-check, so they carry no separate `check`), so
 `deno task lint:core-keychain` and
-`cd packages/tomat-core-keychain && deno task lint` work identically to the Deno
+`cd packages/loca-core-keychain && deno task lint` work identically to the Deno
 packages.
 
 ### Android (Tauri-mobile) client
@@ -221,7 +221,7 @@ i686-linux-android x86_64-linux-android`.
 `init:android` / `dev:android` / `build:android` / `check:android`):
 
 ```bash
-deno task --cwd packages/tomat-client init:android   # one-time: generate gen/android
+deno task --cwd packages/loca-client init:android   # one-time: generate gen/android
 deno task dev:android                                 # dev core + android client (HMR)
 deno task dev:client:android                          # android client only, no core
 deno task build:client:android                        # latest-channel signed APK
@@ -240,11 +240,11 @@ an already-running core); it goes through the same orchestrator (`scripts/dev.ts
 --android --client-only`) so it shares the clean Ctrl+C teardown. Both reap the
 android cross-compile that the detached Gradle daemon spawns; the Gradle daemon
 and adb server are persistent by design and left running. Non-stable channels
-get a distinct `applicationId` (`au.tomat.ing.<channel>`) so they install
+get a distinct `applicationId` (`com.rzkyif.loca.<channel>`) so they install
 alongside stable.
 
 **Release signing.** Release APKs are signed by a Java keystore the release
-pipeline materializes from `.env` (`TOMAT_ANDROID_KEYSTORE_B64` +
+pipeline materializes from `.env` (`LOCA_ANDROID_KEYSTORE_B64` +
 passwords/alias; see `.env.example`). A plain local `build:client:android`
 without that keystore falls back to debug signing so the APK still installs for
 testing. The release path never debug-signs: `scripts/release/android.ts` hard
@@ -294,7 +294,7 @@ other switch (see [macos-signing.md](scripts/release/macos-signing.md)).
 `init:ios` / `dev:ios` / `build:ios` / `check:ios`):
 
 ```bash
-deno task --cwd packages/tomat-client init:ios   # one-time: generate gen/apple
+deno task --cwd packages/loca-client init:ios   # one-time: generate gen/apple
 deno task dev:ios                                 # dev core + iOS Simulator (HMR)
 deno task dev:client:ios                          # iOS client only, no core
 deno task build:client:ios                        # latest-channel build
@@ -310,9 +310,9 @@ the LAN). `dev:client:ios` runs only the client through the same orchestrator
 (`scripts/dev.ts --ios --client-only`) so it shares the clean Ctrl+C teardown:
 both reap the detached `xcodebuild` cross-compile (matched by the apple-ios
 target triples), leaving the Simulator and CoreSimulator services running.
-Non-stable channels get a distinct bundle id (`au.tomat.ing.<channel>`) so they
+Non-stable channels get a distinct bundle id (`com.rzkyif.loca.<channel>`) so they
 install alongside stable, applied by a channel xcconfig in `gen/apple` keyed off
-`TOMAT_CHANNEL` (the iOS analogue of Android's gradle `applicationIdSuffix`; the
+`LOCA_CHANNEL` (the iOS analogue of Android's gradle `applicationIdSuffix`; the
 Tauri `identifier` is not overridden, for the same reason as Android).
 
 **Signing + release.** A signed `.ipa` needs an Apple Developer account: a Team
@@ -349,42 +349,42 @@ The repo separates two axes that used to be tangled in the root task list:
   root `deno.json` (7 Deno + 5 Rust crates), the single source of truth for the
   fan-out (`scripts/pkg.ts`).
 - A **release item** is a unit of distribution and may compose several packages.
-  `core` bundles `tomat-core`, `tomat-core-engine`, `tomat-shared`, and the native helper crates;
-  `client` and `website` each pull `tomat-shared`. Release items live in
+  `core` bundles `loca-core`, `loca-core-engine`, `loca-shared`, and the native helper crates;
+  `client` and `website` each pull `loca-shared`. Release items live in
   `scripts/release/*.ts`; each declares the `packages` it is built from, and the
   ones whose source hash is "each package's src + manifest" derive that hash
   from the package list so it cannot drift. Releasing is covered in
-  [packages/tomat-website/README.md](packages/tomat-website/README.md).
+  [packages/loca-website/README.md](packages/loca-website/README.md).
 
 ### Cleaning build artifacts
 
 ```bash
 deno task clean               # dist, target, build, .svelte-kit, .astro, .wrangler
 deno task clean --deep        # also node_modules + the Deno cache (re-run deno install)
-deno task clean --dev-state    # also ~/.tomat/dev (the isolated dev channel)
-deno task clean --latest-state # also ~/.tomat/latest (the isolated latest channel)
+deno task clean --dev-state    # also ~/.loca/dev (the isolated dev channel)
+deno task clean --latest-state # also ~/.loca/latest (the isolated latest channel)
 ```
 
 ## Channels
 
-State is namespaced by install channel via `TOMAT_CHANNEL`, so a dev or latest
+State is namespaced by install channel via `LOCA_CHANNEL`, so a dev or latest
 build never collides with a stable install:
 
-| `TOMAT_CHANNEL`  | data under         | keychain              |
-| ---------------- | ------------------ | --------------------- |
-| unset / `stable` | `~/.tomat/stable/` | `tomat-client`        |
-| `dev`            | `~/.tomat/dev/`    | `tomat-client-dev`    |
-| `latest`         | `~/.tomat/latest/` | `tomat-client-latest` |
+| `LOCA_CHANNEL`   | data under        | keychain             |
+| ---------------- | ----------------- | -------------------- |
+| unset / `stable` | `~/.loca/stable/` | `loca-client`        |
+| `dev`            | `~/.loca/dev/`    | `loca-client-dev`    |
+| `latest`         | `~/.loca/latest/` | `loca-client-latest` |
 
 `deno task dev` sets `dev` automatically. Models are the one exception: they
-stay shared at `~/.tomat/models` so multi-GB weights aren't re-downloaded per
+stay shared at `~/.loca/models` so multi-GB weights aren't re-downloaded per
 channel. Reset dev state with `deno task clean --dev-state` (or
-`rm -rf ~/.tomat/dev`); it never touches a stable install. How core stores
+`rm -rf ~/.loca/dev`); it never touches a stable install. How core stores
 secrets in dev (and how not to lose them) is covered in
-[packages/tomat-core/README.md](packages/tomat-core/README.md).
+[packages/loca-core/README.md](packages/loca-core/README.md).
 
 Channels are built to **coexist and run at the same time**, not just isolate
-data: binaries get a channel suffix (`tomat-core` → `tomat-core-latest`), the
+data: binaries get a channel suffix (`loca-core` → `loca-core-latest`), the
 desktop app is a distinct bundle, service labels are suffixed, and default ports
 are offset so two cores can bind at once:
 
@@ -397,7 +397,7 @@ are offset so two cores can bind at once:
 (Explicit settings still win; only the defaults shift.)
 
 Building and releasing (to the latest or stable channel) is covered in
-[packages/tomat-website/README.md](packages/tomat-website/README.md), the
+[packages/loca-website/README.md](packages/loca-website/README.md), the
 release + deploy doc. Two release pipelines share one R2 idempotency cursor:
 
 - **Local** `deno task release` (latest) / `release:stable` builds + publishes
@@ -434,23 +434,23 @@ deno task lint:js   # just the JS/Svelte half of lint (oxlint + walkers, no carg
 
 Each aggregate fans the same-named verb out across the packages that define it
 (see [Packages and release items](#packages-and-release-items)), running them
-concurrently (cap with `TOMAT_PKG_CONCURRENCY`). `fmt` and `lint` run
+concurrently (cap with `LOCA_PKG_CONCURRENCY`). `fmt` and `lint` run
 oxfmt/oxlint once over the whole tree (they also cover root-level files) and add
 `cargo fmt`/`clippy` per Rust crate; `check` runs each package's own check.
 
 ### Gate output
 
 The fan-out keeps the console concise. A passing package prints one line
-(`ok @tomat/core test (8.2s)`); a failing one prints the last 20 lines of its
+(`ok @loca/core test (8.2s)`); a failing one prints the last 20 lines of its
 output (the child runners use quiet/dot reporters, so that tail is the failing
 test/file list), the path to the complete log, and a copy-pasteable rerun
 command:
 
 ```
-!! @tomat/core test failed (exit 1, 12.4s)
+!! @loca/core test failed (exit 1, 12.4s)
 <last 20 output lines>
-full: .gate-logs/test-tomat-core.log
-rerun: deno task --cwd packages/tomat-core test
+full: .gate-logs/test-loca-core.log
+rerun: deno task --cwd packages/loca-core test
 ```
 
 Nothing is hidden: every package run, pass or fail, writes its complete output
@@ -472,7 +472,7 @@ runs in parallel on the Rust runners.
 deno task test               # every package's tests (deno test + vitest + cargo test)
 deno task test:js            # just the TS half (deno test + vitest, no cargo)
 deno task test:client        # just the client (vitest + the Tauri crate's cargo test)
-deno task test:core          # just tomat-core
+deno task test:core          # just loca-core
 deno task test:e2e           # tauri-driver E2E smoke (manual, opt-in)
 deno task test:e2e:headless  # headless integration E2E (manual, opt-in)
 ```
@@ -495,7 +495,7 @@ only when a change spans the client/core wire or the full app boot.
 - **Headless integration** (`deno task test:e2e:headless`) is the primary lane
   and where the bulk of happy-path coverage lives. It mounts the real Svelte app
   in a real Chromium and drives it over real HTTP+WS+TLS against a real spawned
-  `tomat-core` subprocess, with every outbound dependency (LLM, STT, TTS, model
+  `loca-core` subprocess, with every outbound dependency (LLM, STT, TTS, model
   and binary downloads) mocked locally. Fast (tens of seconds), deterministic,
   and cross-platform. Run it when you touch the client/core protocol stack
   (`lib/core/`), the boot/connection choreography, chat/session/settings flows,

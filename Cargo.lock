@@ -3570,6 +3570,103 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
+name = "loca"
+version = "0.1.0"
+dependencies = [
+ "anytomd",
+ "apple-native-keyring-store",
+ "base64 0.22.1",
+ "chrono",
+ "cpvc",
+ "dbus-secret-service-keyring-store",
+ "fern",
+ "file-rotate",
+ "font-kit",
+ "futures-util",
+ "image",
+ "keyring-core",
+ "local-ip-address",
+ "log",
+ "pdf-extract",
+ "rcgen",
+ "regex",
+ "reqwest 0.13.4",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "webpki-roots 1.0.7",
+ "windows-native-keyring-store",
+ "x509-parser",
+ "xcap",
+]
+
+[[package]]
+name = "loca-core-hwinfo"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "serde",
+ "serde_json",
+ "sysinfo",
+]
+
+[[package]]
+name = "loca-core-keychain"
+version = "0.1.0"
+dependencies = [
+ "apple-native-keyring-store",
+ "dbus-secret-service-keyring-store",
+ "keyring-core",
+ "windows-native-keyring-store",
+]
+
+[[package]]
+name = "loca-core-ptyhost"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "nix 0.31.3",
+ "portable-pty",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "loca-core-speech"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sherpa-onnx",
+ "tempfile",
+ "tiny_http",
+]
+
+[[package]]
+name = "loca-core-updater"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "time",
+]
+
+[[package]]
 name = "local-ip-address"
 version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7018,103 +7115,6 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "tomat"
-version = "0.1.0"
-dependencies = [
- "anytomd",
- "apple-native-keyring-store",
- "base64 0.22.1",
- "chrono",
- "cpvc",
- "dbus-secret-service-keyring-store",
- "fern",
- "file-rotate",
- "font-kit",
- "futures-util",
- "image",
- "keyring-core",
- "local-ip-address",
- "log",
- "pdf-extract",
- "rcgen",
- "regex",
- "reqwest 0.13.4",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-process",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-tungstenite",
- "webpki-roots 1.0.7",
- "windows-native-keyring-store",
- "x509-parser",
- "xcap",
-]
-
-[[package]]
-name = "tomat-core-hwinfo"
-version = "0.1.0"
-dependencies = [
- "ash",
- "serde",
- "serde_json",
- "sysinfo",
-]
-
-[[package]]
-name = "tomat-core-keychain"
-version = "0.1.0"
-dependencies = [
- "apple-native-keyring-store",
- "dbus-secret-service-keyring-store",
- "keyring-core",
- "windows-native-keyring-store",
-]
-
-[[package]]
-name = "tomat-core-ptyhost"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "nix 0.31.3",
- "portable-pty",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "tomat-core-speech"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sherpa-onnx",
- "tempfile",
- "tiny_http",
-]
-
-[[package]]
-name = "tomat-core-updater"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "time",
 ]
 
 [[package]]

@@ -8,9 +8,10 @@
 
 import type { ApiErrorBody, ClientToServerFrame, ServerToClientFrame } from "@loca/shared";
 import { serverToClientFrameSchema } from "@loca/shared";
-import { type NetResponse, type NetSocket, platform } from "../platform/index.ts";
+import type { NetResponse, NetSocket } from "../platform/index.ts";
 import { getLogger } from "../util/log.ts";
 import { Subscribers } from "../util/subscribers.ts";
+import { type CoreTransport, netTransport } from "./transport.ts";
 
 const log = getLogger("ws");
 
@@ -57,6 +58,12 @@ export type ConnectionListener = (state: ConnectionState, reason?: string) => vo
 // "gaveUp". At the remote backoff (500ms, doubling to a 30s cap) six attempts
 // span roughly half a minute of trying.
 const MAX_ATTEMPTS = 6;
+
+// How much later than its scheduled deadline a reconnect timer has to fire
+// before we read it as "this app was suspended" rather than "the event loop was
+// busy". Comfortably above the 30s remote backoff cap, so ordinary scheduling
+// jitter can never look like a suspend.
+const SUSPEND_GAP_MS = 60_000;
 
 // The attempt from which we start asking whether the local core is even running.
 // Not the first close: a local core restarts in well under a second (dev
@@ -118,18 +125,39 @@ export class CoreClient {
    *  own core AND that core's process is not running, so a reconnect cannot
    *  succeed until someone starts it. Injected (rather than reached for here)
    *  to keep this class transport-only: which core is ours, and whether its
-   *  process is up, are the registry's concerns. Absent for a remote core. */
+   *  process is up, are the registry's concerns. Absent for a remote core.
+   *  @param transport how requests cross to the core. Defaults to the pinned
+   *  network transport; the registry passes the in-process one for the Core
+   *  inside this app. Resolved lazily (see `transport` below) so a client may
+   *  still be constructed before the platform is installed. */
   constructor(
     public readonly endpoint: CoreEndpoint,
     private readonly localStoppedProbe?: () => Promise<boolean>,
+    private readonly injectedTransport?: CoreTransport,
   ) {
     // A loopback core (dev hot-reload, on-demand local spawn) restarts in well
     // under a second, so reconnect briskly with a low cap; a remote core can be
-    // down a while, so back off further to avoid hammering the link.
-    this.isLocalCore = /\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)/.test(endpoint.baseUrl);
+    // down a while, so back off further to avoid hammering the link. An
+    // in-process core is the same case taken further: there is no link at all.
+    this.isLocalCore =
+      injectedTransport?.inProcess === true ||
+      /\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)/.test(endpoint.baseUrl);
     this.wsBackoffInitialMs = this.isLocalCore ? 250 : 500;
     this.wsBackoffCapMs = this.isLocalCore ? 2_000 : 30_000;
-    this.wsConnectTimeoutMs = this.isLocalCore ? 4_000 : 12_000;
+    // The connect deadline does NOT follow the backoff profile, because it is
+    // measuring something different on each transport. Over a socket it bounds a
+    // connect that resolved but never opened, and legitimate connect latency is
+    // a round trip, so seconds are generous. In process the connect does not
+    // resolve until the Core has BOOTED: on a first-ever start that is root
+    // dirs, SQLite migrations, and the offline install of the built-in extension
+    // behind an Ed25519 + sha256 verify, none of which a phone does in four
+    // seconds. Retrying buys nothing there (the boot is start-once, so every
+    // attempt awaits the same one), so a tight deadline only converts a slow
+    // start into a parked client. What the deadline still catches is a boot that
+    // HANGS; a boot that FAILS rejects instead and takes the backoff path
+    // immediately, without waiting for this at all.
+    this.wsConnectTimeoutMs =
+      injectedTransport?.inProcess === true ? 60_000 : this.isLocalCore ? 4_000 : 12_000;
     this.wsBackoffMs = this.wsBackoffInitialMs;
   }
 
@@ -210,7 +238,7 @@ export class CoreClient {
     const encoded = new Response(form);
     const body = new Uint8Array(await encoded.arrayBuffer());
     const contentType = encoded.headers.get("content-type") ?? "multipart/form-data";
-    const res = await platform().net.fetch({
+    const res = await this.transport.fetch({
       url: this.endpoint.baseUrl + path,
       method: "POST",
       headers: {
@@ -225,7 +253,7 @@ export class CoreClient {
 
   // POST a JSON body and get a binary blob back (TTS synth WAV).
   async postBlob(path: string, body: unknown): Promise<Blob> {
-    const res = await platform().net.fetch({
+    const res = await this.transport.fetch({
       url: this.endpoint.baseUrl + path,
       method: "POST",
       headers: {
@@ -239,9 +267,27 @@ export class CoreClient {
     return new Blob([res.body as BlobPart]);
   }
 
+  /** One request through this client's transport, with headers of the caller's
+   *  choosing and no response parsing. For the few call sites that need a
+   *  header this class does not send (the admin token) or already hold an
+   *  absolute URL (a stored attachment path).
+   *
+   *  It exists so those sites do not reach for `platform().net` themselves: a
+   *  raw network fetch is the wrong answer for a Core that is in process, and
+   *  the base URL it would target is a sentinel with nothing behind it. The
+   *  trust mode is this client's and is not the caller's to choose. */
+  async fetchRaw(req: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string | Uint8Array;
+  }): Promise<NetResponse> {
+    return await this.transport.fetch({ ...req, ...this.netTrust() });
+  }
+
   // For binary endpoints (TTS WAV blob, attachment downloads).
   async fetchBlob(path: string): Promise<Blob> {
-    const res = await platform().net.fetch({
+    const res = await this.transport.fetch({
       url: this.endpoint.baseUrl + path,
       headers: { Authorization: `Bearer ${this.endpoint.token}` },
       ...this.netTrust(),
@@ -283,6 +329,14 @@ export class CoreClient {
 
   // --- internals ---------------------------------------------------------
 
+  // How this client reaches its core. A getter rather than a constructor
+  // default so `platform()` is still read per call: a default parameter would
+  // resolve it at construction and break any caller that builds a client before
+  // setPlatform().
+  private get transport(): CoreTransport {
+    return this.injectedTransport ?? netTransport();
+  }
+
   // The TLS trust arguments for a paired request. Pin mode enforces the stored
   // SPKI pin; webpki mode does standard public-CA validation with no pin. Every
   // net.fetch / connectWebSocket call spreads this, so the mode is never absent.
@@ -306,7 +360,7 @@ export class CoreClient {
     if (options.auth !== false) {
       headers.Authorization = `Bearer ${this.endpoint.token}`;
     }
-    const res = await platform().net.fetch({
+    const res = await this.transport.fetch({
       url: this.endpoint.baseUrl + path,
       method,
       headers,
@@ -372,6 +426,14 @@ export class CoreClient {
   // offline/5xx mint, or a stale/spent ticket that the upgrade later rejects -
   // and the backoff loop re-mints a fresh ticket rather than parking.
   private async mintTicketAndOpen(gen: number): Promise<void> {
+    // An in-process core has no wire URL, and the URL is the only thing the
+    // ticket exists to travel in: the identity is injected below the boundary
+    // instead. Minting one anyway would send a credential nobody reads and make
+    // the connection depend on a route with no part in it.
+    if (this.transport.inProcess) {
+      await this.openSocket("", gen);
+      return;
+    }
     let ticket: string;
     try {
       ticket = (await this.post<{ ticket: string }>("/api/v1/ws/ticket")).ticket;
@@ -397,7 +459,7 @@ export class CoreClient {
   private async openSocket(wsUrl: string, gen: number): Promise<void> {
     let sock: NetSocket;
     try {
-      sock = await platform().net.connectWebSocket(wsUrl, this.netTrust());
+      sock = await this.transport.connectWebSocket(wsUrl, this.netTrust());
     } catch (err) {
       // A newer attempt (watchdog/close) superseded this one while it was in
       // flight: drop it silently so we don't double-schedule a reconnect.
@@ -642,10 +704,28 @@ export class CoreClient {
     const delay = this.wsBackoffMs;
     this.wsBackoffMs = Math.min(this.wsBackoffMs * 2, this.wsBackoffCapMs);
     log.debug(`reconnect in ${delay}ms`);
+    const scheduledAtMs = Date.now();
     this.wsReconnectTimer = setTimeout(() => {
       this.wsReconnectTimer = null;
+      this.resumeIfSuspended(scheduledAtMs, delay);
       this.connectWs();
     }, delay);
+  }
+
+  // A backgrounded WebView has its timers throttled or frozen, so a reconnect
+  // scheduled before the app was suspended fires whenever the user comes back.
+  // The attempts counted before that gap describe a network the user has since
+  // left, and nothing else resets the counter (only a successful open, or an
+  // explicit retryNow), so a background gap that began with two or three
+  // failures would spend the rest of the budget in the first seconds of the
+  // foreground and park as "gaveUp" on a link that is probably fine. Measured
+  // rather than subscribed to: a visibility subscription would make this class
+  // reach for the platform, which is exactly what keeps it transport-only.
+  private resumeIfSuspended(scheduledAtMs: number, delay: number): void {
+    if (Date.now() - scheduledAtMs < delay + SUSPEND_GAP_MS) return;
+    log.info("reconnect resumed after a long gap; restarting the attempt budget");
+    this.connectAttempt = 0;
+    this.wsBackoffMs = this.wsBackoffInitialMs;
   }
 }
 

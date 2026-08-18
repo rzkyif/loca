@@ -54,6 +54,31 @@ Deno.test("chatStartWsSchema: ignores an unknown field (forward-compat, no silen
   assertEquals(parsed.success && parsed.data.streamId, "s1");
 });
 
+Deno.test("chatStartWsSchema: an absent route stays absent, so core can auto-route", () => {
+  // The distinction this pins is the whole of dual-model routing. Core reads an
+  // absent `route` as "the client did not pin one" and only then consults
+  // `dualModel.enabled` (chat.ts:296-299). A `.default("default")` here made the
+  // field always present, so that test could never be false and the secondary
+  // model was unreachable no matter what the user configured. See D-058 / D-066.
+  const auto = chatStartWsSchema.safeParse({
+    kind: "chat.start",
+    streamId: "s1",
+    sessionId: "S1",
+  });
+  assertEquals(auto.success, true);
+  assertEquals(auto.success && auto.data.route, undefined);
+
+  // A pinned route still survives, which is the other half: pinning "default"
+  // must suppress auto-routing rather than being indistinguishable from silence.
+  const pinned = chatStartWsSchema.safeParse({
+    kind: "chat.start",
+    streamId: "s1",
+    sessionId: "S1",
+    route: "default",
+  });
+  assertEquals(pinned.success && pinned.data.route, "default");
+});
+
 Deno.test("chatInterruptWsSchema: requires non-empty streamId", () => {
   assertEquals(
     chatInterruptWsSchema.safeParse({ kind: "chat.interrupt", streamId: "x" }).success,

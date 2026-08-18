@@ -9,6 +9,8 @@
 // client-side command builder's accepted command kinds.
 export type CommandType = "llm";
 
+import type { CoreCapabilities } from "../../api/http.ts";
+
 export type OptionsSource = "monitors" | "fonts" | "tts_voices";
 
 export type ActivationMode = "manual" | "sticky" | "push-to-talk";
@@ -367,8 +369,23 @@ export interface SettingGroup {
   hidden?: boolean;
   /** When true, the group is hidden on mobile (the platform has no equivalent of
    *  the feature it configures, e.g. global keyboard shortcuts). Honored by
-   *  `isGroupVisible(group, platform)` so the desktop UI is unaffected. */
+   *  `isGroupVisible(group, platform)` so the desktop UI is unaffected.
+   *
+   *  About the DEVICE. Its sibling `requiresCapability` is about the CORE, and
+   *  the two are not interchangeable: a phone paired to a desktop Core still
+   *  gets that Core's extensions, because the extensions are the Core's. */
   desktopOnly?: boolean;
+  /** When set, the group is hidden unless the connected Core reports that
+   *  capability on `GET /api/v1/health`.
+   *
+   *  About the CORE, where `desktopOnly` is about the device. Use it for a
+   *  group configuring something the connected Core cannot do at all (an
+   *  embedded Core has no worker spawner, so its extensions could install and
+   *  then never run), never for something the screen cannot show.
+   *
+   *  Unknown counts as capable, so a Core that predates negotiation is
+   *  unaffected. See `capabilitiesState.can`. */
+  requiresCapability?: keyof CoreCapabilities;
   /** Where this group's values are persisted. Usually a single destination. A
    *  group may declare BOTH (an array) when it spans client and core - currently
    *  only the render-only `usage` group, which shows client + core resources

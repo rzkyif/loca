@@ -79,10 +79,35 @@ export function settingsRoutes(authed: MiddlewareHandler): Hono {
   // indicating which keys are configured, never the values." So GET
   // returns names only; values are never read back over the API.
 
-  r.get("/secrets", async (c) => c.json({ names: await listSecretNames() }));
+  // The vault holds three classes of secret and these routes manage exactly
+  // one: the schema's `type: "password"` fields, which is what
+  // `isSecretSettingKey` tests. The other two are reachable only by their owners, and must not be
+  // reachable here.
+  //
+  //   - `mcp.<id>.authToken` / `mcp.<id>.oauth`, written by the MCP routes.
+  //   - `tls-key`, the sealed private key of the certificate every paired
+  //     client pinned.
+  //
+  // Without this gate a paired client can DELETE `tls-key`, and the next boot
+  // generates a fresh keypair with a different SPKI pin, which locks out every
+  // paired client at once. PUT is worse: a value that is not a valid JWK means
+  // the core does not boot at all. Revoking one other device is deliberately
+  // gated behind the admin token so a single device cannot lock the others out;
+  // an ungated route reaching the same outcome defeats that.
+  function assertSettingsSecret(name: string): void {
+    if (!isSecretSettingKey(name)) {
+      throw new AppError("not_found", `unknown secret setting "${name}"`);
+    }
+  }
+
+  r.get("/secrets", async (c) => {
+    const names = await listSecretNames();
+    return c.json({ names: names.filter(isSecretSettingKey) });
+  });
 
   r.put("/secrets/:name", async (c) => {
     const name = c.req.param("name");
+    assertSettingsSecret(name);
     const body = await readJson(c);
     if (
       !body ||
@@ -97,6 +122,7 @@ export function settingsRoutes(authed: MiddlewareHandler): Hono {
 
   r.delete("/secrets/:name", async (c) => {
     const name = c.req.param("name");
+    assertSettingsSecret(name);
     const ok = await deleteSecret(name);
     if (!ok) throw new AppError("not_found", `secret "${name}" not set`);
     return c.body(null, 204);

@@ -126,7 +126,10 @@ class StreamingState {
     this.turnAnchorId = anchorUserId;
   }
 
-  start(modelUsed: "default" | "secondary" = "default"): void {
+  // `modelUsed` unset means "let core decide", which is what lets
+  // `dualModel.enabled` route the turn. Defaulting it here would pin the
+  // default route and the setting would never take effect. See D-058 / D-066.
+  start(modelUsed?: "default" | "secondary"): void {
     const sessionId = this.session?.id ?? null;
     if (!sessionId) {
       log.warn("start called without an active session");

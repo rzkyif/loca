@@ -185,15 +185,38 @@ function loadClientOverlay(clientId: string): Record<string, unknown> {
   return overlay;
 }
 
-/** The effective sparse settings the core should apply for a turn owned by
- *  `clientId`: the shared core-global values overlaid with that client's
- *  per-client overrides (overlay wins). Still sparse - downstream readers
- *  (boolSetting/numSetting/strSetting) apply the schema defaults. Every chat
- *  turn and automated session reads through this so the core honors each
- *  client's own inference preferences. */
+/** The effective SPARSE settings for a turn owned by `clientId`: the shared
+ *  core-global values overlaid with that client's per-client overrides (overlay
+ *  wins). Sparse on purpose, and only the settings API should read it: absence
+ *  is how "this key is unset" is represented on the wire, which is what lets
+ *  `GET /api/v1/settings` answer `{}` for a fresh core and what stops a client
+ *  round-tripping a read into a PATCH that persists every default.
+ *
+ *  Anything that ACTS on a setting wants [`loadEffectiveResolved`]. */
 export async function loadEffective(clientId: string): Promise<Record<string, unknown>> {
   const base = await loadCoreSettings();
   return { ...base, ...loadClientOverlay(clientId) };
+}
+
+/** [`loadEffective`] with the schema defaults underneath: what every consumer
+ *  that acts on a setting should read.
+ *
+ *  The pair exists because the sparse record was being used for both jobs, and
+ *  the doc on `loadEffective` used to claim "downstream readers apply the schema
+ *  defaults". They never did: `boolSetting`/`numSetting`/`strSetting` apply the
+ *  fallback their CALLER hardcodes, which differs from the schema's wherever the
+ *  two disagree and supplies nothing at all where the caller passes 0 or "".
+ *  That is why `prompts.titleGenerationThinkingBudget` (schema 128) and
+ *  `prompts.memorySummaryThinkingBudget` (schema 256) resolved to 0 on every
+ *  install, and thinking was off everywhere the panel said it was on.
+ *  See D-037 / D-069.
+ *
+ *  Deliberately NOT folded into `loadCoreSettings`: `patchCoreSettings` merges
+ *  onto that before writing, so resolving there would persist all 156 defaults
+ *  into settings.json and freeze them against any later schema change. The
+ *  boot-only keys in `main.ts` read it raw for the same reason. */
+export async function loadEffectiveResolved(clientId: string): Promise<Record<string, unknown>> {
+  return { ...getDefaultSettings(), ...(await loadEffective(clientId)) };
 }
 
 /** Apply a sparse patch to one client's overlay (null/undefined deletes a key,

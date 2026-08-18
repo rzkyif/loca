@@ -1,7 +1,18 @@
-// Release item: loca-core (deno-compiled) + the four native helper crates
-// (updater, keychain, hwinfo, ptyhost) + the worker .ts files, composed into
-// signed core.json and binaries.json and uploaded to R2. Versioned via
-// CORE_VERSION in packages/loca-core/src/config.ts.
+// Release item: loca-core (the Rust crate `loca-core-rs`) + the surviving native
+// helper crate (updater) + the worker .ts files, composed into signed core.json
+// and binaries.json and uploaded to R2. Versioned via CORE_VERSION in
+// packages/loca-core/src/config.ts.
+//
+// The core was a `deno compile` binary until the Rust port cut over. What that
+// removed, and why it is gone rather than kept beside the new path: there is no
+// dual-shipping period (D-000), so a second build path would be a second thing
+// to keep green with nothing shipping from it. `setupCompileWorkspace()` went
+// with it; it existed only to keep `deno compile` from embedding the whole
+// workspace's npm graph, a problem cargo does not have.
+//
+// Deno itself does NOT go away. Extension tools still run as sandboxed `deno`
+// subprocesses, so the pinned runtime is still a consent-gated download and
+// `tool-worker.ts` still ships beside the binary.
 
 import { copy } from "@std/fs/copy";
 import { ensureDir } from "@std/fs/ensure-dir";
@@ -31,6 +42,7 @@ import {
   channelStoragePrefix,
   colors,
   CONFIG_PATH,
+  CORE_CONFIG_RS,
   CORE_DIR,
   type DeployEnv,
   detectHostTriple,
@@ -54,10 +66,7 @@ import {
   step,
   stripCoreVersion,
 } from "./lib.ts";
-import { reportRouting, routeTriples } from "./all-targets.ts";
-import { type ArtifactBundle, mergeCoreBundles } from "./artifacts.ts";
-import { withEnvironment } from "./drivers/lifecycle.ts";
-import type { BuildEnvironment } from "./drivers/mod.ts";
+import { mergeCoreBundles } from "./artifacts.ts";
 
 // ---------------------------------------------------------------------------
 // constants
@@ -76,15 +85,18 @@ const ALL_TRIPLES: Triple[] = [
 // them as Deno subprocesses from ~/.loca/core/workers/.
 const WORKER_FILES = ["tool-worker.ts"] as const;
 
+// One helper left. The Rust core absorbed the keychain (`secrets/**`), the
+// hardware probe (`models/hardware.rs`, via `sysinfo`) and the PTY host
+// (`extensions/pty/**`), so those three crates are deleted rather than unused.
+//
+// The updater stays a SEPARATE BINARY on purpose and is not an oversight: it is
+// what swaps the core executable during self-update, and a process cannot
+// replace the file it is currently running from on Windows. The boundary is the
+// feature.
 const HELPER_CRATES: Array<{
-  name: "loca-core-keychain" | "loca-core-updater" | "loca-core-hwinfo" | "loca-core-ptyhost";
+  name: "loca-core-updater";
   crateDir: string;
-}> = [
-  { name: "loca-core-keychain", crateDir: "packages/loca-core-keychain" },
-  { name: "loca-core-updater", crateDir: "packages/loca-core-updater" },
-  { name: "loca-core-hwinfo", crateDir: "packages/loca-core-hwinfo" },
-  { name: "loca-core-ptyhost", crateDir: "packages/loca-core-ptyhost" },
-];
+}> = [{ name: "loca-core-updater", crateDir: "packages/loca-core-updater" }];
 
 // loca-core-speech is OURS but, unlike the eager helpers, it's consent-gated +
 // on-demand: built host-only here, packaged with its espeak-ng-data, and pinned
@@ -167,151 +179,138 @@ export interface CoreBuildArtifacts {
 // Packages in the core's module graph; only these are copied into the compile
 // workspace. `loca-core` imports `@loca/shared`, `@loca/core-engine`, and
 // `@loca/model-catalog` via relative paths, so all must be present for
-// resolution to stay inside the temp tree.
-const COMPILE_WORKSPACE_PACKAGES = [
-  "loca-shared",
-  "loca-core-engine",
-  "loca-core",
-  "loca-model-catalog",
-];
+/// The Rust core crate, and the one binary target it produces.
+const CORE_CRATE_DIR = "packages/loca-core-rs";
+const CORE_BIN = "loca-core";
 
-/** Isolated workspace for `deno compile`. `deno compile` embeds every npm dep
- *  recorded in the deno.lock plus every entry in the compiled package's import
- *  map -- not only what the entry actually imports. The repo's lock and import
- *  maps span the whole workspace (client + website deps), so compiling against
- *  them bakes hundreds of MB of unused packages (workerd, onnxruntime-web, ...)
- *  into the binary.
- *
- *  To avoid that we COPY (not symlink, so resolution cannot escape back to the
- *  repo root and its workspace-wide lock + node_modules) only the packages in
- *  the core's graph, then generate a lock scoped to just those packages. The
- *  result embeds only the core's own graph (~100 MB). Worker ML deps stay out
- *  of `loca-core`'s import map -- the workers carry their own `npm:` specifiers
- *  -- so they are never pulled into this scope. */
-async function setupCompileWorkspace(): Promise<string> {
-  const dir = await Deno.makeTempDir({ prefix: "loca-compile-" });
-  await ensureDir(join(dir, "packages"));
-  for (const pkg of COMPILE_WORKSPACE_PACKAGES) {
-    await copy(join(REPO_ROOT, "packages", pkg), join(dir, "packages", pkg));
-    // A stray per-package node_modules would be embedded wholesale; drop it.
-    await Deno.remove(join(dir, "packages", pkg, "node_modules"), {
-      recursive: true,
-    }).catch(() => {});
-  }
-  await Deno.writeTextFile(
-    join(dir, "deno.json"),
-    JSON.stringify(
-      {
-        workspace: COMPILE_WORKSPACE_PACKAGES.map((p) => `./packages/${p}`),
-        unstable: ["raw-imports"],
-      },
-      null,
-      2,
-    ),
-  );
-  // Seed the workspace with the committed, CI-verified root lock so `deno install`
-  // REUSES its exact versions + integrity hashes for every dep it already pins
-  // (which is all of the core's graph, since the root lock spans the whole
-  // workspace) instead of re-resolving each `^` range from the build cache. This
-  // is the supply-chain guarantee the signed Rust helpers already get via
-  // `--locked`: the compiled, Ed25519-signed Core embeds the dependency closure
-  // reviewed at this commit, not whatever newer in-range patch happens to be in
-  // the builder's cache. We do NOT pass `--frozen`: the root lock also pins the
-  // client/website-only deps, and the scoped 4-package workspace must PRUNE those,
-  // which `--frozen` would reject as drift. A plain `deno install` reuses the
-  // pinned entries and prunes the unused ones, keeping both the integrity pin and
-  // the scoped (~100 MB) graph.
-  await Deno.copyFile(join(REPO_ROOT, "deno.lock"), join(dir, "deno.lock"));
-  const { code } = await new Deno.Command("deno", {
-    args: ["install"],
-    cwd: dir,
+/// Features a SHIPPING core is built with.
+///
+/// Both are off by default in the crate, and that default is for CI rather than
+/// for releases: each compiles a vendored third-party C/C++ tree, and a fresh
+/// checkout has no `vendor/`, so a default-on build script would turn every
+/// clippy job red. A release is the case that must have them.
+///
+/// Shipping without `local-inference` would be the loudest possible regression
+/// (no on-device model at all) and shipping without `local-speech` would
+/// silently drop local STT/TTS back to external providers, so neither is
+/// optional here and neither is a flag.
+const CORE_FEATURES = ["local-inference", "local-speech"] as const;
+
+/// llama.cpp is vendored by script rather than by submodule, and `vendor/` is
+/// gitignored, so a release host's fresh checkout does not have it.
+///
+/// Idempotent and cheap when the tree is already at the pin. Run rather than
+/// assumed, because `build.rs` reads `vendor/.llama-pin` and a missing tree
+/// surfaces as a compiler error rather than as a missing prerequisite.
+///
+/// **espeak-ng-data is deliberately NOT fetched here.** Its archive is
+/// COMMITTED and pulled in with `include_bytes!`, so the build needs no network
+/// for it; `scripts/vendor-espeak.ts` regenerates and verifies that committed
+/// file and is a maintenance tool, not a build step. Calling it from here would
+/// add an upstream fetch to every release build for a file already in the tree.
+async function ensureVendoredSources(): Promise<void> {
+  info("vendoring llama.cpp at the pinned SHA");
+  const { code } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", join(REPO_ROOT, "scripts", "vendor-llama.ts")],
+    cwd: REPO_ROOT,
     stdout: "inherit",
     stderr: "inherit",
   }).output();
-  if (code !== 0) fail(`deno install in compile workspace exited ${code}`);
-  return dir;
+  if (code !== 0) fail(`vendor-llama.ts exited ${code}`);
 }
 
-async function compileFor(
-  triple: Triple,
-  name: string,
-  entryRelative: string,
-  compileWorkspace: string,
-): Promise<string> {
-  const isWin = triple.includes("windows");
-  const exe = isWin ? ".exe" : "";
-  const outDir = join(DIST_DIR, triple);
-  await ensureDir(outDir);
-  const outPath = join(outDir, `${name}${exe}`);
-  // `deno compile` can cross-compile to every triple EXCEPT aarch64-pc-windows-msvc
-  // (it's absent from --target's list). It CAN compile that triple natively, so
-  // there we drop --target and require the running deno to already be the
-  // arm64-windows build (the Windows driver installs it). Every other triple
-  // cross-compiles via --target.
-  const nativeOnly = triple === "aarch64-pc-windows-msvc";
-  if (nativeOnly && Deno.build.target !== triple) {
-    fail(
-      `building ${triple} needs the arm64-windows deno on PATH (deno compile can't ` +
-        `cross-target it); the running deno is ${Deno.build.target}.`,
-    );
+/// Copy the llama.cpp runtime libraries that must sit BESIDE the core binary.
+///
+/// Not packaging polish. `GGML_BACKEND_DL` (D-103) makes every backend a
+/// separately loaded shared library, **including the CPU one**: with none of
+/// these present the process registers zero compute devices and cannot run a
+/// model at all (D-106). `backends::directories` looks for them in the install
+/// directory, which is wherever the binary is unpacked, and `build.rs` stages
+/// them next to cargo's artifacts so the relative rpath (D-116) resolves.
+///
+/// Returns the filenames copied, so the caller can fail on an empty result
+/// rather than shipping a core that cannot compute.
+async function copyRuntimeLibs(builtDir: string, outDir: string): Promise<string[]> {
+  const copied: string[] = [];
+  for await (const entry of Deno.readDir(builtDir)) {
+    if (!entry.isFile) continue;
+    const name = entry.name;
+    // The same predicate `build.rs` stages with, deliberately: a file it staged
+    // and this skipped would be a core that builds and cannot load a backend.
+    if (!(name.includes(".dylib") || name.includes(".so") || name.endsWith(".dll"))) continue;
+    await Deno.copyFile(join(builtDir, name), join(outDir, name));
+    copied.push(name);
   }
-  const targetArgs = nativeOnly ? [] : ["--target", triple];
-  const cmd = new Deno.Command("deno", {
-    args: ["compile", "--allow-all", ...targetArgs, "--output", outPath, entryRelative],
-    cwd: compileWorkspace,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const { code } = await cmd.output();
-  if (code !== 0) fail(`deno compile ${name} for ${triple} exited ${code}`);
-  return outPath;
+  return copied;
 }
 
 export async function buildAll(triples: Triple[], suffix: string): Promise<BuildArtifact[]> {
-  let compileWorkspace: string | null = null;
-  try {
-    const artifacts: BuildArtifact[] = [];
-    for (const triple of triples) {
-      const isWin = triple.includes("windows");
-      const exe = isWin ? ".exe" : "";
-      for (const [name, entryRelative] of [
-        ["loca-core", "packages/loca-core/src/main.ts"],
-      ] as const) {
-        const filename = `${name}${suffix}${exe}`;
-        const outPath = join(DIST_DIR, triple, filename);
-        if (!compileWorkspace) {
-          compileWorkspace = await setupCompileWorkspace();
-          info(`compile workspace at ${compileWorkspace}`);
-        }
-        info(`compiling ${name}${suffix} for ${triple}`);
-        await compileFor(triple, `${name}${suffix}`, entryRelative, compileWorkspace);
-        const { sha256, size } = await sha256File(outPath);
-        artifacts.push({ triple, name, filename, path: outPath, sha256, size });
-      }
+  await ensureVendoredSources();
+  await ensureRustTargets(triples);
+
+  const artifacts: BuildArtifact[] = [];
+  for (const triple of triples) {
+    const isWin = triple.includes("windows");
+    const exe = isWin ? ".exe" : "";
+    const name = CORE_BIN;
+    const filename = `${name}${suffix}${exe}`;
+    const outDir = join(DIST_DIR, triple);
+    await ensureDir(outDir);
+    const outPath = join(outDir, filename);
+
+    info(`cargo build ${name}${suffix} for ${triple}`);
+    const { code } = await new Deno.Command("cargo", {
+      args: [
+        "build",
+        "--release",
+        // The same supply-chain guarantee the helpers already had: the signed
+        // artifact embeds the dependency closure reviewed at this commit rather
+        // than whatever in-range patch is in the builder's cache.
+        "--locked",
+        "--manifest-path",
+        join(REPO_ROOT, CORE_CRATE_DIR, "Cargo.toml"),
+        "--bin",
+        CORE_BIN,
+        "--features",
+        CORE_FEATURES.join(","),
+        "--target",
+        triple,
+      ],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (code !== 0) fail(`cargo build ${name} for ${triple} exited ${code}`);
+
+    const builtDir = join(cargoTargetDir(), triple, "release");
+    await Deno.copyFile(join(builtDir, `${name}${exe}`), outPath);
+
+    const libs = await copyRuntimeLibs(builtDir, outDir);
+    if (libs.length === 0) {
+      fail(
+        `no llama.cpp runtime libraries were staged beside ${filename} for ${triple}. ` +
+          `Every backend is a loadable module under GGML_BACKEND_DL, the CPU one included, ` +
+          `so this core would register zero compute devices and run no model (D-103, D-106).`,
+      );
     }
-    return artifacts;
-  } finally {
-    if (compileWorkspace) {
-      await Deno.remove(compileWorkspace, { recursive: true }).catch(() => {});
-    }
+    info(`staged ${libs.length} runtime librar${libs.length === 1 ? "y" : "ies"} for ${triple}`);
+
+    const { sha256, size } = await sha256File(outPath);
+    artifacts.push({ triple, name, filename, path: outPath, sha256, size });
   }
+  return artifacts;
 }
 
-// Where cargo writes its build output. Honors CARGO_TARGET_DIR (the Podman Linux
-// driver points it at /tmp/target because the repo is bind-mounted read-only, so
-// cargo can't write into REPO_ROOT/target there); falls back to the in-repo
-// target/ on the host, where the env is unset.
+// Where cargo writes its build output. Honors CARGO_TARGET_DIR when a build
+// environment sets it; falls back to the in-repo target/, where the env is unset.
 function cargoTargetDir(): string {
   return Deno.env.get("CARGO_TARGET_DIR") ?? join(REPO_ROOT, "target");
 }
 
 // Each helper/speech crate compiles per triple with `cargo --target <triple>`,
-// which needs that target's std installed. The drivers pre-install their targets
-// (Containerfile / windows-provision.ps1); on the host the second arch (e.g.
-// x86_64-apple-darwin on an arm64 mac, now part of the all-targets matrix) may be
-// missing. Add each idempotently via rustup before the cargo builds (a no-op when
-// already present). Best-effort: if rustup is absent or the add fails, fall
-// through and let cargo surface its own clearer error.
+// which needs that target's std installed. Every build is native, so the host
+// triple is normally already present. Add each idempotently via rustup before the
+// cargo builds (a no-op when already present). Best-effort: if rustup is absent
+// or the add fails, fall through and let cargo surface its own clearer error.
 async function ensureRustTargets(triples: Triple[]): Promise<void> {
   for (const triple of triples) {
     const code = await new Deno.Command("rustup", {
@@ -444,7 +443,7 @@ const SPEECH_GPU_VARIANTS: Partial<Record<Triple, BinaryVariant[]>> = {
 };
 
 /** Env var naming the staged prebuilt GPU sherpa-onnx lib dir for `variant`,
- *  e.g. `SHERPA_ONNX_GPU_LIB_DIR_CUDA`. CI/driver provisioning downloads the
+ *  e.g. `SHERPA_ONNX_GPU_LIB_DIR_CUDA`. The CI runner's provisioning step downloads the
  *  matching k2-fsa GPU archive (`...-linux-x64-gpu` / `...-win-x64-cuda`) and
  *  points this at it (the dir holding the import/`.so` libs the crate links). */
 function speechGpuLibDirEnv(variant: BinaryVariant): string {
@@ -470,8 +469,8 @@ async function buildSpeech(triples: Triple[], suffix: string): Promise<SpeechArt
   const out: SpeechArtifact[] = [];
   // Safety net: if a triple is ever marked speech-unavailable (binaries.json),
   // skip it rather than fail the whole core build. None are today (windows-arm64
-  // links the sherpa lib via SHERPA_ONNX_LIB_DIR in the guest), so this filters
-  // nothing.
+  // links the sherpa lib via SHERPA_ONNX_LIB_DIR, staged by the CI runner), so
+  // this filters nothing.
   const speechTriples = triples.filter((t) => !binaryUnavailableOnTriple("loca-core-speech", t));
   for (const skipped of triples.filter((t) => !speechTriples.includes(t))) {
     info(colors.yellow(`skipping speech for ${skipped} (marked unavailable)`));
@@ -942,27 +941,40 @@ async function writeManifestFile(
 // here cannot silently skip the source-hash gate. Lockfiles are intentionally
 // excluded (a client-only dep bump touches the root lock but not core); declared
 // deps live in each deno.json / Cargo.toml, which ARE hashed.
-const CORE_PACKAGES = [
-  "core",
-  "core-engine",
-  "shared",
-  "core-keychain",
-  "core-updater",
-  "core-hwinfo",
-  "core-ptyhost",
-  "core-speech",
+// **What actually composes the shipped artifact**, which since the build
+// cutover is the Rust crate rather than the TypeScript one. Getting this list
+// wrong is silent in the worst direction: the source-hash gate decides whether a
+// release is NEEDED, so a list that watched the old core would let a change to
+// the code that actually ships go out under an unchanged hash, or not go out at
+// all.
+//
+// `core` and `core-engine` are deliberately ABSENT even though both still exist:
+// they are retained as the conformance oracle and ship nothing, so hashing them
+// would trigger core releases for edits that cannot reach a user.
+//
+// `core` is the one exception and it is listed for a single file: it still holds
+// `src/workers/tool-worker.ts`, which IS shipped beside the binary and which the
+// Rust core spawns under the pinned `deno`. That file is the last thread tying a
+// release to the retained package; if it moves, `core` leaves this list.
+const CORE_PACKAGES = ["core-rs", "shared", "core-updater", "core"];
+// Two files of the Rust crate live OUTSIDE `src/` and both change the artifact,
+// so `pkgHashInputs`'s src+manifest pair is not sufficient for it:
+// `build.rs` decides how llama.cpp is linked and which backends are staged, and
+// `schema.sql` is the database the core opens. A change to either with an
+// unchanged hash would publish a core that behaves differently under the same
+// version.
+const CORE_HASH_INPUTS = [
+  ...packagesHashInputs(CORE_PACKAGES),
+  "packages/loca-core-rs/build.rs",
+  "packages/loca-core-rs/schema.sql",
 ];
-const CORE_HASH_INPUTS = packagesHashInputs(CORE_PACKAGES);
 
 // The dist/<triple>/ binaries buildAll + buildHelpers emit for this channel:
-// loca-core plus the four helpers, each with the channel suffix. The unified
-// build hash-checks these so a wiped or swapped artifact forces a rebuild.
-// Defaults to the host triple; a cross-platform build passes the triples it
-// built so the cursor tracks every arch, not just the host's.
-export function coreOutputs(
-  channel: ReleaseChannel,
-  triples: Triple[] = [detectHostTriple()],
-): string[] {
+// loca-core plus the four helpers, each with the channel suffix. `deno task
+// build` hash-checks these so a wiped or swapped artifact forces a rebuild.
+// Always the host triple: every build (local or a CI runner) is native.
+export function coreOutputs(channel: ReleaseChannel): string[] {
+  const triples = [detectHostTriple()];
   const suffix = channelBinSuffix(channel);
   const names = ["loca-core", ...HELPER_CRATES.map((h) => h.name)];
   return triples.flatMap((triple) => {
@@ -976,23 +988,33 @@ export const coreItem: ReleaseItem = {
   label: "core + helpers",
   scope: "channel",
   packages: CORE_PACKAGES,
-  bumpHint: "packages/loca-core/src/config.ts (CORE_VERSION)",
+  bumpHint:
+    "packages/loca-core-rs/src/config.rs (CORE_VERSION), mirrored in packages/loca-core/src/config.ts",
 
   version: readCoreVersion,
-  versionFile: CONFIG_PATH,
+  // The RUST constant: it is the one the shipped binary reports, so it is the
+  // one an update check compares against. `bumpCoreVersion` keeps the oracle's
+  // copy in step and `readCoreVersion` refuses a tree where they disagree.
+  versionFile: CORE_CONFIG_RS,
   bumpVersion: bumpCoreVersion,
 
   sourceHash(_channel: ReleaseChannel): Promise<string> {
-    // config.ts carries CORE_VERSION; drop it from the tree hash and fold it back
-    // in with the version blanked, so a lone version bump does not re-trigger a
-    // core release while a real config.ts change still does.
+    // Both config files carry CORE_VERSION; drop each from the tree hash and
+    // fold it back in with the version blanked, so a lone version bump does not
+    // re-trigger a core release while a real change to either still does.
+    //
+    // Two entries rather than one since the cutover: missing the Rust half would
+    // make every version bump look like a source change to the crate that
+    // actually ships, and every release would then chase its own tail.
     const configRel = rel(CONFIG_PATH);
+    const rustConfigRel = rel(CORE_CONFIG_RS);
     return hashPaths([
       ...CORE_HASH_INPUTS.map((p) => ({
         path: join(REPO_ROOT, p),
-        exclude: (r: string) => r.endsWith(".test.ts") || r === configRel,
+        exclude: (r: string) => r.endsWith(".test.ts") || r === configRel || r === rustConfigRel,
       })),
       { path: CONFIG_PATH, transform: stripCoreVersion },
+      { path: CORE_CONFIG_RS, transform: stripCoreVersion },
     ]);
   },
 
@@ -1001,18 +1023,11 @@ export const coreItem: ReleaseItem = {
   },
 
   async apply(env: DeployEnv, channel: ReleaseChannel, opts: ApplyOpts): Promise<void> {
-    const suffix = channelBinSuffix(channel);
     const version = await readCoreVersion();
-    // Prebuilt mode (CI publish): merge the bundles the build runners produced
-    // (their dist/<triple>/ files already collected under DIST_DIR) and hash the
-    // platform-independent workers from this host's checkout. No build.
-    // All-targets mode: build host triples here + the rest in their environments.
-    // Host-only mode: today's single-host build.
-    const built = opts.prebuilt
-      ? await mergeCoreBundles(opts.prebuilt.coreBundles, await hashWorkers())
-      : opts.environments?.length
-        ? await buildCoreUnified(opts.triples, suffix, channel, opts.environments)
-        : await buildCoreArtifacts(opts.triples, suffix);
+    // Merge the bundles the build runners produced (their dist/<triple>/ files
+    // already collected under DIST_DIR) and hash the platform-independent
+    // workers from this coordinator's checkout. Nothing is built here.
+    const built = await mergeCoreBundles(opts.prebuilt.coreBundles, await hashWorkers());
     await composeAndUploadCore(env, channel, version, built, opts);
     // Native installers are NOT built here: they belong to the client item
     // (client.ts), which wraps the just-published core artifacts and its own
@@ -1021,47 +1036,11 @@ export const coreItem: ReleaseItem = {
   },
 };
 
-// Build the core artifacts for `triples` across this host + the given build
-// environments: the host compiles its own OS's triples directly; every other
-// triple is routed to an environment (started on demand, torn down after) that
-// builds it and ships the artifacts back into the host's dist/. The results are
-// merged into one CoreBuildArtifacts for composeAndUploadCore. Triples with no
-// available environment are reported and dropped (the manifests tolerate a
-// partial platform set).
-export async function buildCoreUnified(
-  triples: Triple[],
-  suffix: string,
-  channel: ReleaseChannel,
-  environments: BuildEnvironment[],
-): Promise<CoreBuildArtifacts> {
-  const routing = await routeTriples(triples, environments);
-  reportRouting(routing);
-
-  const hostBuilt = await buildCoreArtifacts(routing.host, suffix);
-
-  const bundles: ArtifactBundle[] = [];
-  for (const { env, triples: envTriples } of routing.byEnv) {
-    const bundle = await withEnvironment(env, () =>
-      env.buildCore({ triples: envTriples, channel, suffix }),
-    );
-    bundles.push(bundle);
-  }
-  // Re-anchor + verify the environments' artifacts (already copied into dist/).
-  // Workers are platform-independent, so the host's are authoritative.
-  const fromEnvs = await mergeCoreBundles(bundles, []);
-  return {
-    artifacts: [...hostBuilt.artifacts, ...fromEnvs.artifacts],
-    helpers: [...hostBuilt.helpers, ...fromEnvs.helpers],
-    speech: [...hostBuilt.speech, ...fromEnvs.speech],
-    workers: hostBuilt.workers,
-  };
-}
-
-// Build everything the core release item needs for a set of triples, in the
-// current environment: the deno-compiled binaries, the four native helpers, the
-// speech sidecar, and the (platform-independent) worker hashes. This is the half
-// that runs INSIDE each build environment (host, a Podman container, the Windows
-// VM); composeAndUploadCore aggregates the results and runs once on the host.
+// Build everything the core release item needs for a set of triples, natively:
+// the deno-compiled binaries, the native helpers, the speech sidecar, and the
+// (platform-independent) worker hashes. This is the half that runs on each build
+// runner (and in `deno task build`); composeAndUploadCore aggregates the results
+// and runs once on the publish coordinator.
 export async function buildCoreArtifacts(
   triples: Triple[],
   suffix: string,
@@ -1096,8 +1075,9 @@ export async function buildCoreArtifacts(
 
 // Compose + sign core.json/binaries.json over the given (possibly cross-env)
 // artifact set, then upload the artifacts + manifests to R2. Runs ONCE on the
-// host: composeCoreManifest/composeBinaryManifest carry no R2 carry-forward, so
-// the arrays passed here must already be the full union across every triple.
+// publish coordinator: composeCoreManifest/composeBinaryManifest carry no R2
+// carry-forward, so the arrays passed here must already be the full union across
+// every triple the build matrix staged.
 export async function composeAndUploadCore(
   env: DeployEnv,
   channel: ReleaseChannel,

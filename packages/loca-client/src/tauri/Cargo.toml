@@ -57,6 +57,54 @@ file-rotate = "0.8"
 # macOS uses the "legacy keychain" store (available to unsigned/ad-hoc builds);
 # iOS has only the "protected data" store, and the crate hard-requires the
 # `protected` feature there (the `keychain` module is macOS-only).
+# The embedded Core. On a phone there is no separate `loca-core` process to talk
+# to, so the app links the real Core and drives it in process (commands/core.rs).
+#
+# **Gated to mobile, and the gate is what keeps desktop clean.** This edge is the
+# only thing that would pull the Core (and eventually llama.cpp and sherpa-onnx)
+# into an archive, because this crate is already
+# `crate-type = ["staticlib", "cdylib", "rlib"]`. `loca-core-ffi` is an rlib for
+# the same reason: on mobile THIS crate is the staticlib, so declaring another
+# one would either need a hand-written C ABI between two Rust crates or archive
+# the Core on every desktop build. See D-004 and D-135.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# `local-inference` is enabled HERE rather than in the ffi crate's own defaults,
+# and this block is the reason it can be: it is already gated to the two mobile
+# targets, so the feature turns on exactly where the app ships and stays off for
+# every host build (this crate's clippy, the ffi crate's tests, any
+# workspace-wide cargo invocation) where `vendor/llama.cpp` may not exist.
+#
+# Without it the phone embeds a Core with NO engine: `provider_for` falls back to
+# `HttpProvider` against `http://127.0.0.1:7701/v1`, where nothing listens now
+# that the sidecar is gone, so every local turn fails with a connection error on
+# a build that was supposed to run the model itself. That is the whole objective
+# of the mobile half of the port, so it is not a default worth inheriting.
+# `local-speech` rides along for the same reason and with the same gating. It
+# needs `vendor/sherpa-onnx` staged by `scripts/vendor-sherpa.ts` and
+# `SHERPA_ONNX_LIB_DIR` pointed at the right per-target directory, both of which
+# the mobile build tasks do; a host build never reaches this block and so never
+# needs either. Without it the phone embeds a Core whose `/api/v1/health`
+# capabilities report `localSpeech: false` and whose STT and TTS work only
+# against an external endpoint, which on a phone is the feature people came for.
+loca-core-ffi = { path = "../../../loca-core-ffi", features = ["local-inference", "local-speech"] }
+
+# Android has no keyring-core OS backend, so both on-device secret stores (this
+# crate's paired-core bearer tokens and the embedded Core's vault master key)
+# are sealed with an AES-256-GCM key held in the AndroidKeyStore. The KeyStore is
+# reachable only through the JVM, so this is the crate that owns the JNI: see
+# `commands/keychain.rs` and `SecretBox.kt`.
+#
+# `jni` 0.21 rather than 0.22: the workspace lock already carries BOTH, 0.21.1
+# pulled by the Tauri Android stack (tao/wry) and 0.22.4 arriving separately, so
+# neither pin adds a first copy. Matching the Tauri stack keeps one of the two
+# from becoming a third.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+# Hands back the JavaVM and the Activity the runtime already holds. The Activity
+# is what makes app classes resolvable: a JNI `FindClass` from a Rust-created
+# thread searches the SYSTEM classloader, which cannot see `com.rzkyif.loca.*`.
+ndk-context = "0.1"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 

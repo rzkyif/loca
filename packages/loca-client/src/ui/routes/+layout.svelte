@@ -14,6 +14,7 @@
   } from "$lib/platform/select";
   import { connectionState } from "$stores/connection.svelte";
   import { coreStatusState } from "$stores/core-status.svelte";
+  import { capabilitiesState } from "$stores/capabilities.svelte";
   import { localCoreState } from "$stores/local-core.svelte";
   import { makeUiContext, setUiContext } from "@loca/shared/ui/context";
   import { getDefaultSettings } from "@loca/shared";
@@ -80,6 +81,10 @@
     // Backend core status (core.status frames) feeds the CoreBar alongside the
     // transport state above; same persistent-subscription rationale.
     coreStatusState.attach();
+    // What the selected core can DO, read from /health on connect. Beside
+    // coreStatusState rather than with the stores in +page.svelte because both
+    // are per-core state that must reset on a core switch, not on a page mount.
+    capabilitiesState.attach();
     // Liveness of the core installed on this device, feeding the tray's Start /
     // Stop Core item and the CoreBar's Stopped pill. Probes on boot and on every
     // transport transition; never polls.

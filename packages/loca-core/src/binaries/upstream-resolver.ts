@@ -24,6 +24,7 @@
 // module isn't involved.
 
 import type { BinaryManifestEntry, BinaryVariant, Triple, UpstreamResolver } from "@loca/shared";
+import { GITHUB_API_BASE_URL } from "../config.ts";
 import { assetVariants, errMessage, isResolverEntry, platformVariants } from "@loca/shared";
 import { AppError } from "@loca/core-engine";
 
@@ -124,13 +125,13 @@ async function candidateReleases(
   let releases: GitHubRelease[];
   if (pinnedTag) {
     const rel = (await githubJson(
-      `https://api.github.com/repos/${repo}/releases/tags/${pinnedTag}`,
+      `${GITHUB_API_BASE_URL}/repos/${repo}/releases/tags/${pinnedTag}`,
       signal,
     )) as GitHubRelease;
     releases = [rel];
   } else {
     const list = (await githubJson(
-      `https://api.github.com/repos/${repo}/releases?per_page=${RECENT_RELEASES_PAGE}`,
+      `${GITHUB_API_BASE_URL}/repos/${repo}/releases?per_page=${RECENT_RELEASES_PAGE}`,
       signal,
     )) as GitHubRelease[];
     // GitHub returns releases newest-first; keep that order. Exclude drafts and

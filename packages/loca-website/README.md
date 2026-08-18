@@ -49,8 +49,8 @@ cd packages/loca-website && deno task preview    # wrangler dev
 
 The site is a platform-independent item of the umbrella release, alongside the
 model catalog and schemas: it carries no per-triple artifact, so it
-builds + deploys directly on the release host with no build-matrix runner. From
-the **repo root** `deno task release` (or a remote-triggered channel push) runs
+builds + deploys directly on the publish coordinator with no build-matrix runner.
+A channel push (`deno task remote-release`) runs
 `astro build` then `wrangler deploy` for it, gated by the same source-hash cursor
 on R2 and version-bump check every other item uses, so an unchanged site is a
 no-op and no other artifact is built when only the site changed. The website's
@@ -79,8 +79,8 @@ plus Cloudflare/R2 credentials; the signing keypair is generated on first run).
 
 ## GitHub Actions release (branch-driven)
 
-Besides the local `deno task release`, a second pipeline releases each channel by
-a git transfer (`.github/workflows/release.yml`):
+Releasing is CI-only. Each channel is released by a git transfer
+(`.github/workflows/release.yml`):
 
 - fast-forward `main` -> `latest` publishes the **latest** channel;
 - fast-forward `latest` -> `stable` publishes the **stable** channel.
@@ -94,43 +94,43 @@ deno task remote-release:stable   # remote latest <- stable -> CI publishes stab
 
 `remote-release` is purely remote: it fast-forwards the target branch onto its
 source via the GitHub refs API (`gh`), refuses a non-fast-forward, and no-ops
-when the target is already aligned (so it never triggers a redundant run). It
-replaces the manual `git push origin main:latest`.
+when the target is already aligned (so it never triggers a redundant run). It is
+the only release entry point; there is no local publish path.
 
-**The channel branches are shared with the local pipeline.** A `preflight` job
-diffs the release items against the shared R2 cursor and emits two gates:
-`changed` (any item differs -> run the publish job) and `native` (a matrix-built
-item - core, desktop client, android - differs -> run the expensive per-triple
-build matrix). So `deno task release` (which publishes to R2 locally first, then
-fast-forwards and pushes the channel branch) lands a branch push that preflight
-sees as "nothing changed" -> every job is skipped. `remote-release` moves the
-branch with nothing published yet -> preflight sees changes -> CI does the work.
-A push that touches only platform-independent items (extension, catalog, install
-scripts, schemas, the landing page) has `native=false`, so the whole build matrix
-is skipped and the publish job builds + deploys just those items on its own. The
-two pipelines never double-publish, and neither wastes a matrix build.
+**Nothing is published from a developer machine.** A `preflight` job diffs the
+release items against the R2 cursor and emits two gates: `changed` (any item
+differs -> run the publish job) and `native` (a matrix-built item - core, desktop
+client, android, ios - differs -> run the expensive per-triple build matrix).
+Re-pushing an already-published commit is therefore a no-op: preflight sees
+"nothing changed" and every job is skipped. A push that touches only
+platform-independent items (extension, catalog, install scripts, schemas, the
+landing page) has `native=false`, so the whole build matrix is skipped and the
+publish job builds + deploys just those items on its own.
 
 The channel is the branch name. The workflow fans out one native build runner per
-desktop triple (`macos-13` x64, `macos-14` arm64, `windows-latest` x64,
-`windows-11-arm` arm64, `ubuntu-latest` x64 + Android), each running
-`deno task release:ci-build` to build and build-time-sign its own triple (Tauri
-minisign for the desktop bundle, the Java keystore for the APK) and upload a
-staging artifact. A single coordinator then runs `deno task release:ci-publish`:
-it reconstructs `dist/`, composes + Ed25519-signs + uploads the unified manifests
-**once** to R2, and mirrors the run to a rolling per-channel **GitHub Release**
-(tags `latest` / `stable`, assets clobbered each run).
+desktop triple (`macos-15-intel` x64, `macos-14` arm64 + iOS, `windows-latest`
+x64, `windows-11-arm` arm64, `ubuntu-latest` x64, `ubuntu-24.04-arm` arm64, plus
+an Android-only leg), each running `deno task release:ci-build` to build and
+build-time-sign its own triple (Tauri minisign for the desktop bundle, the Java
+keystore for the APK) and upload a staging artifact. A single coordinator then
+runs `deno task release:ci-publish`: it reconstructs `dist/`, composes +
+Ed25519-signs + uploads the unified manifests **once** to R2, and mirrors the run
+to a rolling per-channel **GitHub Release** (tags `latest` / `stable`, assets
+clobbered each run).
 
-This is the same compose/sign/upload code and the **same R2 release-state cursor**
-as the local pipeline, so a CI run and a local run can never double-publish; the
-CI build runners are just an alternative environment provider to the local
-Podman/UTM drivers, producing the same bundle/descriptor contract
-(`scripts/release/artifacts.ts`). The Ed25519 trust-root **private** key is given
-only to the publish job, never to a build runner (which gets only the public key,
-baked into the core binary, plus the Tauri/Android build-signing keys).
+iOS is the one exception to the stage-then-publish split: it ships through the
+App Store, so the macOS arm64 runner builds AND uploads the `.ipa` to App Store
+Connect itself (diffing the cursor first, since the upload is its own side
+effect) and stages only a receipt, which the coordinator turns into the cursor
+entry.
+
+The Ed25519 trust-root **private** key is given only to the publish job, never to
+a build runner (which gets only the public key, baked into the core binary, plus
+the Tauri/Android build-signing keys).
 
 **Version bumps live on `main`.** The channel branches stay clean fast-forwards
 and CI never writes the repo: a changed item that wasn't bumped past the published
-version fails the publish job loudly (`--noBump` records the as-built source hash,
+version fails the publish job loudly (the cursor records the as-built source hash,
 so re-pushing the same commit is a no-op). Bump versions as part of the work on
 `main` before transferring (see the version-bump table in
 [DEVELOPMENT.md](../../DEVELOPMENT.md#channels)).

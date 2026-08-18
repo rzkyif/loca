@@ -15,6 +15,7 @@
 // Android plan and the per-feature notes inline.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   getVersion as tauriGetVersion,
   hide as tauriHide,
@@ -31,7 +32,15 @@ import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { platform as osPlatform } from "@tauri-apps/plugin-os";
 import { sha256Hex, timingSafeEqualHex, verifyEd25519Detached } from "@loca/shared";
 import { presentActionSheet } from "$lib/menu/action-sheet-host.svelte";
-import { type Platform, setPlatform, type UpdateHandle } from "./index";
+import {
+  type LocalCore,
+  type LocalCoreInfo,
+  type LocalCoreReply,
+  type LocalCoreRequest,
+  type Platform,
+  setPlatform,
+  type UpdateHandle,
+} from "./index";
 import { net } from "./shared";
 
 export function installMobilePlatform(): void {
@@ -126,12 +135,29 @@ async function checkAndroidUpdate(): Promise<UpdateHandle | null> {
     return null;
   }
   if (!manifest?.version || !isNewerVersion(manifest.version, current)) return null;
-  // The device ABI isn't known to JS; prefer arm64 (every modern device), then a
-  // universal fat APK, then whatever the manifest carries.
-  const entry =
-    manifest.abis["android-arm64"] ??
-    manifest.abis["android-universal"] ??
-    Object.values(manifest.abis ?? {})[0];
+  // Pick the APK built for THIS device's ABI, and decline rather than guess.
+  //
+  // This used to prefer `android-arm64`, then a universal fat APK, then
+  // whatever the manifest happened to carry first. That was correct only by
+  // accident: the release script publishes a single `android-universal` key for
+  // a fat APK, so the arm64 arm never matched. The moment per-ABI splits ship
+  // the accident inverts and every armv7 or x86_64 device downloads an arm64
+  // APK whose native library its CPU cannot load. **A self-update that breaks
+  // the app is worse than one that does nothing**, and it happens after the
+  // signature and hash checks pass, so nothing else here would catch it.
+  //
+  // `client_abi` reports the ABI this build was compiled for, which IS the ABI
+  // running, because the native library is compiled once per ABI. The universal
+  // fallback stays for as long as fat APKs are published; the "first entry"
+  // fallback is gone, because a coin flip that installs an unloadable APK is
+  // strictly worse than telling the user there is no update.
+  let abi: string | null = null;
+  try {
+    abi = (await invoke<string | null>("client_abi")) ?? null;
+  } catch {
+    // An older shell without the command. Fall through to universal only.
+  }
+  const entry = (abi ? manifest.abis[abi] : undefined) ?? manifest.abis["android-universal"];
   if (!entry?.url || !entry?.sha256) return null;
   const expectedSha = entry.sha256.toLowerCase();
 
@@ -176,6 +202,45 @@ async function checkAndroidUpdate(): Promise<UpdateHandle | null> {
     close: () => Promise.resolve(),
   };
 }
+
+// --- The Core inside this app ----------------------------------------------
+//
+// The phone IS a Core: `loca-core` is linked into the app and driven in process
+// through the `core_*` commands (see src/tauri/src/commands/core.rs). There is
+// no loopback listener and that is load bearing, so none of these carry a TLS
+// mode, a pin, or a socket URL.
+//
+// This object is the whole reason `lib/core/local-transport.ts` needs no
+// `@tauri-apps/*` import: every `invoke` and every `listen` for the embedded
+// Core is here, inside lib/platform/, where the boundary rule allows them.
+const localCore: LocalCore = {
+  start: () => invoke<LocalCoreInfo>("core_start"),
+  running: () => invoke<boolean>("core_running"),
+  http: (req: LocalCoreRequest) =>
+    invoke<LocalCoreReply>("core_http", {
+      url: req.url,
+      method: req.method,
+      headers: req.headers,
+      bodyB64: req.bodyB64,
+    }),
+  wsOpen: (wsId) => invoke("core_ws_open", { wsId }),
+  wsSend: (wsId, data) => invoke("core_ws_send", { wsId, data }),
+  wsClose: (wsId) => invoke("core_ws_close", { wsId }),
+  async subscribeWs(wsId, handlers) {
+    // Three events, not four: there is no `core://ws/<id>/error`, because
+    // registering with the frame bus cannot fail. The close payload carries the
+    // close code, which nothing on this side acts on (a local close is always
+    // real, so the response is the same whatever the code says).
+    const unlisteners: UnlistenFn[] = await Promise.all([
+      listen(`core://ws/${wsId}/open`, () => handlers.onOpen()),
+      listen<string>(`core://ws/${wsId}/message`, (e) => handlers.onMessage(e.payload)),
+      listen(`core://ws/${wsId}/close`, () => handlers.onClose()),
+    ]);
+    return () => {
+      for (const u of unlisteners) u();
+    };
+  },
+};
 
 /** Reject for a host feature that genuinely has no Android equivalent. The UI
  *  gates these affordances on `UiContext.platform`, so a thrown error here is a
@@ -240,6 +305,7 @@ const impl: Platform = {
   // discovery is desktop-only (the Rust command isn't registered on mobile and
   // interface enumeration is out of scope), so override it with an empty sweep.
   net: { ...net, discoverCores: () => Promise.resolve([]) },
+  localCore,
   windowing: {
     // A single fullscreen activity: there is no floating window to move, size,
     // or hide. show/hide/position resolve as no-ops so the boot path (which
@@ -358,15 +424,28 @@ const impl: Platform = {
     delete: (coreId) => invoke("keychain_delete_token", { coreId }),
   },
   pairing: {
-    // Remote-only on mobile: no on-device core. These resolve to inert values
-    // so the (desktop-shaped) onboarding never throws before the mobile NewCore
-    // flow skips the local branch entirely.
+    // This device DOES host a Core, but it hosts it in process rather than as a
+    // separate binary on a port, so the desktop-shaped questions get the answers
+    // that are true of an embedded Core rather than the inert ones.
+    //
+    // No admin token and no boot breadcrumb: both are files a supervised core
+    // process writes, and there is no such process. An embedded Core also mints
+    // no pairing codes, because nothing can pair to it (no listener), which is
+    // the same fact its `capabilities.pairing: false` reports.
     readAdminToken: () => Promise.resolve(null),
     readLocalCoreBootError: () => Promise.resolve(null),
-    isLocalCoreInstalled: () => Promise.resolve(false),
-    isLocalCoreRunning: () => Promise.resolve(false),
-    startLocalCore: () => Promise.resolve(false),
+    // Always present: the Core is compiled into this app, so it cannot be
+    // missing the way an uninstalled desktop core can.
+    isLocalCoreInstalled: () => Promise.resolve(true),
+    isLocalCoreRunning: () => localCore.running(),
+    startLocalCore: () => localCore.start().then(() => true),
+    // Nothing to stop. `StartOnce` cannot be un-started, and an embedded Core
+    // lives exactly as long as the app does, so this is a no-op rather than a
+    // rejection: callers (the tray item, the CoreBar pill) are desktop-only
+    // affordances that never reach it here.
     stopLocalCore: () => Promise.resolve(),
+    // No origin, because there is no listener. See the interface doc for why
+    // this stays `""` rather than becoming null.
     localCoreBaseUrl: () => Promise.resolve(""),
     localSidecarPorts: () => Promise.resolve({ llm: 0, stt: 0 }),
     // Dev-only onboarding autofill, the mobile analogue of the desktop

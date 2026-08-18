@@ -3,7 +3,7 @@
 // up the encrypted vault for this).
 
 import { assertEquals } from "@std/assert";
-import { DEFAULT_SAMPLING } from "@loca/shared";
+import { DEFAULT_SAMPLING, getDefaultSettings } from "@loca/shared";
 import { attachHost } from "@loca/core-engine";
 import { denoHost } from "../host/deno-host.ts";
 import { resolveContextSize, resolveEndpoint } from "@loca/core-engine/services/endpoint-resolver";
@@ -14,6 +14,35 @@ import { resolveContextSize, resolveEndpoint } from "@loca/core-engine/services/
 // the developer's real one, without standing up the full test harness.
 Deno.env.set("LOCA_CORE_HOME", Deno.makeTempDirSync({ prefix: "loca-endpoint-test-" }));
 attachHost(denoHost());
+
+Deno.test("resolveEndpoint: the local port follows the channel, and a RESOLVED record breaks that", async () => {
+  // The whole point of the port offsets is that two channels run at once. The
+  // resolver's `llm.port` fallback is `llmPort()` = 7701 + channelPortOffset(),
+  // but the SCHEMA's default for that key is the bare "7701", because static
+  // schema data cannot express a channel-derived value.
+  //
+  // So the two disagree by construction, and the disagreement is only visible
+  // off the stable channel. Handing the resolver a record with schema defaults
+  // underneath sends every dev and latest install at the STABLE channel's
+  // llama-server. That is why chat.ts, title-gen.ts and memories-indexer.ts
+  // pass the sparse record here while acting on the resolved one. See D-078.
+  const previous = Deno.env.get("LOCA_CHANNEL");
+  Deno.env.set("LOCA_CHANNEL", "dev");
+  try {
+    // Sparse: the channel-aware fallback fires, which is the correct behaviour.
+    assertEquals((await resolveEndpoint({})).baseUrl, "http://127.0.0.1:7721/v1");
+
+    // Resolved: the schema's channel-blind "7701" is present, so the fallback
+    // never runs and the turn silently crosses channels. Asserted rather than
+    // described so that "just resolve the settings everywhere" trips a named
+    // test instead of shipping.
+    const resolved = await resolveEndpoint(getDefaultSettings());
+    assertEquals(resolved.baseUrl, "http://127.0.0.1:7701/v1");
+  } finally {
+    if (previous === undefined) Deno.env.delete("LOCA_CHANNEL");
+    else Deno.env.set("LOCA_CHANNEL", previous);
+  }
+});
 
 Deno.test("resolveEndpoint: defaults to local llama-server when provider is unset", async () => {
   const cfg = await resolveEndpoint({});
@@ -145,4 +174,40 @@ Deno.test("resolveContextSize: coerces numeric string", () => {
 Deno.test("resolveContextSize: ignores non-finite values and falls back to default", () => {
   assertEquals(resolveContextSize({ "llm.contextSize": "nope" }), 4096);
   assertEquals(resolveContextSize({ "llm.contextSize": Number.NaN }), 4096);
+});
+
+// The scheduler's semaphore is sized against `--parallel` on the llama-server
+// the core spawned (llm-scheduler.ts), so "local" has to mean "we spawned it",
+// not "the URL looks like loopback". The two answers differ in both directions
+// and each direction is a real misconfiguration:
+//
+//   - a user-run LM Studio on 127.0.0.1 is an external provider that enforces
+//     its own limits, and queueing it behind one slot only adds latency;
+//   - a core-spawned server on a LAN bind address is still ours and still has
+//     one slot, so not queueing it lets two clients collide on it.
+//
+// Carried on the endpoint because a caller holding only the endpoint (the chat
+// muxer does) has no other way to ask.
+Deno.test("resolveEndpoint: locality follows the provider, not the URL", async () => {
+  const local = await resolveEndpoint({});
+  assertEquals(local.isLocalProvider, true);
+
+  // Still ours when bound somewhere other than loopback.
+  const lan = await resolveEndpoint({ "llm.host": "192.168.1.10" });
+  assertEquals(lan.isLocalProvider, true);
+
+  // Not ours even when it happens to be on loopback.
+  const lmStudio = await resolveEndpoint({
+    "llm.provider": "external",
+    "llm.external.baseUrl": "http://127.0.0.1:1234/v1",
+  });
+  assertEquals(lmStudio.isLocalProvider, undefined);
+
+  // The secondary route is `dualModel.external.*` by definition, so it is never
+  // the spawned server whatever its URL says.
+  const secondary = await resolveEndpoint(
+    { "dualModel.external.baseUrl": "http://localhost:1234/v1" },
+    "secondary",
+  );
+  assertEquals(secondary.isLocalProvider, undefined);
 });

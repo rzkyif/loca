@@ -1,5 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  iOS entitlements. Referenced by gen/apple/project.yml
+  (targets.loca_iOS.entitlements.path), so xcodegen wires this file into the
+  target; nothing else needs to change to add a key here.
+
+  Not to be confused with src/tauri/Info.plist, which is macOS-only and says so.
+  iOS declares its own strings in gen/apple/loca_iOS/Info.plist.
+-->
 <plist version="1.0">
-<dict/>
+<dict>
+	<!--
+	  Loca runs the model in process on the phone, and llama.cpp loads weights
+	  with mmap. File-backed pages stay evictable, so the binding constraint is
+	  not the size of the GGUF but the per-app jetsam limit, and this entitlement
+	  is what raises that limit on devices that support it.
+
+	  The mmap half is a DEFAULT, not a guarantee this file can rely on. llm.mmap
+	  defaults on everywhere (settings/groups/llm.ts) and inference/options.rs
+	  reads it without consulting the platform, so a user who turns it off gets
+	  what they asked for: resident anonymous weight pages, and a jetsam kill
+	  that this entitlement raises the ceiling for but cannot prevent. That is
+	  deliberate (D-178); the setting's description carries the warning.
+
+	  Two consequences worth knowing before touching this file:
+
+	  1. It must also be enabled on the App ID in the Apple Developer portal, or
+	     it will not be in the provisioning profile and codesign FAILS the build
+	     with "provisioning profile doesn't include entitlement" rather than
+	     degrading. There is no macOS CI runner, so the first evidence either way
+	     is a signed build on the user's machine. The portal step is item 0 in
+	     M4's S0.4 session list.
+	  2. It is a precondition for the S0.4 measurement rather than a result of
+	     it: that session measures the jetsam ceiling WITH and WITHOUT the
+	     entitlement, which it cannot do if the key is absent. The mobile fit
+	     fractions in the model catalog are provisional until it has run.
+	-->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+</dict>
 </plist>

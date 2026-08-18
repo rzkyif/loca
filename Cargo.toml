@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
   "packages/loca-client/src/tauri",
+  "packages/loca-core-rs",
+  "packages/loca-core-ffi",
   "packages/loca-core-keychain",
   "packages/loca-core-updater",
   "packages/loca-core-hwinfo",
@@ -10,7 +12,29 @@ members = [
 ]
 # `reference/` is a local-only, git-ignored area (e.g. old app versions kept for
 # reference); keep anything inside it out of the workspace.
-exclude = ["reference"]
+# `scripts/contract/codegen` is a build-time tool (JSON Schema -> Rust wire
+# types) run by `deno task contract`; it keeps its own lockfile so pulling in
+# typify never touches the shipped crates' dependency graph.
+exclude = ["reference", "scripts/contract/codegen"]
+
+# Dev/test builds default to full DWARF, and on macOS `split-debuginfo` defaults
+# to "unpacked": rustc leaves one `.o` per codegen unit in `target/debug/deps`
+# and never reclaims the ones a later rebuild supersedes. Rebuilding
+# `loca-core-rs` in a loop therefore grows `target/` without bound, at roughly
+# 180 MB per rebuild. Line tables keep the file:line that panic and backtrace
+# output need, which is all the test suite reads, at a fraction of the size;
+# dependencies and build scripts, which nobody steps through, carry none. Run
+# `deno task clean:stale` to prune orphans a rebuild left behind.
+[profile.dev]
+debug = "line-tables-only"
+
+# `"*"` matches dependencies only, never the workspace members, so first-party
+# code keeps its line tables while the dependency graph carries no debug info.
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.build-override]
+debug = false
 
 # Single shared release profile for every Rust crate. In a workspace the member
 # crates' own [profile.*] sections are ignored, and `lto`/`panic` can't be

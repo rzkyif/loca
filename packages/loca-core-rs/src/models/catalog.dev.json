@@ -1,0 +1,1937 @@
+{
+  "generatedBy": "deno task contract, via scripts/contract/emit-catalog.ts. Do not edit.",
+  "payload": {
+    "schemaVersion": 1,
+    "generatedAt": "",
+    "families": [
+      {
+        "family": "Qwen 3.6",
+        "publisher": "Qwen",
+        "models": [
+          {
+            "id": "Qwen/Qwen3.6-27B",
+            "name": "Qwen3.6 27B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 45.8
+              }
+            ],
+            "paramsB": 27,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 64,
+              "embeddingLength": 5120,
+              "headCount": 24,
+              "headCountKv": 4,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.6-27B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 927607360,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.6-27B-GGUF/main/Qwen3.6-27B-Q8_0.gguf",
+                    "fileSizeBytes": 28595763424,
+                    "sha256": "f93f517f38e696d35a1a7df2c0e3155a64f4c4dcd662107a146ae263f7fb14ce"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.6-27B-GGUF/main/Qwen3.6-27B-Q4_K_M.gguf",
+                    "fileSizeBytes": 16817244384,
+                    "sha256": "5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.6-27B-GGUF/main/Qwen3.6-27B-Q3_K_M.gguf",
+                    "fileSizeBytes": 13586217184,
+                    "sha256": "bdfa99d488b501f5ca711f35c930f005319a064eabcaae23290571a25c499eeb"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.6-27B-GGUF/main/Qwen3.6-27B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 11849779424,
+                    "sha256": "3db422cf36c7efacb027396a11df287c0fc469829bd7daf1867a3505a9e44af6"
+                  }
+                ],
+                "mmprojSha256": "eacf610d1ee4bd5ed0197a0777dd8f4fceb8eefa27009067c7d496cb68fbde45"
+              }
+            ]
+          },
+          {
+            "id": "Qwen/Qwen3.6-35B-A3B",
+            "name": "Qwen3.6 35B-A3B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 43.5
+              }
+            ],
+            "paramsB": 35,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 40,
+              "embeddingLength": 2048,
+              "headCount": 16,
+              "headCountKv": 2,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": ["moe"],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.6-35B-A3B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 899283680,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.6-35B-A3B-GGUF/main/Qwen3.6-35B-A3B-Q8_0.gguf",
+                    "fileSizeBytes": 36903140320,
+                    "sha256": "d1a395809f65a43a13ad119eb4e7acdef1ac6d68120f39902c8ab96e72794a59"
+                  },
+                  {
+                    "quant": "UD-Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.6-35B-A3B-GGUF/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+                    "fileSizeBytes": 22134528992,
+                    "sha256": "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61"
+                  },
+                  {
+                    "quant": "UD-Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.6-35B-A3B-GGUF/main/Qwen3.6-35B-A3B-UD-Q3_K_M.gguf",
+                    "fileSizeBytes": 16600710112,
+                    "sha256": "1b715841683f960bd9a49f008181bd910ee169b78d4cf465b6fde7f4d929ff99"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.6-35B-A3B-GGUF/main/Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 12290628576,
+                    "sha256": "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7"
+                  }
+                ],
+                "mmprojSha256": "8971ee4f331ff0a4c609374f32984b3d4e6dc086c0aa35f1d637fad1829e887f"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "family": "Qwen 3.5",
+        "publisher": "Qwen",
+        "models": [
+          {
+            "id": "Qwen/Qwen3.5-0.8B",
+            "name": "Qwen3.5 0.8B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 10.5
+              }
+            ],
+            "paramsB": 0.8,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 24,
+              "embeddingLength": 1024,
+              "headCount": 8,
+              "headCountKv": 2,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.5-0.8B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 204987232,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.5-0.8B-GGUF/main/Qwen3.5-0.8B-Q8_0.gguf",
+                    "fileSizeBytes": 811843840,
+                    "sha256": "0ad885ffd4bb022fc4f0d33a3308fa108ef8613159d3b3a67e23abca056b7a6c"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-0.8B-GGUF/main/Qwen3.5-0.8B-Q4_K_M.gguf",
+                    "fileSizeBytes": 532517120,
+                    "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-0.8B-GGUF/main/Qwen3.5-0.8B-Q3_K_M.gguf",
+                    "fileSizeBytes": 470167808,
+                    "sha256": "c49ad509cd0a3f8584c4eff50d84202336bf9475b8a724c89f4061687c1fb510"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.5-0.8B-GGUF/main/Qwen3.5-0.8B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 417718528,
+                    "sha256": "8d992fef3b0bd269eb4ef2ed492b2b02f9027a055d6a764b700f4092593c9909"
+                  }
+                ],
+                "mmprojSha256": "56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453"
+              }
+            ]
+          },
+          {
+            "id": "Qwen/Qwen3.5-2B",
+            "name": "Qwen3.5 2B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 16.3
+              }
+            ],
+            "paramsB": 2,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 24,
+              "embeddingLength": 2048,
+              "headCount": 8,
+              "headCountKv": 2,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.5-2B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 668227264,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-Q8_0.gguf",
+                    "fileSizeBytes": 2012012800,
+                    "sha256": "1b04acba824817554f4ce23639bc8495ff70453b8fcb047900c731521021f2c1"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-Q4_K_M.gguf",
+                    "fileSizeBytes": 1280835840,
+                    "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-Q3_K_M.gguf",
+                    "fileSizeBytes": 1107149056,
+                    "sha256": "8b049f98461020b7e15797e13413fc63b9b500ffa883c74618b618ecbc2bfccf"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 966533376,
+                    "sha256": "dbcf28421dece9c86884f9da5a2291c8214be7920623f1fcb663ed8f58b38ccb"
+                  }
+                ],
+                "mmprojSha256": "7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7"
+              }
+            ]
+          },
+          {
+            "id": "Qwen/Qwen3.5-4B",
+            "name": "Qwen3.5 4B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 27.1
+              }
+            ],
+            "paramsB": 4,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 32,
+              "embeddingLength": 2560,
+              "headCount": 16,
+              "headCountKv": 4,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.5-4B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 672423616,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.5-4B-GGUF/main/Qwen3.5-4B-Q8_0.gguf",
+                    "fileSizeBytes": 4482403488,
+                    "sha256": "10cc391b403021dd11c614679d2fd92f611c3681d29e29651b717316965d61e1"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-4B-GGUF/main/Qwen3.5-4B-Q4_K_M.gguf",
+                    "fileSizeBytes": 2740937888,
+                    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-4B-GGUF/main/Qwen3.5-4B-Q3_K_M.gguf",
+                    "fileSizeBytes": 2293388448,
+                    "sha256": "d6981ab4d77ba712b48ef69d69042d75b5e39b9dce5fb5a5b054fd08e06afb95"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.5-4B-GGUF/main/Qwen3.5-4B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 1940825248,
+                    "sha256": "79aa0b583c888976013002f66b9f617070d91cf8de6a09dc775983640ac59463"
+                  }
+                ],
+                "mmprojSha256": "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"
+              }
+            ]
+          },
+          {
+            "id": "Qwen/Qwen3.5-9B",
+            "name": "Qwen3.5 9B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 32.4
+              }
+            ],
+            "paramsB": 9,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 32,
+              "embeddingLength": 4096,
+              "headCount": 16,
+              "headCountKv": 4,
+              "headDim": 256
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/Qwen3.5-9B-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 918166080,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/Qwen3.5-9B-GGUF/main/Qwen3.5-9B-Q8_0.gguf",
+                    "fileSizeBytes": 9527502048,
+                    "sha256": "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-9B-GGUF/main/Qwen3.5-9B-Q4_K_M.gguf",
+                    "fileSizeBytes": 5680522464,
+                    "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/Qwen3.5-9B-GGUF/main/Qwen3.5-9B-Q3_K_M.gguf",
+                    "fileSizeBytes": 4673643744,
+                    "sha256": "8fed90306e4f019e2bf35f3766470b7bc59ea1a9dae00f5ceb20b43cb5514393"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/Qwen3.5-9B-GGUF/main/Qwen3.5-9B-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 4121781472,
+                    "sha256": "fcea605227c939525a4145349a082f603d7e5df639be3d88b7aa1e883517552c"
+                  }
+                ],
+                "mmprojSha256": "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "family": "Gemma 4",
+        "publisher": "Google",
+        "models": [
+          {
+            "id": "google/gemma-4-E2B-it",
+            "name": "Gemma 4 E2B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 15.2
+              }
+            ],
+            "paramsB": 2,
+            "contextMax": 131072,
+            "arch": {
+              "blockCount": 35,
+              "embeddingLength": 1536,
+              "headCount": 8,
+              "headCountKv": 1,
+              "headDim": 512
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 1,
+              "topP": 0.95,
+              "topK": 64,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 985654080,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/gemma-4-E2B-it-Q8_0.gguf",
+                    "fileSizeBytes": 5048350848,
+                    "sha256": "0a8488b149e1f700712c35d5bf0a3795f9dcc2563b4944d5ef2fb89375f9483e"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/gemma-4-E2B-it-Q4_K_M.gguf",
+                    "fileSizeBytes": 3106736256,
+                    "sha256": "9378bc471710229ef165709b62e34bfb62231420ddaf6d729e727305b5b8672d"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/gemma-4-E2B-it-Q3_K_M.gguf",
+                    "fileSizeBytes": 2536784000,
+                    "sha256": "31aeee4a8b5c4a743f51f4021c29cfaa809d31a892cf9b918b9bb40542941197"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/gemma-4-E2B-it-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 2403612800,
+                    "sha256": "dd279a54c0c0dc9724ed11d7f73ad7fb4489a45f58fefe9447da2429a727de0c"
+                  }
+                ],
+                "mmprojSha256": "140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa"
+              },
+              {
+                "label": "QAT",
+                "tags": ["qat"],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-E2B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 985654080,
+                "quants": [
+                  {
+                    "quant": "UD-Q4_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-qat-GGUF/main/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+                    "fileSizeBytes": 2620368960,
+                    "sha256": "cd4526493dccbfd6791bee8822e37e30340074d1d4d9aada52ce09afefd6a33a"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E2B-it-qat-GGUF/main/gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 2186184768,
+                    "sha256": "8279c8b153490e400831e89fc8162348911dfbe3c70d22055c70abaa9b05a0b4"
+                  }
+                ],
+                "mmprojSha256": "140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa"
+              }
+            ]
+          },
+          {
+            "id": "google/gemma-4-E4B-it",
+            "name": "Gemma 4 E4B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 18.8
+              }
+            ],
+            "paramsB": 4,
+            "contextMax": 131072,
+            "arch": {
+              "blockCount": 42,
+              "embeddingLength": 2560,
+              "headCount": 8,
+              "headCountKv": 2,
+              "headDim": 512
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 1,
+              "topP": 0.95,
+              "topK": 64,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 990372672,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/gemma-4-E4B-it-Q8_0.gguf",
+                    "fileSizeBytes": 8192951456,
+                    "sha256": "a2232a649523c36bf530f1dc3614eb8c800645c4227390381c8b05d4d6eee05a"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/gemma-4-E4B-it-Q4_K_M.gguf",
+                    "fileSizeBytes": 4977169568,
+                    "sha256": "519b9793ed6ce0ff530f1b7c96e848e08e49e7af4d57bb97f76215963a54146d"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/gemma-4-E4B-it-Q3_K_M.gguf",
+                    "fileSizeBytes": 4058135712,
+                    "sha256": "db7ba769f71e7d4e8ec11db42152ba20f422a12d58960a665b5395e111582072"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/gemma-4-E4B-it-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 3757417632,
+                    "sha256": "7c2d0ce4275d2bd53e8e84cf2af1cca0bc458fd5320a65494cd26e83fea2fb7f"
+                  }
+                ],
+                "mmprojSha256": "ddf46c21d7078e95338cfc22306b19b276a29a5ad089023449dd54d4b6170a51"
+              },
+              {
+                "label": "QAT",
+                "tags": ["qat"],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-E4B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 990372672,
+                "quants": [
+                  {
+                    "quant": "UD-Q4_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-qat-GGUF/main/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf",
+                    "fileSizeBytes": 4215693760,
+                    "sha256": "b3052f962d6449b4eb2075733c068bdec1c51eadb7b237e6c3157bfbb7b1dae0"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-E4B-it-qat-GGUF/main/gemma-4-E4B-it-qat-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 3219530176,
+                    "sha256": "fa5add96dfe96039c24087e90a9239e9e15618df42df306d9043c7ae2f58184d"
+                  }
+                ],
+                "mmprojSha256": "ddf46c21d7078e95338cfc22306b19b276a29a5ad089023449dd54d4b6170a51"
+              }
+            ]
+          },
+          {
+            "id": "google/gemma-4-31b-it",
+            "name": "Gemma 4 31B",
+            "scores": [
+              {
+                "source": "artificial-analysis",
+                "metric": "intelligence-index",
+                "value": 39.2
+              }
+            ],
+            "paramsB": 31,
+            "contextMax": 262144,
+            "arch": {
+              "blockCount": 60,
+              "embeddingLength": 5376,
+              "headCount": 32,
+              "headCountKv": 16,
+              "headDim": 512
+            },
+            "capabilities": {
+              "tools": true,
+              "vision": true,
+              "reasoning": true
+            },
+            "sampling": {
+              "temperature": 1,
+              "topP": 0.95,
+              "topK": 64,
+              "minP": 0,
+              "repeatPenalty": 1,
+              "samplers": [
+                "top_k",
+                "typ_p",
+                "top_p",
+                "min_p",
+                "xtc",
+                "temperature",
+                "dry",
+                "penalties"
+              ]
+            },
+            "variants": [
+              {
+                "label": "standard",
+                "tags": [],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-31B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 1198957024,
+                "quants": [
+                  {
+                    "quant": "Q8_0",
+                    "modelSpec": "@unsloth/gemma-4-31B-it-GGUF/main/gemma-4-31B-it-Q8_0.gguf",
+                    "fileSizeBytes": 32635675648,
+                    "sha256": "85c623b5383e5b462e3d49490990a3cdfd0abf6b09f8f5e6c5881903d7de67cc"
+                  },
+                  {
+                    "quant": "Q4_K_M",
+                    "modelSpec": "@unsloth/gemma-4-31B-it-GGUF/main/gemma-4-31B-it-Q4_K_M.gguf",
+                    "fileSizeBytes": 18323731456,
+                    "sha256": "9fdf3dc8b0384830b4402d151388c140bd8eb2abf8d60588d8224231198254a1"
+                  },
+                  {
+                    "quant": "Q3_K_M",
+                    "modelSpec": "@unsloth/gemma-4-31B-it-GGUF/main/gemma-4-31B-it-Q3_K_M.gguf",
+                    "fileSizeBytes": 14736606208,
+                    "sha256": "40dfaa7900e55f52a1f8416193294b88117f803e2b546248d7644fe1236557e7"
+                  },
+                  {
+                    "quant": "UD-Q2_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-31B-it-GGUF/main/gemma-4-31B-it-UD-Q2_K_XL.gguf",
+                    "fileSizeBytes": 11774989312,
+                    "sha256": "356c2560612c04a6fb367262675a96098ea59648cbc1d3b8fbb971aac5cbe397"
+                  }
+                ],
+                "mmprojSha256": "6edcca228213c28d3567a35d22f849eea52d8360875093851959adf5d2f270eb"
+              },
+              {
+                "label": "QAT",
+                "tags": ["qat"],
+                "provider": "unsloth",
+                "mmprojSpec": "@unsloth/gemma-4-31B-it-GGUF/main/mmproj-F16.gguf",
+                "mmprojSizeBytes": 1198957024,
+                "quants": [
+                  {
+                    "quant": "UD-Q4_K_XL",
+                    "modelSpec": "@unsloth/gemma-4-31B-it-qat-GGUF/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf",
+                    "fileSizeBytes": 17287668064,
+                    "sha256": "9188a71055550f1e60b875d02b7abb63625ac11b4a6f148d6b22b3b28ba3d335"
+                  }
+                ],
+                "mmprojSha256": "6edcca228213c28d3567a35d22f849eea52d8360875093851959adf5d2f270eb"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "fit": {
+      "budgetFraction": {
+        "half": 0.5,
+        "full": 0.9
+      },
+      "safetyMarginBytes": 1500000000,
+      "primaryScore": {
+        "source": "artificial-analysis",
+        "metric": "intelligence-index"
+      },
+      "smallestQualityFloorRef": "Qwen/Qwen3.5-2B",
+      "tieBreakers": ["lowerFootprint", "preferTag:qat"],
+      "computeOverheadBytes": 600000000,
+      "ctxCeiling": {
+        "smallest": 8192,
+        "half": 16384,
+        "full": 32768
+      },
+      "ctxLadder": [32768, 16384, 8192, 4096],
+      "vision": true,
+      "profiles": {
+        "mobile": {
+          "budgetFraction": {
+            "half": 0.2,
+            "full": 0.35
+          },
+          "safetyMarginBytes": 0,
+          "smallestQualityFloorRef": "Qwen/Qwen3.5-0.8B",
+          "computeOverheadBytes": 400000000,
+          "ctxCeiling": {
+            "smallest": 2048,
+            "half": 4096,
+            "full": 4096
+          },
+          "ctxLadder": [8192, 4096, 2048],
+          "vision": false
+        }
+      }
+    },
+    "stt": {
+      "models": [
+        {
+          "id": "whisper-tiny.en",
+          "name": "Whisper Tiny (English)",
+          "family": "whisper",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny.en/main/tiny.en-encoder.int8.onnx",
+                  "fileSizeBytes": 12937772,
+                  "sha256": "0ce578b827c94a961aacb8fa14b02f096504b337e5c94be37c36238cbe3e8bc6"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny.en/main/tiny.en-decoder.int8.onnx",
+                  "fileSizeBytes": 89853865,
+                  "sha256": "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny.en/main/tiny.en-tokens.txt",
+                  "fileSizeBytes": 835554,
+                  "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+                }
+              ],
+              "fileSizeBytes": 103627191
+            }
+          ]
+        },
+        {
+          "id": "whisper-tiny",
+          "name": "Whisper Tiny",
+          "family": "whisper",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny/main/tiny-encoder.int8.onnx",
+                  "fileSizeBytes": 12937772,
+                  "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny/main/tiny-decoder.int8.onnx",
+                  "fileSizeBytes": 89855401,
+                  "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-tiny/main/tiny-tokens.txt",
+                  "fileSizeBytes": 816730,
+                  "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+                }
+              ],
+              "fileSizeBytes": 103609903
+            }
+          ]
+        },
+        {
+          "id": "whisper-base.en",
+          "name": "Whisper Base (English)",
+          "family": "whisper",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base.en/main/base.en-encoder.int8.onnx",
+                  "fileSizeBytes": 29120534,
+                  "sha256": "ef6b936f4c9b1d90a3b68634b60c4ed8576b26172b33c2535ec0e933c9edb823"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base.en/main/base.en-decoder.int8.onnx",
+                  "fileSizeBytes": 130669978,
+                  "sha256": "f7162ad6db2dbef16cfaeaa7f945b9d7dd9c1b8d472f6aca82f2273d185e4d41"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base.en/main/base.en-tokens.txt",
+                  "fileSizeBytes": 835554,
+                  "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+                }
+              ],
+              "fileSizeBytes": 160626066
+            }
+          ]
+        },
+        {
+          "id": "whisper-base",
+          "name": "Whisper Base",
+          "family": "whisper",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base/main/base-encoder.int8.onnx",
+                  "fileSizeBytes": 29120534,
+                  "sha256": "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base/main/base-decoder.int8.onnx",
+                  "fileSizeBytes": 130672026,
+                  "sha256": "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-base/main/base-tokens.txt",
+                  "fileSizeBytes": 816730,
+                  "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+                }
+              ],
+              "fileSizeBytes": 160609290
+            }
+          ]
+        },
+        {
+          "id": "whisper-small.en",
+          "name": "Whisper Small (English)",
+          "family": "whisper",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small.en/main/small.en-encoder.int8.onnx",
+                  "fileSizeBytes": 112442483,
+                  "sha256": "8bdac288f369aa94ee2194059238c465ed82ea9d47ee8fa4a8c0a891873e462f"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small.en/main/small.en-decoder.int8.onnx",
+                  "fileSizeBytes": 262223042,
+                  "sha256": "710ccf890e10f3faa15f51ec346081a2723c9f3adb6e4da81c6573a5a6f877fb"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small.en/main/small.en-tokens.txt",
+                  "fileSizeBytes": 835554,
+                  "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+                }
+              ],
+              "fileSizeBytes": 375501079
+            }
+          ]
+        },
+        {
+          "id": "whisper-small",
+          "name": "Whisper Small",
+          "family": "whisper",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small/main/small-encoder.int8.onnx",
+                  "fileSizeBytes": 112442483,
+                  "sha256": "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small/main/small-decoder.int8.onnx",
+                  "fileSizeBytes": 262226114,
+                  "sha256": "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-small/main/small-tokens.txt",
+                  "fileSizeBytes": 816730,
+                  "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+                }
+              ],
+              "fileSizeBytes": 375485327
+            }
+          ]
+        },
+        {
+          "id": "whisper-medium.en",
+          "name": "Whisper Medium (English)",
+          "family": "whisper",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-medium.en/main/medium.en-encoder.int8.onnx",
+                  "fileSizeBytes": 374196283,
+                  "sha256": "5a8e3a36619e0b67db9320eef3152db59d4b440f5ce0212d2c162a61b750bf80"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-medium.en/main/medium.en-decoder.int8.onnx",
+                  "fileSizeBytes": 571055161,
+                  "sha256": "7303be339ed4e51f4ffb7ae84f3803b10cf8e67e1dcf8a98cb4d843f0dea0141"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-medium.en/main/medium.en-tokens.txt",
+                  "fileSizeBytes": 835554,
+                  "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+                }
+              ],
+              "fileSizeBytes": 946086998
+            }
+          ]
+        },
+        {
+          "id": "whisper-turbo",
+          "name": "Whisper Large v3 Turbo",
+          "family": "whisper",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-turbo/main/turbo-encoder.int8.onnx",
+                  "fileSizeBytes": 674716297,
+                  "sha256": "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-turbo/main/turbo-decoder.int8.onnx",
+                  "fileSizeBytes": 361080764,
+                  "sha256": "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-whisper-turbo/main/turbo-tokens.txt",
+                  "fileSizeBytes": 816730,
+                  "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+                }
+              ],
+              "fileSizeBytes": 1036613791
+            }
+          ]
+        },
+        {
+          "id": "sense-voice",
+          "name": "SenseVoice",
+          "family": "sense-voice",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/main/model.int8.onnx",
+                  "fileSizeBytes": 239233841,
+                  "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/main/tokens.txt",
+                  "fileSizeBytes": 315894,
+                  "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+                }
+              ],
+              "fileSizeBytes": 239549735
+            }
+          ]
+        },
+        {
+          "id": "moonshine-tiny.en",
+          "name": "Moonshine Tiny (English)",
+          "family": "moonshine",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "preprocessor",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/main/preprocess.onnx",
+                  "fileSizeBytes": 6800738,
+                  "sha256": "f33addce61a143460fe753b5ee5b7db255e5140b5b779c065b94f6c83ff0bf4e"
+                },
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/main/encode.int8.onnx",
+                  "fileSizeBytes": 18249187,
+                  "sha256": "8774dfba578de027ec6595c2c654a0836434489bc963a0db124a7f181f571acb"
+                },
+                {
+                  "role": "uncached_decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/main/uncached_decode.int8.onnx",
+                  "fileSizeBytes": 53216096,
+                  "sha256": "216737000dd5881a17aa043f6bbd286add33e4c3b0ae257153e2ec15438bdc41"
+                },
+                {
+                  "role": "cached_decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/main/cached_decode.int8.onnx",
+                  "fileSizeBytes": 45264830,
+                  "sha256": "2aff28bba6a03d8dcf5c9feac45462629bae37317442299f28115ad09da773f6"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/main/tokens.txt",
+                  "fileSizeBytes": 436688,
+                  "sha256": "1165c2aeb9f72f457a83be2d459a09054f27490acd9b41bd43794dfd25e296ea"
+                }
+              ],
+              "fileSizeBytes": 123967539
+            }
+          ]
+        },
+        {
+          "id": "moonshine-base.en",
+          "name": "Moonshine Base (English)",
+          "family": "moonshine",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "preprocessor",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-base-en-int8/main/preprocess.onnx",
+                  "fileSizeBytes": 14077290,
+                  "sha256": "ffa630d395c5ccf76f5d4954be5b882df76aaf6491519ec01fd82ea7a3819fb2"
+                },
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-base-en-int8/main/encode.int8.onnx",
+                  "fileSizeBytes": 50311494,
+                  "sha256": "7e38770f776f2e5583a53b052936005df2ba5c833d7e09c2a5fd796b94bf73e2"
+                },
+                {
+                  "role": "uncached_decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-base-en-int8/main/uncached_decode.int8.onnx",
+                  "fileSizeBytes": 122120451,
+                  "sha256": "c01f4b35093bcac20d352d23a75a539e772964579f9d024a90e5e6f09cae9987"
+                },
+                {
+                  "role": "cached_decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-base-en-int8/main/cached_decode.int8.onnx",
+                  "fileSizeBytes": 99983837,
+                  "sha256": "2db74e51cedf64a8b1be3c8192e0bb5e4923af0e90bd9e87f8e8771873f8ea03"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-moonshine-base-en-int8/main/tokens.txt",
+                  "fileSizeBytes": 436688,
+                  "sha256": "1165c2aeb9f72f457a83be2d459a09054f27490acd9b41bd43794dfd25e296ea"
+                }
+              ],
+              "fileSizeBytes": 286929760
+            }
+          ]
+        },
+        {
+          "id": "paraformer-en",
+          "name": "Paraformer (English)",
+          "family": "paraformer",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-paraformer-en-2024-03-09/main/model.int8.onnx",
+                  "fileSizeBytes": 229772488,
+                  "sha256": "889e95b79b80c62851a091b52fea82eac1fd59ad2b1e28ebee6437838cdd76e3"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-paraformer-en-2024-03-09/main/tokens.txt",
+                  "fileSizeBytes": 46872,
+                  "sha256": "cbf55cc04b3a789c6a149a446f755069509e029f8514f2b433cb49650ff8b7b5"
+                }
+              ],
+              "fileSizeBytes": 229819360
+            }
+          ]
+        },
+        {
+          "id": "nemo-ctc-en-small",
+          "name": "NeMo Conformer CTC Small (English)",
+          "family": "nemo-ctc",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-nemo-ctc-en-conformer-small/main/model.int8.onnx",
+                  "fileSizeBytes": 46419854,
+                  "sha256": "66cfde4ce0b6da9e1a4352e58f0c968f87da23070cf229c81ae0d520cddad2a2"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-nemo-ctc-en-conformer-small/main/tokens.txt",
+                  "fileSizeBytes": 11611,
+                  "sha256": "1adce7866285e6a4aac6208b120d5b8e4302b7cae5f2ae541c343097773fd988"
+                }
+              ],
+              "fileSizeBytes": 46431465
+            }
+          ]
+        },
+        {
+          "id": "zipformer-en",
+          "name": "Zipformer Transducer (English)",
+          "family": "transducer",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-en-2023-06-26/main/encoder-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 68778564,
+                  "sha256": "52a48f46c17b19a36fe3927c4d59479bb16eeb2493313ed82c4bf775c2cb8bc8"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-en-2023-06-26/main/decoder-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 1307236,
+                  "sha256": "783cd6b23b8db8e14a43804ecf972ae96e71499cce799e334ab95c961800d797"
+                },
+                {
+                  "role": "joiner",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-en-2023-06-26/main/joiner-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 259335,
+                  "sha256": "48de5d6467a2ab1e72cb5c4d828330be06524d877bc458118b6a4198ca031357"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-en-2023-06-26/main/tokens.txt",
+                  "fileSizeBytes": 5048,
+                  "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"
+                }
+              ],
+              "fileSizeBytes": 70350183
+            }
+          ]
+        },
+        {
+          "id": "zipformer-small-en",
+          "name": "Zipformer Transducer Small (English)",
+          "family": "transducer",
+          "english": true,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "encoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-small-en-2023-06-26/main/encoder-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 26015366,
+                  "sha256": "3a6ac78a31cc2c60ca8c1e2e2f43c878fbbcaf051ada4900e0a42ef8ba53d375"
+                },
+                {
+                  "role": "decoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-small-en-2023-06-26/main/decoder-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 1307236,
+                  "sha256": "f462ab9189ba6f9b2658774e6bf3d651913de54a3833655dc5e093e2f5e4c2b6"
+                },
+                {
+                  "role": "joiner",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-small-en-2023-06-26/main/joiner-epoch-99-avg-1.int8.onnx",
+                  "fileSizeBytes": 259335,
+                  "sha256": "6b183b6ec656e4d3ca6b86d0aeca992dac14df80aae6b416d7c068d0ff2bd4d7"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-zipformer-small-en-2023-06-26/main/tokens.txt",
+                  "fileSizeBytes": 5048,
+                  "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"
+                }
+              ],
+              "fileSizeBytes": 27586985
+            }
+          ]
+        },
+        {
+          "id": "dolphin-base",
+          "name": "Dolphin Base (Multilingual)",
+          "family": "dolphin",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/main/model.int8.onnx",
+                  "fileSizeBytes": 103729802,
+                  "sha256": "a3aa46c97f3f60f135ff949793cb05fabe7a0b3c484dc2e3cc699d354ee11b76"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02/main/tokens.txt",
+                  "fileSizeBytes": 504662,
+                  "sha256": "c3788261a51df1899ea4b210b552cd42139204de72c0ad60f6cebb199078872e"
+                }
+              ],
+              "fileSizeBytes": 104234464
+            }
+          ]
+        },
+        {
+          "id": "telespeech-zh",
+          "name": "TeleSpeech CTC (Chinese)",
+          "family": "telespeech-ctc",
+          "english": false,
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-telespeech-ctc-int8-zh-2024-06-04/main/model.int8.onnx",
+                  "fileSizeBytes": 340990949,
+                  "sha256": "2bf52b42c971696dc02a2db94c52c8fc75fab321ac4cf10b5a2d6863a73a33b3"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-telespeech-ctc-int8-zh-2024-06-04/main/tokens.txt",
+                  "fileSizeBytes": 66642,
+                  "sha256": "f1dea25fe751bc3eebd27b2ff3b86298f9598686a090701990dabddde0eba508"
+                }
+              ],
+              "fileSizeBytes": 341057591
+            }
+          ]
+        }
+      ],
+      "presets": [
+        {
+          "id": "light-english",
+          "modelId": "whisper-small.en",
+          "quant": "int8"
+        },
+        {
+          "id": "light-multilingual",
+          "modelId": "whisper-small",
+          "quant": "int8"
+        },
+        {
+          "id": "accurate",
+          "modelId": "whisper-turbo",
+          "quant": "int8"
+        },
+        {
+          "id": "fast-multilingual",
+          "modelId": "sense-voice",
+          "quant": "int8"
+        }
+      ]
+    },
+    "tts": {
+      "models": [
+        {
+          "id": "kokoro",
+          "name": "Kokoro Multilingual",
+          "family": "kokoro",
+          "voices": [
+            {
+              "id": "af_alloy",
+              "label": "American • Female • Alloy",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_aoede",
+              "label": "American • Female • Aoede",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_bella",
+              "label": "American • Female • Bella",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_heart",
+              "label": "American • Female • Heart",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_jessica",
+              "label": "American • Female • Jessica",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_kore",
+              "label": "American • Female • Kore",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_nicole",
+              "label": "American • Female • Nicole",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_nova",
+              "label": "American • Female • Nova",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_river",
+              "label": "American • Female • River",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_sarah",
+              "label": "American • Female • Sarah",
+              "lang": "en-us"
+            },
+            {
+              "id": "af_sky",
+              "label": "American • Female • Sky",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_adam",
+              "label": "American • Male • Adam",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_echo",
+              "label": "American • Male • Echo",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_eric",
+              "label": "American • Male • Eric",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_fenrir",
+              "label": "American • Male • Fenrir",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_liam",
+              "label": "American • Male • Liam",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_michael",
+              "label": "American • Male • Michael",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_onyx",
+              "label": "American • Male • Onyx",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_puck",
+              "label": "American • Male • Puck",
+              "lang": "en-us"
+            },
+            {
+              "id": "am_santa",
+              "label": "American • Male • Santa",
+              "lang": "en-us"
+            },
+            {
+              "id": "bf_alice",
+              "label": "British • Female • Alice",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bf_emma",
+              "label": "British • Female • Emma",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bf_isabella",
+              "label": "British • Female • Isabella",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bf_lily",
+              "label": "British • Female • Lily",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bm_daniel",
+              "label": "British • Male • Daniel",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bm_fable",
+              "label": "British • Male • Fable",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bm_george",
+              "label": "British • Male • George",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "bm_lewis",
+              "label": "British • Male • Lewis",
+              "lang": "en-gb-x-rp"
+            },
+            {
+              "id": "jf_alpha",
+              "label": "Japanese • Female • Alpha",
+              "lang": "ja"
+            },
+            {
+              "id": "jf_gongitsune",
+              "label": "Japanese • Female • Gongitsune",
+              "lang": "ja"
+            },
+            {
+              "id": "jf_nezumi",
+              "label": "Japanese • Female • Nezumi",
+              "lang": "ja"
+            },
+            {
+              "id": "jf_tebukuro",
+              "label": "Japanese • Female • Tebukuro",
+              "lang": "ja"
+            },
+            {
+              "id": "jm_kumo",
+              "label": "Japanese • Male • Kumo",
+              "lang": "ja"
+            },
+            {
+              "id": "zf_xiaobei",
+              "label": "Mandarin • Female • Xiaobei",
+              "lang": "cmn"
+            },
+            {
+              "id": "zf_xiaoni",
+              "label": "Mandarin • Female • Xiaoni",
+              "lang": "cmn"
+            },
+            {
+              "id": "zf_xiaoxiao",
+              "label": "Mandarin • Female • Xiaoxiao",
+              "lang": "cmn"
+            },
+            {
+              "id": "zf_xiaoyi",
+              "label": "Mandarin • Female • Xiaoyi",
+              "lang": "cmn"
+            },
+            {
+              "id": "zm_yunjian",
+              "label": "Mandarin • Male • Yunjian",
+              "lang": "cmn"
+            },
+            {
+              "id": "zm_yunxi",
+              "label": "Mandarin • Male • Yunxi",
+              "lang": "cmn"
+            },
+            {
+              "id": "zm_yunxia",
+              "label": "Mandarin • Male • Yunxia",
+              "lang": "cmn"
+            },
+            {
+              "id": "zm_yunyang",
+              "label": "Mandarin • Male • Yunyang",
+              "lang": "cmn"
+            },
+            {
+              "id": "ef_dora",
+              "label": "Spanish • Female • Dora",
+              "lang": "es"
+            },
+            {
+              "id": "em_alex",
+              "label": "Spanish • Male • Alex",
+              "lang": "es"
+            },
+            {
+              "id": "ff_siwis",
+              "label": "French • Female • Siwis",
+              "lang": "fr"
+            },
+            {
+              "id": "hf_alpha",
+              "label": "Hindi • Female • Alpha",
+              "lang": "hi"
+            },
+            {
+              "id": "hf_beta",
+              "label": "Hindi • Female • Beta",
+              "lang": "hi"
+            },
+            {
+              "id": "hm_omega",
+              "label": "Hindi • Male • Omega",
+              "lang": "hi"
+            },
+            {
+              "id": "hm_psi",
+              "label": "Hindi • Male • Psi",
+              "lang": "hi"
+            },
+            {
+              "id": "if_sara",
+              "label": "Italian • Female • Sara",
+              "lang": "it"
+            },
+            {
+              "id": "im_nicola",
+              "label": "Italian • Male • Nicola",
+              "lang": "it"
+            },
+            {
+              "id": "pf_dora",
+              "label": "Brazilian Portuguese • Female • Dora",
+              "lang": "pt-br"
+            },
+            {
+              "id": "pm_alex",
+              "label": "Brazilian Portuguese • Male • Alex",
+              "lang": "pt-br"
+            },
+            {
+              "id": "pm_santa",
+              "label": "Brazilian Portuguese • Male • Santa",
+              "lang": "pt-br"
+            }
+          ],
+          "defaultVoice": "af_bella",
+          "quants": [
+            {
+              "quant": "int8",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/kokoro-int8-multi-lang-v1_0/main/model.int8.onnx",
+                  "fileSizeBytes": 114298054,
+                  "sha256": "77ef4f0513401d508ed7831f8504c7042df58bc75e004ec9666894590f999b1d"
+                },
+                {
+                  "role": "voices",
+                  "modelSpec": "@csukuangfj/kokoro-int8-multi-lang-v1_0/main/voices.bin",
+                  "fileSizeBytes": 27678720,
+                  "sha256": "8a77c0d397026208d22211f37670b5b3b11e03f190756b25a1d24041fced82a9"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/kokoro-int8-multi-lang-v1_0/main/tokens.txt",
+                  "fileSizeBytes": 687,
+                  "sha256": "6ebb6bb288f20f3ae8d004d3c2ca27697da27c037d75e81a60e2a6a663f95425"
+                }
+              ],
+              "fileSizeBytes": 141977461
+            }
+          ]
+        },
+        {
+          "id": "kitten",
+          "name": "Kitten Nano (English)",
+          "family": "kitten",
+          "voices": [
+            {
+              "id": "0",
+              "label": "English • Male • Jasper",
+              "lang": "en-us"
+            },
+            {
+              "id": "1",
+              "label": "English • Female • Bella",
+              "lang": "en-us"
+            },
+            {
+              "id": "2",
+              "label": "English • Male • Bruno",
+              "lang": "en-us"
+            },
+            {
+              "id": "3",
+              "label": "English • Female • Luna",
+              "lang": "en-us"
+            },
+            {
+              "id": "4",
+              "label": "English • Male • Hugo",
+              "lang": "en-us"
+            },
+            {
+              "id": "5",
+              "label": "English • Female • Rosie",
+              "lang": "en-us"
+            },
+            {
+              "id": "6",
+              "label": "English • Male • Leo",
+              "lang": "en-us"
+            },
+            {
+              "id": "7",
+              "label": "English • Female • Kiki",
+              "lang": "en-us"
+            }
+          ],
+          "defaultVoice": "1",
+          "quants": [
+            {
+              "quant": "fp16",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/kitten-nano-en-v0_1-fp16/main/model.fp16.onnx",
+                  "fileSizeBytes": 23848586,
+                  "sha256": "6b42d25df767db408d95738b464f02168a9cfb76367c1b2b9e90095485981407"
+                },
+                {
+                  "role": "voices",
+                  "modelSpec": "@csukuangfj/kitten-nano-en-v0_1-fp16/main/voices.bin",
+                  "fileSizeBytes": 8192,
+                  "sha256": "138cf3a7afd0ebf1f9d6fb72f49e960ef8405252eaff5d130cf3fba1b038a741"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/kitten-nano-en-v0_1-fp16/main/tokens.txt",
+                  "fileSizeBytes": 1064,
+                  "sha256": "934a4188addc7665dd3410256bb622169242357fbb99d840d9351209b486dabb"
+                }
+              ],
+              "fileSizeBytes": 23857842
+            }
+          ]
+        },
+        {
+          "id": "piper-amy",
+          "name": "Piper Amy (American English)",
+          "family": "vits",
+          "voices": [
+            {
+              "id": "0",
+              "label": "Default"
+            }
+          ],
+          "defaultVoice": "0",
+          "quants": [
+            {
+              "quant": "fp32",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/vits-piper-en_US-amy-low/main/en_US-amy-low.onnx",
+                  "fileSizeBytes": 63104657,
+                  "sha256": "8275b02c37c4ce6483b26a91704807e6de0c3f0bf8068e5d3b3598ab0da4253e"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/vits-piper-en_US-amy-low/main/tokens.txt",
+                  "fileSizeBytes": 763,
+                  "sha256": "42d1a69ed2b91a51928a711aa228ed9f3dc021c6d359a3e9c4f37eb1d20f80bd"
+                }
+              ],
+              "fileSizeBytes": 63105420
+            }
+          ]
+        },
+        {
+          "id": "piper-alan",
+          "name": "Piper Alan (British English)",
+          "family": "vits",
+          "voices": [
+            {
+              "id": "0",
+              "label": "Default"
+            }
+          ],
+          "defaultVoice": "0",
+          "quants": [
+            {
+              "quant": "fp32",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/vits-piper-en_GB-alan-medium/main/en_GB-alan-medium.onnx",
+                  "fileSizeBytes": 63201430,
+                  "sha256": "d907c48857000940104a9ad3248a94617df917d1a525c9495490fdbf87fd54b2"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/vits-piper-en_GB-alan-medium/main/tokens.txt",
+                  "fileSizeBytes": 921,
+                  "sha256": "87c8ef66eae5473ed0cc0366b3964c736ca6c5f676c979522ea31234e47430b9"
+                }
+              ],
+              "fileSizeBytes": 63202351
+            }
+          ]
+        },
+        {
+          "id": "piper-ryan",
+          "name": "Piper Ryan (American English)",
+          "family": "vits",
+          "voices": [
+            {
+              "id": "0",
+              "label": "Default"
+            }
+          ],
+          "defaultVoice": "0",
+          "quants": [
+            {
+              "quant": "fp32",
+              "files": [
+                {
+                  "role": "model",
+                  "modelSpec": "@csukuangfj/vits-piper-en_US-ryan-medium/main/en_US-ryan-medium.onnx",
+                  "fileSizeBytes": 63201425,
+                  "sha256": "8a4063318faeda9bf67f89d25b29cc4bd5fde8832422aa451a5d5d2647553081"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/vits-piper-en_US-ryan-medium/main/tokens.txt",
+                  "fileSizeBytes": 921,
+                  "sha256": "87c8ef66eae5473ed0cc0366b3964c736ca6c5f676c979522ea31234e47430b9"
+                }
+              ],
+              "fileSizeBytes": 63202346
+            }
+          ]
+        },
+        {
+          "id": "matcha-ljspeech",
+          "name": "Matcha LJSpeech (English)",
+          "family": "matcha",
+          "voices": [
+            {
+              "id": "0",
+              "label": "Default"
+            }
+          ],
+          "defaultVoice": "0",
+          "quants": [
+            {
+              "quant": "fp32",
+              "files": [
+                {
+                  "role": "acoustic_model",
+                  "modelSpec": "@csukuangfj/matcha-icefall-en_US-ljspeech/main/model-steps-3.onnx",
+                  "fileSizeBytes": 74157680,
+                  "sha256": "61b7863ea712386e085f596f50c9dc7a856c6deed398b016a8f67df4e3474ffb"
+                },
+                {
+                  "role": "vocoder",
+                  "modelSpec": "@csukuangfj/sherpa-onnx-hifigan/main/hifigan_v2.onnx",
+                  "fileSizeBytes": 3749714,
+                  "sha256": "a41d404cce7924493540238da5b30a4bc14b6ddaf1a37f3c79fa4f59548c19f0"
+                },
+                {
+                  "role": "tokens",
+                  "modelSpec": "@csukuangfj/matcha-icefall-en_US-ljspeech/main/tokens.txt",
+                  "fileSizeBytes": 954,
+                  "sha256": "bcb4a50830e9402112fe8cb57d53ae8523908868a5015f2040dde5f5fd231697"
+                }
+              ],
+              "fileSizeBytes": 77908348
+            }
+          ]
+        }
+      ],
+      "presets": [
+        {
+          "id": "kokoro",
+          "modelId": "kokoro",
+          "quant": "int8"
+        },
+        {
+          "id": "kitten",
+          "modelId": "kitten",
+          "quant": "fp16"
+        },
+        {
+          "id": "piper",
+          "modelId": "piper-amy",
+          "quant": "fp32"
+        },
+        {
+          "id": "matcha",
+          "modelId": "matcha-ljspeech",
+          "quant": "fp32"
+        }
+      ]
+    }
+  }
+}

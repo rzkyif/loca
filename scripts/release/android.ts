@@ -83,7 +83,16 @@ const ABI_KEYS: Array<[fragment: string, key: string]> = [
   ["x86", "android-x86"],
 ];
 
-function abiKeyFor(filename: string): string {
+/** Map a gradle APK filename onto its android.json key.
+ *
+ *  Exported for `android.test.ts`. It cannot fail by design: an unrecognised
+ *  filename falls through to `android-universal`, which is indistinguishable
+ *  from a genuine fat APK. With ABI splits AND `isUniversalApk = true` that
+ *  fall-through no longer produces zero matches, it produces SEVERAL, and
+ *  `composeAndUploadAndroid` is what refuses them (see the duplicate check
+ *  there). The two halves are deliberate: this stays total so one odd artifact
+ *  cannot fail a release, and the collision it would cause is fatal. */
+export function abiKeyFor(filename: string): string {
   for (const [fragment, key] of ABI_KEYS) {
     if (filename.includes(fragment)) return key;
   }
@@ -272,14 +281,13 @@ export const androidItem: ReleaseItem = {
 
   async apply(env: DeployEnv, channel: ReleaseChannel, opts: ApplyOpts): Promise<void> {
     const version = await readAndroidVersion();
-    // Prebuilt mode (CI publish): the Linux build runner already keystore-signed
-    // the APKs; just compose + upload. Otherwise build them here.
-    if (opts.prebuilt && !opts.prebuilt.android) {
+    // The Linux build runner already keystore-signed the APKs; just compose +
+    // upload.
+    if (!opts.prebuilt.android) {
       info(colors.yellow("no android bundle produced; skipping android publish"));
       return;
     }
-    const descriptor = opts.prebuilt?.android ?? (await buildAndroidBundle(env, channel));
-    await composeAndUploadAndroid(env, channel, version, descriptor, opts);
+    await composeAndUploadAndroid(env, channel, version, opts.prebuilt.android, opts);
   },
 };
 
@@ -338,6 +346,24 @@ export async function composeAndUploadAndroid(
   const uploads: Array<{ abi: string; path: string; key: string; aliasKey: string; size: number }> =
     [];
   for (const a of descriptor.apks) {
+    // A repeated ABI key means two artifacts resolved to one manifest entry and
+    // one R2 object, so which APK lands there is a race between two concurrent
+    // uploads and the manifest advertises a sha256 that may belong to the other
+    // one. Every device that falls back to that key then downloads an APK its
+    // CPU cannot load, which is the same failure the client-side ABI selection
+    // exists to prevent, reached through the release script instead.
+    //
+    // The realistic cause is a gradle filename whose fragment `abiKeyFor` does
+    // not recognise: it falls through to `android-universal` alongside the real
+    // universal APK. Fatal here rather than total there, so a mismatch is a red
+    // release rather than a silently wrong artifact.
+    if (abis[a.abi]) {
+      fail(
+        `two APKs resolved to the ABI key "${a.abi}" (${a.filename} and another). ` +
+          `Check that the gradle split filenames still contain the fragments in ` +
+          `ABI_KEYS; an unrecognised name falls through to android-universal.`,
+      );
+    }
     // Re-anchor + verify the APK bytes against the descriptor's sha256.
     const path = await reanchorFile(a.relPath, a.sha256);
     const key = `${storagePrefix}${version}/${a.abi}/loca.apk`;

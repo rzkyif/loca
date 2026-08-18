@@ -210,6 +210,18 @@ async function dispatchMemories(op: string, args: unknown): Promise<unknown> {
       const title = argString(args, "title");
       const content = argString(args, "content", { allowEmpty: true });
       const existing = await store.getByTitle(title);
+      // A disabled memory is REFUSED here, not treated as absent. Disabling is
+      // how a user takes a memory away from the model, and this branch returns
+      // `before`, so without the check a tool could read any disabled memory's
+      // full content just by writing to its title. `get`/`getFile` above answer
+      // `not_found` because they reveal nothing either way; `write` cannot,
+      // because "absent" sends it to `create`, which then fails the
+      // case-insensitive unique-title check with a `conflict` the tool can
+      // neither act on nor understand. `forbidden` says the actionable thing:
+      // the memory exists and is turned off.
+      if (existing && !existing.enabled) {
+        throw new AppError("forbidden", `memory "${title}" is disabled`);
+      }
       const before = existing?.content ?? "";
       const memory = existing
         ? await store.replaceContent(existing.id, content)
@@ -227,6 +239,11 @@ async function dispatchMemories(op: string, args: unknown): Promise<unknown> {
       const existing = await store.getByTitle(title);
       if (!existing) {
         throw new AppError("not_found", `memory "${title}" not found`);
+      }
+      // Same reasoning as `write`: `editContent` returns `before`, so a disabled
+      // memory's content would leak through the result of an edit against it.
+      if (!existing.enabled) {
+        throw new AppError("forbidden", `memory "${title}" is disabled`);
       }
       const { memory, before, after } = await store.editContent(
         existing.id,

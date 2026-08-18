@@ -24,8 +24,16 @@ Model Context Protocol process the core connects to). The packages:
   same TypeScript can run both in the Deno service and, in a future pass, inside
   the mobile Client's webview. Owns the portable stateful logic (session/message
   storage, LLM streaming, settings, memories + embedding-based relevance, external
-  STT/TTS, remote MCP) behind a `Host` abstraction; imports no `Deno.*`,
+  STT/TTS) behind a `Host` abstraction; imports no `Deno.*`,
   `@db/sqlite`, `@tauri-apps/*`, or `node:*` (enforced by `loca/no-host-import`).
+  It serves the `/api/v1/mcp` admin routes, but the MCP subsystem itself (the
+  registry, the connection manager, the OAuth flow) lives in `@loca/core` behind
+  `host.mcp`, so "the engine owns remote MCP" is not accurate.
+- **`@loca/core-rs`**: the Rust core being ported from the two packages above,
+  which it replaces at cutover. One library with a desktop service binary and a
+  mobile staticlib frontend, so the phone embeds the real Core rather than a
+  reimplementation of it. Under construction; see
+  [docs/rust-port/](docs/rust-port/).
 - **`@loca/core-updater`**: standalone Rust binary (`loca-core-updater`) that
   swaps in a staged core build during self-update, then restarts core.
 - **`@loca/core-keychain`**: standalone Rust binary (`loca-core-keychain`)
@@ -76,6 +84,33 @@ through `npm:` specifiers from `deno task`.
   Schema in `packages/loca-shared/src/loca-json-schema.json`.
 - MCP server connections (the other tool provider): the subsystem under
   `packages/loca-core/src/mcp/` (manager, registry, token resolution).
+
+## Current state: feature freeze, Rust port in progress
+
+**All other development is frozen.** Core is being rewritten from TypeScript
+(`@loca/core` + `@loca/core-engine`) into one Rust library at
+`packages/loca-core-rs/` that runs as a service on desktop and links into the
+Tauri app on mobile. The freeze exists because the rewrite is a big-bang
+cutover: there is no dual-shipping period, so a concurrent change to the
+TypeScript core is a change that has to be ported again.
+
+If you are picking up work in this repo, read
+[docs/rust-port/README.md](docs/rust-port/README.md) first. It is the map:
+stages, the work-package protocol, and how to resume a stopped package.
+[docs/rust-port/registry.md](docs/rust-port/registry.md) is the index of who
+owns what, and [docs/rust-port/shared/decisions.md](docs/rust-port/shared/decisions.md)
+records every deviation from the plan and why.
+
+Two things that already apply to work anywhere in the repo:
+
+- **The wire contract generates Rust.** `@loca/shared` stays the single source
+  of truth, and `packages/loca-core-rs/src/contract/` is generated from it by
+  `deno task contract`. `deno task check` fails on stale output. Change the
+  TypeScript, regenerate, commit both. See
+  [scripts/contract/README.md](scripts/contract/README.md).
+- **The TypeScript core is the specification.** Until cutover it is also what
+  ships, so a bug fixed there has to be fixed in the Rust port too. Prefer
+  fixing it in both, and record anything non-obvious in the ADR log.
 
 ## Conventions
 

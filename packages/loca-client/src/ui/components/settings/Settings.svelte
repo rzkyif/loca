@@ -16,7 +16,7 @@
   import { hasAlpha } from "$lib/appearance/color";
   import { getLogger } from "$lib/util/log";
   import { defaultExpandedSections } from "@loca/shared";
-  import { downloadsState, settingsState, viewState } from "../../state";
+  import { capabilitiesState, downloadsState, settingsState, viewState } from "../../state";
   import { connectionState } from "$stores/connection.svelte";
   import { confirmState } from "$stores/confirm.svelte";
   import { useSettingsForm } from "$composables/use-settings-form.svelte";
@@ -96,7 +96,13 @@
 
   const ui = useUiContext();
   const onMobile = ui.platform === "mobile";
-  const visibleGroups = $derived(SETTINGS_SCHEMA.filter((g) => isGroupVisible(g, ui.platform)));
+  // Two independent gates. `ui.platform` drops what this DEVICE has no
+  // equivalent for (global shortcuts); the capability check drops what the
+  // connected CORE cannot do at all. Keeping them apart is what makes a phone
+  // paired to a desktop Core still show that Core's extensions.
+  const visibleGroups = $derived(
+    SETTINGS_SCHEMA.filter((g) => isGroupVisible(g, ui.platform, (f) => capabilitiesState.can(f))),
+  );
   const shellGroups = $derived(
     visibleGroups.map((g) => ({
       id: g.id,

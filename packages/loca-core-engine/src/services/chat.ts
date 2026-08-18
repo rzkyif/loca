@@ -68,7 +68,7 @@ import { hasMemories, relevantMemories, relevantMemoriesBlock } from "./memory-i
 import { type LlmRequest } from "./llm-provider.ts";
 import { maybeGenerateTitle } from "./title-gen.ts";
 import { resolveEndpoint } from "./endpoint-resolver.ts";
-import { loadEffective } from "./core-settings.ts";
+import { loadEffective, loadEffectiveResolved } from "./core-settings.ts";
 import { frameBus } from "../frame-bus.ts";
 import { host } from "../platform/runtime.ts";
 import { getLogger } from "../platform/log.ts";
@@ -289,7 +289,13 @@ export class ChatService {
     // memory selection). Automated/scheduled sessions reach here via
     // chatService().start(ownerClientId, ...), so they honor the owner's knobs
     // too. Model/server/provider keys are core-global and unaffected.
-    const settings = await loadEffective(stream.clientId);
+    const settings = await loadEffectiveResolved(stream.clientId);
+    // The SPARSE record, for the endpoint resolver only. Its `llm.port` fallback
+    // is `llmPort()` = 7701 + channelPortOffset(), and the schema's default for
+    // that key is the bare "7701", because static schema data cannot express a
+    // channel-derived value. Handing it a resolved record therefore points every
+    // dev and latest install at the STABLE channel's llama-server, silently
+    // undoing the port offsets that let two channels run at once. See D-078.
     // Reload the local model if idle-unload stopped it (no-op otherwise).
     await host().status?.ensureLocalModelLoaded(settings);
 
@@ -307,7 +313,7 @@ export class ChatService {
       }
     }
 
-    const endpoint = await resolveEndpoint(settings, route);
+    const endpoint = await resolveEndpoint(await loadEffective(stream.clientId), route);
     // An external provider can't stream until it's configured: an empty base
     // URL, API key, or model otherwise reaches the OpenAI SDK and fails with an
     // opaque network/auth error on send. Fail fast with an actionable message.

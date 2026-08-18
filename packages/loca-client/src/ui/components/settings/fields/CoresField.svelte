@@ -2,6 +2,7 @@
   import { errMessage, MIN_ADMIN_PASSWORD_LENGTH, type PairedClientEntry } from "@loca/shared";
   import {
     cores,
+    isLocalCoreEntry,
     isThisDevicesCore,
     mintCodeWithAdminToken,
     type PairedCoreEntry,
@@ -56,9 +57,16 @@
     adminPasswordSet = null;
     if (sel && isCurrent(sel.id)) {
       void loadDevices();
-      void probeCore(sel.baseUrl)
-        .then((h) => (adminPasswordSet = h.adminPasswordSet))
-        .catch(() => (adminPasswordSet = null));
+      // Not for the Core inside this app: `probeCore` is a real outbound
+      // request, and that Core's base URL is a sentinel whose whole job is to
+      // make one fail loudly. There is nothing on the other end of it, and the
+      // answer it would carry (is an admin password set) has no meaning for a
+      // Core that accepts no inbound pairing.
+      if (!isLocalCoreEntry(sel)) {
+        void probeCore(sel.baseUrl)
+          .then((h) => (adminPasswordSet = h.adminPasswordSet))
+          .catch(() => (adminPasswordSet = null));
+      }
     }
   });
 
@@ -339,6 +347,7 @@
         })) ?? null}
         {devicesError}
         {adminPasswordSet}
+        canPair={!isLocalCoreEntry(item)}
         canSetPassword={isLocal(item)}
         onNameInput={(v) => {
           draftName = v;

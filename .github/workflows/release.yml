@@ -116,6 +116,7 @@ jobs:
           - { id: windows-x64, os: windows-latest }
           - { id: windows-arm64, os: windows-11-arm }
           - { id: linux-x64, os: ubuntu-latest }
+          - { id: linux-arm64, os: ubuntu-24.04-arm }
           # Android-only leg: ci-build --android-only skips core + the desktop
           # client, so this runs the APK build in parallel with linux-x64
           # instead of serializing behind it.
@@ -175,6 +176,22 @@ jobs:
           workspaces: . -> target
           shared-key: release-${{ matrix.id }}
 
+      # llama.cpp, vendored rather than a submodule and gitignored, so a release
+      # runner's fresh checkout does not have it. EVERY leg needs it since the
+      # cutover: the desktop legs because the core is built with
+      # `local-inference`, and the android leg because the APK links the Core
+      # through a mobile dependency edge that turns the same feature on.
+      #
+      # `buildAll` calls `scripts/vendor-llama.ts` itself, so the build works
+      # without this step; the cache is what stops every release re-cloning the
+      # tree. Keyed on the vendoring script, which is where the pinned SHA
+      # lives, and shared with CI's jobs because the vendored tree is source and
+      # identical on every runner.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/llama.cpp
+          key: llama-cpp-${{ hashFiles('scripts/vendor-llama.ts') }}
+
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
@@ -213,10 +230,10 @@ jobs:
           grep -v 'npm:workerd@' deno.json > deno.json.tmp
           mv deno.json.tmp deno.json
 
-      # sherpa-onnx-sys's prebuilt download map omits win-arm64, so stage the
-      # upstream win-arm64 static lib and point SHERPA_ONNX_LIB_DIR at it (the CI
-      # counterpart to windows-provision.ps1's guest setup). The version pin must
-      # match sherpa-onnx in packages/loca-core-speech/Cargo.toml.
+      # sherpa-onnx-sys's prebuilt download map omits win-arm64 (it does carry
+      # linux-aarch64, so the linux-arm64 leg needs nothing here), so stage the
+      # upstream win-arm64 static lib and point SHERPA_ONNX_LIB_DIR at it. The
+      # version pin must match sherpa-onnx in packages/loca-core-speech/Cargo.toml.
       - name: Stage sherpa-onnx win-arm64 lib (win-arm64)
         if: matrix.id == 'windows-arm64'
         shell: pwsh
@@ -272,7 +289,7 @@ jobs:
       # degrades to skipping that installer, so these keep the double-click
       # packages in the release rather than being strictly required.
       - name: Install Core installer tooling (linux)
-        if: matrix.id == 'linux-x64'
+        if: runner.os == 'Linux' && !matrix.androidOnly
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       # winget is absent on the windows-11-arm runner, and even where present its
@@ -358,6 +375,12 @@ jobs:
           if [ -n "${{ matrix.android }}" ]; then
             export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
             export ANDROID_NDK_HOME="$NDK_HOME"
+            # cc-rs resolves the NDK from ANDROID_NDK_ROOT specifically, not
+            # from the other two, and the Core's shim is C++: it needs
+            # `aarch64-linux-android-clang++`, a name the NDK does not ship.
+            # Measured, not assumed - with only ANDROID_NDK_HOME set the C
+            # dependencies build and the shim does not.
+            export ANDROID_NDK_ROOT="$NDK_HOME"
           fi
           deno task release:ci-build \
             --channel=${{ steps.ch.outputs.channel }} \

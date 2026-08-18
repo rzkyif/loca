@@ -17,9 +17,10 @@
   import { backState } from "$stores/back.svelte";
   import { hostFromUrl, NewCoreWizard } from "$composables/use-new-core-wizard.svelte";
 
-  // Mobile is remote-only: there is no on-device core, so the connect-local
-  // branch is skipped (see decideInitialView) and the wizard renders
-  // full-screen rather than in a fixed-width bubble.
+  // `onMobile` is a LAYOUT fact only: the wizard renders full-screen rather
+  // than in a fixed-width bubble. Which first step the wizard opens on is
+  // decided by whether this build carries a Core of its own, not by the form
+  // factor (see the composable's decideInitialView).
   const ui = useUiContext();
   const onMobile = ui.platform === "mobile";
   // On Android the OS owns back navigation, so the wizard drops its in-UI
@@ -94,6 +95,8 @@
   onCheckConnection={() => wizard.checkConnection()}
   onRetryLocal={() => wizard.connectLocal()}
   onUseRemoteInstead={() => wizard.useRemoteInstead()}
+  onUseThisDevice={() => wizard.useThisDevice()}
+  onUseAnotherDevice={() => wizard.useAnotherDevice()}
   onPairRemote={() => wizard.pairRemote()}
   bind:remoteUrl={wizard.remoteUrl}
   bind:remoteName={wizard.remoteName}

@@ -4,6 +4,7 @@
  */
 
 import type { SearchResultGroup, SettingField, SettingGroup, SettingSection } from "./types.ts";
+import type { CoreCapabilities } from "../../api/http.ts";
 import { SETTINGS_SCHEMA } from "./schema.ts";
 import { evalCondition } from "./conditions.ts";
 
@@ -15,16 +16,24 @@ export function isSectionVisible(section: SettingSection): boolean {
   return section.fields.length > 0;
 }
 
-/** True when a group should appear in the settings UI. `platform` defaults to
- *  desktop, so existing desktop callers are unaffected; passing `"mobile"` also
- *  drops `desktopOnly` groups (e.g. global shortcuts) that have no mobile
- *  equivalent. */
+/** True when a group should appear in the settings UI.
+ *
+ *  Two independent gates, and keeping them apart is the point. `platform`
+ *  drops `desktopOnly` groups the DEVICE has no equivalent for (global
+ *  shortcuts); `can` drops groups the connected CORE cannot do at all. A phone
+ *  paired to a desktop Core passes `"mobile"` and still sees that Core's
+ *  extensions, because the extensions are the Core's.
+ *
+ *  Both default to permissive, so existing desktop callers and any caller with
+ *  no capability information are unaffected. */
 export function isGroupVisible(
   group: SettingGroup,
   platform: "desktop" | "mobile" = "desktop",
+  can: (flag: keyof CoreCapabilities) => boolean = () => true,
 ): boolean {
   if (group.hidden) return false;
   if (group.desktopOnly && platform === "mobile") return false;
+  if (group.requiresCapability && !can(group.requiresCapability)) return false;
   return true;
 }
 

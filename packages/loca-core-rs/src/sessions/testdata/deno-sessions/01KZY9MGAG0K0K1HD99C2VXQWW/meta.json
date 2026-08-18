@@ -1,0 +1,13 @@
+{
+  "id": "01KZY9MGAG0K0K1HD99C2VXQWW",
+  "ownerClientId": "client-alice",
+  "title": "Parity fixture",
+  "createdAtMs": 1786649395536,
+  "updatedAtMs": 1786649395542,
+  "messageCount": 10,
+  "summary": [
+    { "role": "user", "text": "What is the weather?" },
+    { "role": "user", "text": "And in this photo?" },
+    { "role": "agent", "text": "It is 31 degrees." }
+  ]
+}

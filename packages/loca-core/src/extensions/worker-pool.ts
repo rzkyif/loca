@@ -8,6 +8,7 @@
 
 import { newCallId } from "@loca/core-engine";
 import { getLogger } from "../shared/log.ts";
+import { numSetting } from "@loca/core-engine/services/settings-access";
 import { paths } from "../paths.ts";
 import { AppError } from "@loca/core-engine";
 import { emptyFlagSet, flagSetToArgs, type PathTemplates, unionFlags } from "./permissions.ts";
@@ -37,6 +38,39 @@ export const DEFAULT_POOL_CONFIG: PoolConfig = {
   callTimeoutMs: 60_000,
   drainTimeoutMs: 2_000,
 };
+
+/** The settings that tune the pool. Named as a set, and paired with a test
+ *  asserting every key `poolConfigFrom` reads is in it: D-139 is a watch set
+ *  that omitted two of the keys its own reader used, so the user changed a
+ *  setting and nothing happened. `drainTimeoutMs` is absent because it is not a
+ *  setting. */
+export const POOL_KEYS = new Set([
+  "extensions.maxWarmWorkers",
+  "extensions.workerIdleMs",
+  "extensions.callTimeoutMs",
+]);
+
+/** Read the pool's tunables from a settings record.
+ *
+ *  Every fallback is `DEFAULT_POOL_CONFIG`'s own value, which is also the schema
+ *  default, so a sparse record lands where the panel says it should. Zero and
+ *  negative are refused rather than applied: zero warm workers means no tool can
+ *  ever run, and a zero timeout fails every call instantly. */
+export function poolConfigFrom(s: Record<string, unknown>): PoolConfig {
+  const positive = (key: string, fallback: number): number => {
+    const value = numSetting(s, key, fallback);
+    return value > 0 ? value : fallback;
+  };
+  return {
+    maxWarmWorkers: Math.max(
+      1,
+      Math.floor(positive("extensions.maxWarmWorkers", DEFAULT_POOL_CONFIG.maxWarmWorkers)),
+    ),
+    workerIdleMs: positive("extensions.workerIdleMs", DEFAULT_POOL_CONFIG.workerIdleMs),
+    callTimeoutMs: positive("extensions.callTimeoutMs", DEFAULT_POOL_CONFIG.callTimeoutMs),
+    drainTimeoutMs: DEFAULT_POOL_CONFIG.drainTimeoutMs,
+  };
+}
 
 export class WorkerPool {
   private config: PoolConfig = DEFAULT_POOL_CONFIG;

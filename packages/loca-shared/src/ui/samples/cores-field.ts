@@ -32,6 +32,15 @@ export const coresFieldSamples = {
     canSetPassword: true,
     devices: [{ id: "d1", name: "This Mac", lastSeenLabel: "active now", isMe: true }],
   },
+  // The Core running inside this very app. It has no listener, so it can take
+  // on no new paired device and the pairing-code section is not offered at all.
+  embedded: {
+    draftName: "This Device",
+    baseUrl: "https://local.loca.invalid",
+    isCurrent: true,
+    canPair: false,
+    devices: [{ id: "d1", name: "This Phone", lastSeenLabel: "active now", isMe: true }],
+  },
   mintedCode: {
     draftName: "Studio Mac",
     baseUrl: "https://192.168.1.20:8787",

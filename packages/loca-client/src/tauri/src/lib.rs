@@ -373,6 +373,7 @@ fn run_desktop() {
             restore_system_volume,
             resolve_path,
             client_channel,
+            client_abi,
             can_self_install,
             convert_file_to_markdown,
             get_self_metrics,
@@ -449,6 +450,10 @@ fn run_mobile() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // The embedded Core, started lazily on its first command rather than
+        // here: booting is fallible and the client shows its own progress and
+        // errors, which it cannot do from inside the builder.
+        .manage(crate::commands::LocalCoreState::default())
         .setup(|app| {
             // Logging needs the app-data dir (no $HOME on android), so it is
             // initialized here once an AppHandle exists. Logs land under the same
@@ -461,11 +466,19 @@ fn run_mobile() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Pinned core networking
+            // Pinned core networking (a Core running somewhere else)
             net_fetch,
             net_ws_open,
             net_ws_send,
             net_ws_close,
+            // The embedded Core (this device IS a Core). In process, never over
+            // a loopback socket: 127.0.0.1 is not app-private on Android.
+            core_start,
+            core_running,
+            core_http,
+            core_ws_open,
+            core_ws_send,
+            core_ws_close,
             // Client files (settings / cores / snippets) + keychain
             read_client_file,
             write_client_file,
@@ -481,6 +494,7 @@ fn run_mobile() {
             truncate_client_log,
             resolve_path,
             client_channel,
+            client_abi,
             can_self_install,
             // Logging
             client_log,

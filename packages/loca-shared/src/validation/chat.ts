@@ -18,7 +18,12 @@ export const chatStartWsSchema = z
     kind: z.literal("chat.start"),
     streamId: z.string().min(1),
     sessionId: z.string().min(1),
-    route: z.enum(["default", "secondary"]).default("default"),
+    // No `.default("default")`. The core distinguishes "the client pinned the
+    // default route" from "the client said nothing", and only the second is
+    // allowed to auto-route to the secondary model (chat.ts:296-299). A default
+    // here makes the field always present, so that test can never be false and
+    // dual-model routing never runs. See D-058 / D-066.
+    route: z.enum(["default", "secondary"]).optional(),
     // Per-turn effective system prompt composed client-side; see the frame
     // type in api/ws.ts. Empty string is meaningful ("send no system
     // prompt"), absent means "fall back to prompts.defaultSystemPrompt".

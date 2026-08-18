@@ -39,17 +39,20 @@ import { extensionItem } from "./extension.ts";
 import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
+import { iosItem } from "./ios.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
-// Matrix-built items: each carries a per-triple artifact produced by a native
-// build runner, so any change here requires the build matrix. This is the set
-// the `build` job gates on.
-const NATIVE_ITEMS: ReleaseItem[] = [coreItem, clientItem, androidItem];
+// Matrix-built items: each needs a native build runner, so any change here
+// requires the build matrix. This is the set the `build` job gates on. iOS is
+// here even though it stages no artifact: its .ipa is built + uploaded to App
+// Store Connect by the macOS runner, so an iOS-only change still needs the
+// matrix.
+const NATIVE_ITEMS: ReleaseItem[] = [coreItem, clientItem, androidItem, iosItem];
 
-// The full set the umbrella release (main.ts) and ci-publish plan against: the
-// matrix-built items plus the platform-independent ones that build on the
-// publish coordinator. Any change here means the publish job has work to do.
+// The full set ci-publish plans against: the matrix-built items plus the
+// platform-independent ones that build on the publish coordinator. Any change
+// here means the publish job has work to do.
 const ITEMS: ReleaseItem[] = [
   ...NATIVE_ITEMS,
   extensionItem,

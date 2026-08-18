@@ -11,6 +11,8 @@ import { requireWorkerDeno } from "../sidecars/worker-deno.ts";
 import { hashExtension } from "./hash.ts";
 import { extensionsRegistry } from "./registry.ts";
 import { type InstallEventSink, readOptional } from "./installer-shared.ts";
+import { loadCoreSettings } from "@loca/core-engine/services/core-settings";
+import { boolSetting } from "@loca/core-engine/services/settings-access";
 
 const log = getLogger("extension-installer");
 
@@ -59,6 +61,31 @@ async function installDeps(
 /** True when the extension declares dependencies in deno.json `imports`
  *  (npm:/jsr: specifiers) or package.json `dependencies`. Throws on an
  *  unparseable config rather than silently skipping its deps. */
+/** Whether npm lifecycle scripts may run during `deno install`.
+ *
+ *  Without `--allow-scripts` deno denies them, which is the difference between
+ *  installing a package and executing whatever its author put in `postinstall`.
+ *  `extensions.ignorePostinstallScripts` is phrased as BLOCKING, so the flag is
+ *  its inverse, and the fallback says blocked: the two failure directions are
+ *  not symmetric. Blocked wrongly is an install that fails loudly; allowed
+ *  wrongly is third-party code running with the user's privileges during what
+ *  they asked for as an install.
+ *
+ *  It is a setting rather than a constant because the panel already offered it,
+ *  with copy telling the user to turn it off when an extension must build native
+ *  code, and nothing read the key. */
+export function allowPostinstallScripts(s: Record<string, unknown>): boolean {
+  return !boolSetting(s, "extensions.ignorePostinstallScripts", true);
+}
+
+/** The argument vector, as a pure function so the flag's presence is assertable
+ *  without spawning anything. */
+export function denoInstallArgs(allowScripts: boolean): string[] {
+  const args = ["install", "--node-modules-dir=auto", "--quiet"];
+  if (allowScripts) args.push("--allow-scripts");
+  return args;
+}
+
 export async function hasDeclaredDeps(dir: string): Promise<boolean> {
   const denoText = await readOptional(join(dir, "deno.json"));
   if (denoText) {
@@ -101,10 +128,16 @@ async function runDenoInstall(
   const denoBin = await requireWorkerDeno();
   // --node-modules-dir=auto lands node_modules in the extension folder without us
   // editing the shipped deno.json; DENO_DIR keeps the package cache under
-  // ~/.loca. We omit --allow-scripts so npm lifecycle scripts are denied by
-  // default (deno rejects the flag when its value isn't an npm: specifier).
+  // ~/.loca.
+  const allowScripts = allowPostinstallScripts(await loadCoreSettings());
+  if (allowScripts) {
+    log.warn(
+      `${extensionId}: npm lifecycle scripts are ENABLED for this install ` +
+        `(extensions.ignorePostinstallScripts is off)`,
+    );
+  }
   const proc = new Deno.Command(denoBin, {
-    args: ["install", "--node-modules-dir=auto", "--quiet"],
+    args: denoInstallArgs(allowScripts),
     cwd,
     env: { DENO_DIR: paths().denoCacheDir },
     stdout: "piped",

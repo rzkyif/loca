@@ -9,7 +9,7 @@
 // core download.
 //
 // Every package delegates provisioning to the core binary's own install
-// subcommands (packages/loca-core/src/install): the post-install hook runs
+// subcommands (packages/loca-core-rs/src/update/install): the post-install hook runs
 // `loca-core install-service` (admin token, built-in extension plant, launchd
 // / systemd-user / Scheduled Task) and removal runs `loca-core
 // uninstall-service`. Because the runtime state lives per-user under
@@ -518,7 +518,7 @@ export async function uploadInstallers(
   channel: ReleaseChannel,
   versions: { coreVersion: string; clientVersion?: string },
   installers: InstallerAsset[],
-  opts: ApplyOpts,
+  opts: Pick<ApplyOpts, "dryRun" | "recordVersionedKey">,
 ): Promise<Array<{ path: string; name: string }>> {
   if (installers.length === 0) return [];
   const manifestDir = channelManifestDir(channel);

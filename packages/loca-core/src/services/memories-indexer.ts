@@ -15,7 +15,10 @@ import {
   embedWithHash,
   memoryEmbedText,
 } from "@loca/core-engine/services/relevance";
-import { loadCoreSettings } from "@loca/core-engine/services/core-settings";
+import {
+  loadCoreSettings,
+  loadCoreSettingsResolved,
+} from "@loca/core-engine/services/core-settings";
 import { resolveEndpoint } from "@loca/core-engine/services/endpoint-resolver";
 import { singleShot } from "@loca/core-engine/services/single-shot";
 import { thinkingBudget } from "@loca/core-engine/services/thinking-budget";
@@ -53,7 +56,10 @@ async function indexMemory(id: string): Promise<void> {
   // Summary: regenerate when it was derived from different content.
   if (state.summarySourceHash !== state.contentHash) {
     const doc = await store.get(id);
-    const settings = await loadCoreSettings();
+    // Resolved: a background job has no client to overlay, but it still needs
+    // the schema defaults. Reading raw here is what made the Summary Thinking
+    // Budget resolve to 0 on every install while the panel advertised 256.
+    const settings = await loadCoreSettingsResolved();
     try {
       // Background jobs run during the idle window, which is exactly when
       // idle-unload may have stopped the local model. ensureLoaded() reloads
@@ -61,9 +67,13 @@ async function indexMemory(id: string): Promise<void> {
       // without this the summary request races a stopped sidecar and the
       // job is dropped, leaving the memory permanently unsummarized.
       await llmIdle().ensureLoaded(settings);
-      const endpoint = await resolveEndpoint(settings);
-      // Thinking off by default (Summary Thinking Budget = 0); a positive
-      // budget opts in, added on top of the summary's own token allowance.
+      // The SPARSE record for the resolver: its `llm.port` fallback is the
+      // channel-adjusted `llmPort()` and the schema default is the bare "7701",
+      // so a resolved record points dev and latest at the stable channel's
+      // llama-server. See D-078.
+      const endpoint = await resolveEndpoint(await loadCoreSettings());
+      // Summary Thinking Budget defaults to 256, added on top of the summary's
+      // own token allowance; 0 turns thinking off for this call.
       const budget = thinkingBudget(settings, "prompts.memorySummaryThinkingBudget");
       const summary = await singleShot({
         systemPrompt: summaryPrompt(settings),

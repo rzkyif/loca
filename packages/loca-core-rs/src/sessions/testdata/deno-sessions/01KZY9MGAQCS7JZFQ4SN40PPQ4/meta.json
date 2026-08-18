@@ -1,0 +1,9 @@
+{
+  "id": "01KZY9MGAQCS7JZFQ4SN40PPQ4",
+  "ownerClientId": "client-bob",
+  "title": "Bob's session",
+  "createdAtMs": 1786649395543,
+  "updatedAtMs": 1786649395544,
+  "messageCount": 1,
+  "summary": [{ "role": "user", "text": "hello from bob" }]
+}

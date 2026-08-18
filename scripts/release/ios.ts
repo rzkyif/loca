@@ -6,15 +6,15 @@
 // Store Connect API), not from the Linux publish coordinator that composes the
 // R2 manifests.
 //
-// The whole item is secret-driven: main.ts drops it (with a yellow warning)
-// whenever appleReleaseConfigured(env) is false, exactly as it drops the desktop
-// client without Tauri keys and android without a keystore. Filling the APPLE_*
+// The whole flow is secret-driven: ci-build.ts skips iOS (with a yellow warning)
+// whenever appleReleaseConfigured(env) is false, exactly as the desktop client is
+// skipped without Tauri keys and android without a keystore. Filling the APPLE_*
 // env is the only switch. See scripts/release/macos-signing.md.
 
 import { ensureDir } from "@std/fs/ensure-dir";
 import { walk } from "@std/fs/walk";
 import { join } from "@std/path";
-import { appleReleaseConfigured, iosToolchainReady, resolveAppleEnv } from "./apple-toolchain.ts";
+import { resolveAppleEnv } from "./apple-toolchain.ts";
 import {
   type ApplyOpts,
   bumpVersionField,
@@ -46,7 +46,7 @@ const GEN_APPLE_DIR = join(TAURI_DIR, "gen/apple");
 
 /** Version is the one baked into the app by Tauri (tauri.conf.json), shared with
  *  the desktop + android clients (they all bump this file once). */
-async function readIosVersion(): Promise<string> {
+export async function readIosVersion(): Promise<string> {
   const conf = JSON.parse(await Deno.readTextFile(TAURI_CONF_PATH)) as { version?: string };
   if (!conf.version) fail(`no version in ${rel(TAURI_CONF_PATH)}`);
   return conf.version;
@@ -168,7 +168,7 @@ export async function buildIosBundle(env: DeployEnv, channel: ReleaseChannel): P
 export async function buildAndUploadIos(
   env: DeployEnv,
   channel: ReleaseChannel,
-  opts: ApplyOpts,
+  opts: Pick<ApplyOpts, "dryRun">,
 ): Promise<void> {
   const relPath = await buildIosBundle(env, channel);
 
@@ -220,17 +220,14 @@ export const iosItem: ReleaseItem = {
     return Promise.resolve([join(DIST_DIR, "ios")]);
   },
 
-  async apply(env: DeployEnv, channel: ReleaseChannel, _opts: ApplyOpts): Promise<void> {
-    // Defensive: main.ts already drops the item when signing/upload isn't
-    // configured, so this only guards a direct call.
-    if (!appleReleaseConfigured(env)) {
-      info(colors.yellow("Apple signing / App Store Connect not configured; skipping iOS."));
-      return;
-    }
-    if (!iosToolchainReady()) {
-      info(colors.yellow("iOS release requires macOS with Xcode; skipping on this host."));
-      return;
-    }
-    await buildAndUploadIos(env, channel, _opts);
+  // Record-only: the .ipa was already built, signed, and uploaded to App Store
+  // Connect by the macOS build runner (ci-build.ts --ios), which is the only host
+  // that can do it. The coordinator runs on Linux and has nothing to upload; this
+  // item exists so the run records an `ios` cursor entry (and ci-bump advances the
+  // version). ci-publish only includes the item when a runner staged the receipt,
+  // so the cursor can never claim an upload that did not happen.
+  apply(_env: DeployEnv, _channel: ReleaseChannel, _opts: ApplyOpts): Promise<void> {
+    info("ios client built + uploaded to App Store Connect by the macOS build runner");
+    return Promise.resolve();
   },
 };

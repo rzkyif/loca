@@ -6,7 +6,17 @@
 // pending-downloads popup on its boot-time HTTP snapshot.
 
 import { assertEquals } from "@std/assert";
+import { CLIENT_TO_SERVER_KINDS, SERVER_TO_CLIENT_KINDS } from "../api/ws.ts";
 import { serverToClientFrameSchema } from "./ws.ts";
+import {
+  chatInterruptWsSchema,
+  chatStartWsSchema,
+  chatSubscribeWsSchema,
+  scheduleConfirmResponseSchema,
+  toolAskUserResponseSchema,
+  toolCancelSchema,
+  toolPermissionResponseSchema,
+} from "./chat.ts";
 
 Deno.test("serverToClientFrameSchema: accepts requirements.snapshot", () => {
   const frame = {
@@ -72,40 +82,38 @@ Deno.test("serverToClientFrameSchema: accepts settings.updated (with and without
 });
 
 Deno.test("serverToClientFrameSchema: every server->client kind has a variant", () => {
-  // Mirrors the ServerToClientFrame union in ../api/ws.ts. Add a kind here when
-  // you add one there; the assertion below then forces a matching Zod variant
-  // so the frame can't be silently dropped on the client.
-  const expected = new Set([
-    "pong",
-    "ping",
-    "chat.message",
-    "chat.delta",
-    "chat.usage",
-    "chat.done",
-    "chat.error",
-    "tool.progress",
-    "tool.askuser_request",
-    "tool.permission_request",
-    "tool.log",
-    "tool.result",
-    "tool.error",
-    "tool.cancelled",
-    "extension.install_log",
-    "extension.install_done",
-    "extension.snapshot",
-    "mcp.snapshot",
-    "downloads.snapshot",
-    "requirements.snapshot",
-    "settings.updated",
-    "session.updated",
-    "session.created",
-    "schedule.confirm_request",
-    "update.staged",
-    "update.error",
-    "core.status",
-  ]);
+  // SERVER_TO_CLIENT_KINDS is the one source for the kind set. The TS union in
+  // ../api/ws.ts is checked against it at compile time; this checks the Zod
+  // union against the same tuple, so a kind cannot exist on one side only.
   const covered = new Set(
     serverToClientFrameSchema.options.map((o) => o.shape.kind.value as string),
   );
+  assertEquals(covered, new Set<string>(SERVER_TO_CLIENT_KINDS));
+});
+
+Deno.test("client->server: every kind has a validator", () => {
+  // ping and pong carry nothing beyond `kind`, so the hub routes them off the
+  // envelope schema alone and they need no per-kind validator.
+  const envelopeOnly = new Set<string>(["ping", "pong"]);
+  const validators = [
+    chatStartWsSchema,
+    chatInterruptWsSchema,
+    chatSubscribeWsSchema,
+    toolAskUserResponseSchema,
+    toolPermissionResponseSchema,
+    toolCancelSchema,
+    scheduleConfirmResponseSchema,
+  ];
+  // scheduleConfirmResponseSchema is a ZodEffects (it has a .superRefine), so
+  // its shape lives one level down under .innerType().
+  const covered = new Set(
+    validators.map((schema) => {
+      // deno-lint-ignore no-explicit-any
+      const s = schema as any;
+      const shape = s.shape ?? s.innerType?.().shape ?? s._def?.schema?.shape;
+      return shape.kind.value as string;
+    }),
+  );
+  const expected = new Set(CLIENT_TO_SERVER_KINDS.filter((k) => !envelopeOnly.has(k)));
   assertEquals(covered, expected);
 });

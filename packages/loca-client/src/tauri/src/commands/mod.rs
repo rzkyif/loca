@@ -24,6 +24,11 @@ pub mod process;
 // Desktop-only commands. Each backs a host feature with no Android equivalent
 // (windowing / global shortcuts, screen capture, font enumeration, local-core
 // install); the mobile Platform impl stubs the corresponding methods.
+// Mobile-only: the Core linked into this app and driven in process. There is no
+// separate `loca-core` process on a phone.
+#[cfg(mobile)]
+pub mod core;
+
 #[cfg(desktop)]
 pub mod capture;
 #[cfg(desktop)]
@@ -46,6 +51,13 @@ pub use client_files::{
     write_client_snippet,
 };
 pub use client_storage::{get_client_storage, truncate_client_log};
+// `self::`, not a bare `core::`: a bare path here is one resolution rule away
+// from the built-in `core` crate of the same name, and the failure would appear
+// only on the mobile triples where this module is compiled at all.
+#[cfg(mobile)]
+pub use self::core::{
+    core_http, core_running, core_start, core_ws_close, core_ws_open, core_ws_send, LocalCoreState,
+};
 #[cfg(desktop)]
 pub use fonts::list_system_fonts;
 pub use keychain::{
@@ -189,6 +201,44 @@ pub fn resolve_path(handle: AppHandle, path: String) -> AppResult<String> {
 #[tauri::command]
 pub fn client_channel() -> &'static str {
     crate::channel::channel()
+}
+
+/// This build's Android ABI, as the key it is published under in `android.json`
+/// (`android-arm64` | `android-armv7` | `android-x86_64` | `android-x86`), or
+/// `None` off Android.
+///
+/// **Why `target_arch` rather than `Build.SUPPORTED_ABIS` over JNI:** the native
+/// library is compiled once per ABI, so the architecture this code was compiled
+/// for IS the ABI the device is running, by construction. Asking Android would
+/// return the device's PREFERRED list, which on an arm64 phone running an armv7
+/// build would answer arm64 and pick the wrong APK, which is the bug this exists
+/// to prevent.
+///
+/// The self-updater needs it because JavaScript cannot see the ABI at all. Until
+/// per-ABI splits ship only `android-universal` is published, so the value is
+/// unused; the moment splits ship, guessing installs a library the CPU cannot
+/// load. See `lib/platform/mobile.ts`.
+#[tauri::command]
+pub fn client_abi() -> Option<&'static str> {
+    #[cfg(target_os = "android")]
+    {
+        return Some(if cfg!(target_arch = "aarch64") {
+            "android-arm64"
+        } else if cfg!(target_arch = "arm") {
+            "android-armv7"
+        } else if cfg!(target_arch = "x86_64") {
+            "android-x86_64"
+        } else if cfg!(target_arch = "x86") {
+            "android-x86"
+        } else {
+            // A fifth Android ABI would publish under a key this build cannot
+            // name, and guessing is what the caller must not do, so say nothing
+            // and let it decline the update.
+            return None;
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    None
 }
 
 /// Whether an in-app client update can be applied to this install in place.

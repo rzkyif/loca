@@ -85,6 +85,56 @@ export type ClientToServerFrame =
 // follows the same idea from its own home, `PERMISSION_KINDS` in
 // ../domain/extension.ts.
 
+// The frame `kind` sets, one source for all three places that need them: the
+// TS unions in this file (checked at compile time by the assertions at the
+// bottom), the Zod validators in ../validation/, and the Rust wire types
+// generated from both. A kind present in one but not another does not fail
+// anywhere on its own: the client drops the frame silently and the symptom
+// appears somewhere unrelated, which is exactly how `requirements.snapshot`
+// broadcasts went missing and froze the pending-downloads popup.
+
+export const CLIENT_TO_SERVER_KINDS = [
+  "ping",
+  "pong",
+  "chat.start",
+  "chat.interrupt",
+  "chat.subscribe",
+  "tool.askuser_response",
+  "tool.permission_response",
+  "tool.cancel",
+  "schedule.confirm_response",
+] as const;
+
+export const SERVER_TO_CLIENT_KINDS = [
+  "pong",
+  "ping",
+  "chat.message",
+  "chat.delta",
+  "chat.usage",
+  "chat.done",
+  "chat.error",
+  "tool.progress",
+  "tool.askuser_request",
+  "tool.permission_request",
+  "tool.log",
+  "tool.result",
+  "tool.error",
+  "tool.cancelled",
+  "extension.install_log",
+  "extension.install_done",
+  "extension.snapshot",
+  "mcp.snapshot",
+  "downloads.snapshot",
+  "requirements.snapshot",
+  "settings.updated",
+  "session.updated",
+  "session.created",
+  "schedule.confirm_request",
+  "update.staged",
+  "update.error",
+  "core.status",
+] as const;
+
 export const CHAT_DONE_REASONS = ["stop", "interrupted", "hop_limit", "length"] as const;
 export const TOOL_LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 export const EXTENSION_INSTALL_STREAMS = ["stdout", "stderr"] as const;
@@ -97,6 +147,23 @@ export const SESSION_UPDATED_OPS = [
 ] as const;
 export const SESSION_CREATED_REASONS = ["schedule", "greeting"] as const;
 export const SESSION_CREATED_FOCUSES = ["show", "show_when_done"] as const;
+
+// Named aliases for the two `reason` sets, and the name is the point.
+//
+// `ts-json-schema-generator` inlines an anonymous union at its use site, and
+// typify then mints a Rust type for it called `<Parent><Field>`. Two different
+// `reason` fields under `ServerToClientFrame` therefore collide, and the FIRST
+// one wins silently: `session.created.reason` generated as
+// `stop | interrupted | hop_limit | length`, so the Rust core could neither
+// emit nor accept a valid `session.created` frame, which is every greeting and
+// every scheduled prompt. Naming them makes the generator emit two
+// `definitions` and the frames `$ref` them, so the two sets stay two types.
+//
+// The same reasoning as D-040: a generated name is a thing to declare, not to
+// leave to whatever the emitter happens to derive from context.
+export type ChatDoneReason = (typeof CHAT_DONE_REASONS)[number];
+export type SessionCreatedReason = (typeof SESSION_CREATED_REASONS)[number];
+export type SessionCreatedFocus = (typeof SESSION_CREATED_FOCUSES)[number];
 
 // --- Server → Client -------------------------------------------------------
 
@@ -142,7 +209,7 @@ export type ServerToClientFrame =
   | {
       kind: "chat.done";
       streamId: string;
-      reason: (typeof CHAT_DONE_REASONS)[number];
+      reason: ChatDoneReason;
     }
   | { kind: "chat.error"; streamId: string; code: ErrorCode; message: string }
   // Tool-call events
@@ -247,12 +314,12 @@ export type ServerToClientFrame =
   | {
       kind: "session.created";
       session: Session;
-      reason: (typeof SESSION_CREATED_REASONS)[number];
+      reason: SessionCreatedReason;
       scheduledPromptId?: string;
       /** "show": navigate to the session and show the window now;
        *  "show_when_done": navigate silently, show the window when the
        *  session's stream finishes. */
-      focus: (typeof SESSION_CREATED_FOCUSES)[number];
+      focus: SessionCreatedFocus;
     }
   // A running tool proposed a scheduled prompt; the call is paused until
   // the user accepts (possibly after editing the draft) or rejects in chat.
@@ -276,3 +343,22 @@ export type ServerToClientFrame =
   | { kind: "core.status"; snapshot: CoreStatusSnapshot };
 
 export type WsFrame = ClientToServerFrame | ServerToClientFrame;
+
+// --- Kind coverage, checked at compile time --------------------------------
+//
+// Each assertion fails to compile if the union above and its tuple disagree in
+// either direction, so adding a frame variant without adding its kind (or the
+// reverse) is a type error here rather than a frame silently dropped at
+// runtime. The Zod side is checked at test time in ../validation/ws.test.ts;
+// it cannot be checked here because Zod's inferred kinds are values, not types.
+
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
+
+type _ClientKindsMatch = Assert<
+  Equal<ClientToServerFrame["kind"], (typeof CLIENT_TO_SERVER_KINDS)[number]>
+>;
+type _ServerKindsMatch = Assert<
+  Equal<ServerToClientFrame["kind"], (typeof SERVER_TO_CLIENT_KINDS)[number]>
+>;

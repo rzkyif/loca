@@ -38,6 +38,11 @@ export function resolveAndroidEnv(): Record<string, string> {
   if (ndk) {
     out.NDK_HOME = ndk;
     out.ANDROID_NDK_HOME = ndk;
+    // ANDROID_NDK_ROOT specifically, and it is not redundant with the other
+    // two: cc-rs resolves the NDK from THIS name alone, and the Core's llama.cpp
+    // shim is C++, so without it the C dependencies build and the shim does not.
+    // Measured rather than assumed; the CI android job carries the same note.
+    out.ANDROID_NDK_ROOT = ndk;
   }
 
   let javaHome = Deno.env.get("JAVA_HOME") ?? "";

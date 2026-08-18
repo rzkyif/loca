@@ -1,0 +1,1200 @@
+{
+  "generatedBy": "deno task contract, via scripts/contract/emit-settings-schema.ts. Do not edit.",
+  "fields": [
+    {
+      "id": "general.context.userName",
+      "type": "string",
+      "destination": "client-on-client",
+      "defaultValue": ""
+    },
+    {
+      "id": "general.context.agentName",
+      "type": "string",
+      "destination": "client-on-client",
+      "defaultValue": ""
+    },
+    {
+      "id": "general.context.language",
+      "type": "string",
+      "destination": "client-on-client",
+      "defaultValue": ""
+    },
+    {
+      "id": "general.context.locationAuto",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "general.context.location",
+      "type": "string",
+      "destination": "client-on-client",
+      "defaultValue": ""
+    },
+    {
+      "id": "general.context.dateTime",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "general.context.os",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "general.launch.autostart",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "general.session.alwaysStartNew",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "general.session.storeSessions",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "shortcuts.toggleWindow",
+      "type": "shortcut",
+      "destination": "client-on-client",
+      "defaultValue": "super+ctrl+shift+z"
+    },
+    {
+      "id": "shortcuts.attachFile",
+      "type": "shortcut",
+      "destination": "client-on-client",
+      "defaultValue": "super+ctrl+shift+a"
+    },
+    {
+      "id": "shortcuts.captureScreen",
+      "type": "shortcut",
+      "destination": "client-on-client",
+      "defaultValue": "super+ctrl+shift+s"
+    },
+    {
+      "id": "shortcuts.captureRegion",
+      "type": "shortcut",
+      "destination": "client-on-client",
+      "defaultValue": "super+ctrl+shift+x"
+    },
+    {
+      "id": "layout.monitor",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "primary"
+    },
+    {
+      "id": "layout.alignment",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "center",
+      "options": ["left", "center", "right"]
+    },
+    {
+      "id": "layout.width",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 700,
+      "regex": [
+        {
+          "regex": "^(?:4[0-9]{2}|[5-9][0-9]{2}|1[01][0-9]{2}|1200)$",
+          "errorMessage": "Must be between 400 and 1200"
+        }
+      ]
+    },
+    {
+      "id": "appearance.settings.sidebarCollapsed",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "appearance.settings.horizontalThreshold",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 450,
+      "regex": [
+        {
+          "regex": "^([4-9][0-9]{2}|[12][0-9]{3})$",
+          "errorMessage": "Must be between 400 and 2999"
+        }
+      ]
+    },
+    {
+      "id": "appearance.theme",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "auto",
+      "options": ["light", "dark", "auto"]
+    },
+    {
+      "id": "appearance.textSize",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 16,
+      "regex": [
+        {
+          "regex": "^(?:1[2-9]|2[0-9]|3[0-2])$",
+          "errorMessage": "Must be between 12 and 32"
+        }
+      ]
+    },
+    {
+      "id": "appearance.defaultFont",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "default"
+    },
+    {
+      "id": "appearance.monoFont",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "default"
+    },
+    {
+      "id": "appearance.userBubbleColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#86efacff"
+    },
+    {
+      "id": "appearance.agentBubbleColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#93c5fdff"
+    },
+    {
+      "id": "appearance.secondaryAgentBubbleColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#d8b4feff"
+    },
+    {
+      "id": "appearance.bubbleShadowColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#00000033"
+    },
+    {
+      "id": "appearance.bubbleShadowDistance",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 8,
+      "min": 0,
+      "max": 40
+    },
+    {
+      "id": "appearance.bubbleBlurEnabled",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "appearance.bubbleBlurRings",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 1,
+      "min": 1,
+      "max": 6
+    },
+    {
+      "id": "appearance.defaultColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#737373ff"
+    },
+    {
+      "id": "appearance.systemMessageDefaultColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#00000000"
+    },
+    {
+      "id": "appearance.userInputDefaultColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#00000000"
+    },
+    {
+      "id": "appearance.sessionBarDefaultColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#00000000"
+    },
+    {
+      "id": "appearance.settingsDefaultColor",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#00000000"
+    },
+    {
+      "id": "appearance.accentRed",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#ef4444ff"
+    },
+    {
+      "id": "appearance.accentBlue",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#3b82f6ff"
+    },
+    {
+      "id": "appearance.accentPurple",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#a855f7ff"
+    },
+    {
+      "id": "appearance.accentGreen",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#22c55eff"
+    },
+    {
+      "id": "appearance.accentYellow",
+      "type": "color",
+      "destination": "client-on-client",
+      "defaultValue": "#eab308ff"
+    },
+    {
+      "id": "appearance.roundedSmall",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 6,
+      "min": 0,
+      "max": 16
+    },
+    {
+      "id": "appearance.roundedMedium",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 8,
+      "min": 0,
+      "max": 20
+    },
+    {
+      "id": "appearance.roundedLarge",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 16,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "appearance.animationsEnabled",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "appearance.animationSpeedMultiplier",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 100,
+      "min": 25,
+      "max": 400
+    },
+    {
+      "id": "llm.supportImages",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": false
+    },
+    {
+      "id": "llm.idleUnloadSeconds",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 0
+    },
+    {
+      "id": "llm.showReasoning",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "llm.provider",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "local",
+      "options": ["local", "external"]
+    },
+    {
+      "id": "llm.preset",
+      "type": "model_preset",
+      "destination": "core",
+      "defaultValue": "smallest"
+    },
+    {
+      "id": "llm.reasoning",
+      "type": "select",
+      "destination": "client-on-core",
+      "defaultValue": "off",
+      "options": ["off", "on"]
+    },
+    {
+      "id": "llm.reasoningBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 256
+    },
+    {
+      "id": "llm.reasoningEffort",
+      "type": "select",
+      "destination": "client-on-core",
+      "defaultValue": "high",
+      "options": ["minimal", "low", "medium", "high"]
+    },
+    {
+      "id": "llm.temperature",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 0.7
+    },
+    {
+      "id": "llm.topP",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 0.95
+    },
+    {
+      "id": "llm.topK",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 20
+    },
+    {
+      "id": "llm.minP",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 0
+    },
+    {
+      "id": "llm.repeatPenalty",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 1
+    },
+    {
+      "id": "llm.dryMultiplier",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 0.8
+    },
+    {
+      "id": "llm.presencePenalty",
+      "type": "float",
+      "destination": "client-on-core",
+      "defaultValue": 0
+    },
+    {
+      "id": "llm.samplers",
+      "type": "string",
+      "destination": "client-on-core",
+      "defaultValue": ""
+    },
+    {
+      "id": "llm.modelPath",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-Q4_K_M.gguf"
+    },
+    {
+      "id": "llm.mmprojPath",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "@unsloth/Qwen3.5-2B-GGUF/main/mmproj-F16.gguf"
+    },
+    {
+      "id": "llm.contextSize",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 4096
+    },
+    {
+      "id": "llm.threads",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 4
+    },
+    {
+      "id": "llm.gpuLayers",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "llm.binaryBackend",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "auto",
+      "options": ["auto", "cpu", "vulkan", "cuda", "rocm", "hip", "metal"]
+    },
+    {
+      "id": "llm.flashAttn",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": false
+    },
+    {
+      "id": "llm.mmap",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": true
+    },
+    {
+      "id": "llm.host",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "127.0.0.1",
+      "regex": [
+        {
+          "regex": "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+          "errorMessage": "Must be a valid IPv4 address"
+        }
+      ]
+    },
+    {
+      "id": "llm.port",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "7701",
+      "regex": [
+        {
+          "regex": "^\\d+$",
+          "errorMessage": "Port must be a number"
+        },
+        {
+          "regex": "^(?:[1-9]\\d{0,4}|[1-5]\\d{4}|6[0-4]\\d{3}|65[0-4]\\d{2}|655[0-2]\\d|6553[0-5])$",
+          "errorMessage": "Port must be 1-65535"
+        }
+      ]
+    },
+    {
+      "id": "llm.webui",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": false
+    },
+    {
+      "id": "llm.commandPreview",
+      "type": "command_preview",
+      "destination": "core"
+    },
+    {
+      "id": "llm.external.baseUrl",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "",
+      "regex": [
+        {
+          "regex": "^(https://|http://(localhost|127\\.0\\.0\\.1)(:|/|$))",
+          "errorMessage": "URL must use HTTPS, or HTTP with localhost / 127.0.0.1 only."
+        }
+      ]
+    },
+    {
+      "id": "llm.external.apiKey",
+      "type": "password",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "llm.external.model",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "llm.external.embedModel",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "llm.external.contextSize",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 128000,
+      "min": 1
+    },
+    {
+      "id": "prompts.showSystemPrompt",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": false
+    },
+    {
+      "id": "prompts.defaultSystemPrompt.preset",
+      "type": "preset",
+      "destination": "client-on-core",
+      "defaultValue": "disabled"
+    },
+    {
+      "id": "prompts.defaultSystemPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": ""
+    },
+    {
+      "id": "prompts.contextTemplate",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "[agentName:Your name is {agentName}.]\n[language:Always respond in {language}.]\n\n<user_metadata>\nHidden instruction: only refer to these when they are related to the user's message.\n[userName:- The user's preferred name is {userName}]\n[location:- The user's location is {location}]\n[dateTime:- The user's date and time is {dateTime}]\n[os:- The user's operating system is {os}]\n</user_metadata>\n\n[toolsAvailable:Tools are available for this turn. Use one only when the user's request actually needs it; for greetings or small talk, just reply normally without calling any tool.]",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Template cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.titleGenerationPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "You are a title generator. Your ONLY job is to summarize a conversation into a very short topic label. You are NOT continuing the conversation, NOT answering anything, and NOT describing what a reply would contain.\n\nRules:\n- Output ONLY the title on a single line, nothing else.\n- The title MUST be a MAXIMUM of 5 words. Shorter is better.\n- The title summarizes what the conversation is ABOUT, anchored on the opening request but reflecting where the discussion has gone.\n- Do NOT answer, fulfill, or expand on anything in the conversation.\n- Do NOT add quotes, punctuation, prefixes, or any extra text.\n- Do NOT show your reasoning. Do NOT include <think> blocks. Just the title.\n\nExamples:\n\nFirst message: How do I center a div in CSS?\nTitle: Centering A Div\n\nFirst message: Can you help me write a Python script to rename files?\nTitle: Python File Renaming Script\n\nFirst message: I'm having trouble with my React app crashing on startup\nTitle: React App Crash Issue\n\nHere is the conversation to title.\n\nFirst message:\n{firstMessage}\n\nMost recent messages:\n{recentMessages}",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Prompt cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.titleGenerationThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 128,
+      "min": 0
+    },
+    {
+      "id": "prompts.autocorrectPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "You are a transcription corrector. Your ONLY job is to fix small mistakes in speech-to-text output. Do NOT change the meaning. Do NOT add or remove sentences. Do NOT answer or respond to the text. Output ONLY the corrected text, nothing else.\n\nCommon mistakes to fix:\n- Wrong homophones (e.g. \"there\" vs \"their\", \"your\" vs \"you're\")\n- Missing or extra small words (e.g. \"a\", \"the\", \"is\")\n- Misheard technical terms or names\n- Missing punctuation or capitalization\n\nExamples:\n\nInput: i want too create a new react component for the side bar\nOutput: I want to create a new React component for the sidebar.\n\nInput: can you fix the bug were the button doesnt work when i click on it\nOutput: Can you fix the bug where the button doesn't work when I click on it?\n\nInput: their is a error in the console that says type error\nOutput: There is an error in the console that says TypeError.",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Prompt cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.autocorrectThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 0,
+      "min": 0
+    },
+    {
+      "id": "prompts.memorySummaryPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "You are a memory summarizer. Your ONLY job is to compress the given memory into a short summary that helps an assistant decide whether the memory is relevant to a conversation.\n\nRules:\n- Output ONLY the summary, nothing else.\n- Two sentences MAXIMUM. Shorter is better.\n- Name the memory's main topics and the kind of information it holds.\n- Do NOT answer, expand on, or evaluate the memory's content.\n- Do NOT show your reasoning. Do NOT include <think> blocks. Just the summary.",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Prompt cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.memorySummaryThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 256,
+      "min": 0
+    },
+    {
+      "id": "prompts.mergeTranscriptionPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "You are a text combiner. You will receive EXISTING text already in the user's input box and a NEW transcription. Merge the NEW text into the EXISTING text naturally, continuing lists, sentences, or paragraphs where appropriate. Do NOT answer the content, do NOT add new ideas, do NOT remove existing content. Preserve formatting (newlines, lists, code fences) from the existing text. Output ONLY the combined text, nothing else.\n\nInput format:\n<existing>\n{existing text}\n</existing>\n<new>\n{new transcription}\n</new>\n\nExample:\n<existing>\nExplain the following things to me:\n1. cats\n</existing>\n<new>\n2 dogs\n</new>\nOutput:\nExplain the following things to me:\n1. cats\n2. dogs",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Prompt cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.mergeTranscriptionThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 0
+    },
+    {
+      "id": "prompts.complexityDetectionPrompt",
+      "type": "multiline",
+      "destination": "client-on-core",
+      "defaultValue": "You are a router. Classify the user's request as either `simple` or `complex`.\n- `simple`: short factual questions, light chit-chat, trivial code edits, summarization of attached text, single-step tool invocations (e.g. set an alarm, start a timer, fetch the weather).\n- `complex`: multi-step reasoning, non-trivial coding, in-depth analysis, planning, long-form writing, anything that benefits from stronger reasoning or vision understanding.\nReply with exactly one word: `simple` or `complex`. No punctuation.",
+      "regex": [
+        {
+          "regex": "\\S",
+          "errorMessage": "Prompt cannot be empty"
+        }
+      ]
+    },
+    {
+      "id": "prompts.complexityDetectionThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 0
+    },
+    {
+      "id": "snippets.list",
+      "type": "object_management",
+      "destination": "client-on-client"
+    },
+    {
+      "id": "memories.enabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "memories.maxRelevant",
+      "type": "number_slider",
+      "destination": "client-on-core",
+      "defaultValue": 3,
+      "min": 1,
+      "max": 10
+    },
+    {
+      "id": "memories.skills.autoRelevancy",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "memories.showEmptySelection",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": false
+    },
+    {
+      "id": "memories.list",
+      "type": "object_management",
+      "destination": "core"
+    },
+    {
+      "id": "scheduledPrompts.list",
+      "type": "object_management",
+      "destination": "core"
+    },
+    {
+      "id": "greetings.enabled",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "greetings.runOn",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "autostart",
+      "options": ["autostart", "every_start", "every_show"]
+    },
+    {
+      "id": "greetings.showCooldown",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 10,
+      "regex": [
+        {
+          "regex": "^([5-9]|[1-9][0-9]|[1-9][0-9]{2}|[12][0-9]{3}|3[0-5][0-9]{2}|3600)$",
+          "errorMessage": "Must be 5-3600"
+        }
+      ]
+    },
+    {
+      "id": "greetings.sessionTitle",
+      "type": "string",
+      "destination": "client-on-client",
+      "defaultValue": "Greeting {datetime}"
+    },
+    {
+      "id": "greetings.instruction",
+      "type": "multiline",
+      "destination": "client-on-client",
+      "defaultValue": "Greet me to start the session. Keep it short and friendly. If a tool can fetch something timely and useful (like the weather or today's schedule), include one highlight; otherwise just say hello."
+    },
+    {
+      "id": "tools.enabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": false
+    },
+    {
+      "id": "tools.filteringEnabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "tools.filteringMinTools",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 0,
+      "regex": [
+        {
+          "regex": "^([0-9]|[1-9][0-9]{1,2}|1000)$",
+          "errorMessage": "Must be 0-1000"
+        }
+      ]
+    },
+    {
+      "id": "tools.alwaysAvailableEnabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "tools.maxTools",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 30,
+      "regex": [
+        {
+          "regex": "^[1-9][0-9]?$",
+          "errorMessage": "Must be 1-99"
+        }
+      ]
+    },
+    {
+      "id": "tools.secondPassEnabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": true
+    },
+    {
+      "id": "tools.filterThinkingBudget",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 0
+    },
+    {
+      "id": "tools.maxHops",
+      "type": "number",
+      "destination": "client-on-core",
+      "defaultValue": 5,
+      "regex": [
+        {
+          "regex": "^[1-9][0-9]?$",
+          "errorMessage": "Must be 1-99"
+        }
+      ]
+    },
+    {
+      "id": "tools.showEmptySelection",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": false
+    },
+    {
+      "id": "extensions.maxWarmWorkers",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 8,
+      "regex": [
+        {
+          "regex": "^[1-9][0-9]?$",
+          "errorMessage": "Must be 1-99"
+        }
+      ]
+    },
+    {
+      "id": "extensions.workerIdleMs",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 300000,
+      "regex": [
+        {
+          "regex": "^[0-9]+$",
+          "errorMessage": "Must be a non-negative integer"
+        }
+      ]
+    },
+    {
+      "id": "extensions.callTimeoutMs",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 60000,
+      "regex": [
+        {
+          "regex": "^[0-9]+$",
+          "errorMessage": "Must be a non-negative integer"
+        }
+      ]
+    },
+    {
+      "id": "tools.list",
+      "type": "object_management",
+      "destination": "core"
+    },
+    {
+      "id": "extensions.skipRiskyGrantWarning",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "tools.builtinPromptDismissed",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "extensions.list",
+      "type": "object_management",
+      "destination": "core"
+    },
+    {
+      "id": "extensions.ignorePostinstallScripts",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": true
+    },
+    {
+      "id": "mcp.list",
+      "type": "object_management",
+      "destination": "core"
+    },
+    {
+      "id": "dualModel.enabled",
+      "type": "boolean",
+      "destination": "client-on-core",
+      "defaultValue": false
+    },
+    {
+      "id": "dualModel.external.baseUrl",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "",
+      "regex": [
+        {
+          "regex": "^(https://|http://(localhost|127\\.0\\.0\\.1)(:|/|$))",
+          "errorMessage": "URL must use HTTPS, or HTTP with localhost / 127.0.0.1 only."
+        }
+      ]
+    },
+    {
+      "id": "dualModel.external.apiKey",
+      "type": "password",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "dualModel.external.model",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "dualModel.external.contextSize",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 128000,
+      "min": 1
+    },
+    {
+      "id": "stt.enabled",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": false
+    },
+    {
+      "id": "stt.activation",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "push-to-talk",
+      "options": ["manual", "sticky", "push-to-talk"]
+    },
+    {
+      "id": "stt.holdDuration",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 250
+    },
+    {
+      "id": "stt.autoVolumeEnabled",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "stt.autoVolumeTarget",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 20,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "stt.vadPersistedState",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "stt.llmAutocorrect",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "stt.llmChainTranscription",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "stt.autoSend",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": true
+    },
+    {
+      "id": "stt.provider",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "local",
+      "options": ["local", "external"]
+    },
+    {
+      "id": "stt.preset",
+      "type": "stt_preset",
+      "destination": "core",
+      "defaultValue": "light-multilingual"
+    },
+    {
+      "id": "stt.modelType",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "whisper",
+      "options": [
+        "whisper",
+        "sense-voice",
+        "moonshine",
+        "paraformer",
+        "transducer",
+        "nemo-ctc",
+        "dolphin",
+        "telespeech-ctc"
+      ]
+    },
+    {
+      "id": "stt.modelPath",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "@csukuangfj/sherpa-onnx-whisper-small/main/small-encoder.int8.onnx"
+    },
+    {
+      "id": "stt.modelFiles",
+      "type": "multiline",
+      "destination": "core",
+      "defaultValue": "{\"encoder\":\"@csukuangfj/sherpa-onnx-whisper-small/main/small-encoder.int8.onnx\",\"decoder\":\"@csukuangfj/sherpa-onnx-whisper-small/main/small-decoder.int8.onnx\",\"tokens\":\"@csukuangfj/sherpa-onnx-whisper-small/main/small-tokens.txt\"}"
+    },
+    {
+      "id": "stt.threads",
+      "type": "number",
+      "destination": "core",
+      "defaultValue": 4
+    },
+    {
+      "id": "speech.binaryBackend",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "auto",
+      "options": ["auto", "cpu", "cuda"]
+    },
+    {
+      "id": "stt.external.baseUrl",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "",
+      "regex": [
+        {
+          "regex": "^(https://|http://(localhost|127\\.0\\.0\\.1)(:|/|$))",
+          "errorMessage": "URL must use HTTPS, or HTTP with localhost / 127.0.0.1 only."
+        }
+      ]
+    },
+    {
+      "id": "stt.external.apiKey",
+      "type": "password",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "stt.external.model",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "stt.external.language",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "tts.enabled",
+      "type": "boolean",
+      "destination": "core",
+      "defaultValue": false
+    },
+    {
+      "id": "tts.provider",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "local",
+      "options": ["local", "external"]
+    },
+    {
+      "id": "tts.preset",
+      "type": "tts_preset",
+      "destination": "core",
+      "defaultValue": "kokoro"
+    },
+    {
+      "id": "tts.modelType",
+      "type": "select",
+      "destination": "core",
+      "defaultValue": "kokoro",
+      "options": ["kokoro", "kitten", "vits", "matcha"]
+    },
+    {
+      "id": "tts.modelPath",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "@csukuangfj/kokoro-int8-multi-lang-v1_0/main/model.int8.onnx"
+    },
+    {
+      "id": "tts.modelFiles",
+      "type": "multiline",
+      "destination": "core",
+      "defaultValue": "{\n  \"model\": \"@csukuangfj/kokoro-int8-multi-lang-v1_0/main/model.int8.onnx\",\n  \"voices\": \"@csukuangfj/kokoro-int8-multi-lang-v1_0/main/voices.bin\",\n  \"tokens\": \"@csukuangfj/kokoro-int8-multi-lang-v1_0/main/tokens.txt\"\n}"
+    },
+    {
+      "id": "tts.spellOutEmojis",
+      "type": "boolean",
+      "destination": "client-on-client",
+      "defaultValue": false
+    },
+    {
+      "id": "tts.voice",
+      "type": "select",
+      "destination": "client-on-client",
+      "defaultValue": "af_bella"
+    },
+    {
+      "id": "tts.minChunkWords",
+      "type": "number",
+      "destination": "client-on-client",
+      "defaultValue": 8,
+      "regex": [
+        {
+          "regex": "^[1-9][0-9]*$",
+          "errorMessage": "Must be a positive integer"
+        }
+      ]
+    },
+    {
+      "id": "tts.synthesisSpeed",
+      "type": "float",
+      "destination": "client-on-client",
+      "defaultValue": 1,
+      "regex": [
+        {
+          "regex": "^(0\\.(2[5-9]|[3-9]\\d?)|[12](\\.\\d+)?|3(\\.0+)?)$",
+          "errorMessage": "Must be between 0.25 and 3"
+        }
+      ]
+    },
+    {
+      "id": "tts.playbackSpeed",
+      "type": "float",
+      "destination": "client-on-client",
+      "defaultValue": 1,
+      "regex": [
+        {
+          "regex": "^(0\\.(2[5-9]|[3-9]\\d?)|[12](\\.\\d+)?|3(\\.0+)?)$",
+          "errorMessage": "Must be between 0.25 and 3"
+        }
+      ]
+    },
+    {
+      "id": "tts.volume",
+      "type": "number_slider",
+      "destination": "client-on-client",
+      "defaultValue": 70,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "tts.external.baseUrl",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "",
+      "regex": [
+        {
+          "regex": "^(https://|http://(localhost|127\\.0\\.0\\.1)(:|/|$))",
+          "errorMessage": "URL must use HTTPS, or HTTP with localhost / 127.0.0.1 only."
+        }
+      ]
+    },
+    {
+      "id": "tts.external.apiKey",
+      "type": "password",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "tts.external.model",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": ""
+    },
+    {
+      "id": "tts.external.voice",
+      "type": "string",
+      "destination": "core",
+      "defaultValue": "alloy"
+    },
+    {
+      "id": "usage.clientServices",
+      "type": "services",
+      "destination": "client-on-client"
+    },
+    {
+      "id": "usage.clientStorage",
+      "type": "storage",
+      "destination": "client-on-client"
+    },
+    {
+      "id": "usage.coreServices",
+      "type": "services",
+      "destination": "core"
+    },
+    {
+      "id": "usage.coreStorage",
+      "type": "storage",
+      "destination": "core"
+    },
+    {
+      "id": "cores.list",
+      "type": "object_management",
+      "destination": "client-on-client"
+    }
+  ]
+}

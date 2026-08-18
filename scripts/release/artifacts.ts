@@ -1,17 +1,17 @@
-// The serializable contract between a build environment and the host.
+// The serializable contract between a build runner and the publish coordinator.
 //
-// A full all-targets release builds each platform NATIVELY in its own
-// environment (the host, a Podman Linux container, the Windows VM), because the
+// A full release builds each platform NATIVELY on its own CI runner, because the
 // speech sidecar (static sherpa-onnx) and the Tauri installers can't be
-// cross-compiled. Each environment is a dumb artifact producer: it builds into
-// dist/<triple>/… and emits a bundle.json describing what it produced. The host
-// collects every environment's dist subtree, reads the bundles, and composes +
-// signs + uploads the unified manifests ONCE (composeCoreManifest et al. carry
-// no R2 carry-forward, so the host must hold the full union before composing).
+// cross-compiled. Each runner is a dumb artifact producer: it builds into
+// dist/<triple>/… and emits a bundle.json describing what it produced. The
+// coordinator collects every runner's dist subtree, reads the bundles, and
+// composes + signs + uploads the unified manifests ONCE (composeCoreManifest et
+// al. carry no R2 carry-forward, so the coordinator must hold the full union
+// before composing).
 //
-// Paths in a record are RELATIVE to dist/ so they survive the move from an
-// environment's filesystem to the host's dist/ (the layout is identical on both
-// sides). The host re-anchors each relPath under its own DIST_DIR.
+// Paths in a record are RELATIVE to dist/ so they survive the move from a
+// runner's filesystem to the coordinator's dist/ (the layout is identical on both
+// sides). The coordinator re-anchors each relPath under its own DIST_DIR.
 
 import { dirname, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
@@ -232,17 +232,29 @@ export interface AndroidDescriptor {
   apks: AndroidApkRecord[];
 }
 
-/** Pre-built artifacts collected from every build environment, ready for the
- *  host's single compose+sign+upload pass. Populated by the CI publish step from
- *  the per-runner staging dirs; absent for a local single-host build. */
+/** What the macOS build runner records after it has built + uploaded the .ipa to
+ *  App Store Connect. iOS ships through the App Store, so unlike every other
+ *  platform there is no artifact for the coordinator to upload - only the fact
+ *  that this version was shipped, which is what lets the coordinator record the
+ *  cursor entry (and ci-bump advance the version). */
+export interface IosReceipt {
+  version: string;
+  channel: ReleaseChannel;
+}
+
+/** Pre-built artifacts collected from every build runner, ready for the
+ *  coordinator's single compose+sign+upload pass. Populated by the CI publish
+ *  step from the per-runner staging dirs. */
 export interface PrebuiltStaging {
   coreBundles: ArtifactBundle[];
   clientDescriptors: ClientDescriptor[];
   android?: AndroidDescriptor;
+  ios?: IosReceipt;
 }
 
 export const CLIENT_DESCRIPTOR_FILENAME = "client-descriptor.json";
 export const ANDROID_DESCRIPTOR_FILENAME = "android-descriptor.json";
+export const IOS_RECEIPT_FILENAME = "ios-receipt.json";
 
 export async function writeClientDescriptor(
   stagingDir: string,
@@ -270,6 +282,17 @@ export async function writeAndroidDescriptor(
 export async function readAndroidDescriptor(stagingDir: string): Promise<AndroidDescriptor> {
   const path = join(stagingDir, ANDROID_DESCRIPTOR_FILENAME);
   return JSON.parse(await Deno.readTextFile(path)) as AndroidDescriptor;
+}
+
+export async function writeIosReceipt(stagingDir: string, receipt: IosReceipt): Promise<string> {
+  const path = join(stagingDir, IOS_RECEIPT_FILENAME);
+  await Deno.writeTextFile(path, JSON.stringify(receipt, null, 2));
+  return path;
+}
+
+export async function readIosReceipt(stagingDir: string): Promise<IosReceipt> {
+  const path = join(stagingDir, IOS_RECEIPT_FILENAME);
+  return JSON.parse(await Deno.readTextFile(path)) as IosReceipt;
 }
 
 /** Copy one dist-relative artifact into a staging dir's mirrored `dist/` tree,

@@ -10,7 +10,11 @@ export class ChatApi {
   start(
     streamId: string,
     sessionId: string,
-    route: "default" | "secondary" = "default",
+    // Omitted, not defaulted, and the frame leaves it out when it is absent.
+    // Core reads an absent `route` as "the client did not pin one" and only
+    // then consults `dualModel.enabled`; sending "default" pins the default
+    // route and suppresses auto-routing entirely. See D-058 / D-066.
+    route?: "default" | "secondary",
     opts?: {
       systemPrompt?: string;
       toolsHint?: string;
@@ -21,7 +25,7 @@ export class ChatApi {
       kind: "chat.start",
       streamId,
       sessionId,
-      route,
+      ...(route !== undefined ? { route } : {}),
       ...(opts?.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
       ...(opts?.toolsHint ? { toolsHint: opts.toolsHint } : {}),
       ...(opts?.anchorMessageId ? { anchorMessageId: opts.anchorMessageId } : {}),

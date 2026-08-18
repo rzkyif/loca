@@ -20,6 +20,8 @@
 import { errMessage } from "@loca/shared";
 import {
   cores,
+  isLocalCoreEntry,
+  LOCAL_CORE_ID,
   mintCodeWithAdminToken,
   pairWithCode,
   type PairedCoreEntry,
@@ -32,11 +34,19 @@ import { modelRecommendState, viewState } from "$stores";
 const log = getLogger("cores");
 const CLIENT_NAME = "Loca Client";
 
-// Wizard steps. `connectLocal` is the silent first-boot pair with an
-// installer-provided local core (auto-run; its UI is a spinner and, on
-// failure, an error with a remote fallback). Everyone else starts at
-// `remoteAddress`.
-export type WizardView = "connectLocal" | "remoteAddress" | "remotePair";
+// Wizard steps.
+//
+// `choose` is the fork offered where the app embeds a Core of its own: run it
+// here, or connect to one elsewhere. `connectLocal` is the silent first-boot
+// pair with an installer-provided local core process (auto-run; its UI is a
+// spinner and, on failure, an error with a remote fallback). Everyone else
+// starts at `remoteAddress`.
+export type WizardView = "choose" | "connectLocal" | "remoteAddress" | "remotePair";
+
+/** The name the reserved entry is recorded under. Not "Local Core": on a device
+ *  that hosts its own Core, what distinguishes it from the others in the list is
+ *  that it IS this device. */
+const LOCAL_CORE_NAME = "This Device";
 
 type ConnectionStatus =
   | { kind: "idle" }
@@ -74,12 +84,19 @@ export class NewCoreWizard {
 
   view = $state<WizardView>("remoteAddress");
 
+  // Whether the fork is offered at all, and whether "this device" is still on
+  // it. Resolved in decideInitialView so the template reads live state rather
+  // than re-asking the platform on every render.
+  canRunHere = $state(false);
+
   constructor(private readonly onMobile: boolean) {}
 
   // Whether an intra-wizard step-back is available (same condition as the header
   // back arrow). Drives both the arrow and the Android back interceptor.
   get canStepBack(): boolean {
-    return this.view === "remotePair";
+    if (this.view === "remotePair") return true;
+    // The address form is a step back to the fork only when the fork was shown.
+    return this.view === "remoteAddress" && this.canRunHere;
   }
 
   // Suggested name shown as the placeholder on the (optional) name field: the
@@ -100,15 +117,27 @@ export class NewCoreWizard {
       .catch((e) => log.warn("localCoreBaseUrl failed", e));
   }
 
-  // Pick the first step. First boot (zero cores paired) on a desktop with an
-  // installer-provided local core connects to it silently; everything else
-  // (mobile, no local core on disk, any core already paired - including the
-  // add-another-core entry from Settings) is the remote-connect form.
+  // Pick the first step.
+  //
+  // Where the app embeds a Core, the user is offered the fork: run it here, or
+  // connect to one elsewhere. That gate is a fact about this BUILD (does this
+  // device host a Core at all), never a core capability: the core being asked
+  // has not been chosen yet, so there is nothing to negotiate with. It is also
+  // not a platform sniff, so a desktop build that ever embedded a Core would get
+  // the same offer without a second flag.
+  //
+  // Otherwise: first boot (zero cores) on a desktop with an installer-provided
+  // local core connects to it silently, and everything else (no local core on
+  // disk, any core already paired, including the add-another-core entry from
+  // Settings) is the remote-connect form.
   async decideInitialView(): Promise<void> {
     const list = await cores().list();
+    // Already adopted: there is exactly one Core inside this app, so offering to
+    // add it again would be an action with nothing to do.
+    this.canRunHere = Boolean(platform().localCore) && !list.some(isLocalCoreEntry);
 
     let localInstalled = false;
-    if (!this.onMobile && list.length === 0) {
+    if (!this.onMobile && !this.canRunHere && list.length === 0) {
       try {
         localInstalled = await platform().pairing.isLocalCoreInstalled();
       } catch {
@@ -116,7 +145,9 @@ export class NewCoreWizard {
       }
     }
 
-    if (localInstalled) {
+    if (this.canRunHere) {
+      this.view = "choose";
+    } else if (localInstalled) {
       this.view = "connectLocal";
       void this.connectLocal();
     } else {
@@ -199,9 +230,14 @@ export class NewCoreWizard {
         new Promise<void>((resolve) => setTimeout(resolve, 8000)),
       ]);
     }
+    this.finish(firstEver);
+  }
+
+  // Where the wizard goes once a core is added, by whichever route.
+  private finish(firstEver: boolean): void {
     this.busy = null;
     if (firstEver) {
-      // First core ever paired: unlock the UI and open the new-user quick
+      // First core ever added: unlock the UI and open the new-user quick
       // settings.
       viewState.setLocked(false);
       viewState.navigate("quickSettings");
@@ -212,13 +248,15 @@ export class NewCoreWizard {
     }
   }
 
-  // Step-back within the wizard: remote pairing -> remote address. Only wired
-  // to the back arrow, which is hidden when no previous step exists, so it
-  // never needs to handle the root case.
+  // Step-back within the wizard: remote pairing -> remote address, and the
+  // address form -> the fork when the fork was shown. Only wired to the back
+  // arrow, which is hidden when no previous step exists, so it never needs to
+  // handle the root case.
   goBack(): void {
     if (this.busy !== null) return;
     this.error = "";
-    this.view = "remoteAddress";
+    this.connectionStatus = { kind: "idle" };
+    this.view = this.view === "remotePair" ? "remoteAddress" : "choose";
   }
 
   // Explicit exit out of the whole wizard, bound to the close button shown on
@@ -227,6 +265,51 @@ export class NewCoreWizard {
   exitFlow(): void {
     viewState.pendingSettingsGroup = "cores";
     viewState.navigate("settings");
+  }
+
+  // The "run it here" branch of the fork: adopt the Core inside this app.
+  //
+  // There is NO pairing here and nothing lands in the keychain. The Core is
+  // already this device and the client it serves is pre-authenticated by
+  // construction, so adopting it is a registry write followed by a select. That
+  // is the whole reason this is not `claimAndAdd`: there is no code to mint, no
+  // PAKE to run, and no token to keep.
+  //
+  // The Core is BOOTED FIRST, and that ordering is the point. `select()` rebinds
+  // every persistent WS listener onto the new client, which connects at once, so
+  // without this the first thing a fresh install does is measure the Core's
+  // first-ever boot (root dirs, SQLite migrations, the Ed25519-verified offline
+  // install of the built-in extension) against a connect deadline. Booting
+  // first also keeps a Core that cannot start out of the registry: the user gets
+  // the reason on the fork instead of a chat view behind a dead connection.
+  async useThisDevice(): Promise<void> {
+    this.error = "";
+    this.busy = "claiming";
+    try {
+      const firstEver = (await cores().list()).length === 0;
+      await platform().pairing.startLocalCore();
+      await cores().adoptLocalCore(LOCAL_CORE_NAME);
+      await cores().select(LOCAL_CORE_ID);
+      // Same hardware-fit step the first local pair does, and it matters more
+      // here than anywhere: a phone's baseline is the tightest fit in the
+      // catalog. Best-effort and time-bounded, exactly as in claimAndAdd.
+      if (firstEver) {
+        await Promise.race([
+          modelRecommendState.applyBucket("smallest"),
+          new Promise<void>((resolve) => setTimeout(resolve, 8000)),
+        ]);
+      }
+      this.finish(firstEver);
+    } catch (e) {
+      this.error = errMessage(e);
+      this.busy = null;
+    }
+  }
+
+  // The "connect to one elsewhere" branch of the fork.
+  useAnotherDevice(): void {
+    this.error = "";
+    this.view = "remoteAddress";
   }
 
   // Silently pair with the installer-provided local core: make sure it's

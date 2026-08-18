@@ -22,8 +22,7 @@ const ROOT = fromFileUrl(new URL("..", import.meta.url));
 const STORAGE_BASE = "https://get.loca.rzkyif.com";
 
 const args = parseArgs(Deno.args, {
-  string: ["channel", "target", "bundles"],
-  collect: ["target"],
+  string: ["channel"],
   default: { channel: "stable" },
 });
 
@@ -38,30 +37,18 @@ if (!["stable", "dev", "latest"].includes(channel)) {
 // file is the deterministic source the compile reads (see build.rs).
 await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), channel);
 
-// Optional cross-arch target(s): the all-targets release builds the host's second
-// arch (e.g. x86_64-apple-darwin on an arm64 mac) and, in a build environment,
-// the env's other arch. When set, Tauri emits under target/<triple>/release/bundle.
-const targets = (args.target as string[])
-  .flatMap((t) => t.split(","))
-  .map((t) => t.trim())
-  .filter(Boolean);
-// Optional bundle-target override: a CSV of Tauri bundle targets, narrowing what
-// gets built instead of every target in tauri.conf.json. The Linux cross-build
-// passes just "appimage" - the AppImage is the sole Linux client format.
-const bundles = (args.bundles ?? "").trim();
-
-// Windows-only: the build host is the win-arm64 UTM guest, and `workerd` (the
-// website's Cloudflare Worker runtime, a workspace dep the client never uses)
-// ships NO win-arm64 binary, so its lifecycle script aborts `deno install` mid
-// frontend build. Drop workerd from this EPHEMERAL synced repo's allowScripts so
-// the install skips it (a harmless "ignored build script" warning) and proceeds.
-// Host (macOS/Linux) builds are untouched; the guest's deno.json is re-synced
-// every run, so this never persists.
+// Windows-only: `workerd` (the website's Cloudflare Worker runtime, a workspace
+// dep the client never uses) ships NO win-arm64 binary, so its lifecycle script
+// aborts `deno install` mid frontend build on the win-arm64 CI runner. Drop
+// workerd from that EPHEMERAL runner checkout's allowScripts so the install skips
+// it (a harmless "ignored build script" warning) and proceeds. macOS/Linux builds
+// are untouched, and a runner's checkout is fresh every run so this never
+// persists.
 // Strip line-based, not via JSON.parse: deno.json is JSONC and the CI pre-strip
-// (release.yml drops workerd before the first deno command) can leave a trailing
-// comma that a strict JSON.parse rejects. deno itself tolerates it, so filtering
-// the workerd line and writing the text back verbatim is enough (and idempotent
-// when the pre-strip already removed it).
+// (release.yml drops workerd before the first deno command, see its "Strip
+// workerd" step) can leave a trailing comma that a strict JSON.parse rejects.
+// deno itself tolerates it, so filtering the workerd line and writing the text
+// back verbatim is enough (and idempotent when the pre-strip already removed it).
 if (Deno.build.os === "windows") {
   const confPath = join(ROOT, "deno.json");
   const conf = await Deno.readTextFile(confPath);
@@ -99,8 +86,6 @@ if (!Deno.env.get("TAURI_SIGNING_PRIVATE_KEY")) {
 // dotted-key expression and fails. Calling the CLI directly also sidesteps
 // `deno task`'s own `--config` flag.
 const tauriArgs = ["run", "-A", "npm:@tauri-apps/cli@^2", "build"];
-for (const t of targets) tauriArgs.push("--target", t);
-if (bundles) tauriArgs.push("--bundles", bundles);
 if (Object.keys(override).length > 0) {
   tauriArgs.push("--config", JSON.stringify(override));
 }

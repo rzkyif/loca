@@ -70,11 +70,6 @@ export const adminPasswordSetRequestSchema = z
 
 export type AdminPasswordSetRequest = z.infer<typeof adminPasswordSetRequestSchema>;
 
-export interface PairingCodeResponse {
-  code: string;
-  expiresAtMs: number;
-}
-
 // --- PAKE handshake -------------------------------------------------------
 
 // Step 1: client (initiator) → core. `sid` is the CPace session id the client
@@ -89,13 +84,6 @@ export const pakeStartRequestSchema = z
 
 export type PakeStartRequest = z.infer<typeof pakeStartRequestSchema>;
 
-export interface PakeStartResponse {
-  // Opaque handle for the in-flight handshake; echoed back in the finish call.
-  pakeId: string;
-  // Core's CPace public element (Yb).
-  msgB: string;
-}
-
 // Step 2: client → core. `confirmC` is MAC(K, "C" ‖ transcript ‖ pinClientSaw).
 export const pakeFinishRequestSchema = z
   .object({
@@ -105,20 +93,3 @@ export const pakeFinishRequestSchema = z
   .strict();
 
 export type PakeFinishRequest = z.infer<typeof pakeFinishRequestSchema>;
-
-export interface PakeFinishResponse {
-  token: string;
-  clientId: string;
-  coreVersion: string;
-  // MAC(K, "S" ‖ transcript ‖ pinCoreHas). The client verifies it against the
-  // pin it observed, authenticating core and confirming the pin (no MITM).
-  confirmS: string;
-}
-
-export interface PairedClientEntry {
-  id: string;
-  name: string;
-  createdAtMs: number;
-  lastSeenMs: number;
-  isMe: boolean;
-}

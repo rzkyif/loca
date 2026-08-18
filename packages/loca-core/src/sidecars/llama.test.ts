@@ -30,10 +30,13 @@ Deno.test("llamaReadinessTimeoutMs: caps so a pathological size can't wait forev
 Deno.test("llamaStartArgsFromSettings: absent supportImages follows the schema default (mmproj)", async () => {
   const env = await setupTestEnv();
   try {
-    const on = llamaStartArgsFromSettings({});
-    assert(on?.mmprojPath?.endsWith("mmproj-F16.gguf"), "the default resolves the mmproj path");
-    const off = llamaStartArgsFromSettings({ "llm.supportImages": false });
-    assertEquals(off?.mmprojPath, undefined);
+    // The schema default is off, so an untouched install loads no projector even
+    // though `llm.mmprojPath` is populated: selecting a vision model writes the
+    // path, and this setting is the separate question of whether to load it.
+    const off = llamaStartArgsFromSettings({});
+    assertEquals(off?.mmprojPath, undefined, "the default loads no projector");
+    const on = llamaStartArgsFromSettings({ "llm.supportImages": true });
+    assert(on?.mmprojPath?.endsWith("mmproj-F16.gguf"), "turning it on resolves the path");
   } finally {
     await env.teardown();
   }

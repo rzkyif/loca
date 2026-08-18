@@ -1,0 +1,16 @@
+[package]
+name = "loca-contract-codegen"
+version = "0.1.0"
+edition = "2021"
+description = "Turns the JSON Schema bundles emitted from @loca/shared into the Rust wire-contract types in loca-core-rs. Run through `deno task contract`, never by hand."
+publish = false
+
+# Excluded from the root workspace on purpose (see the root Cargo.toml): this is
+# a build-time tool, so it keeps its own lockfile and stays out of the gate.
+
+[dependencies]
+prettyplease = "0.2"
+schemars = "0.8"
+serde_json = "1"
+syn = "2"
+typify = "0.4"

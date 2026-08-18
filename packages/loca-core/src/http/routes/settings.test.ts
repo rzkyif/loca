@@ -198,7 +198,7 @@ Deno.test("PUT /api/v1/settings/secrets/:name: stores secret then GET returns na
     const token = await pairOne();
     const app = await engine();
     const put = await app.handleHttp(
-      new Request("http://x/api/v1/settings/secrets/openai-api-key", {
+      new Request("http://x/api/v1/settings/secrets/llm.external.apiKey", {
         method: "PUT",
         headers: { ...bearer(token), "content-type": "application/json" },
         body: JSON.stringify({ value: "sk-secret-do-not-leak" }),
@@ -212,9 +212,36 @@ Deno.test("PUT /api/v1/settings/secrets/:name: stores secret then GET returns na
       }),
     );
     const body = await list.json();
-    assertEquals(body, { names: ["openai-api-key"] });
+    assertEquals(body, { names: ["llm.external.apiKey"] });
     // No value field anywhere in the response.
     assertEquals(JSON.stringify(body).includes("sk-secret"), false);
+  } finally {
+    await env.teardown();
+  }
+});
+
+// The vault holds more than the settings schema's secrets: the sealed TLS
+// private key lives there too, under `tls-key`. These routes address the vault
+// by name, so without the schema check any paired client could delete the key
+// every paired client pinned, and the next boot would generate a fresh one and
+// lock all of them out. Revoking one other device is deliberately gated behind
+// the admin token; this was a way to revoke every device with an ordinary
+// bearer.
+Deno.test("the settings secret routes cannot reach the TLS key", async () => {
+  const env = await setupTestEnv();
+  try {
+    const token = await pairOne();
+    const app = await engine();
+    for (const method of ["PUT", "DELETE"] as const) {
+      const res = await app.handleHttp(
+        new Request("http://x/api/v1/settings/secrets/tls-key", {
+          method,
+          headers: { ...bearer(token), "content-type": "application/json" },
+          body: method === "PUT" ? JSON.stringify({ value: "not-a-jwk" }) : undefined,
+        }),
+      );
+      assertEquals(res.status, 404);
+    }
   } finally {
     await env.teardown();
   }
@@ -226,7 +253,7 @@ Deno.test("DELETE /api/v1/settings/secrets/:name: 404 when the name was never se
     const token = await pairOne();
     const app = await engine();
     const res = await app.handleHttp(
-      new Request("http://x/api/v1/settings/secrets/absent", {
+      new Request("http://x/api/v1/settings/secrets/stt.external.apiKey", {
         method: "DELETE",
         headers: bearer(token),
       }),

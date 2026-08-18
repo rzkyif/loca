@@ -12,8 +12,7 @@
 // session.created frame, not this response.
 
 import { Hono } from "hono";
-import { z } from "zod";
-import { DEFAULT_GREETING_INSTRUCTION, errMessage } from "@loca/shared";
+import { DEFAULT_GREETING_INSTRUCTION, errMessage, greetingRunBodySchema } from "@loca/shared";
 import { runAutomatedSession } from "../../services/automated-session.ts";
 import { llmStillLoading } from "../../services/prompt-scheduler.ts";
 import { parseBody, readJson } from "@loca/core-engine/http/body";
@@ -37,21 +36,13 @@ const GREETING_READY_POLL_MS = 2_000;
 
 const lastGreetingAtByClient = new Map<string, number>();
 
-const runBodySchema = z
-  .object({
-    sessionTitle: z.string().optional(),
-    instruction: z.string().optional(),
-    cooldownMs: z.number().optional(),
-  })
-  .strict();
-
 export function greetingsRoutes(): Hono {
   const r = new Hono();
   r.use("*", bearerMiddleware());
 
   r.post("/run", async (c) => {
     const me = requireClient(c);
-    const body = parseBody(runBodySchema, await readJson(c));
+    const body = parseBody(greetingRunBodySchema, await readJson(c));
     const interval = Math.max(
       body.cooldownMs ?? GREETING_MIN_INTERVAL_MS,
       GREETING_INTERVAL_FLOOR_MS,

@@ -168,6 +168,64 @@ export interface NetSocket {
 /** Severity levels for the client logger (lib/util/log.ts). */
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
+// --- The Core inside this app ---------------------------------------------
+
+/** One request into the embedded Core. `url` may be a whole URL or a bare
+ *  path+query; the Core accepts either. `bodyB64` is base64 so bytes survive
+ *  the IPC hop, matching `net_fetch`. */
+export interface LocalCoreRequest {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  bodyB64: string | null;
+}
+
+/** One reply from the embedded Core. An HTTP-level failure (401, 404, 500)
+ *  arrives HERE, not as a rejection: the status and the Core's error envelope
+ *  come back exactly as they would over a socket. */
+export interface LocalCoreReply {
+  status: number;
+  headers: Record<string, string>;
+  bodyB64: string;
+}
+
+/** What the embedded Core reports about itself once started. */
+export interface LocalCoreInfo {
+  version: string;
+  channel: string;
+  root: string;
+}
+
+/** The Core compiled into this app, reached in process.
+ *
+ *  There is deliberately no socket and no TLS: `127.0.0.1` is not app-private
+ *  on Android, so binding a port would expose the Core to every installed app.
+ *  Requests go straight into the Core's router, so `mode` / `pin` /
+ *  `capturedPin` have no meaning here and are absent rather than ignored.
+ *
+ *  Frames arrive as per-id events, mirroring `net.connectWebSocket`. There is
+ *  no `error` event: registering with the frame bus cannot fail. */
+export interface LocalCore {
+  /** Boot the Core if it is not already running, and report it. Idempotent, and
+   *  a failed start is retryable rather than cached. */
+  start(): Promise<LocalCoreInfo>;
+  /** Whether it has been started. Never starts it. */
+  running(): Promise<boolean>;
+  http(req: LocalCoreRequest): Promise<LocalCoreReply>;
+  /** Attach a client connection under `wsId`. Re-using a live id silently
+   *  replaces the previous connection, so callers use a fresh id each time. */
+  wsOpen(wsId: string): Promise<void>;
+  wsSend(wsId: string, data: string): Promise<void>;
+  wsClose(wsId: string): Promise<void>;
+  /** Subscribe to one connection's frames. Register BEFORE calling `wsOpen`:
+   *  `open` is emitted before any seed frame, so a late listener loses it.
+   *  Returns a detach. */
+  subscribeWs(
+    wsId: string,
+    handlers: { onOpen(): void; onMessage(data: string): void; onClose(): void },
+  ): Promise<() => void>;
+}
+
 export interface Platform {
   // Network access to a paired core, with TLS certificate pinning enforced
   // below the webview. See the NetRequest/NetSocket docs above.
@@ -183,6 +241,12 @@ export interface Platform {
      *  cert pin. Desktop only; returns [] on mobile. */
     discoverCores(): Promise<DiscoveredCore[]>;
   };
+  /** The Core compiled into this app, or `null` where the app embeds none.
+   *  Null on desktop, where the Core is a separate process reached over TLS
+   *  through `net`. A single `!== null` is the whole "does this device host a
+   *  Core" predicate, and it is a property of the BUILD, never of the core
+   *  currently selected. */
+  localCore: LocalCore | null;
   // Window control.
   windowing: {
     show(): Promise<void>;
@@ -331,7 +395,15 @@ export interface Platform {
     stopLocalCore(): Promise<void>;
     /** Loopback base URL of this channel's local core, with the channel-aware
      *  port (stable 7800, latest 7810, …). Used by the local-core pair flow so
-     *  a latest client targets the latest core. */
+     *  a latest client targets the latest core.
+     *
+     *  **Empty string where there is no such URL**, which is every build whose
+     *  Core is embedded (`localCore !== null`): an in-process Core has no
+     *  origin, which is the point of it. Kept as `string` rather than widened
+     *  to `string | null` deliberately: every consumer runs the value through
+     *  `new URL(...)`, which throws on `""` and on `null` alike, so the two are
+     *  indistinguishable downstream and widening the type would only move the
+     *  same check into three more files. */
     localCoreBaseUrl(): Promise<string>;
     /** This channel's default local sidecar ports (llama / whisper). Used as
      *  fallbacks when the paired core hasn't overridden llm.port / stt.port so

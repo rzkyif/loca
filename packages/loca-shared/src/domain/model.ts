@@ -364,9 +364,9 @@ export function requiredBinaryKinds(s: Record<string, unknown>): BinaryKind[] {
 /** Triples a self-hosted (no upstream resolver) binary cannot run on.
  *  loca-core-speech statically links sherpa-onnx; upstream ships a static lib
  *  for every shipped triple. windows-arm64 is the one the sherpa-onnx-sys crate's
- *  download map omits, so the build supplies it via SHERPA_ONNX_LIB_DIR (see
- *  scripts/release/drivers/windows-provision.ps1). No triple is unsupported
- *  today; the map stays for any future per-triple gap. */
+ *  download map omits, so the build supplies it via SHERPA_ONNX_LIB_DIR (staged by
+ *  the "Stage sherpa-onnx win-arm64 lib" step in .github/workflows/release.yml).
+ *  No triple is unsupported today; the map stays for any future per-triple gap. */
 const SELF_HOSTED_UNSUPPORTED: Partial<Record<BinaryKind, ReadonlySet<Triple>>> = {};
 
 /** True when `kind` can never be installed on `triple` (so it's marked

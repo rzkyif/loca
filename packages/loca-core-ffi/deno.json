@@ -1,0 +1,12 @@
+{
+  "name": "loca-core-ffi",
+  "exports": {},
+  "tasks": {
+    "//mobile-check": "This crate exists only for the two mobile triples, so the host-target lint/fmt/test tasks below prove it compiles but not that it LINKS where it ships. Same reasoning as loca-core-rs: deliberately not named `check`, because the iOS half needs a macOS runner with Xcode and would fail the ubuntu job. CI covers the android half.",
+    "mobile-check": "cargo check -q -p loca-core-ffi --target aarch64-apple-ios && cargo check -q -p loca-core-ffi --target aarch64-linux-android",
+    "lint": "cargo clippy -q -p loca-core-ffi --all-targets -- -D warnings",
+    "fmt": "cargo fmt -p loca-core-ffi",
+    "fmt:check": "cargo fmt -p loca-core-ffi --check",
+    "test": "cargo test -q -p loca-core-ffi"
+  }
+}

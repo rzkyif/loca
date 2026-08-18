@@ -1,10 +1,15 @@
-// Builds the loca-core binary + the four native helper crates (updater,
-// keychain, hwinfo, ptyhost) for one or more triples, into dist/<triple>/ with
-// channel-suffixed names.
+// Builds the loca-core binary (the Rust crate `loca-core-rs`) + the one
+// surviving native helper crate (updater) for one or more triples, into
+// dist/<triple>/ with channel-suffixed names.
 //
 // Thin wrapper over the same buildAll / buildHelpers the release uses, so there
-// is a single core-build implementation: the lean compile workspace (a ~94 MB
-// binary instead of ~2.2 GB) and all four helpers, identical to what ships.
+// is a single core-build implementation and a local build is what ships.
+//
+// The core is built with `local-inference` and `local-speech`, which are OFF by
+// default in the crate for CI's sake and must be ON in anything shipped. The
+// llama.cpp runtime libraries land in dist/<triple>/ beside the binary and are
+// not optional: under GGML_BACKEND_DL every backend is a loadable module, the
+// CPU one included, so a core without them registers zero compute devices.
 //
 // Default target is the current host. Pass `--target=<triple>` (repeatable, or
 // comma-separated) to override; cargo cross-compilation for non-host triples

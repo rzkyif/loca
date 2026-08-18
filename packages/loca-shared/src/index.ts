@@ -23,11 +23,17 @@ export * from "./domain/skill-frontmatter.ts";
 export * from "./domain/mcp.ts";
 
 export * from "./validation/loca-json.ts";
+export * from "./api/pairing.ts";
 export * from "./validation/pairing.ts";
 export * from "./validation/chat.ts";
 export * from "./validation/session.ts";
 export * from "./validation/ws.ts";
+export * from "./validation/extensions.ts";
 export * from "./validation/scheduled-prompt.ts";
+export * from "./validation/models.ts";
+export * from "./validation/memories.ts";
+export * from "./validation/mcp.ts";
+export * from "./validation/greetings.ts";
 
 export * from "./crypto/pake.ts";
 export * from "./crypto/canonical.ts";

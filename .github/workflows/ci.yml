@@ -15,13 +15,14 @@ jobs:
   # targets so CI can't drift from the canonical command lists. Rust
   # compile-checking (clippy, a superset of cargo check) and the cargo test suite
   # live in the `rs` matrix below and run in parallel with this job; this job
-  # stays TS-only and light. Its only cargo touches are `cargo fmt --check` (which
-  # does not compile) and the tiny ptyhost binary the permission-prompt live probe
-  # needs - neither needs the Tauri/webkit system libs.
+  # stays TS-light. Its cargo touches are `cargo fmt --check` (which does not
+  # compile), the tiny ptyhost binary the permission-prompt live probe needs, and
+  # the contract codegen tool that `deno task check` runs to verify the generated
+  # wire types are not stale. None of them need the Tauri/webkit system libs.
   deno:
     name: "TypeScript checks (linux)"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: denoland/setup-deno@v2
@@ -34,20 +35,27 @@ jobs:
       - name: Verify frozen deno lockfile
         run: deno install --frozen
 
-      # Toolchain for `cargo fmt --check` (no compile) and the small ptyhost build
-      # below; the heavy Rust compile lives in the `rs` matrix.
+      # Toolchain for `cargo fmt --check` (no compile), the small ptyhost build
+      # below, and the contract codegen tool; the heavy Rust compile lives in the
+      # `rs` matrix. rustfmt is not optional here: the contract generator pipes
+      # typify's output through it so the committed files survive `cargo fmt`.
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: 1.96.1
           components: rustfmt
 
-      # All Rust crates are members of the single workspace rooted at the repo
+      # Shipping crates are members of the single workspace rooted at the repo
       # root, so every build lands in the shared ./target. rust-cache must point at
       # that root (not a member subdir, which has no target/ and so caches nothing
-      # but the registry).
+      # but the registry). The contract codegen tool is deliberately EXCLUDED from
+      # that workspace (it pulls typify, which must never touch the shipped
+      # crates' dependency graph), so it has its own target dir and needs its own
+      # cache entry or `deno task check` recompiles typify every run.
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          workspaces: . -> target
+          workspaces: |
+            . -> target
+            scripts/contract/codegen -> scripts/contract/codegen/target
 
       # Cache Deno's module + npm cache between runs.
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -102,10 +110,10 @@ jobs:
 
   # Rust pipeline: clippy (the single Rust compile-check - `--all-targets` is a
   # superset of cargo check, so check is never run separately) plus the cargo test
-  # suite. The shipping crates (the Tauri shell, core-keychain, core-updater,
-  # core-ptyhost) run on every supported host so their platform-specific cfgs stay
-  # buildable; the core-hwinfo and core-speech helpers are Linux-only checks. Runs
-  # in parallel with the TS job above, Linux included.
+  # suite. The shipping crates (the Tauri shell, core-rs, core-keychain,
+  # core-updater, core-ptyhost) run on every supported host so their
+  # platform-specific cfgs stay buildable; the core-hwinfo and core-speech helpers
+  # are Linux-only checks. Runs in parallel with the TS job above, Linux included.
   rs:
     name: "Rust checks (${{ matrix.os }})"
     strategy:
@@ -122,6 +130,12 @@ jobs:
           components: clippy
       # Tauri / xcap / cpal need the webkit + PipeWire/ALSA system libs on Linux;
       # macOS and Windows use the system webview and need nothing extra.
+      # The core crate's own mobile cfg, which nothing else covers. The Rust
+      # checks above are host-target, and the tauri crate does not depend on
+      # loca-core-rs until M1 lands loca-core-ffi, so `boot.rs` silently stopped
+      # compiling for android and ios and no job noticed (D-117). This runner
+      # already has the NDK and the target, so the check is nearly free here.
+      - run: cargo check --locked --manifest-path packages/loca-core-rs/Cargo.toml --target aarch64-linux-android
       - name: Install Linux deps for Tauri / xcap / cpal
         if: runner.os == 'Linux'
         run: |
@@ -147,6 +161,10 @@ jobs:
       # pass CI (the signed helper binaries are built from these locks).
       - run: cargo clippy --locked --manifest-path packages/loca-client/src/tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path packages/loca-client/src/tauri/Cargo.toml --lib
+      # The Rust core. Every host, since it is the crate that has to build
+      # everywhere the product ships, and the one every other package builds on.
+      - run: cargo clippy --locked --manifest-path packages/loca-core-rs/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml
       - run: cargo clippy --locked --manifest-path packages/loca-core-keychain/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path packages/loca-core-keychain/Cargo.toml
       - run: cargo clippy --locked --manifest-path packages/loca-core-updater/Cargo.toml --all-targets -- -D warnings
@@ -163,6 +181,99 @@ jobs:
         if: runner.os == 'Linux'
       - run: cargo test --locked --manifest-path packages/loca-core-speech/Cargo.toml
         if: runner.os == 'Linux'
+
+  # Vendored native builds: the core-rs features that compile a third-party C/C++
+  # tree and are therefore OFF by default.
+  #
+  # `local-inference` builds llama.cpp from vendor/llama.cpp (gitignored, fetched
+  # by scripts/vendor-llama.ts). It is default-off because the `rs` matrix above
+  # builds from a fresh checkout on three runners where vendor/ does not exist,
+  # and a cold llama.cpp build does not fit that job's budget.
+  #
+  # This job is why default-off is acceptable rather than a hole. Without it,
+  # NOTHING in CI compiles the shim, clippies it, or runs any of its tests: the
+  # three chat-capability regressions that guard what dropping upstream's
+  # llama-server costs, the D-108 no-call-path audit that guards the
+  # no-non-consented-network rule, and the D-116 relocation assertion that guards
+  # self-update rollback all ran on one developer's machine, on demand. The Q1
+  # ruling called this job "not optional follow-up"; it had not landed, and a
+  # review found that out.
+  #
+  # One runner, not the matrix: the point is that the tests RUN at all, and a
+  # cold cmake build on three OSes would cost more than it proves. Linux also
+  # means this is the first coverage of the ELF half of the D-116 check
+  # ($ORIGIN + RUNPATH) rather than only the Mach-O half.
+  #
+  # N3's `local-speech` belongs here too when it lands: same shape, same cache,
+  # one more pair of steps rather than a second job.
+  native:
+    name: "Vendored native builds (local-inference, local-speech)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.96.1
+          components: clippy
+      - uses: denoland/setup-deno@v2
+      # Cached across runs, so only the first run pays the clone. The key is the
+      # vendoring script, which is where the pinned SHA lives: bump the pin and
+      # the cache misses. A stale cache cannot quietly build a different
+      # llama.cpp either way, because the script re-reads the clone's actual HEAD
+      # and build.rs refuses to build when it disagrees with its own constant.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/llama.cpp
+          key: llama-cpp-${{ hashFiles('scripts/vendor-llama.ts') }}
+      - run: deno run -A scripts/vendor-llama.ts
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: . -> target
+          shared-key: native-linux
+      # clippy first: --all-targets compiles the tests too, so a shim that does
+      # not build fails here with the compiler's message rather than inside a
+      # test run.
+      - run: cargo clippy --locked --manifest-path packages/loca-core-rs/Cargo.toml --all-targets --features local-inference -- -D warnings
+      # The linkage test needs a small GGUF that is deliberately not in git and
+      # is never fetched by the suite itself (no test may reach the network).
+      # Fetched here, once, as an explicit CI step: absent, that one test prints
+      # a SKIP and stays green, which would leave the decode/sample half of the
+      # linkage unguarded without saying so.
+      - name: Fetch the test GGUF
+        run: |
+          mkdir -p packages/loca-core-rs/models
+          curl -fL --retry 3 -o packages/loca-core-rs/models/test.gguf \
+            https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf
+      - run: cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml --lib --features local-inference inference::shim
+      # The boot-seam suite's feature-ON arm (D-165/D-166/D-167). The default
+      # `rs` job runs its feature-off arm, but the two seams that only exist
+      # under `local-inference` are the ones whose loss was PROVEN invisible:
+      # without `set_local_provider` a local turn resolves HttpProvider against
+      # a sidecar port Stage 3 removed, and without `attach_status` no model
+      # load is ever published so every automated turn stops deferring. Neither
+      # is reachable from a build without the feature, so this is the only job
+      # that can hold them.
+      - run: cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml --lib --features local-inference boot::seams
+      # N3's `local-speech` links sherpa-onnx for the in-process speech engine.
+      # Unlike llama.cpp this needs NO vendoring: `sherpa-onnx-sys`'s build
+      # script fetches its own prebuilt archive (18.7 MB) and caches it under
+      # target/, which the rust-cache entry above already covers, so only the
+      # first run on a cold cache pays for it.
+      #
+      # Two invocations rather than one combined `--features
+      # local-inference,local-speech`. They are additive and would compile
+      # together, but a combined run reports one failure for two independent
+      # subsystems, and the first question on a red job is always which one
+      # broke. Separate steps answer that from the step name alone.
+      - run: cargo clippy --locked --manifest-path packages/loca-core-rs/Cargo.toml --all-targets --features local-speech -- -D warnings
+      # Filtered to `speech::` rather than the whole lib: everything else in this
+      # crate is already covered by the `rs` matrix, and the point of this step is
+      # the code the default gate CANNOT reach, which is `speech::local::engine`.
+      # Quoted: a plain YAML scalar ending in `::` parses as a mapping key, so
+      # the unquoted form breaks the whole file. N1's step above ends in
+      # `inference::shim` and never hits it.
+      - run: "cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml --lib --features local-speech speech::"
 
   # Android build check. The Tauri shell's mobile cfg (#[cfg(mobile)] /
   # target_os = "android") is never exercised by the host-target checks above, and
@@ -208,6 +319,27 @@ jobs:
             libasound2-dev \
             libgbm-dev \
             patchelf
+      # The APK links the Core, whose mobile dependency edge turns
+      # `local-inference` ON, so this build compiles llama.cpp for the Android
+      # ABI. `vendor/llama.cpp` is a gitignored clone; without these two steps
+      # the gradle build fails inside build.rs on a fresh checkout. Same cache
+      # key as the `native` and `ios` jobs: the vendored tree is source and
+      # identical on every runner, so one entry serves all three.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/llama.cpp
+          key: llama-cpp-${{ hashFiles('scripts/vendor-llama.ts') }}
+      - run: deno run -A scripts/vendor-llama.ts
+      # The same for sherpa-onnx, which the mobile edge also turns on
+      # (`local-speech`). Cached on the vendoring script because that is where
+      # both the version and the sha256 digests live, so changing either misses
+      # the cache. A stale entry cannot smuggle in different bytes: the script
+      # re-verifies the digest of every archive it finds.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/sherpa-onnx
+          key: sherpa-onnx-${{ hashFiles('scripts/vendor-sherpa.ts') }}
+      - run: deno run -A scripts/vendor-sherpa.ts
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: . -> target
@@ -238,6 +370,18 @@ jobs:
         run: |
           export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           export ANDROID_NDK_HOME="$NDK_HOME"
+          # cc-rs resolves the NDK from ANDROID_NDK_ROOT specifically, not from
+          # the other two, and the Core's shim is C++: it needs
+          # `aarch64-linux-android-clang++`, a name the NDK does not ship.
+          # Measured, not assumed - with only ANDROID_NDK_HOME set the C
+          # dependencies build and the shim does not.
+          export ANDROID_NDK_ROOT="$NDK_HOME"
+          # sherpa-onnx-sys reads its library directory from this variable and
+          # from nothing else, and its own prebuilt table has no android entry at
+          # all. One ABI is built here, so one value is exactly right; a
+          # multi-ABI build needs one invocation per ABI (see
+          # scripts/mobile-cargo.ts).
+          export SHERPA_ONNX_LIB_DIR="$GITHUB_WORKSPACE/vendor/sherpa-onnx/android/jniLibs/arm64-v8a"
           deno run -A npm:@tauri-apps/cli@^2 android build --apk --debug --target aarch64
 
   # iOS cross-compile check. Same rationale as the android job: the shell's mobile
@@ -254,12 +398,44 @@ jobs:
         with:
           toolchain: 1.96.1
           targets: aarch64-apple-ios
+      # Deno is only here to run the vendoring script below; this job runs no
+      # `deno task`.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.x
+      # The mobile build links the Core, and the Core's mobile dependency edge
+      # turns `local-inference` ON (loca-client/src/tauri/Cargo.toml), so this
+      # build compiles llama.cpp. `vendor/llama.cpp` is a gitignored clone, so
+      # without these two steps the job fails in build.rs on a fresh checkout.
+      #
+      # The cache key is the vendoring script, which is where the pinned SHA
+      # lives: bump the pin and the cache misses. Shared with the `native` job by
+      # using the same key, since the vendored tree is source and identical on
+      # every runner.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/llama.cpp
+          key: llama-cpp-${{ hashFiles('scripts/vendor-llama.ts') }}
+      - run: deno run -A scripts/vendor-llama.ts
+      # sherpa-onnx too, for `local-speech`. Same cache shape as the android job;
+      # the staged tree is identical on every runner, so the key is shared.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: vendor/sherpa-onnx
+          key: sherpa-onnx-${{ hashFiles('scripts/vendor-sherpa.ts') }}
+      - run: deno run -A scripts/vendor-sherpa.ts
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: . -> target
           key: ios
       - name: iOS cargo check (aarch64-apple-ios)
         run: |
+          # See the android job: sherpa-onnx-sys resolves its libraries from this
+          # variable alone. On iOS it points at the staged directory
+          # scripts/vendor-sherpa.ts assembles, not at the xcframework, because
+          # upstream ships one merged archive where the crate emits thirteen
+          # `-l static=` names.
+          export SHERPA_ONNX_LIB_DIR="$GITHUB_WORKSPACE/vendor/sherpa-onnx/ios/lib-arm64"
           cargo check --locked \
             --manifest-path packages/loca-client/src/tauri/Cargo.toml \
             --target aarch64-apple-ios

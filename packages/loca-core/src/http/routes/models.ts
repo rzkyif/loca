@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { z } from "zod";
 import { modelsManager } from "../../models/manager.ts";
 import { downloadManager } from "../../downloads/manager.ts";
 import { ensureKindModels } from "../../services/model-ensure.ts";
@@ -23,43 +22,28 @@ import { parseBody, readJson } from "@loca/core-engine/http/body";
 import { bearerMiddleware, requireClient } from "../middleware/auth.ts";
 import {
   type AppliedModelSettings,
+  // Which device class the fit engine tunes for. Derived from the OS, at this
+  // one call site, rather than inside the engine: a `detect`-shaped function
+  // whose every caller passes the same value has an unobserved parameter
+  // (D-145), and the profile is not `Frontend::Embedded` either, because a
+  // desktop process booted embedded still has desktop memory (D-144's line).
+  fitProfileForOs,
+  modelDownloadBodySchema,
+  modelProbeBodySchema,
+  modelSelectBodySchema,
   PRESET_BUCKETS,
   type PresetBucket,
   settingKeyDestination,
+  speechSelectBodySchema,
 } from "@loca/shared";
 
-type ModelKind = "llm" | "stt" | "tts" | "embed";
+/** This Core's fit profile, fixed for the life of the process because the
+ *  platform is. The TypeScript core only ever runs on a desktop, so this is
+ *  always `desktop` here; the mobile profile is exercised by the Rust core on a
+ *  phone and by fit.test.ts, which passes the profile explicitly. */
+const FIT_PROFILE = fitProfileForOs(Deno.build.os);
 
-// Request-body schemas: strict objects with enums + bounded arrays so a
-// malformed or oversized body is rejected before it reaches the managers
-// (matches the zod-validated pattern in memories.ts / scheduled-prompts.ts).
-const groupEnum = z.enum(["llm", "stt", "tts", "embed"]);
-const downloadBodySchema = z
-  .object({
-    items: z
-      .array(z.object({ source: z.string().min(1), group: groupEnum.optional() }).strict())
-      .max(256),
-  })
-  .strict();
-const probeBodySchema = z
-  .object({
-    sources: z.array(z.string().min(1)).max(256),
-  })
-  .strict();
-const modelSelectBodySchema = z
-  .object({
-    bucket: z.string().optional(),
-    modelId: z.string().optional(),
-    modelSpec: z.string().optional(),
-  })
-  .strict();
-const speechSelectBodySchema = z
-  .object({
-    presetId: z.string().optional(),
-    modelId: z.string().optional(),
-    modelSpec: z.string().optional(),
-  })
-  .strict();
+type ModelKind = "llm" | "stt" | "tts" | "embed";
 
 export function modelsRoutes(): Hono {
   const r = new Hono();
@@ -70,7 +54,7 @@ export function modelsRoutes(): Hono {
   });
 
   r.post("/download", async (c) => {
-    const { items } = parseBody(downloadBodySchema, await readJson(c));
+    const { items } = parseBody(modelDownloadBodySchema, await readJson(c));
     const jobIds = modelsManager().download(
       items.map((i) => ({ source: i.source, group: i.group })),
     );
@@ -101,7 +85,7 @@ export function modelsRoutes(): Hono {
   });
 
   r.post("/probe", async (c) => {
-    const { sources } = parseBody(probeBodySchema, await readJson(c));
+    const { sources } = parseBody(modelProbeBodySchema, await readJson(c));
     return c.json(await modelsManager().probe(sources));
   });
 
@@ -134,7 +118,7 @@ export function modelsRoutes(): Hono {
       detectHardware(),
       loadCoreSettings(),
     ]);
-    return c.json(computeRecommendations(catalog, hw, appliedFromSettings(settings)));
+    return c.json(computeRecommendations(catalog, hw, appliedFromSettings(settings), FIT_PROFILE));
   });
 
   // Force-refresh the catalog + re-probe hardware, then recompute. Used by the
@@ -149,7 +133,7 @@ export function modelsRoutes(): Hono {
     // or driver appeared), so re-evaluate the required-files snapshot: a
     // now-wrong-variant binary surfaces as a pending reinstall.
     void notifyRequirementsChanged();
-    return c.json(computeRecommendations(catalog, hw, appliedFromSettings(settings)));
+    return c.json(computeRecommendations(catalog, hw, appliedFromSettings(settings), FIT_PROFILE));
   });
 
   // Full model list annotated with fit-on-this-device + the settings each would
@@ -158,7 +142,7 @@ export function modelsRoutes(): Hono {
     const [catalog, hw] = await Promise.all([loadModelCatalog(), detectHardware()]);
     return c.json({
       generatedAt: catalog.generatedAt,
-      models: buildCatalogViews(catalog, hw),
+      models: buildCatalogViews(catalog, hw, FIT_PROFILE),
     });
   });
 
@@ -284,9 +268,8 @@ async function resolveSelection(body: {
     if (!(PRESET_BUCKETS as readonly string[]).includes(body.bucket)) {
       throw new AppError("validation_error", `unknown bucket: ${body.bucket}`);
     }
-    const rec = computeRecommendations(catalog, hw, appliedFromSettings(settings)).buckets[
-      body.bucket as PresetBucket
-    ];
+    const rec = computeRecommendations(catalog, hw, appliedFromSettings(settings), FIT_PROFILE)
+      .buckets[body.bucket as PresetBucket];
     if (!rec) {
       throw new AppError("validation_error", `no model fits the "${body.bucket}" preset`);
     }
@@ -294,14 +277,14 @@ async function resolveSelection(body: {
   }
   // A specific quant (by its unique modelSpec) from the manual picker.
   if (body.modelSpec) {
-    const resolved = appliedForModelSpec(catalog, hw, body.modelSpec);
+    const resolved = appliedForModelSpec(catalog, hw, body.modelSpec, FIT_PROFILE);
     if (!resolved) {
       throw new AppError("not_found", `quant not in catalog: ${body.modelSpec}`);
     }
     return { preset: "custom", settings: resolved.apply };
   }
   if (body.modelId) {
-    const view = buildCatalogViews(catalog, hw).find((m) => m.id === body.modelId);
+    const view = buildCatalogViews(catalog, hw, FIT_PROFILE).find((m) => m.id === body.modelId);
     if (!view) {
       throw new AppError("not_found", `model not in catalog: ${body.modelId}`);
     }

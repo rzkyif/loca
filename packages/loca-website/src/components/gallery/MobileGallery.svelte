@@ -61,6 +61,13 @@
   };
 
   const pairingMobile = {
+    // The fork a phone opens on: it carries a Core of its own, so the first
+    // question is where the Core runs rather than which address to reach.
+    choose: {
+      ...SAMPLES.NewCoreWizardView.choose,
+      onMobile: true,
+      canStepBack: false,
+    },
     welcome: {
       ...SAMPLES.NewCoreWizardView.remoteAddress,
       onMobile: true,

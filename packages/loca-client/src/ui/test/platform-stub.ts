@@ -29,6 +29,11 @@ const impl: Platform = {
     connectWebSocket: unavailable("net.connectWebSocket"),
     discoverCores: async () => [],
   },
+  // Null by default, matching a desktop build, so every existing test keeps its
+  // current meaning: no reserved core entry appears and no local transport is
+  // ever selected. A test that wants the embedded Core installs
+  // `fakeLocalCore()` from `test/local-core-fake.ts` over this.
+  localCore: null,
   windowing: {
     show: NOOP,
     hide: NOOP,

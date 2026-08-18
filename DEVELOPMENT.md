@@ -109,8 +109,7 @@ install; a build failure surfaces in the dev log and core declines to start.
   `dpkg-deb`) and `rpm` (for `rpmbuild`); Windows needs `makensis` (NSIS). When a
   tool is absent, `scripts/release/core-installers.ts` skips that installer and
   the release still succeeds with the raw gzip'd binaries (which feed self-update
-  and the thin scripts). CI provisions these per runner; the Podman/UTM
-  cross-build drivers install them in their environments.
+  and the thin scripts). CI provisions these per runner.
 
 ### First-time setup
 
@@ -157,21 +156,21 @@ Settings.
 ```bash
 deno task build         # build everything that changed (core/client/catalog/android/ios) for the latest channel
 deno task build:stable  # ... for the stable channel
-deno task build:native  # same, but only for the current host triple
 ```
 
 `deno task build` compiles each artifact whose source changed since the last
 build and skips the rest (tracked by a `dist/.build-state.json` cursor). Run
-`deno task clean` or pass `--force` to rebuild from scratch. It mirrors the
-umbrella `deno task release` item set: core + helpers, the desktop client, the
-model catalog, the android client (built only when an Android keystore is
-configured in `.env`; otherwise it is skipped with a note), and the ios client
-(built only when Apple signing is configured in `.env` on a mac with Xcode;
-build-only, the App Store upload happens at release). The landing page is
-NOT part of `build`; it builds on its own via `deno task build:website` and is
-released as part of the umbrella `deno task release` (its release item runs the
-Astro build itself). The granular `build:core` / `build:client` tasks force-build
-a single component. Releasing the built artifacts is covered in
+`deno task clean` or pass `--force` to rebuild from scratch. It builds the
+**host triple only**: every desktop platform has to be built natively, so a
+full multi-platform build is the CI matrix's job (see Releasing below), never a
+local one. It covers core + helpers, the desktop client, the model catalog, the
+android client (built only when an Android keystore is configured in `.env`;
+otherwise it is skipped with a note), and the ios client (built only when Apple
+signing is configured in `.env` on a mac with Xcode; build-only, the App Store
+upload happens at release). The landing page is NOT part of `build`; it builds on
+its own via `deno task build:website` and is released by its own release item
+(which runs the Astro build itself). The granular `build:core` / `build:client`
+tasks force-build a single component. Releasing is covered in
 [packages/loca-website/README.md](packages/loca-website/README.md).
 
 ### Working on one package
@@ -248,8 +247,8 @@ pipeline materializes from `.env` (`LOCA_ANDROID_KEYSTORE_B64` +
 passwords/alias; see `.env.example`). A plain local `build:client:android`
 without that keystore falls back to debug signing so the APK still installs for
 testing. The release path never debug-signs: `scripts/release/android.ts` hard
-fails when the keystore env is absent, and `scripts/release/main.ts` drops the
-android item entirely. The decoded `*.jks` + `keystore.properties` are gitignored
+fails when the keystore env is absent, and the CI release leg skips the android
+item entirely. The decoded `*.jks` + `keystore.properties` are gitignored
 and wiped after the build (including on Ctrl-C).
 
 **versionCode.** Android requires a monotonically increasing integer
@@ -322,11 +321,11 @@ base64 `APPLE_CERTIFICATE` on CI) and the App Store Connect API key trio
 `.p8` rides base64 in `APPLE_API_KEY_B64` and the release script materializes
 the file itself) to upload to TestFlight / the App Store. Without them,
 `build:client:ios` falls back to an unsigned Simulator build, `deno task build`
-and `scripts/release/main.ts` drop the iOS item with a note (like android
-without a keystore), and the `.ipa` leg of the CI release skips - so an
-unconfigured checkout builds and releases exactly as if iOS did not exist. With
-them, `deno task build` produces the signed `.ipa` into `dist/ios/` (build-only,
-never uploads) and a release builds + uploads it to App Store Connect; there is
+drops the iOS item with a note (like android without a keystore), and the `.ipa`
+leg of the CI release skips - so an unconfigured checkout builds and releases
+exactly as if iOS did not exist. With them, `deno task build` produces the signed
+`.ipa` into `dist/ios/` (build-only, never uploads) and the CI release's macOS
+arm64 leg builds + uploads it to App Store Connect; there is
 no separate enable flag. The API key drives Xcode's automatic cloud signing, so
 it needs the Admin role. The App Store Connect app record must exist before the
 first upload, and App Review submission stays manual (see
@@ -398,21 +397,20 @@ are offset so two cores can bind at once:
 
 Building and releasing (to the latest or stable channel) is covered in
 [packages/loca-website/README.md](packages/loca-website/README.md), the
-release + deploy doc. Two release pipelines share one R2 idempotency cursor:
+release + deploy doc. **Releases run entirely in CI**, because a complete release
+spans platforms no single machine can build natively:
 
-- **Local** `deno task release` (latest) / `release:stable` builds + publishes
-  every changed item for all targets, then fast-forwards and pushes the channel
-  branch. It is gated on a clean, in-sync git state sitting exactly on the
-  channel's source branch (`latest` <- `main`, `stable` <- `latest`), and a CI
-  preflight sees the cursor already current, so its branch push does not re-run
-  the build matrix.
-- **Remote** `deno task remote-release` (latest) / `remote-release:stable`
-  fast-forwards the channel branch on the remote (server-side, ignoring the local
-  tree) so the branch-driven GitHub Actions pipeline does the build + publish.
+```bash
+deno task remote-release          # publish the latest channel (latest <- main)
+deno task remote-release:stable   # promote to stable   (stable <- latest)
+```
 
-Either way the channel is the branch name and the branches stay clean
-fast-forwards: `main` -> `latest` -> `stable`. Bump versions on `main` (committed)
-before transferring; the version-bump gate rejects a changed-but-unbumped item.
+Each fast-forwards the channel branch on the remote (server-side, ignoring the
+local tree) so the branch-driven GitHub Actions pipeline builds every target on
+its own native runner and publishes once. The channel is the branch name and the
+branches stay clean fast-forwards: `main` -> `latest` -> `stable`. Bump versions
+on `main` (committed) before transferring; the version-bump gate rejects a
+changed-but-unbumped item.
 
 ## External dependencies
 

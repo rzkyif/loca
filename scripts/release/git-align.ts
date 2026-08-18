@@ -1,24 +1,21 @@
-// Git branch alignment for the two release paths.
+// Git branch alignment for the release pipeline.
 //
 // The channel branches mirror the R2 channels: `latest` tracks what the latest
 // channel has published, `stable` tracks stable. The promotion chain is a clean
 // fast-forward: latest <- main, stable <- latest.
 //
-//   - Local release (main.ts, `deno task release`): after publishing to R2 from
-//     the working tree, it fast-forwards the channel branch and pushes it so the
-//     remote reflects the release. This path is guarded by strict LOCAL git
-//     preconditions (assertReleaseGitState): clean tree, in sync with the
-//     remote, and HEAD equal to the channel's source branch.
-//   - Remote release (remote.ts, `deno task remote-release`): purely remote. It
-//     fast-forwards one remote branch onto another via the GitHub refs API,
-//     independent of the local working tree, and lets CI build + publish.
+//   - remote.ts (`deno task remote-release`) fast-forwards one remote branch
+//     onto another via the GitHub refs API, independent of the local working
+//     tree. Moving the branch is what triggers the CI release workflow.
+//   - ci-bump.ts commits the post-release version bumps onto `main` from the
+//     CI runner (commitVersionBump + pushMain).
 //
 // Both no-op when the target is already aligned.
 
 import { fail, info, ok, type PublishedItem, type ReleaseChannel, rel, step } from "./lib.ts";
 
 // ---------------------------------------------------------------------------
-// local helpers (deno task release)
+// local helpers (the CI bump runner's working tree)
 
 async function git(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const out = await new Deno.Command("git", { args, stdout: "piped", stderr: "piped" })
@@ -37,60 +34,12 @@ export async function revParse(ref: string): Promise<string> {
   return out.stdout;
 }
 
-/** The branch a channel promotes FROM: latest <- main, stable <- latest. */
-export function channelSourceRef(channel: ReleaseChannel): string {
-  return channel === "latest" ? "origin/main" : "origin/latest";
-}
-
-/** Preconditions for a LOCAL `deno task release`: a clean tree, in sync with the
- *  remote, sitting exactly on the channel's source branch. Fails loudly with an
- *  actionable message otherwise. */
-export async function assertReleaseGitState(channel: ReleaseChannel): Promise<void> {
-  const sourceRef = channelSourceRef(channel);
-  step(`Checking git state for the ${channel} release`);
-
-  // Refresh origin/* so the comparisons below see the true remote state.
-  const fetch = await git(["fetch", "origin"]);
-  if (fetch.code !== 0) fail(`git fetch origin failed: ${fetch.stderr}`);
-
-  // Clean working tree.
-  const status = await git(["status", "--porcelain"]);
-  if (status.code !== 0) fail(`git status failed: ${status.stderr}`);
-  if (status.stdout !== "") {
-    fail(`working tree is not clean; commit or stash before releasing.\n${status.stdout}`);
-  }
-
-  // In sync with the upstream (no unpushed / unpulled commits).
-  const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-  if (upstream.code !== 0) {
-    fail(`the current branch has no upstream; set tracking and sync it before releasing.`);
-  }
-  const head = await revParse("HEAD");
-  const upstreamSha = await revParse("@{u}");
-  if (head !== upstreamSha) {
-    fail(
-      `local branch is out of sync with ${upstream.stdout}; ` +
-        `push/pull so they match before releasing.`,
-    );
-  }
-
-  // HEAD must equal the channel's source branch, by commit hash.
-  const sourceSha = await revParse(sourceRef);
-  if (head !== sourceSha) {
-    fail(
-      `HEAD (${head.slice(0, 12)}) does not match ${sourceRef} (${sourceSha.slice(0, 12)}). ` +
-        `To release the ${channel} channel, check out the commit equal to ${sourceRef}.`,
-    );
-  }
-  ok(`git state clean and aligned with ${sourceRef}`);
-}
-
 /** Commit the just-bumped version files as `bump: <labels>` on the current
  *  HEAD. The bumped items name both the files to stage (deduped, since client +
  *  android share tauri.conf.json) and the labels for the message. Stages only
  *  those exact files (never `-a`), so an unrelated dirty file cannot ride along;
- *  the clean-tree precondition (assertReleaseGitState) plus the non-force pushes
- *  that follow guard against a colliding concurrent change. Returns the new HEAD
+ *  the non-force push that follows guards against a colliding concurrent
+ *  change. Returns the new HEAD
  *  sha, or null when nothing was bumped. */
 export async function commitVersionBump(bumped: PublishedItem[]): Promise<string | null> {
   if (bumped.length === 0) return null;
@@ -135,24 +84,6 @@ export async function pushMain(): Promise<void> {
     fail(`git push to main failed (non-fast-forward or rejected):\n${push.stderr}`);
   }
   ok(`pushed HEAD to origin/main`);
-}
-
-/** Fast-forward the local channel branch to HEAD and push it. No-op when
- *  origin/<channel> already points at HEAD. Non-force, so a diverged channel
- *  branch is refused rather than clobbered. */
-export async function pushChannelBranch(channel: ReleaseChannel): Promise<void> {
-  const head = await revParse("HEAD");
-  const remote = await git(["rev-parse", `origin/${channel}`]);
-  if (remote.code === 0 && remote.stdout === head) {
-    info(`origin/${channel} already at HEAD (${head.slice(0, 12)}); nothing to push`);
-    return;
-  }
-  step(`Fast-forwarding origin/${channel} -> ${head.slice(0, 12)}`);
-  const push = await git(["push", "origin", `HEAD:refs/heads/${channel}`]);
-  if (push.code !== 0) {
-    fail(`git push to ${channel} failed (non-fast-forward or rejected):\n${push.stderr}`);
-  }
-  ok(`pushed HEAD to origin/${channel}`);
 }
 
 // ---------------------------------------------------------------------------

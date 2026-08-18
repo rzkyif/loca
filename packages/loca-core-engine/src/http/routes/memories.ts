@@ -3,32 +3,10 @@
 // module broker instead of these routes.
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { z } from "zod";
+import { memoryCreateBodySchema, memoryFileBodySchema, memoryPatchBodySchema } from "@loca/shared";
 import { memoriesStore } from "../../services/memories-store.ts";
 import { host } from "../../platform/runtime.ts";
 import { parseBody, readJson } from "../body.ts";
-
-const createBodySchema = z
-  .object({
-    kind: z.enum(["knowledge", "skill"]).default("knowledge"),
-    title: z.string().min(1),
-    content: z.string().default(""),
-  })
-  .strict();
-
-const fileBodySchema = z
-  .object({
-    content: z.string().default(""),
-  })
-  .strict();
-
-const patchBodySchema = z
-  .object({
-    title: z.string().min(1).optional(),
-    content: z.string().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .strict();
 
 // Queue background (re)indexing through the host. Absent on a host without a
 // background queue; there the summary/embedding refresh is that host's concern.
@@ -43,7 +21,7 @@ export function memoriesRoutes(authed: MiddlewareHandler): Hono {
   r.get("/", (c) => c.json({ memories: memoriesStore().list() }));
 
   r.post("/", async (c) => {
-    const body = parseBody(createBodySchema, await readJson(c));
+    const body = parseBody(memoryCreateBodySchema, await readJson(c));
     const doc = await memoriesStore().create(body.kind, body.title, body.content);
     scheduleIndexing(doc.id);
     return c.json(doc, 201);
@@ -75,7 +53,7 @@ export function memoriesRoutes(authed: MiddlewareHandler): Hono {
 
   // Create or replace a bundled file beside a user skill's SKILL.md.
   r.put("/:id/files/:name", async (c) => {
-    const body = parseBody(fileBodySchema, await readJson(c));
+    const body = parseBody(memoryFileBodySchema, await readJson(c));
     await memoriesStore().writeFile(c.req.param("id"), c.req.param("name"), body.content);
     return c.json({ ok: true });
   });
@@ -87,7 +65,7 @@ export function memoriesRoutes(authed: MiddlewareHandler): Hono {
 
   r.patch("/:id", async (c) => {
     const id = c.req.param("id");
-    const body = parseBody(patchBodySchema, await readJson(c));
+    const body = parseBody(memoryPatchBodySchema, await readJson(c));
     if (body.enabled !== undefined) {
       memoriesStore().setEnabled(id, body.enabled);
     }

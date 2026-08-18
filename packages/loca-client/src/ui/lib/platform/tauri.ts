@@ -50,6 +50,11 @@ const impl: Platform = {
   // Pinned HTTP + WebSocket to a paired core; shared with the mobile impl
   // since both call the same Rust commands (see lib/platform/shared.ts).
   net,
+  // No Core inside the desktop app: it is a separate `loca-core` process
+  // reached over pinned TLS through `net`, paired like any other core. The
+  // local-transport / reserved-entry paths in lib/core are dead here, and that
+  // is asserted rather than assumed (see cores.test.ts).
+  localCore: null,
   windowing: {
     show: () => invoke("show_main_window"),
     hide: () => invoke("hide_main_window"),

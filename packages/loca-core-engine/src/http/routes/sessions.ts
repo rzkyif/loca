@@ -10,7 +10,7 @@ import {
   type MessageRoleForPatch,
 } from "@loca/shared";
 import { sessionsRepo } from "../../services/sessions-store.ts";
-import { numSetting, strSetting } from "../../services/settings-access.ts";
+import { strSetting } from "../../services/settings-access.ts";
 import { sessionAttachmentsDir } from "../../platform/paths.ts";
 import { host } from "../../platform/runtime.ts";
 import { AppError } from "../../platform/errors.ts";
@@ -225,8 +225,16 @@ export function sessionsRoutes(authed: MiddlewareHandler): Hono {
     const history = await sessionsRepo().listMessages(session.id);
     const settings = await loadCoreSettings();
     const endpoint = await resolveEndpoint(settings, "default");
-    const isLocal = strSetting(settings, "llm.provider", "local") === "local";
-    const messages = historyToOpenAI(history, strSetting(settings, "llm.systemPrompt", ""));
+    const isLocal = endpoint.isLocalProvider === true;
+    // `prompts.defaultSystemPrompt`, which is the setting that exists. This read
+    // was `llm.systemPrompt`, which is not a settings key at all, so it always
+    // resolved to the caller's `""` fallback and this path sent no system prompt
+    // no matter what the user had configured. The WS path reads the right key
+    // (chat.ts:335), so the two disagreed only on the fallback route. See D-069.
+    const messages = historyToOpenAI(
+      history,
+      strSetting(settings, "prompts.defaultSystemPrompt", ""),
+    );
 
     const req: LlmRequest = { endpoint, messages };
 
@@ -236,10 +244,17 @@ export function sessionsRoutes(authed: MiddlewareHandler): Hono {
         let assistantText = "";
         let usage: { prompt: number; completion: number; total: number } | undefined;
         try {
+          // No `parallelSlots` override. This read was
+          // `numSetting(settings, "llm.local.parallelSlots", 1)`, and that is not
+          // a settings key either, so it always yielded the literal 1 while
+          // looking like it honoured a user preference. Passing it also mutates
+          // the scheduler singleton, so the lie would have become a real
+          // override the moment the scheduler's own default moved off 1. Leaving
+          // it out is behaviour-identical today (DEFAULT_PARALLEL_SLOTS is 1) and
+          // stays correct if that changes. See D-069.
           for await (const delta of llmScheduler().schedule(req, {
             clientId: me.id,
             isLocal,
-            parallelSlots: numSetting(settings, "llm.local.parallelSlots", 1),
           })) {
             if (delta.contentDelta) {
               assistantText += delta.contentDelta;

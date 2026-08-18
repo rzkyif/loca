@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { join } from "@std/path";
-import { z } from "zod";
 import {
   errMessage,
   type Grant,
@@ -8,6 +7,7 @@ import {
   permissionKey,
   seededExtensionById,
   type Tool,
+  toolSchemasBodySchema,
 } from "@loca/shared";
 import {
   flattenPermissions,
@@ -325,12 +325,6 @@ export function extensionsRoutes(): Hono {
     });
     return c.json(result);
   });
-
-  const toolSchemasBodySchema = z
-    .object({
-      ids: z.array(z.string().min(1)).max(512),
-    })
-    .strict();
 
   r.post("/tool-schemas", async (c) => {
     const body = parseBody(toolSchemasBodySchema, await readJson(c));

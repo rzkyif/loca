@@ -1,18 +1,19 @@
 <script lang="ts" module>
-  // Presentational body of the add-a-core wizard. The steps (connect-local |
-  // remote-address -> remote-pair) plus the shared header, error footer, and
-  // bubble/mobile frame are all pure markup here; the client owns the state
-  // machine, the form drafts, LAN discovery, connection probing, and the
-  // pairing flows, and feeds them in as data while taking the step transitions
-  // back out as callbacks. Props in, callbacks out.
+  // Presentational body of the add-a-core wizard. The steps (choose |
+  // connect-local | remote-address -> remote-pair) plus the shared header, error
+  // footer, and bubble/mobile frame are all pure markup here; the client owns
+  // the state machine, the form drafts, LAN discovery, connection probing, and
+  // the pairing flows, and feeds them in as data while taking the step
+  // transitions back out as callbacks. Props in, callbacks out.
   //
-  // The Core is installed by the native installer, never from here:
-  // `connectLocal` is the silent first-boot pair with an installer-provided
-  // local core (a spinner, or an error with a remote fallback), and the remote
-  // steps are the welcoming connect-to-a-core flow every other start lands on.
+  // `choose` is the fork shown where the app carries a Core of its own: run it
+  // on this device, or connect to one elsewhere. `connectLocal` is the silent
+  // first-boot pair with an installer-provided local Core (a spinner, or an
+  // error with a remote fallback), and the remote steps are the welcoming
+  // connect-to-a-Core flow every other start lands on.
 
   // Which wizard step is showing.
-  export type NewCoreWizardStep = "connectLocal" | "remoteAddress" | "remotePair";
+  export type NewCoreWizardStep = "choose" | "connectLocal" | "remoteAddress" | "remotePair";
 
   // The in-flight pairing operation, or null when idle. Drives the primary
   // buttons' spinner + label and disables controls.
@@ -62,6 +63,8 @@
     onCheckConnection,
     onRetryLocal,
     onUseRemoteInstead,
+    onUseThisDevice,
+    onUseAnotherDevice,
     onPairRemote,
     // Controlled text fields.
     remoteUrl = $bindable(""),
@@ -90,6 +93,10 @@
     onCheckConnection?: () => void;
     onRetryLocal?: () => void;
     onUseRemoteInstead?: () => void;
+    /** The `choose` step's two branches: adopt the Core inside this app, or go
+     *  on to the address form for one running somewhere else. */
+    onUseThisDevice?: () => void;
+    onUseAnotherDevice?: () => void;
     onPairRemote?: () => void;
     remoteUrl?: string;
     remoteName?: string;
@@ -110,9 +117,13 @@
       {@render mobileHeader()}
       {@render wizardBody()}
     </div>
-    <div class="shrink-0 px-5 pt-2 pb-3 bg-surface">
-      {@render mobileFooterButton()}
-    </div>
+    <!-- The fork carries its own two actions in the body, so it gets no pinned
+         footer; every other step has exactly one primary action. -->
+    {#if step !== "choose"}
+      <div class="shrink-0 px-5 pt-2 pb-3 bg-surface">
+        {@render mobileFooterButton()}
+      </div>
+    {/if}
   </div>
 {:else}
   <Bubble selectedAlignment={alignment} extraClass="flex flex-col gap-4 w-[22.5rem] max-w-full">
@@ -122,8 +133,12 @@
 
 {#snippet welcomeIntro()}
   <p class="text-sm text-default-600">
-    Loca runs on a Core: the service that powers your models, speech, and tools. Connect this device
-    to one to get started.
+    Loca runs on a Core: the service that powers your models, speech, and tools.
+    {#if step === "choose"}
+      Choose where yours runs.
+    {:else}
+      Connect this device to one to get started.
+    {/if}
   </p>
 {/snippet}
 
@@ -174,6 +189,8 @@
       <h1 class="text-xl font-semibold text-default-800">
         {#if step === "remotePair"}
           Enter the Pairing Code
+        {:else if step === "choose"}
+          Set Up Your Core
         {:else}
           Connect to a Core
         {/if}
@@ -224,7 +241,7 @@
         ></span>
         <h1 class="text-lg font-medium text-default-800">Welcome to Loca</h1>
       </div>
-      {#if step === "remoteAddress"}
+      {#if step === "remoteAddress" || step === "choose"}
         {@render welcomeIntro()}
       {/if}
     {:else}
@@ -249,6 +266,8 @@
         <h1 class="text-lg font-medium text-default-800 flex-1 text-center">
           {#if step === "connectLocal"}
             Connect to a Core
+          {:else if step === "choose"}
+            Set Up Your Core
           {:else}
             Connect to a Remote Core
           {/if}
@@ -270,7 +289,56 @@
     {/if}
   {/if}
 
-  {#if step === "connectLocal"}
+  {#if step === "choose"}
+    <!-- The fork: this app carries a Core of its own, so the user picks where
+         theirs runs before anything else happens. Both branches are equal
+         first-class options rather than a primary and a fallback, so neither
+         gets the primary button treatment. -->
+    <!-- The welcome header already carries the lead on a locked first run; on
+         the add-another-core entry from Settings there is no welcome, so the
+         step states it itself. -->
+    {#if !locked || canStepBack}
+      <p class="text-sm text-default-600">
+        A Core is the service that powers your models, speech, and tools. Choose where this one
+        runs.
+      </p>
+    {/if}
+
+    <div class="flex flex-col gap-2">
+      <ListItem onclick={() => (onUseThisDevice ?? noop)()} disabled={busy !== null}>
+        {#snippet leading()}
+          <i class="i-material-symbols-smartphone text-2xl text-default-700 shrink-0"></i>
+        {/snippet}
+        {#snippet trailing()}
+          <i class="i-material-symbols-chevron-right-rounded text-xl text-default-500 shrink-0"></i>
+        {/snippet}
+        <span class="font-medium text-default-800">Use This Device</span>
+        <span class="text-sm text-default-600">
+          Loca runs the Core itself. Nothing else to set up, and your sessions stay here.
+        </span>
+      </ListItem>
+
+      <ListItem onclick={() => (onUseAnotherDevice ?? noop)()} disabled={busy !== null}>
+        {#snippet leading()}
+          <i class="i-material-symbols-devices-rounded text-2xl text-default-700 shrink-0"></i>
+        {/snippet}
+        {#snippet trailing()}
+          <i class="i-material-symbols-chevron-right-rounded text-xl text-default-500 shrink-0"></i>
+        {/snippet}
+        <span class="font-medium text-default-800">Use Another Device</span>
+        <span class="text-sm text-default-600">
+          Connect to a Core running on your computer. Better for large models.
+        </span>
+      </ListItem>
+    </div>
+
+    {#if busy === "claiming"}
+      <div class="flex items-center justify-center gap-2 py-1 text-sm text-default-600">
+        <i class="i-line-md:loading-loop text-xl shrink-0"></i>
+        <span>Starting the Core on this device…</span>
+      </div>
+    {/if}
+  {:else if step === "connectLocal"}
     <!-- Silent pair with the installer-provided local core. Auto-run: the happy
          path is just a spinner that resolves into the app; a failure explains
          itself and offers a retry or the remote fallback. -->

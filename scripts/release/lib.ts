@@ -2,8 +2,8 @@
 //
 // Anything that touches .env, paths, signing, R2 uploads, or fetches lives
 // here. Sub-scripts (core.ts, client.ts, schemas.ts, website.ts) compose these
-// helpers; main.ts imports each sub-script's main() to run the umbrella
-// release.
+// helpers; ci-publish.ts imports each sub-script's ReleaseItem to run the
+// umbrella release.
 
 import { encodeBase64 } from "@std/encoding/base64";
 import { encodeHex } from "@std/encoding/hex";
@@ -14,7 +14,6 @@ import { load as loadDotenv } from "@std/dotenv";
 import * as ed from "@noble/ed25519";
 import { AwsClient } from "aws4fetch";
 import { canonicalize } from "../../packages/loca-shared/src/crypto/canonical.ts";
-import type { BuildEnvironment } from "./drivers/mod.ts";
 // Type-only: artifacts.ts imports values from this module, so a value import
 // here would be a runtime cycle. `import type` is erased, so it is safe.
 import type { PrebuiltStaging } from "./artifacts.ts";
@@ -34,6 +33,13 @@ export const ENV_PATH = join(REPO_ROOT, ".env");
 export const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
 export const SIGNING_KEYS_PATH = join(CORE_DIR, "data/signing-keys.json");
 export const CONFIG_PATH = join(CORE_DIR, "src/config.ts");
+/** The SHIPPED core's version constant.
+ *
+ *  `CONFIG_PATH` belongs to the TypeScript core, which is retained only as the
+ *  conformance oracle and ships nowhere. Since the build cutover the artifact
+ *  is built from `loca-core-rs`, so the version a running core REPORTS comes
+ *  from here, and this is the one the release manifest must agree with. */
+export const CORE_CONFIG_RS = join(REPO_ROOT, "packages/loca-core-rs/src/config.rs");
 
 // ---------------------------------------------------------------------------
 // pretty output
@@ -293,10 +299,9 @@ export async function loadOrSeedEnv(): Promise<DeployEnv> {
 /** The minimal DeployEnv a BUILD environment needs, constructed directly from
  *  the process env rather than via loadOrSeedEnv: only the build-time signing
  *  fields (Tauri minisign, Android keystore) and the Ed25519 PUBLIC key. The
- *  Ed25519 PRIVATE key is left empty, so it never reaches a build runner or a
- *  driver-driven environment (manifest signing happens only on the publish host).
- *  Shared by the CI build half (ci-build.ts) and the local in-environment build
- *  entry (build-release-bundle.ts) so the two pipelines build identically. */
+ *  Ed25519 PRIVATE key is left empty, so it never reaches a build runner
+ *  (manifest signing happens only on the publish coordinator). Used by the CI
+ *  build half (ci-build.ts) and the preflight gate (ci-preflight.ts). */
 export function envFromProcess(): DeployEnv {
   const get = (k: string) => Deno.env.get(k) ?? "";
   const pubB64 = get("LOCA_SIGNING_PUBLIC_KEY_B64");
@@ -369,6 +374,33 @@ export async function writeSigningKeys(publicKeyB64: string): Promise<void> {
 // item versions
 
 export async function readCoreVersion(): Promise<string> {
+  const rust = await readRustCoreVersion();
+  const ts = await readTsCoreVersion();
+  // Refused rather than reconciled. The manifest is signed with ONE version and
+  // the binary reports the other; if they disagree, an update check compares a
+  // manifest version against a core that calls itself something else and either
+  // re-offers an update forever or never offers one again. Both are silent.
+  //
+  // They must also agree for the conformance suite: `version` is on
+  // `GET /api/v1/health`, so a differential run would report the port and the
+  // oracle as disagreeing about a field neither implements wrongly.
+  if (rust !== ts) {
+    fail(
+      `CORE_VERSION disagrees: ${rel(CORE_CONFIG_RS)} says ${rust}, ` +
+        `${rel(CONFIG_PATH)} says ${ts}. The Rust value is what ships; bump both.`,
+    );
+  }
+  return rust;
+}
+
+async function readRustCoreVersion(): Promise<string> {
+  const text = await Deno.readTextFile(CORE_CONFIG_RS);
+  const match = text.match(/pub\s+const\s+CORE_VERSION\s*:\s*&str\s*=\s*"([^"]+)"/);
+  if (!match) fail(`could not parse CORE_VERSION from ${rel(CORE_CONFIG_RS)}`);
+  return match[1];
+}
+
+async function readTsCoreVersion(): Promise<string> {
   const text = await Deno.readTextFile(CONFIG_PATH);
   const match = text.match(/export\s+const\s+CORE_VERSION\s*=\s*"([^"]+)"/);
   if (!match) fail(`could not parse CORE_VERSION from ${rel(CONFIG_PATH)}`);
@@ -392,12 +424,23 @@ export function bumpPatch(v: string): string {
 /** Surgically bump `CORE_VERSION` in config.ts to the next patch, preserving the
  *  rest of the file byte-for-byte. Returns the new version. */
 export async function bumpCoreVersion(): Promise<string> {
-  const text = await Deno.readTextFile(CONFIG_PATH);
-  const re = /(export\s+const\s+CORE_VERSION\s*=\s*")([^"]+)(")/;
-  const match = text.match(re);
-  if (!match) fail(`could not parse CORE_VERSION from ${rel(CONFIG_PATH)}`);
-  const next = bumpPatch(match[2]);
-  await Deno.writeTextFile(CONFIG_PATH, text.replace(re, `$1${next}$3`));
+  // Reads through the agreement check first, so a tree that has already drifted
+  // is refused here rather than bumped into a wider drift.
+  const next = bumpPatch(await readCoreVersion());
+
+  const rustRe = /(pub\s+const\s+CORE_VERSION\s*:\s*&str\s*=\s*")([^"]+)(")/;
+  const rustText = await Deno.readTextFile(CORE_CONFIG_RS);
+  if (!rustRe.test(rustText)) fail(`could not parse CORE_VERSION from ${rel(CORE_CONFIG_RS)}`);
+  await Deno.writeTextFile(CORE_CONFIG_RS, rustText.replace(rustRe, `$1${next}$3`));
+
+  // The oracle follows. It ships nowhere, but conformance compares its
+  // `/health` against the port's, so leaving it behind would turn every
+  // differential run red on a field that is not a defect.
+  const tsRe = /(export\s+const\s+CORE_VERSION\s*=\s*")([^"]+)(")/;
+  const tsText = await Deno.readTextFile(CONFIG_PATH);
+  if (!tsRe.test(tsText)) fail(`could not parse CORE_VERSION from ${rel(CONFIG_PATH)}`);
+  await Deno.writeTextFile(CONFIG_PATH, tsText.replace(tsRe, `$1${next}$3`));
+
   return next;
 }
 
@@ -453,7 +496,14 @@ export function stripJsonVersion(text: string): string {
 
 /** The config.ts counterpart: blank the `CORE_VERSION = "x.y.z"` constant. */
 export function stripCoreVersion(text: string): string {
-  return text.replace(/(CORE_VERSION\s*=\s*")[^"]+(")/, `$1${VERSION_HASH_PLACEHOLDER}$2`);
+  // Matches BOTH spellings: `export const CORE_VERSION = "..."` (TypeScript) and
+  // `pub const CORE_VERSION: &str = "..."` (Rust). The optional type ascription
+  // is the whole difference, and missing it would leave the Rust version in the
+  // tree hash so that every bump looked like a source change.
+  return text.replace(
+    /(CORE_VERSION\s*(?::\s*&str\s*)?=\s*")[^"]+(")/,
+    `$1${VERSION_HASH_PLACEHOLDER}$2`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -934,6 +984,13 @@ export const PACKAGES: Record<string, { dir: string; kind: PackageKind }> = {
   website: { dir: "packages/loca-website", kind: "deno" },
   extension: { dir: "packages/loca-extension-builtin", kind: "deno" },
   catalog: { dir: "packages/loca-model-catalog", kind: "deno" },
+  // The crate the shipped core is built from since the cutover.
+  "core-rs": { dir: "packages/loca-core-rs", kind: "rust" },
+  // Not in any release item's package list today: it is a library the Tauri
+  // crate links on mobile, so it reaches users through the CLIENT release
+  // rather than the core one. Registered so a future item can name it without
+  // re-deriving the path.
+  "core-ffi": { dir: "packages/loca-core-ffi", kind: "rust" },
   "core-updater": { dir: "packages/loca-core-updater", kind: "rust" },
   "core-keychain": { dir: "packages/loca-core-keychain", kind: "rust" },
   "core-hwinfo": { dir: "packages/loca-core-hwinfo", kind: "rust" },
@@ -1077,22 +1134,17 @@ export function promptYesNo(message: string): boolean {
 // release item contract
 //
 // Each module under scripts/release/ exports one ReleaseItem. The orchestrator
-// (main.ts) computes sourceHash() to decide what changed, enforces the
+// (ci-publish.ts) computes sourceHash() to decide what changed, enforces the
 // version-bump gate via version()/bumpHint, and calls apply() for changed
 // items after confirmation.
 
 export interface ApplyOpts {
-  /** Triples to build (core/client). Other items ignore this. */
-  triples: Triple[];
-  /** On-demand build environments (Podman, UTM) for triples this host can't
-   *  build natively. Present only in all-targets mode; the core item routes
-   *  non-host triples through them. Absent -> host-only (today's behavior). */
-  environments?: BuildEnvironment[];
-  /** Pre-built artifacts collected from CI build runners. When present, the
-   *  core/client/android items SKIP building and compose+sign+upload these
-   *  instead (the publish half of the CI build/publish split). Absent -> the
-   *  item builds locally (drivers or host-only). */
-  prebuilt?: PrebuiltStaging;
+  /** Pre-built artifacts collected from CI build runners: the core/client/android
+   *  items compose+sign+upload these rather than building anything themselves
+   *  (the publish half of the CI build/publish split). The platform-independent
+   *  items (extension, catalog, schemas, website) build on the coordinator and
+   *  ignore this. */
+  prebuilt: PrebuiltStaging;
   /** Build + sign locally but skip every R2 upload. */
   dryRun: boolean;
   /** Versioned items append each uploaded versioned key (full key, WITH channel
@@ -1167,40 +1219,26 @@ export async function signEd25519Bytes(privateKey: Uint8Array, bytes: Uint8Array
 
 export interface RunReleaseOpts {
   yes: boolean;
-  force: boolean;
   dryRun: boolean;
-  triples: Triple[];
-  environments?: BuildEnvironment[];
   /** Pre-built artifacts from CI build runners (the publish half of the CI
    *  build/publish split). Passed to each item's apply as opts.prebuilt. */
-  prebuilt?: PrebuiltStaging;
-  /** Skip the post-release version auto-bump so the cursor records the as-built
-   *  source hash (not a post-bump one), keeping a re-push of the same commit
-   *  idempotent. Set for the CI publish half (the bump is a separate committed
-   *  step, see ci-bump.ts) and for a local stable promotion (a fast-forward of
-   *  already-bumped versions from latest, so there is nothing to bump). */
-  noBump?: boolean;
+  prebuilt: PrebuiltStaging;
   /** Mirror this run's artifacts + manifests to the rolling per-channel GitHub
-   *  Release after the R2 upload. Off for a plain local release. */
+   *  Release after the R2 upload. */
   githubRelease?: boolean;
   /** Extra GitHub-Release assets built outside the release plan (the native Core
    *  installers ci-publish uploads before the plan). Merged into the mirror's
    *  asset set alongside the item-recorded ones. */
   extraGithubAssets?: Array<{ path: string; name: string }>;
-  /** Optional sink: runReleasePlan appends one entry per successfully published
-   *  item so a branch-aligned caller can commit the version bumps it made
-   *  (main.ts) without changing the return type. */
-  publishedOut?: PublishedItem[];
 }
 
-/** One successfully published item, reported through RunReleaseOpts.publishedOut
- *  so a caller can commit the bumps runReleasePlan applied. */
+/** One just-published item, as ci-bump.ts hands it to commitVersionBump. */
 export interface PublishedItem {
   id: string;
   label: string;
   versionFile: string;
-  /** The source hash changed, so this item's version file was bumped (when
-   *  noBump is off). A platform-fill republish (false) was not bumped. */
+  /** The source hash itself changed. A platform-fill republish (false) is
+   *  republished at the same version and is not bumped. */
   sourceChanged: boolean;
   /** The version just published (the pre-bump value). */
   version: string;
@@ -1231,12 +1269,11 @@ async function planItem(
   item: ReleaseItem,
   channel: ReleaseChannel,
   cursor: ReleaseCursor,
-  force: boolean,
 ): Promise<PlanEntry> {
   const localHash = await item.sourceHash(channel);
   const localVersion = await item.version();
   const recorded = cursorState(cursor, item, channel);
-  const sourceChanged = force || !recorded || recorded.sourceHash !== localHash;
+  const sourceChanged = !recorded || recorded.sourceHash !== localHash;
   const extra = item.extraChanged ? await item.extraChanged(env, channel) : false;
   const changed = sourceChanged || extra;
 
@@ -1272,7 +1309,7 @@ export async function hasReleaseChanges(
 ): Promise<boolean> {
   const cursor = await readReleaseCursor(env);
   for (const item of items) {
-    const plan = await planItem(env, item, channel, cursor, false);
+    const plan = await planItem(env, item, channel, cursor);
     if (plan.changed) return true;
   }
   return false;
@@ -1293,7 +1330,7 @@ export async function runReleasePlan(
   step("Planning");
   const plans: PlanEntry[] = [];
   for (const item of items) {
-    plans.push(await planItem(env, item, channel, cursor, opts.force));
+    plans.push(await planItem(env, item, channel, cursor));
   }
 
   // Version-bump gate: any item whose source changed but whose version isn't
@@ -1360,8 +1397,6 @@ export async function runReleasePlan(
     const keys: string[] = [];
     try {
       await p.item.apply(env, channel, {
-        triples: opts.triples,
-        environments: opts.environments,
         prebuilt: opts.prebuilt,
         dryRun: opts.dryRun,
         recordVersionedKey: (k) => keys.push(k),
@@ -1399,23 +1434,9 @@ export async function runReleasePlan(
     });
   }
 
-  // Auto-bump: each succeeded item whose source changed has just published at its
-  // current version, so advance its file to the next patch (uncommitted) ready for
-  // the next cycle. Dedupe by versionFile so a shared file (client + android share
-  // tauri.conf.json) bumps once. A platform-fill change (sourceChanged === false)
-  // republishes the same version and is not bumped. Skipped under noBump (CI):
-  // the repo is never written, versions are bumped on `main` before the transfer.
-  const bumpedFiles = new Set<string>();
-  if (!opts.noBump) {
-    step("Bumping versions for the next release");
-    for (const p of succeeded) {
-      if (!p.sourceChanged || bumpedFiles.has(p.item.versionFile)) continue;
-      bumpedFiles.add(p.item.versionFile);
-      const next = await p.item.bumpVersion();
-      ok(`bumped ${p.item.label} ${p.localVersion} -> ${next} (uncommitted)`);
-    }
-  }
-
+  // No auto-bump: this never writes the repo. The cursor records the as-built
+  // source hash, keeping a re-push of the same commit idempotent; the bump is a
+  // separate committed step on `main` (ci-bump.ts).
   step("Updating release-state cursor");
   const pruneTargets: string[] = [];
   for (const p of succeeded) {
@@ -1448,13 +1469,6 @@ export async function runReleasePlan(
     } else {
       (cursor.channels[channel] ??= {})[p.item.id] = state;
     }
-    opts.publishedOut?.push({
-      id: p.item.id,
-      label: p.item.label,
-      versionFile: p.item.versionFile,
-      sourceChanged: p.sourceChanged,
-      version: p.localVersion,
-    });
   }
   // Write the cursor before pruning so a crash mid-prune leaves harmless orphans
   // rather than a cursor claiming a just-deleted version is retained.

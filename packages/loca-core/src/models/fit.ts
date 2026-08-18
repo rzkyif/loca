@@ -19,27 +19,26 @@ import {
   type CatalogQuant,
   type CatalogVariant,
   DEFAULT_SAMPLING,
-  type FitConfig,
+  type FitProfile,
   type HardwareInfo,
   type PresetBucket,
   primaryScore,
   type QuantOption,
   type RecommendationSet,
+  type ResolvedFit,
+  resolveFitProfile,
 } from "@loca/shared";
 
 const BYTES_PER_KV_ELEM = 2; // fp16 K/V cache
-const COMPUTE_OVERHEAD_BYTES = 600_000_000; // fixed graph/activation slack
 const MAX_THREADS = 8;
 const FULL_IDLE_UNLOAD_SECONDS = 300;
 
-// Largest context to offer per bucket (capped to the model's trained max and
-// reduced until the config fits). Smallest stays lean on purpose.
-const CTX_CEILING: Record<PresetBucket, number> = {
-  smallest: 8192,
-  half: 16384,
-  full: 32768,
-};
-const CTX_LADDER = [32768, 16384, 8192, 4096];
+// The compute overhead, the per-bucket context ceilings and the context ladder
+// used to be constants here. They are catalog data now (`ResolvedFit`), because
+// they are exactly the values a device measurement moves and a value that needs
+// a core release to change is not one anyone retunes. Desktop resolves to the
+// same numbers this file used to hardcode, which the byte-identical baseline in
+// fit.test.ts is what proves. See D-158.
 
 // Token budget for thinking, scaled to the context window. Bounding `<think>`
 // guarantees the model stops reasoning and answers instead of spending the
@@ -104,8 +103,22 @@ function kvCacheBytes(model: CatalogModel, ctx: number): number {
   return 2 * blockCount * ctx * headCountKv * headDim * BYTES_PER_KV_ELEM;
 }
 
-function visionBytes(model: CatalogModel, variant: CatalogVariant): number {
+/** Zero when the profile does not preselect vision. This is one half of a pair:
+ *  the other is `supportImages` in `appliedSettings`, and they must move
+ *  together. Budgeting for an mmproj a profile does not preselect shrinks what
+ *  fits for nothing; preselecting vision without budgeting for it overcommits
+ *  memory.
+ *
+ *  The projector PATH is not part of that pair. It is written either way, so a
+ *  profile that starts with images off is a default the user can overturn
+ *  rather than a capability the build took away. */
+function visionBytes(model: CatalogModel, variant: CatalogVariant, fit: ResolvedFit): number {
+  if (!fit.vision) return 0;
   return model.capabilities.vision && variant.mmprojSpec ? (variant.mmprojSizeBytes ?? 0) : 0;
+}
+
+function hasVision(model: CatalogModel, variant: CatalogVariant, fit: ResolvedFit): boolean {
+  return fit.vision && model.capabilities.vision && !!variant.mmprojSpec;
 }
 
 function footprintBytes(
@@ -113,12 +126,13 @@ function footprintBytes(
   variant: CatalogVariant,
   quant: CatalogQuant,
   ctx: number,
+  fit: ResolvedFit,
 ): number {
   return (
     quant.fileSizeBytes +
     kvCacheBytes(model, ctx) +
-    visionBytes(model, variant) +
-    COMPUTE_OVERHEAD_BYTES
+    visionBytes(model, variant, fit) +
+    fit.computeOverheadBytes
   );
 }
 
@@ -144,11 +158,12 @@ function bestCtx(
   quant: CatalogQuant,
   limit: number,
   ceiling: number,
+  fit: ResolvedFit,
 ): { ctx: number; footprintBytes: number } | null {
   const cap = Math.min(ceiling, model.contextMax);
-  for (const ctx of CTX_LADDER) {
+  for (const ctx of fit.ctxLadder) {
     if (ctx > cap) continue;
-    const fp = footprintBytes(model, variant, quant, ctx);
+    const fp = footprintBytes(model, variant, quant, ctx, fit);
     if (fp <= limit) return { ctx, footprintBytes: fp };
   }
   return null;
@@ -160,11 +175,12 @@ function bestConfigForModel(
   model: CatalogModel,
   limit: number,
   ceiling: number,
+  cfg: ResolvedFit,
 ): FitConfigChoice | null {
   let best: FitConfigChoice | null = null;
   for (const variant of model.variants) {
     for (const quant of variant.quants) {
-      const fit = bestCtx(model, variant, quant, limit, ceiling);
+      const fit = bestCtx(model, variant, quant, limit, ceiling, cfg);
       if (!fit) continue;
       const quantRank = configQuantRank(variant, quant);
       const cand: FitConfigChoice = {
@@ -189,13 +205,14 @@ function bestConfigForModel(
 function recommendedConfigForModel(
   model: CatalogModel,
   limit: number,
-  ceiling: number = CTX_CEILING.full,
+  ceiling: number,
+  cfg: ResolvedFit,
 ): FitConfigChoice | null {
   let sweet: FitConfigChoice | null = null;
   let any: FitConfigChoice | null = null;
   for (const variant of model.variants) {
     for (const quant of variant.quants) {
-      const fit = bestCtx(model, variant, quant, limit, ceiling);
+      const fit = bestCtx(model, variant, quant, limit, ceiling, cfg);
       if (!fit) continue;
       const cand: FitConfigChoice = {
         model,
@@ -221,10 +238,11 @@ function configForQuant(
   variant: CatalogVariant,
   quant: CatalogQuant,
   limit: number,
+  cfg: ResolvedFit,
 ): { choice: FitConfigChoice; fits: boolean } {
-  const fit = bestCtx(model, variant, quant, limit, CTX_CEILING.full);
-  const ctx = fit ? fit.ctx : Math.min(CTX_LADDER[CTX_LADDER.length - 1], model.contextMax);
-  const fp = fit ? fit.footprintBytes : footprintBytes(model, variant, quant, ctx);
+  const fit = bestCtx(model, variant, quant, limit, cfg.ctxCeiling.full, cfg);
+  const ctx = fit ? fit.ctx : Math.min(cfg.ctxLadder[cfg.ctxLadder.length - 1], model.contextMax);
+  const fp = fit ? fit.footprintBytes : footprintBytes(model, variant, quant, ctx, cfg);
   return {
     choice: {
       model,
@@ -246,7 +264,7 @@ function better(a: FitConfigChoice, b: FitConfigChoice): boolean {
 
 /** Apply the catalog's ordered tie-breakers between two equal-score configs.
  *  Returns true if `a` should win over `b`. */
-function tieBreak(a: FitConfigChoice, b: FitConfigChoice, fit: FitConfig): boolean {
+function tieBreak(a: FitConfigChoice, b: FitConfigChoice, fit: ResolvedFit): boolean {
   for (const rule of fit.tieBreakers) {
     if (rule === "lowerFootprint") {
       if (a.footprintBytes !== b.footprintBytes) {
@@ -266,14 +284,20 @@ function appliedSettings(
   c: FitConfigChoice,
   hw: HardwareInfo,
   idleUnloadSeconds: number,
+  fit: ResolvedFit,
 ): AppliedModelSettings {
-  const vision = c.model.capabilities.vision && !!c.variant.mmprojSpec;
+  const vision = hasVision(c.model, c.variant, fit);
   // The model's author-recommended sampling, or the universal default. Written
   // to the llm.* sampling settings on select so each model gets its tuning.
   const sampling = c.model.sampling ?? DEFAULT_SAMPLING;
   return {
     modelPath: c.quant.modelSpec,
-    mmprojPath: vision ? c.variant.mmprojSpec : undefined,
+    // The projector path is a fact about the MODEL, so it is written on every
+    // profile, including one that does not preselect or budget for vision. A
+    // profile skips the flag and the footprint; erasing the path too would
+    // leave `llm.supportImages` a switch wired to nothing, which is the product
+    // deciding for the user rather than defaulting for them.
+    mmprojPath: c.model.capabilities.vision ? c.variant.mmprojSpec : undefined,
     contextSize: c.ctx,
     threads: threadsFor(hw),
     gpuLayers: gpuLayersFor(hw),
@@ -297,7 +321,7 @@ function toRecommendation(
   bucket: PresetBucket,
   c: FitConfigChoice,
   hw: HardwareInfo,
-  fit: FitConfig,
+  fit: ResolvedFit,
 ): BucketRecommendation {
   const idle = bucket === "full" ? FULL_IDLE_UNLOAD_SECONDS : 0;
   return {
@@ -307,9 +331,9 @@ function toRecommendation(
     quality: primaryScore(c.model, fit.primaryScore) ?? 0,
     quant: c.quant.quant,
     footprintBytes: c.footprintBytes,
-    vision: c.model.capabilities.vision && !!c.variant.mmprojSpec,
+    vision: hasVision(c.model, c.variant, fit),
     variantLabel: c.variant.label,
-    apply: appliedSettings(c, hw, idle),
+    apply: appliedSettings(c, hw, idle, fit),
   };
 }
 
@@ -317,7 +341,7 @@ function toRecommendation(
  *  `configFor` decides the quant policy per bucket (sweet-spot vs biggest). */
 function pickBestModel(
   models: CatalogModel[],
-  fit: FitConfig,
+  fit: ResolvedFit,
   configFor: (model: CatalogModel) => FitConfigChoice | null,
 ): FitConfigChoice | null {
   let winner: FitConfigChoice | null = null;
@@ -342,7 +366,7 @@ function pickBestModel(
  *  `configFor` decides the quant policy (Smallest uses the recommended quant). */
 function pickSmallest(
   models: CatalogModel[],
-  fit: FitConfig,
+  fit: ResolvedFit,
   floorScore: number,
   configFor: (model: CatalogModel) => FitConfigChoice | null,
 ): FitConfigChoice | null {
@@ -359,18 +383,25 @@ function pickSmallest(
   return winner;
 }
 
-function floorScore(catalog: CatalogPayload): number {
-  const ref = catalogModels(catalog).find((m) => m.id === catalog.fit.smallestQualityFloorRef);
-  return ref ? (primaryScore(ref, catalog.fit.primaryScore) ?? 0) : 0;
+function floorScore(catalog: CatalogPayload, fit: ResolvedFit): number {
+  const ref = catalogModels(catalog).find((m) => m.id === fit.smallestQualityFloorRef);
+  return ref ? (primaryScore(ref, fit.primaryScore) ?? 0) : 0;
 }
 
-/** Compute the three adaptive presets for this device. */
+/** Compute the three adaptive presets for this device.
+ *
+ *  `profile` selects which set of tuning the catalog's policy resolves to. It is
+ *  an explicit argument rather than something derived inside, so a test can drive
+ *  both on one machine: a `detect`-shaped function whose every caller passes the
+ *  dominant value has an unobserved parameter, which is D-145 exactly. The
+ *  derivation lives at the route, as `fitProfileForOs(hw.os)`. */
 export function computeRecommendations(
   catalog: CatalogPayload,
   hw: HardwareInfo,
   applied: { preset?: string; modelPath?: string },
+  profile: FitProfile = "desktop",
 ): RecommendationSet {
-  const fit = catalog.fit;
+  const fit = resolveFitProfile(catalog.fit, profile);
   const models = catalogModels(catalog);
   const budget = memoryBudgetBytes(hw);
   const margin = fit.safetyMarginBytes;
@@ -381,14 +412,14 @@ export function computeRecommendations(
   // steps down to a lower quant if the sweet spot doesn't fit its budget (that
   // fallback is built into recommendedConfigForModel). Full maxes out: the
   // biggest quant that fits.
-  const smallest = pickSmallest(models, fit, floorScore(catalog), (m) =>
-    recommendedConfigForModel(m, fullLimit, CTX_CEILING.smallest),
+  const smallest = pickSmallest(models, fit, floorScore(catalog, fit), (m) =>
+    recommendedConfigForModel(m, fullLimit, fit.ctxCeiling.smallest, fit),
   );
   const half = pickBestModel(models, fit, (m) =>
-    recommendedConfigForModel(m, halfLimit, CTX_CEILING.half),
+    recommendedConfigForModel(m, halfLimit, fit.ctxCeiling.half, fit),
   );
   const full = pickBestModel(models, fit, (m) =>
-    bestConfigForModel(m, fullLimit, CTX_CEILING.full),
+    bestConfigForModel(m, fullLimit, fit.ctxCeiling.full, fit),
   );
 
   return {
@@ -406,18 +437,22 @@ export function computeRecommendations(
 /** One browser row per catalog model: the quant we recommend (and apply by
  *  default) for this device, plus every quant the user can pick manually. When
  *  nothing fits, falls back to the smallest config and reports fits=false. */
-export function buildCatalogViews(catalog: CatalogPayload, hw: HardwareInfo): CatalogModelView[] {
-  const fit = catalog.fit;
+export function buildCatalogViews(
+  catalog: CatalogPayload,
+  hw: HardwareInfo,
+  profile: FitProfile = "desktop",
+): CatalogModelView[] {
+  const fit = resolveFitProfile(catalog.fit, profile);
   const budget = memoryBudgetBytes(hw);
   const fullLimit = budget * fit.budgetFraction.full - fit.safetyMarginBytes;
 
   return catalogModels(catalog).map((model) => {
-    const fitting = recommendedConfigForModel(model, fullLimit);
-    const config = fitting ?? smallestConfig(model);
+    const fitting = recommendedConfigForModel(model, fullLimit, fit.ctxCeiling.full, fit);
+    const config = fitting ?? smallestConfig(model, fit);
     const quants: QuantOption[] = [];
     for (const variant of model.variants) {
       for (const quant of variant.quants) {
-        const { choice, fits } = configForQuant(model, variant, quant, fullLimit);
+        const { choice, fits } = configForQuant(model, variant, quant, fullLimit, fit);
         quants.push({
           modelSpec: quant.modelSpec,
           quant: quant.quant,
@@ -434,13 +469,13 @@ export function buildCatalogViews(catalog: CatalogPayload, hw: HardwareInfo): Ca
       name: model.name,
       quality: primaryScore(model, fit.primaryScore),
       paramsB: model.paramsB,
-      vision: model.capabilities.vision,
+      vision: fit.vision && model.capabilities.vision,
       tags: [...new Set(model.variants.flatMap((v) => v.tags))],
       quant: config.quant.quant,
       variantLabel: config.variant.label,
       footprintBytes: config.footprintBytes,
       fits: fitting !== null,
-      apply: appliedSettings(config, hw, 0),
+      apply: appliedSettings(config, hw, 0, fit),
       quants,
     };
     return view;
@@ -454,15 +489,17 @@ export function appliedForModelSpec(
   catalog: CatalogPayload,
   hw: HardwareInfo,
   modelSpec: string,
+  profile: FitProfile = "desktop",
 ): { modelId: string; apply: AppliedModelSettings } | null {
+  const fit = resolveFitProfile(catalog.fit, profile);
   const budget = memoryBudgetBytes(hw);
-  const fullLimit = budget * catalog.fit.budgetFraction.full - catalog.fit.safetyMarginBytes;
+  const fullLimit = budget * fit.budgetFraction.full - fit.safetyMarginBytes;
   for (const model of catalogModels(catalog)) {
     for (const variant of model.variants) {
       for (const quant of variant.quants) {
         if (quant.modelSpec !== modelSpec) continue;
-        const { choice } = configForQuant(model, variant, quant, fullLimit);
-        return { modelId: model.id, apply: appliedSettings(choice, hw, 0) };
+        const { choice } = configForQuant(model, variant, quant, fullLimit, fit);
+        return { modelId: model.id, apply: appliedSettings(choice, hw, 0, fit) };
       }
     }
   }
@@ -471,12 +508,12 @@ export function appliedForModelSpec(
 
 /** Cheapest config of a model (used for the browser row when nothing fits): the
  *  smallest-footprint quant at the lowest context. */
-function smallestConfig(model: CatalogModel): FitConfigChoice {
+function smallestConfig(model: CatalogModel, fit: ResolvedFit): FitConfigChoice {
   let best: FitConfigChoice | null = null;
-  const ctx = Math.min(CTX_LADDER[CTX_LADDER.length - 1], model.contextMax);
+  const ctx = Math.min(fit.ctxLadder[fit.ctxLadder.length - 1], model.contextMax);
   for (const variant of model.variants) {
     for (const quant of variant.quants) {
-      const fp = footprintBytes(model, variant, quant, ctx);
+      const fp = footprintBytes(model, variant, quant, ctx, fit);
       if (!best || fp < best.footprintBytes) {
         best = {
           model,

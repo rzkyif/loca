@@ -1,0 +1,129 @@
+{
+  "id": "01KZY9MGAG0K0K1HD99C2VXQWW",
+  "ownerClientId": "client-alice",
+  "title": "Parity fixture",
+  "createdAtMs": 1786649395536,
+  "updatedAtMs": 1786649395542,
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the weather?",
+      "id": "01KZY9MGAHBK4QWWSW4N953ZSD",
+      "ord": 0,
+      "createdAtMs": 1786649395537
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "And in this photo?"
+        },
+        {
+          "type": "image_file",
+          "filename": "photo.png",
+          "path": "/api/v1/sessions/x/attachments/a1",
+          "mime": "image/png"
+        }
+      ],
+      "id": "01KZY9MGAJRSF4A8E1WC0Z0FZG",
+      "ord": 1,
+      "createdAtMs": 1786649395538
+    },
+    {
+      "role": "reasoning",
+      "content": "The user wants weather.",
+      "interrupted": false,
+      "id": "01KZY9MGAJFSHRD31D242FFPHQ",
+      "ord": 2,
+      "createdAtMs": 1786649395538
+    },
+    {
+      "role": "assistant",
+      "content": "It is 31 degrees.",
+      "toolCalls": [
+        {
+          "callId": "call-1",
+          "extensionId": "loca-extension-builtin",
+          "toolName": "get_weather",
+          "arguments": "{\"city\":\"Jakarta\"}",
+          "status": "completed"
+        }
+      ],
+      "id": "01KZY9MGAKJH028Z515926RJ3J",
+      "ord": 3,
+      "createdAtMs": 1786649395539
+    },
+    {
+      "role": "tool",
+      "callId": "call-1",
+      "extensionId": "loca-extension-builtin",
+      "toolName": "get_weather",
+      "arguments": "{\"city\":\"Jakarta\"}",
+      "status": "completed",
+      "result": {
+        "tempC": 31
+      },
+      "id": "01KZY9MGAKB0301C4QPX8JJV0M",
+      "ord": 4,
+      "createdAtMs": 1786649395539
+    },
+    {
+      "role": "system",
+      "content": "You are helpful.",
+      "id": "01KZY9MGAM6HG5N5B4TVJ824M4",
+      "ord": 5,
+      "createdAtMs": 1786649395540
+    },
+    {
+      "role": "tool_filter",
+      "status": "complete",
+      "toolsSent": 3,
+      "id": "01KZY9MGAMWVMP36ANRSX7MGN3",
+      "ord": 6,
+      "createdAtMs": 1786649395540
+    },
+    {
+      "role": "memory_filter",
+      "status": "complete",
+      "id": "01KZY9MGANTVT1FMNAF1TX02BQ",
+      "ord": 7,
+      "createdAtMs": 1786649395541
+    },
+    {
+      "role": "display",
+      "content": {
+        "type": "markdown",
+        "markdown": "**done**"
+      },
+      "id": "01KZY9MGAN02FT6HF11WMWNY55",
+      "ord": 8,
+      "createdAtMs": 1786649395541
+    },
+    {
+      "role": "error",
+      "content": "something failed",
+      "code": "provider_error",
+      "id": "01KZY9MGAP24GXJJPXKS8G5HVF",
+      "ord": 9,
+      "createdAtMs": 1786649395542
+    }
+  ],
+  "attachments": [
+    {
+      "id": "01KZY9MGAQC0JPM6VM1N22RK3X",
+      "sessionId": "01KZY9MGAG0K0K1HD99C2VXQWW",
+      "messageId": "msg-1",
+      "filename": "photo.png",
+      "mime": "image/png",
+      "sizeBytes": 64,
+      "absPath": "/var/folders/xf/67dwyjjs61j_0csrrgzd5_yh0000gn/T/loca-d2-fixture-c084f915914d102d/sessions/01KZY9MGAG0K0K1HD99C2VXQWW/attachments/att1_photo.png",
+      "createdAtMs": 1786649395543
+    }
+  ],
+  "tokenUsage": {
+    "prompt": 120,
+    "completion": 45,
+    "total": 165
+  }
+}

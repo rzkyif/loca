@@ -51,6 +51,28 @@ vite.config.ts.timestamp-*
 # Reference only
 reference/
 
+# Agent coordination artefacts for the Rust port: plans, per-package status,
+# the ADR log. Working notes for whoever is driving the port, not a deliverable,
+# and they are referenced by comment throughout `packages/loca-core-rs/src/**`
+# (those references resolve for anyone with the folder and dangle for anyone
+# without it).
+#
+# Anchored: unanchored, this would also swallow any future `docs/` folder nested
+# in a package (a website content collection, say) with no error and no diff.
+/docs/
+
+# Release staging tree, `scripts/release/ci-build.ts --stage-dir` default.
+/stage/
+
+# The tiny GGUF the inference linkage test loads. Not committed; the test skips
+# with an acquisition command when it is absent, so a fresh clone stays green.
+packages/loca-core-rs/models/
+
+# Vendored third-party sources, fetched by scripts/vendor-llama.ts at the SHA
+# pinned in packages/loca-core-rs/build.rs. Not committed, so a release built
+# from a working tree is only as reproducible as that pin.
+vendor/
+
 # Test suite
 # Scratch tests created by agents during dev. See AGENTS.md "Testing".
 **/*.tmp.test.ts

@@ -58,17 +58,18 @@ import { extensionItem } from "./extension.ts";
 import { catalogItem } from "./catalog.ts";
 import { clientItem } from "./client.ts";
 import { androidItem } from "./android.ts";
+import { iosItem } from "./ios.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
-// The same set ci-preflight / ci-publish plan against (iOS ships through the App
-// Store, not the R2 cursor, so it is not here).
+// The same set ci-preflight / ci-publish plan against.
 const ITEMS: ReleaseItem[] = [
   coreItem,
   extensionItem,
   catalogItem,
   clientItem,
   androidItem,
+  iosItem,
   schemasItem,
   websiteItem,
 ];

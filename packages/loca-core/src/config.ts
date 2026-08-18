@@ -23,6 +23,14 @@ export const STORAGE_BASE_URL =
 // The HuggingFace host model-file downloads resolve against. Overridable via
 // LOCA_HF_BASE_URL for the same test-isolation reason (see downloads/sources.ts).
 export const HF_BASE_URL = Deno.env.get("LOCA_HF_BASE_URL") ?? "https://huggingface.co";
+// The GitHub API host upstream sidecar releases are resolved against.
+// Overridable for the same reason as the two above: without it
+// GET /api/v1/binaries/check and POST /api/v1/binaries/probe reach the real
+// api.github.com during a conformance run, which contradicts the harness's
+// stated guarantee that every base URL points at 127.0.0.1 so a core that
+// escapes fails its cases instead of quietly succeeding.
+export const GITHUB_API_BASE_URL =
+  (Deno.env.get("LOCA_GITHUB_API_BASE_URL") ?? "").replace(/\/+$/, "") || "https://api.github.com";
 
 // Manifests live under a per-channel path segment so latest/dev publish + fetch
 // their own signed manifests without touching stable's. Stable stays bare

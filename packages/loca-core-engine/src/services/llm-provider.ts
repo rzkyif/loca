@@ -22,6 +22,18 @@ export interface LlmEndpointConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  // Whether this endpoint is the llama-server the core itself spawned, which is
+  // the only thing the scheduler's semaphore bounds: `llm.local.parallelSlots`
+  // has to match `--parallel` on that process's command line
+  // (sidecars/llama.ts), and an external provider enforces its own limits.
+  //
+  // Set from `llm.provider`, and it has to travel on the endpoint rather than
+  // be re-derived per call site: a caller holding only the endpoint has no
+  // other way to ask, and the two questions "did we spawn this" and "is this
+  // URL loopback" are not the same one. A user-run LM Studio on 127.0.0.1 is
+  // external and bounds itself; a core-spawned server on a LAN bind address is
+  // ours and does not.
+  isLocalProvider?: boolean;
   // Optional reasoning hint (provider-specific encoding handled below).
   reasoning?: "off" | "on";
   // OpenAI-style sampling (sent to both local and external endpoints).

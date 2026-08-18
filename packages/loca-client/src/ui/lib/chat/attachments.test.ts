@@ -1,9 +1,9 @@
 // pure attachment helpers: base64 round-trip, filename hygiene, and
-// MIME -> extension mapping. The Tauri/REST sides (writeSessionAttachment
-// + readSessionAttachment) need the platform() seam and are integration-
-// tested by the running app, not here.
+// MIME -> extension mapping. writeSessionAttachment needs the platform() seam
+// and is integration-tested by the running app; readSessionAttachment is
+// covered here because WHICH transport it uses is a correctness question.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   base64ToUtf8,
   classifyAttachment,
@@ -11,9 +11,14 @@ import {
   diffRemovedAttachmentPaths,
   ensureMarkdownExtension,
   imageExtFromMime,
+  readSessionAttachment,
   toPreviewParts,
   utf8ToBase64,
 } from "./attachments";
+import { cores, CoreClient } from "$lib/core";
+import { localTransport } from "$lib/core/local-transport";
+import { type Platform, setPlatform } from "$lib/platform";
+import { fakeLocalCore } from "../../test/local-core-fake";
 import type { MessagePart } from "$lib/util/types";
 
 describe("utf8ToBase64 + base64ToUtf8", () => {
@@ -171,5 +176,36 @@ describe("toPreviewParts", () => {
 
   it("returns [] for string content", () => {
     expect(toPreviewParts("plain text")).toEqual([]);
+  });
+});
+
+describe("readSessionAttachment", () => {
+  // The stored path is an absolute `<baseUrl>/api/v1/...` URL, so this is one of
+  // the few sites that fetches outside CoreClient's path-based helpers. It still
+  // has to go through the SELECTED core's transport: when that core is the one
+  // inside this app, its base URL is a sentinel with nothing behind it, so a
+  // plain network fetch would fail for every attachment.
+  it("fetches through the selected client's transport, not the network layer", async () => {
+    const core = fakeLocalCore();
+    setPlatform({
+      localCore: core,
+      net: {
+        fetch: () => Promise.reject(new Error("the network must not be reached")),
+      },
+    } as unknown as Platform);
+
+    const client = new CoreClient(
+      { baseUrl: "https://local.loca.invalid", token: "", trustMode: "webpki" },
+      undefined,
+      localTransport(),
+    );
+    vi.spyOn(cores(), "currentClient").mockReturnValue(client);
+    core.reply({ status: 200, bodyB64: btoa("FILE") });
+
+    const b64 = await readSessionAttachment(
+      "https://local.loca.invalid/api/v1/sessions/s1/attachments/a1",
+    );
+    expect(atob(b64)).toBe("FILE");
+    expect(core.requests.at(-1)?.url).toBe("/api/v1/sessions/s1/attachments/a1");
   });
 });

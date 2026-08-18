@@ -13,8 +13,9 @@ import { type Platform, setPlatform } from "$lib/platform";
 // log; all are replaced here so the class is tested in isolation.
 const h = vi.hoisted(() => ({
   cores: {
-    list: vi.fn<() => Promise<Array<{ baseUrl: string }>>>(),
+    list: vi.fn<() => Promise<Array<{ id?: string; baseUrl: string }>>>(),
     addPaired: vi.fn<(entry: unknown, token: string) => Promise<void>>(),
+    adoptLocalCore: vi.fn<(name: string) => Promise<void>>(),
     select: vi.fn<(id: string) => Promise<void>>(),
   },
   mintCodeWithAdminToken: vi.fn(),
@@ -30,7 +31,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock("$lib/core", () => ({
   cores: () => h.cores,
+  isLocalCoreEntry: (e: { id?: string }) => e.id === "local",
   isLoopbackUrl: (u: string) => u.includes("127.0.0.1") || u.includes("localhost"),
+  LOCAL_CORE_ID: "local",
   mintCodeWithAdminToken: h.mintCodeWithAdminToken,
   pairWithCode: h.pairWithCode,
   probeCore: h.probeCore,
@@ -72,7 +75,16 @@ function makePlatform() {
       ),
     },
     net: { discoverCores: vi.fn(async () => []) },
+    // Null by default = a build with no Core inside it (every desktop build).
+    // Tests that want the fork set this to a marker; the wizard only ever asks
+    // whether it is there, never calls it.
+    localCore: null as unknown,
   };
+}
+
+/** A build that carries a Core of its own. */
+function withEmbeddedCore(): void {
+  plat.localCore = {};
 }
 
 let plat: ReturnType<typeof makePlatform>;
@@ -83,6 +95,7 @@ beforeEach(() => {
   setPlatform(plat as unknown as Platform);
   h.cores.list.mockResolvedValue([]);
   h.cores.addPaired.mockResolvedValue(undefined);
+  h.cores.adoptLocalCore.mockResolvedValue(undefined);
   h.cores.select.mockResolvedValue(undefined);
   h.mintCodeWithAdminToken.mockResolvedValue({ code: "654321" });
   h.pairWithCode.mockResolvedValue(PAIR_RESULT);
@@ -110,6 +123,17 @@ describe("getters", () => {
     expect(w.canStepBack).toBe(false);
   });
 
+  it("the address step steps back to the fork only when the fork was shown", () => {
+    const w = new NewCoreWizard(true);
+    w.view = "remoteAddress";
+    expect(w.canStepBack).toBe(false);
+    w.canRunHere = true;
+    expect(w.canStepBack).toBe(true);
+    // The fork itself is the first step, so it has nowhere to go back to.
+    w.view = "choose";
+    expect(w.canStepBack).toBe(false);
+  });
+
   it("normalizedRemoteUrl coerces to https and trims", () => {
     const w = new NewCoreWizard(false);
     w.remoteUrl = "http://x:7800";
@@ -124,11 +148,46 @@ describe("getters", () => {
 });
 
 describe("decideInitialView", () => {
-  it("mobile goes straight to the remote form without probing for a local core", async () => {
+  it("mobile with no Core inside the build goes straight to the remote form", async () => {
     const w = new NewCoreWizard(true);
     await w.decideInitialView();
     expect(w.view).toBe("remoteAddress");
+    expect(w.canRunHere).toBe(false);
     expect(plat.pairing.isLocalCoreInstalled).not.toHaveBeenCalled();
+  });
+
+  it("a build that carries a Core of its own opens on the fork", async () => {
+    withEmbeddedCore();
+    const w = new NewCoreWizard(true);
+    await w.decideInitialView();
+    expect(w.view).toBe("choose");
+    expect(w.canRunHere).toBe(true);
+  });
+
+  it("offers the fork on a desktop build too when it carries a Core", async () => {
+    // The gate is a fact about the BUILD, not the form factor. A platform sniff
+    // here would be the same bug capability negotiation exists to fix.
+    withEmbeddedCore();
+    const w = new NewCoreWizard(false);
+    await w.decideInitialView();
+    expect(w.view).toBe("choose");
+  });
+
+  it("does not offer the fork once this device's Core is already adopted", async () => {
+    withEmbeddedCore();
+    h.cores.list.mockResolvedValue([{ id: "local", baseUrl: "https://local.loca.invalid" }]);
+    const w = new NewCoreWizard(true);
+    await w.decideInitialView();
+    expect(w.canRunHere).toBe(false);
+    expect(w.view).toBe("remoteAddress");
+  });
+
+  it("still offers the fork when adding another core, if this device's is not adopted", async () => {
+    withEmbeddedCore();
+    h.cores.list.mockResolvedValue([{ id: "remote-1", baseUrl: "https://192.168.1.5:7800" }]);
+    const w = new NewCoreWizard(true);
+    await w.decideInitialView();
+    expect(w.view).toBe("choose");
   });
 
   it("desktop without an installed local core opens the remote form", async () => {
@@ -315,6 +374,128 @@ describe("remote flow", () => {
     await w.pairRemote();
     expect(w.error).toMatch(/check the connection/i);
     expect(h.pairWithCode).not.toHaveBeenCalled();
+  });
+});
+
+describe("the fork's two branches", () => {
+  beforeEach(() => {
+    withEmbeddedCore();
+  });
+
+  it("useThisDevice adopts and selects WITHOUT pairing or a keychain write", async () => {
+    // The whole point of the branch: the Core is already this device and the
+    // client it serves is pre-authenticated, so there is no code to mint, no
+    // PAKE to run and no token to keep.
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(h.cores.adoptLocalCore).toHaveBeenCalledTimes(1);
+    expect(h.cores.select).toHaveBeenCalledWith("local");
+    expect(h.pairWithCode).not.toHaveBeenCalled();
+    expect(h.mintCodeWithAdminToken).not.toHaveBeenCalled();
+    expect(h.cores.addPaired).not.toHaveBeenCalled();
+    expect(plat.pairing.readAdminToken).not.toHaveBeenCalled();
+  });
+
+  it("records it under the name the copy ruling settled on", async () => {
+    // "This Device", not "Local Core". The phrase took a ruling of its own
+    // (Q4, against COPY.md:68, which governs where a MODEL runs) and it is both
+    // user-visible and persisted into cores.json, so it is pinned rather than
+    // left to drift.
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(h.cores.adoptLocalCore).toHaveBeenCalledWith("This Device");
+  });
+
+  it("warms the embedded Core BEFORE selecting it, so the first connect is not a cold boot", async () => {
+    // select() rebinds every persistent WS listener onto the new client, which
+    // connects synchronously. On a fresh install that connect is the Core's
+    // first-ever boot (root dirs, SQLite migrations, the Ed25519-verified
+    // offline install of the built-in extension), and the client's connect
+    // deadline would be measuring it. Warming first makes the race absent
+    // rather than narrower.
+    const order: string[] = [];
+    plat.pairing.startLocalCore.mockImplementation(async () => {
+      order.push("start");
+      return true;
+    });
+    h.cores.adoptLocalCore.mockImplementation(async () => {
+      order.push("adopt");
+    });
+    h.cores.select.mockImplementation(async () => {
+      order.push("select");
+    });
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(order).toEqual(["start", "adopt", "select"]);
+  });
+
+  it("adopts nothing when the embedded Core will not start", async () => {
+    // Warming first is also what keeps a Core that cannot boot out of the
+    // registry: the user stays on the fork with the reason, rather than being
+    // navigated into a chat view behind a connection that can never open.
+    plat.pairing.startLocalCore.mockRejectedValue(new Error("no space left on device"));
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(w.error).toContain("no space left on device");
+    expect(h.cores.adoptLocalCore).not.toHaveBeenCalled();
+    expect(h.cores.select).not.toHaveBeenCalled();
+    expect(w.busy).toBeNull();
+  });
+
+  it("useThisDevice unlocks the UI and opens quick settings on the first core ever", async () => {
+    // The adoption itself is what makes the registry non-empty, so "was this the
+    // first core ever" has to be answered BEFORE it lands. Read afterwards, the
+    // answer is always no and a first-run phone stays locked in the wizard it
+    // just finished.
+    // No `mockResolvedValueOnce([])` here: a queued first answer would be handed
+    // to whichever call came first and would satisfy the mutation too, which is
+    // how this assertion passed while proving nothing. The registry starts empty
+    // (beforeEach) and the adoption is what fills it.
+    h.cores.adoptLocalCore.mockImplementation(async () => {
+      h.cores.list.mockResolvedValue([{ id: "local", baseUrl: "https://local.loca.invalid" }]);
+    });
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(h.viewState.setLocked).toHaveBeenCalledWith(false);
+    expect(h.viewState.navigate).toHaveBeenCalledWith("quickSettings");
+    expect(h.modelRecommendState.applyBucket).toHaveBeenCalledWith("smallest");
+    expect(w.busy).toBeNull();
+  });
+
+  it("useThisDevice returns to the Cores manager when a core is already paired", async () => {
+    h.cores.list.mockResolvedValue([{ id: "remote-1", baseUrl: "https://192.168.1.5:7800" }]);
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(h.viewState.setLocked).not.toHaveBeenCalled();
+    expect(h.viewState.pendingSettingsGroup).toBe("cores");
+    expect(h.viewState.navigate).toHaveBeenCalledWith("settings");
+    expect(h.modelRecommendState.applyBucket).not.toHaveBeenCalled();
+  });
+
+  it("useThisDevice surfaces a failed adoption and clears busy", async () => {
+    h.cores.adoptLocalCore.mockRejectedValue(new Error("no Core inside this build"));
+    const w = new NewCoreWizard(true);
+    await w.useThisDevice();
+    expect(w.error).toContain("no Core inside this build");
+    expect(w.busy).toBeNull();
+    expect(h.cores.select).not.toHaveBeenCalled();
+  });
+
+  it("useAnotherDevice moves on to the address form", () => {
+    const w = new NewCoreWizard(true);
+    w.view = "choose";
+    w.error = "boom";
+    w.useAnotherDevice();
+    expect(w.view).toBe("remoteAddress");
+    expect(w.error).toBe("");
+  });
+
+  it("goBack returns from the address form to the fork", async () => {
+    const w = new NewCoreWizard(true);
+    await w.decideInitialView();
+    w.useAnotherDevice();
+    w.goBack();
+    expect(w.view).toBe("choose");
   });
 });
 

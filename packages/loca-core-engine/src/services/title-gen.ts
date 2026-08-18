@@ -20,7 +20,7 @@
 import type OpenAI from "openai";
 import { DEFAULT_TITLE_GENERATION_PROMPT, errMessage } from "@loca/shared";
 import { sessionsRepo } from "./sessions-store.ts";
-import { loadEffective } from "./core-settings.ts";
+import { loadEffective, loadEffectiveResolved } from "./core-settings.ts";
 import { type LlmRequest, streamChatCompletion } from "./llm-provider.ts";
 import { resolveContextSize, resolveEndpoint } from "./endpoint-resolver.ts";
 import { thinkingBudget } from "./thinking-budget.ts";
@@ -99,18 +99,23 @@ async function generateTitle(
 
     // Honor the owner's per-client title prompt + thinking budget (client-on-core);
     // the endpoint/context-size reads below are core-global and unaffected.
-    const settings = await loadEffective(ownerClientId);
+    const settings = await loadEffectiveResolved(ownerClientId);
     const template = strSetting(
       settings,
       "prompts.titleGenerationPrompt",
       DEFAULT_TITLE_GENERATION_PROMPT,
     );
-    const endpoint = await resolveEndpoint(settings);
-    // Thinking is off by default here (a title rarely benefits from it); the
-    // Title Thinking Budget setting can opt in. maxTokens carries the budget
-    // on top of the title's own allowance so thinking can't crowd it out.
+    // The SPARSE record for the resolvers: their `llm.port` fallback is the
+    // channel-adjusted `llmPort()`, and the schema's default is the bare "7701",
+    // so a resolved record sends dev and latest at the stable channel's
+    // llama-server. See D-078.
+    const sparse = await loadEffective(ownerClientId);
+    const endpoint = await resolveEndpoint(sparse);
+    // Title Thinking Budget defaults to 128; 0 turns thinking off for this
+    // call. maxTokens carries the budget on top of the title's own allowance so
+    // thinking can't crowd it out.
     const budget = thinkingBudget(settings, "prompts.titleGenerationThinkingBudget");
-    const contextSize = resolveContextSize(settings, "default");
+    const contextSize = resolveContextSize(sparse, "default");
 
     const { firstMessage, recentMessages } = selectTitleContext(
       sessionMessages,

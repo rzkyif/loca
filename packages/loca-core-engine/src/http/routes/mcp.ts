@@ -5,32 +5,17 @@
 // any change that affects which servers are enabled.
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { z } from "zod";
+import {
+  mcpPromptResolveBodySchema,
+  mcpServerBodySchema,
+  mcpServerPatchBodySchema,
+} from "@loca/shared";
 import type { McpAdminHost } from "../../host.ts";
 import { host } from "../../platform/runtime.ts";
 import { frameBus } from "../../frame-bus.ts";
 import { deleteSecret, setSecret } from "../../services/secrets.ts";
 import { AppError } from "../../platform/errors.ts";
 import { parseBody, readJson } from "../body.ts";
-
-const serverBody = z
-  .object({
-    name: z.string().min(1),
-    kind: z.enum(["stdio", "remote"]),
-    command: z.string().optional(),
-    args: z.array(z.string()).optional(),
-    runtime: z.enum(["custom", "deno"]).optional(),
-    denoAllowAll: z.boolean().optional(),
-    denoPermissions: z.array(z.string()).optional(),
-    url: z.string().optional(),
-    remoteAuth: z.enum(["none", "bearer", "oauth"]).optional(),
-    enabled: z.boolean().optional(),
-    // Remote bearer token: write-only. Omitted = leave as-is; "" = clear; a
-    // value = store in the vault. Never echoed back (the projection only
-    // exposes `hasAuth`).
-    authToken: z.string().optional(),
-  })
-  .strict();
 
 // The MCP admin provider, or a clear error when the host doesn't offer MCP.
 function mcp(): McpAdminHost {
@@ -66,7 +51,7 @@ export function mcpRoutes(authed: MiddlewareHandler): Hono {
   r.get("/resources", (c) => c.json({ resources: mcp().listResources() }));
 
   r.post("/", async (c) => {
-    const { authToken, ...input } = parseBody(serverBody, await readJson(c));
+    const { authToken, ...input } = parseBody(mcpServerBodySchema, await readJson(c));
     const server = mcp().create(input);
     const hasAuth = await applyAuthToken(server.id, authToken);
     if (hasAuth !== undefined) {
@@ -80,7 +65,7 @@ export function mcpRoutes(authed: MiddlewareHandler): Hono {
 
   r.patch("/:id", async (c) => {
     const id = c.req.param("id");
-    const { authToken, ...data } = parseBody(serverBody.partial(), await readJson(c));
+    const { authToken, ...data } = parseBody(mcpServerPatchBodySchema, await readJson(c));
     const hasAuth = await applyAuthToken(id, authToken);
     mcp().update(id, { ...data, hasAuth });
     // A change to connection config (transport, command/args, url, auth) must
@@ -153,10 +138,7 @@ export function mcpRoutes(authed: MiddlewareHandler): Hono {
   // arguments. The client calls this at send time to fold a `/prompt` reference
   // into the turn's system prompt (a live server round-trip).
   r.post("/:id/prompts/:prompt/resolve", async (c) => {
-    const args = parseBody(
-      z.object({ arguments: z.record(z.string(), z.string()).optional() }).strict(),
-      await readJson(c),
-    );
+    const args = parseBody(mcpPromptResolveBodySchema, await readJson(c));
     const text = await mcp().resolvePrompt(
       c.req.param("id"),
       c.req.param("prompt"),

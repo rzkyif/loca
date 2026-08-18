@@ -5,6 +5,7 @@ import { assertEquals } from "@std/assert";
 import {
   loadCoreSettings,
   loadEffective,
+  loadEffectiveResolved,
   patchClientSettings,
   patchCoreSettings,
   resetAllClientSettings,
@@ -101,6 +102,31 @@ Deno.test("loadEffective: core base overlaid with a client's overrides (overlay 
     assertEquals(eff["prompts.defaultSystemPrompt"], "mine"); // overlay wins
     // The shared core store is untouched by the per-client patch.
     assertEquals((await loadCoreSettings())["prompts.defaultSystemPrompt"], "shared");
+  } finally {
+    await env.teardown();
+  }
+});
+
+Deno.test("loadEffectiveResolved: supplies schema defaults; loadEffective stays sparse", async () => {
+  const env = await setupTestEnv();
+  try {
+    const a = createTestClient("a");
+    // The two thinking budgets the panel advertises. Read through the sparse
+    // loader they resolve to nothing, and `thinkingBudget` turns absent into 0,
+    // so thinking was off on every install while the panel said 128 and 256.
+    assertEquals("prompts.titleGenerationThinkingBudget" in (await loadEffective(a)), false);
+    const resolved = await loadEffectiveResolved(a);
+    assertEquals(resolved["prompts.titleGenerationThinkingBudget"], 128);
+    assertEquals(resolved["prompts.memorySummaryThinkingBudget"], 256);
+
+    // Sparseness is load-bearing on the other side and must NOT follow: it is
+    // how `GET /api/v1/settings` says "unset", and resolving there would have a
+    // client round-trip a read into a PATCH that persists every default.
+    assertEquals(await loadEffective(a), {});
+
+    // An explicit value still wins over the schema default.
+    await patchClientSettings(a, { "prompts.titleGenerationThinkingBudget": 0 });
+    assertEquals((await loadEffectiveResolved(a))["prompts.titleGenerationThinkingBudget"], 0);
   } finally {
     await env.teardown();
   }

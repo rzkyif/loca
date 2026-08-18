@@ -18,6 +18,7 @@ import { ModelsApi } from "./models";
 import { RequirementsApi } from "./requirements";
 import { SidecarsApi } from "./sidecars";
 import { StorageApi } from "./storage";
+import { localTransport } from "./local-transport";
 import { PairingApi } from "./pairing";
 import { CoreSettingsApi } from "./settings";
 import { SessionsApi } from "./sessions";
@@ -38,6 +39,48 @@ export interface PairedCoreEntry {
   addedAtMs: number;
 }
 
+/** The id of the Core inside this app, reserved so it can never collide with a
+ *  pairing-issued ULID.
+ *
+ *  It is a PERSISTED KEY: `cores.json` names the entry by it, so changing the
+ *  string orphans every entry already on disk. It is NOT coupled to the Core's
+ *  own reserved client id, which happens to read the same. The two live in
+ *  different namespaces (this is a registry key, that is a paired-client row id)
+ *  and the client never sends this value to the embedded Core at all, since the
+ *  identity is injected below the command boundary. */
+export const LOCAL_CORE_ID = "local";
+
+/** The reserved entry's base URL. There is no origin behind it: the Core is in
+ *  process and the local transport strips this off again before dispatching.
+ *
+ *  It is a parseable absolute URL so every consumer that concatenates
+ *  `baseUrl + path`, parses it, or rewrites its scheme keeps working untouched.
+ *  `.invalid` is the IANA-reserved TLD that is guaranteed never to resolve, so
+ *  a request that somehow escaped the local transport into the network layer
+ *  fails immediately and locally instead of reaching a host somebody owns. */
+const LOCAL_CORE_BASE_URL = "https://local.loca.invalid";
+
+/** The canonical reserved entry. Every field except the two the user owns is
+ *  rebuilt from constants, never read from disk: see `coerceCoreEntry`. */
+function localCoreEntry(name: string, addedAtMs: number): PairedCoreEntry {
+  return {
+    id: LOCAL_CORE_ID,
+    name,
+    baseUrl: LOCAL_CORE_BASE_URL,
+    // Nominal. Nothing about the reserved entry reaches TLS, and the local
+    // transport ignores the trust arguments entirely; `webpki` is the arm that
+    // carries no pin, so this cannot be mistaken for a pin-mode entry whose pin
+    // went missing.
+    trustMode: "webpki",
+    addedAtMs,
+  };
+}
+
+/** True for the Core inside this app. */
+export function isLocalCoreEntry(entry: { id: string }): boolean {
+  return entry.id === LOCAL_CORE_ID;
+}
+
 /** Validate one raw cores.json entry. A `webpki` core carries no pin; every
  *  other entry is `pin` mode and MUST carry a non-empty pin - a pin-mode entry
  *  without a pin would drive an accept-any connection, so it is dropped (the
@@ -52,6 +95,21 @@ function coerceCoreEntry(raw: unknown): PairedCoreEntry | null {
     typeof r.addedAtMs !== "number"
   ) {
     return null;
+  }
+  // The reserved entry keeps only the two fields the user owns and takes the
+  // rest from constants. Trusting the file here would let a hand-edited (or
+  // restored-from-elsewhere) cores.json point the reserved id at a network host
+  // and inherit its no-token, no-pin selection path.
+  //
+  // Whether this build embeds a Core at all is the one fact that decides
+  // whether the entry can serve anything, and it is not in the file to rebuild
+  // from, so it is asked here. Dropping it at the READ is what puts the rule
+  // where the recovery paths look: `select` would still leave it listed in
+  // Settings, left on disk, and skipped by all three sweeps that exist to clear
+  // a persisted core that cannot work (it is not loopback, and the tokenless
+  // sweep passes over it by design).
+  if (r.id === LOCAL_CORE_ID) {
+    return platform().localCore ? localCoreEntry(r.name, r.addedAtMs) : null;
   }
   if (r.trustMode === "webpki") {
     return {
@@ -115,7 +173,30 @@ class CoresRegistry {
     return (await this.readRegistry()).cores;
   }
 
+  /** Record the Core inside this app and make it current.
+   *
+   *  Deliberately NOT `addPaired`: there is no pairing here and no token to
+   *  keep. The Core is already running as this device, and the client it serves
+   *  is pre-authenticated by construction, so adopting it is a registry write
+   *  and nothing else. Idempotent: adopting twice renames rather than
+   *  duplicates. */
+  async adoptLocalCore(name: string): Promise<void> {
+    if (!platform().localCore) {
+      throw new Error("this build has no Core inside it");
+    }
+    const cores = await this.list();
+    const existing = cores.find(isLocalCoreEntry);
+    const entry = localCoreEntry(name, existing?.addedAtMs ?? Date.now());
+    await this.writeCores(cores.filter((c) => !isLocalCoreEntry(c)).concat(entry), entry.id);
+  }
+
   async addPaired(entry: PairedCoreEntry, token: string): Promise<void> {
+    if (isLocalCoreEntry(entry)) {
+      // The reserved id has no token, so the read-back verify below would fail
+      // and report a keychain problem for something that is not one. Adoption
+      // has its own path.
+      throw new Error(`"${LOCAL_CORE_ID}" is reserved for this device's own Core`);
+    }
     await platform().keychain.set(entry.id, token);
     // Verify the token actually landed before recording the core. A keychain
     // write can fail silently (access denied, the keychain is locked) on some
@@ -136,7 +217,11 @@ class CoresRegistry {
   }
 
   async removePaired(id: string): Promise<void> {
-    await platform().keychain.delete(id);
+    // The reserved entry has no keychain token to delete. Removal is allowed
+    // (forgetting a registry entry takes nothing away: adoptLocalCore puts it
+    // back and the Core's own data is untouched in its root), it just has one
+    // fewer step.
+    if (id !== LOCAL_CORE_ID) await platform().keychain.delete(id);
     const cores = await this.list();
     const remaining = cores.filter((c) => c.id !== id);
     const nextCurrent = remaining[0]?.id;
@@ -175,8 +260,16 @@ class CoresRegistry {
     const cores = await this.list();
     const entry = cores.find((c) => c.id === id);
     if (!entry) throw new Error(`core ${id} not in paired list`);
-    const token = await platform().keychain.get(entry.id);
-    if (!token) throw new Error(`no token for core ${entry.id}; re-pair`);
+    const local = isLocalCoreEntry(entry);
+    // The Core inside this app keeps no token: its client identity is injected
+    // below the command boundary, so the bearer is never read. An empty one is
+    // the honest value; inventing a fake would imply a credential exists.
+    let token = "";
+    if (!local) {
+      const stored = await platform().keychain.get(entry.id);
+      if (!stored) throw new Error(`no token for core ${entry.id}; re-pair`);
+      token = stored;
+    }
     if (this.current) this.current.client.close();
     const client = new CoreClient(
       {
@@ -185,7 +278,11 @@ class CoresRegistry {
         trustMode: entry.trustMode,
         tlsPin: entry.tlsPin,
       },
-      () => isThisDevicesCoreStopped(entry.baseUrl),
+      // No stopped-probe for the Core inside this app: there is no process to
+      // be down, and a request boots it. "Stopped" is a state it cannot enter,
+      // so offering the user a Start affordance for it would be a dead end.
+      local ? undefined : () => isThisDevicesCoreStopped(entry.baseUrl),
+      local ? localTransport() : undefined,
     );
     this.current = { entry, client };
     this.apis = {
@@ -331,7 +428,7 @@ class CoresRegistry {
     for (const c of rawCores) {
       const entry = coerceCoreEntry(c);
       if (entry) cores.push(entry);
-      else log.warn("dropping a malformed core entry from cores.json (re-pair to restore it)");
+      else log.warn("dropping an unusable core entry from cores.json (re-pair to restore it)");
     }
     const currentCoreId =
       typeof raw[CURRENT_KEY] === "string" ? (raw[CURRENT_KEY] as string) : undefined;
@@ -410,15 +507,23 @@ export async function isThisDevicesCoreStopped(coreBaseUrl: string): Promise<boo
   return !(await platform().pairing.isLocalCoreRunning());
 }
 
-// On-demand mode: when the selected core points at loopback and the binary
-// is installed locally, spawn it ourselves if no service has it running.
-// Idempotent: start_local_core probes the port first and exits cleanly if
-// the core is already up. Failures are non-fatal: the user sees a normal
-// "could not reach core" error from the regular call paths.
+// On-demand mode: when the selected core is this device's own, start it
+// ourselves if nothing has it running yet. Idempotent on both shapes:
+// start_local_core probes the port first and exits cleanly if the core is
+// already up, and core_start returns the running core if there is one.
+// Failures are non-fatal: the user sees a normal "could not reach core" error
+// from the regular call paths.
+//
+// The reserved entry has to be recognized EXPLICITLY, not through
+// `isLoopbackUrl`: its base URL is a sentinel with no host, so a loopback test
+// reads it as remote and this would silently skip the one core it is most sure
+// about. The cost of skipping is not an error but a delay, which is worse to
+// diagnose: the Core would boot lazily on the first request instead, moving a
+// multi-second start onto whatever call happened to be first.
 export async function ensureLocalCoreUpIfNeeded(): Promise<void> {
   const current = cores().currentEntry();
   if (!current) return;
-  if (!isLoopbackUrl(current.baseUrl)) return;
+  if (!isLocalCoreEntry(current) && !isLoopbackUrl(current.baseUrl)) return;
   try {
     if (await platform().pairing.isLocalCoreInstalled()) {
       await platform().pairing.startLocalCore();
@@ -426,6 +531,64 @@ export async function ensureLocalCoreUpIfNeeded(): Promise<void> {
   } catch (e) {
     log.error("ensureLocalCoreUpIfNeeded:", e);
   }
+}
+
+/** Drop paired cores whose bearer token is gone from the keychain.
+ *
+ *  `select()` throws "no token" before any connection, so those cores never
+ *  reach the "unauthorized" state the auth-rejection path recovers from, and the
+ *  app would otherwise hang on "Connecting to core...". A keychain ERROR is left
+ *  alone so a transient glitch cannot unpair a still-valid core.
+ *
+ *  The Core inside this app is skipped, and it is not incidental: it has no
+ *  keychain token by design, so the tokenless test would name the one core that
+ *  cannot be broken. It is unreachable today only because selecting that core
+ *  always succeeds, which is a property of a different function and not one this
+ *  sweep can rely on.
+ *
+ *  Returns the ids it removed. */
+export async function dropTokenlessCores(): Promise<string[]> {
+  const removed: string[] = [];
+  for (const c of await cores().list()) {
+    if (isLocalCoreEntry(c)) continue;
+    let token: string | null = null;
+    try {
+      token = await platform().keychain.get(c.id);
+    } catch (e) {
+      log.error(`keychain check failed for core "${c.name}"; leaving it paired:`, e);
+      continue;
+    }
+    if (token) continue;
+    log.warn(`core "${c.name}" has no stored token; unpairing`);
+    try {
+      await cores().removePaired(c.id);
+      removed.push(c.id);
+    } catch (e) {
+      log.error("auto-unpair of tokenless core failed:", e);
+    }
+  }
+  return removed;
+}
+
+/** Drop the current core after it rejected our bearer.
+ *
+ *  The token is permanently dead (the Core reset its DB, or this client was
+ *  revoked), so the entry can only be re-paired; keeping it would strand the
+ *  user on "Connecting to core...". The caller owns what happens next, which is
+ *  view state and not this module's business.
+ *
+ *  The Core inside this app is REFUSED, and it lives here rather than at the
+ *  call site for the same reason the tokenless sweep does: a pre-authenticated
+ *  in-process client cannot have its bearer rejected, so this naming it would be
+ *  a bug elsewhere, and obeying that bug would silently unpair the only Core the
+ *  device has.
+ *
+ *  Returns the id it removed, or null if there was nothing to remove. */
+export async function dropUnauthorizedCore(): Promise<string | null> {
+  const dead = cores().currentEntry();
+  if (!dead || isLocalCoreEntry(dead)) return null;
+  await cores().removePaired(dead.id);
+  return dead.id;
 }
 
 /** Drop paired LOCAL cores whose core is no longer installed on this device.

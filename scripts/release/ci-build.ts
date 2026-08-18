@@ -1,9 +1,8 @@
 #!/usr/bin/env -S deno run -A
 // CI build half: runs on ONE native runner, builds that runner's host triple,
 // and stages the artifacts + descriptors for the publish job (ci-publish.ts) to
-// compose + sign + upload once. This is the GitHub Actions analogue of the local
-// build-environment drivers (Podman/UTM): a dumb artifact producer emitting the
-// same bundle/descriptor contract, so the two pipelines stay aligned.
+// compose + sign + upload once. A dumb artifact producer: it emits the
+// bundle/descriptor contract in artifacts.ts and never signs a manifest.
 //
 // It builds core + the desktop client (when Tauri keys are present) + Android
 // (only with --android, on the Linux runner); --android-only builds just the
@@ -30,6 +29,7 @@ import {
   detectHostTriple,
   envFromProcess,
   fail,
+  hasReleaseChanges,
   info,
   ok,
   parseChannelFlag,
@@ -44,7 +44,7 @@ import { buildLinuxCoreInstallers, type InstallerAsset } from "./core-installers
 import { buildMacUnified, buildWindowsUnified } from "./unified-installers.ts";
 import { buildClientBundle } from "./client.ts";
 import { buildAndroidBundle } from "./android.ts";
-import { buildAndUploadIos } from "./ios.ts";
+import { buildAndUploadIos, iosItem, readIosVersion } from "./ios.ts";
 import { appleReleaseConfigured, materializeAppleApiKey } from "./apple-toolchain.ts";
 import {
   bundleCoreArtifacts,
@@ -52,6 +52,7 @@ import {
   writeAndroidDescriptor,
   writeBundle,
   writeClientDescriptor,
+  writeIosReceipt,
 } from "./artifacts.ts";
 
 async function main(): Promise<void> {
@@ -170,6 +171,13 @@ async function main(): Promise<void> {
     // .ipa here rather than staging it for the Linux publish coordinator. Inert
     // until the Apple secrets exist: without them this no-ops so the runner
     // stays green (mirrors the macOS APPLE_* signing being secret-driven).
+    //
+    // The upload is its own side effect (App Store Connect rejects a duplicate
+    // build number), so unlike the staged artifacts it must be diffed against the
+    // cursor HERE rather than by the coordinator's release plan. The cursor is
+    // public on R2, so envFromProcess (public key + storage domain) is enough to
+    // read it - same as ci-preflight. On success a receipt is staged; the
+    // coordinator turns that into the cursor entry.
     if (args.ios) {
       if (!appleReleaseConfigured(env)) {
         info(
@@ -177,8 +185,11 @@ async function main(): Promise<void> {
             "--ios given but Apple signing / App Store Connect is not configured; skipping iOS.",
           ),
         );
+      } else if (!(await hasReleaseChanges(env, [iosItem], channel))) {
+        info("ios client unchanged since the published cursor; skipping the App Store upload");
       } else {
-        await buildAndUploadIos(env, channel, { triples: [], dryRun: false });
+        await buildAndUploadIos(env, channel, { dryRun: false });
+        await writeIosReceipt(stageDir, { version: await readIosVersion(), channel });
         ok("built + uploaded the iOS .ipa to App Store Connect");
       }
     }

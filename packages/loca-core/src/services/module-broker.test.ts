@@ -10,6 +10,7 @@ import { permissionKey } from "@loca/shared";
 import { setupTestEnv } from "../../tests/helpers/db.ts";
 import { extensionsRegistry } from "../extensions/registry.ts";
 import { AppError } from "@loca/core-engine";
+import { memoriesStore } from "@loca/core-engine/services/memories-store";
 import {
   deleteExtensionData,
   handleModuleRequest,
@@ -204,6 +205,61 @@ Deno.test("broker: memories write grant covers read ops, not vice versa", async 
     // The read grant itself still works.
     const read2 = await run("memories", "list", false);
     assertEquals(read2.outcome, "dispatched");
+  } finally {
+    await env.teardown();
+  }
+});
+
+Deno.test("broker: a disabled memory is refused by write and edit, and leaks nothing", async () => {
+  // Disabling is how a user takes a memory away from the model. `get`/`getFile`
+  // already answered `not_found` for one, but `write` and `edit` both return the
+  // prior content as `before` and neither checked the flag, so a tool could read
+  // any disabled memory in full simply by writing to its title.
+  const env = await setupTestEnv();
+  try {
+    seedExtension({ permissions: [DOCS_WRITE] });
+    setGrant(DOCS_WRITE, "granted");
+    const call = (op: string, args: unknown) =>
+      handleModuleRequest({
+        extensionId: EXTENSION_ID,
+        toolName: TOOL_NAME,
+        callId: "call-1",
+        module: "memories",
+        op,
+        args,
+        promptUser: () => Promise.resolve(false),
+      });
+
+    await call("write", { title: "Secrets", content: "the private body" });
+    const row = (await memoriesStore().list()).find((m) => m.title === "Secrets");
+    memoriesStore().setEnabled(row!.id, false);
+
+    // The content must not appear in any error or result. Asserted on the whole
+    // thrown value rather than the code alone: a message that interpolated the
+    // body would satisfy a code-only assertion.
+    for (const [op, args] of [
+      ["write", { title: "Secrets", content: "overwrite" }],
+      ["edit", { title: "Secrets", find: "private", replace: "public" }],
+    ] as const) {
+      const err = await call(op, args).then(
+        () => null,
+        (e: unknown) => e as AppError,
+      );
+      assertEquals(err?.code, "forbidden", `${op} did not refuse a disabled memory`);
+      assertEquals(
+        JSON.stringify(err).includes("the private body"),
+        false,
+        `${op} leaked the disabled memory's content`,
+      );
+    }
+
+    // Re-enabling restores normal behaviour, so the refusal is about the flag
+    // and not about the title.
+    memoriesStore().setEnabled(row!.id, true);
+    assertEquals(await call("get", { title: "Secrets" }), {
+      title: "Secrets",
+      content: "the private body",
+    });
   } finally {
     await env.teardown();
   }

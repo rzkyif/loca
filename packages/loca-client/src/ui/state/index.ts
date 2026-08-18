@@ -8,6 +8,7 @@ export * from "./settings.svelte";
 export * from "./sessions.svelte";
 export * from "./view.svelte";
 export * from "./streaming.svelte";
+export * from "./capabilities.svelte";
 export * from "./core-status.svelte";
 export * from "./messages.svelte";
 export * from "./confirm.svelte";

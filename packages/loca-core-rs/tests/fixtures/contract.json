@@ -1,0 +1,485 @@
+[
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "pong"
+    },
+    "expected": {
+      "kind": "pong"
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "ping"
+    },
+    "expected": {
+      "kind": "ping"
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "chat.delta",
+      "streamId": "s1",
+      "messageId": "m1",
+      "delta": "hello"
+    },
+    "expected": {
+      "kind": "chat.delta",
+      "streamId": "s1",
+      "messageId": "m1",
+      "delta": "hello"
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "chat.done",
+      "streamId": "s1",
+      "reason": "length"
+    },
+    "expected": {
+      "kind": "chat.done",
+      "streamId": "s1",
+      "reason": "length"
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "chat.error",
+      "streamId": "s1",
+      "code": "context_window_exceeded",
+      "message": "too long"
+    },
+    "expected": {
+      "kind": "chat.error",
+      "streamId": "s1",
+      "code": "context_window_exceeded",
+      "message": "too long"
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "session.updated",
+      "sessionId": "s1",
+      "op": "title_generating",
+      "payload": {
+        "generating": true
+      }
+    },
+    "expected": {
+      "kind": "session.updated",
+      "sessionId": "s1",
+      "op": "title_generating",
+      "payload": {
+        "generating": true
+      }
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "requirements.snapshot",
+      "required": [
+        {
+          "source": "@unsloth/Qwen3.5-2B-GGUF/main/x.gguf",
+          "type": "model",
+          "group": "llm",
+          "present": false
+        }
+      ],
+      "missing": [
+        {
+          "source": "@unsloth/Qwen3.5-2B-GGUF/main/x.gguf",
+          "type": "model",
+          "group": "llm",
+          "present": false
+        }
+      ]
+    },
+    "expected": {
+      "kind": "requirements.snapshot",
+      "required": [
+        {
+          "source": "@unsloth/Qwen3.5-2B-GGUF/main/x.gguf",
+          "type": "model",
+          "group": "llm",
+          "present": false
+        }
+      ],
+      "missing": [
+        {
+          "source": "@unsloth/Qwen3.5-2B-GGUF/main/x.gguf",
+          "type": "model",
+          "group": "llm",
+          "present": false
+        }
+      ]
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "settings.updated",
+      "values": {
+        "tts.enabled": true
+      },
+      "deleted": ["llm.modelPath"]
+    },
+    "expected": {
+      "kind": "settings.updated",
+      "values": {
+        "tts.enabled": true
+      },
+      "deleted": ["llm.modelPath"]
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "tool.askuser_request",
+      "callId": "c1",
+      "requestId": "r1",
+      "questions": [
+        {
+          "question": "Pick one",
+          "kind": "choice",
+          "options": [
+            {
+              "label": "A",
+              "value": "a"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "kind": "tool.askuser_request",
+      "callId": "c1",
+      "requestId": "r1",
+      "questions": [
+        {
+          "question": "Pick one",
+          "kind": "choice",
+          "options": [
+            {
+              "label": "A",
+              "value": "a"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "tool.askuser_request",
+      "callId": "c1",
+      "requestId": "r1",
+      "questions": [
+        {
+          "question": "Legacy, no kind"
+        },
+        {
+          "kind": "diff",
+          "question": "Apply?",
+          "before": "a",
+          "after": "b",
+          "title": "patch"
+        },
+        {
+          "kind": "files",
+          "question": "Which files?",
+          "entries": [
+            {
+              "path": "src/main.rs",
+              "label": "main"
+            }
+          ],
+          "multiselect": true
+        },
+        {
+          "kind": "image",
+          "question": "Crop?",
+          "dataB64": "AAAA",
+          "mime": "image/png",
+          "actions": [
+            {
+              "label": "Yes",
+              "value": "yes"
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "question": "Edit",
+          "columns": ["a", "b"],
+          "rows": [["1", "2"]]
+        }
+      ]
+    },
+    "expected": {
+      "kind": "tool.askuser_request",
+      "callId": "c1",
+      "requestId": "r1",
+      "questions": [
+        {
+          "question": "Legacy, no kind"
+        },
+        {
+          "question": "Apply?",
+          "kind": "diff",
+          "before": "a",
+          "after": "b",
+          "title": "patch"
+        },
+        {
+          "question": "Which files?",
+          "kind": "files",
+          "multiselect": true,
+          "entries": [
+            {
+              "path": "src/main.rs",
+              "label": "main"
+            }
+          ]
+        },
+        {
+          "question": "Crop?",
+          "kind": "image",
+          "dataB64": "AAAA",
+          "mime": "image/png",
+          "actions": [
+            {
+              "label": "Yes",
+              "value": "yes"
+            }
+          ]
+        },
+        {
+          "question": "Edit",
+          "kind": "table",
+          "columns": ["a", "b"],
+          "rows": [["1", "2"]]
+        }
+      ]
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "core.status",
+      "snapshot": {
+        "status": "idle",
+        "detail": "ok",
+        "subsystems": []
+      }
+    },
+    "expected": {
+      "kind": "core.status",
+      "snapshot": {
+        "status": "idle",
+        "detail": "ok",
+        "subsystems": []
+      }
+    }
+  },
+  {
+    "type": "api::ServerToClientFrame",
+    "value": {
+      "kind": "update.staged",
+      "version": "0.1.16"
+    },
+    "expected": {
+      "kind": "update.staged",
+      "version": "0.1.16"
+    }
+  },
+  {
+    "type": "inbound::ChatStartWs",
+    "value": {
+      "kind": "chat.start",
+      "streamId": "s1",
+      "sessionId": "sess1"
+    },
+    "expected": {
+      "kind": "chat.start",
+      "streamId": "s1",
+      "sessionId": "sess1"
+    }
+  },
+  {
+    "type": "inbound::ChatStartWs",
+    "value": {
+      "kind": "chat.start",
+      "streamId": "s1",
+      "sessionId": "sess1",
+      "route": "secondary",
+      "systemPrompt": "",
+      "anchorMessageId": "m9"
+    },
+    "expected": {
+      "kind": "chat.start",
+      "streamId": "s1",
+      "sessionId": "sess1",
+      "route": "secondary",
+      "systemPrompt": "",
+      "anchorMessageId": "m9"
+    }
+  },
+  {
+    "type": "inbound::ChatSubscribeWs",
+    "value": {
+      "kind": "chat.subscribe",
+      "sessionId": "sess1"
+    },
+    "expected": {
+      "kind": "chat.subscribe",
+      "sessionId": "sess1"
+    }
+  },
+  {
+    "type": "inbound::ToolPermissionResponse",
+    "value": {
+      "kind": "tool.permission_response",
+      "callId": "c1",
+      "requestId": "r1",
+      "allow": true
+    },
+    "expected": {
+      "kind": "tool.permission_response",
+      "callId": "c1",
+      "requestId": "r1",
+      "allow": true
+    }
+  },
+  {
+    "type": "inbound::ToolAskUserResponse",
+    "value": {
+      "kind": "tool.askuser_response",
+      "callId": "c1",
+      "requestId": "r1",
+      "answers": [
+        "a",
+        ["b", "c"],
+        [
+          {
+            "col": "v"
+          }
+        ]
+      ]
+    },
+    "expected": {
+      "kind": "tool.askuser_response",
+      "callId": "c1",
+      "requestId": "r1",
+      "answers": [
+        "a",
+        ["b", "c"],
+        [
+          {
+            "col": "v"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "type": "inbound::PairingCodeRequest",
+    "value": {},
+    "expected": {}
+  },
+  {
+    "type": "inbound::MessageInput",
+    "value": {
+      "role": "user",
+      "content": "hi"
+    },
+    "expected": {
+      "role": "user",
+      "content": "hi"
+    }
+  },
+  {
+    "type": "inbound::MessageInput",
+    "value": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "hi"
+        }
+      ]
+    },
+    "expected": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "hi"
+        }
+      ]
+    }
+  },
+  {
+    "type": "inbound::MessageInput",
+    "value": {
+      "role": "assistant",
+      "content": "hello"
+    },
+    "expected": {
+      "role": "assistant",
+      "content": "hello"
+    }
+  },
+  {
+    "type": "inbound::ScheduledPromptDraft",
+    "value": {
+      "title": "Daily standup",
+      "instruction": "Summarise yesterday",
+      "schedule": {
+        "kind": "weekly",
+        "weekdays": [1, 2, 3],
+        "hour": 9,
+        "minute": 0
+      },
+      "runMissed": false
+    },
+    "expected": {
+      "title": "Daily standup",
+      "instruction": "Summarise yesterday",
+      "schedule": {
+        "kind": "weekly",
+        "weekdays": [1, 2, 3],
+        "hour": 9,
+        "minute": 0
+      },
+      "runMissed": false
+    }
+  },
+  {
+    "type": "inbound::ScheduledPromptDraft",
+    "value": {
+      "title": "One off",
+      "instruction": "Ping me",
+      "schedule": {
+        "kind": "once",
+        "atMs": 1760000000000
+      },
+      "runMissed": true
+    },
+    "expected": {
+      "title": "One off",
+      "instruction": "Ping me",
+      "schedule": {
+        "kind": "once",
+        "atMs": 1760000000000
+      },
+      "runMissed": true
+    }
+  }
+]

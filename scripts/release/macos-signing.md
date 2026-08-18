@@ -145,11 +145,10 @@ while the env is absent.
   compiles the shell for `aarch64-apple-ios`; the CI `ios` job runs the same
   check on every `main` push (compile-only, no secrets).
 - **Secret-gated:** `build:client:ios` falls back to an unsigned Simulator build
-  without signing; `scripts/release/ios.ts` (`iosItem`, registered in `main.ts`)
-  is dropped by `appleReleaseConfigured(env)` when the signing + App Store
-  Connect env is absent, and `ci-build.ts --ios` (the macOS arm64 release leg)
-  skips with a note under the same condition, so an unconfigured repo releases
-  exactly what it releases today. To activate iOS: fill `APPLE_TEAM_ID` + a
+  without signing; `ci-build.ts --ios` (the macOS arm64
+  release leg) skips the build + App Store upload with a note when
+  `appleReleaseConfigured(env)` is false, so an unconfigured repo releases exactly
+  what it releases today. To activate iOS: fill `APPLE_TEAM_ID` + a
   certificate (`APPLE_SIGNING_IDENTITY` or the base64 `APPLE_CERTIFICATE`) + the
   `APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH` (locally) or
   `APPLE_API_KEY_B64` (CI) trio; the same paths then build/sign/upload the

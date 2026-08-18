@@ -5,24 +5,10 @@
 // same version. Versioned via packages/loca-client/src/tauri/tauri.conf.json.
 
 import { ensureDir } from "@std/fs/ensure-dir";
-import { encodeBase64 } from "@std/encoding/base64";
 import { join } from "@std/path";
 import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
 import { type ClientDescriptor, reanchorFile } from "./artifacts.ts";
-import {
-  buildLinuxCoreInstallers,
-  type InstallerAsset,
-  type InstallersManifest,
-  uploadInstallers,
-} from "./core-installers.ts";
-import {
-  buildMacUnified,
-  buildWindowsUnified,
-  materializeCorePayload,
-} from "./unified-installers.ts";
-import { reportRouting, routeTriples } from "./all-targets.ts";
-import { withEnvironment } from "./drivers/lifecycle.ts";
-import type { BuildEnvironment } from "./drivers/mod.ts";
+import type { InstallersManifest } from "./core-installers.ts";
 import {
   type ApplyOpts,
   bumpVersionField,
@@ -138,20 +124,10 @@ async function injectTauriPubkey(pubkey: string): Promise<() => Promise<void>> {
 // ---------------------------------------------------------------------------
 // build client + locate bundle
 
-async function buildClient(
-  env: DeployEnv,
-  channel: ReleaseChannel,
-  triple?: Triple,
-  bundles?: string[],
-): Promise<void> {
+async function buildClient(env: DeployEnv, channel: ReleaseChannel): Promise<void> {
   // Drive build-client.ts directly with the channel so it bakes LOCA_CHANNEL
-  // + applies the per-channel app-identity config override. `triple` cross-builds
-  // the host's other arch; `bundles` narrows the bundle targets (the Linux
-  // cross-build passes just "appimage" - the AppImage is the sole Linux client
-  // format).
+  // + applies the per-channel app-identity config override.
   const args = ["run", "-A", "scripts/build-client.ts", `--channel=${channel}`];
-  if (triple) args.push(`--target=${triple}`);
-  if (bundles?.length) args.push(`--bundles=${bundles.join(",")}`);
   // CI passes every APPLE_* secret through the build step, so the ones that do
   // not exist arrive as empty strings. Tauri treats a present-but-empty
   // APPLE_CERTIFICATE as "sign me" and fails `security import`. Deno.Command
@@ -172,7 +148,7 @@ async function buildClient(
       ...Deno.env.toObject(),
       TAURI_SIGNING_PRIVATE_KEY: env.tauriUpdaterPrivateKey,
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: env.tauriUpdaterPassword,
-      ...appleSigningEnv(env, triple ?? detectHostTriple()),
+      ...appleSigningEnv(env, detectHostTriple()),
     },
   });
   const { code } = await cmd.output();
@@ -319,25 +295,18 @@ async function writeManifestFile(
 export async function buildClientBundle(
   env: DeployEnv,
   channel: ReleaseChannel,
-  opts: { triple?: Triple; bundles?: string[] } = {},
 ): Promise<ClientDescriptor> {
   const version = await readClientVersion();
-  const triple = opts.triple ?? detectHostTriple();
+  const triple = detectHostTriple();
   const tauriKey = tauriPlatformKey(triple);
-  // A host-native build (no --target) emits under target/release/bundle; a
-  // cross-targeted one under <CARGO_TARGET_DIR|target>/<triple>/release/bundle
-  // (the Podman client build points CARGO_TARGET_DIR at /tmp so it doesn't write
-  // the read-only repo mount).
-  const targetDir = Deno.env.get("CARGO_TARGET_DIR") ?? join(REPO_ROOT, "target");
-  const bundleRoot = opts.triple ? join(targetDir, triple, "release", "bundle") : TAURI_BUNDLE_OUT;
   info(`client triple: ${triple} (tauri key: ${tauriKey}), version ${version}`);
 
   step(`Building Tauri client bundle (${triple})`);
   const restorePubkey = await injectTauriPubkey(env.tauriUpdaterPublicKey);
   const restoreWinSigning = await injectWindowsSigning(env, triple);
   try {
-    await buildClient(env, channel, opts.triple, opts.bundles);
-    const bundle = await findClientBundle(triple, bundleRoot);
+    await buildClient(env, channel);
+    const bundle = await findClientBundle(triple, TAURI_BUNDLE_OUT);
     ok(`${triple}/${bundle.filename}  ${humanBytes(bundle.size)}  → ${rel(bundle.sigPath)}`);
 
     // Copy the bundle + its Tauri .sig under dist/<triple>/ so they ride along
@@ -521,58 +490,6 @@ export async function composeAndUploadClient(
 }
 
 // ---------------------------------------------------------------------------
-// local all-targets build (host cross-arch + on-demand driver environments)
-
-/** Build the client installer for every requested triple across this host + the
- *  given build environments, mirroring core's buildCoreUnified: the host builds
- *  its own OS's triples directly (native + same-OS cross-arch), and every other
- *  triple is routed to an environment (Podman/UTM) started on demand. Returns a
- *  descriptor per built triple for composeAndUploadClient. Triples whose driver
- *  can't build the client (or isn't available) are reported and dropped - the
- *  live manifest carries them forward at the same version. */
-export async function buildClientUnified(
-  triples: Triple[],
-  env: DeployEnv,
-  channel: ReleaseChannel,
-  environments: BuildEnvironment[],
-): Promise<ClientDescriptor[]> {
-  const routing = await routeTriples(triples, environments);
-  reportRouting(routing);
-
-  const descriptors: ClientDescriptor[] = [];
-  // Host: build each same-OS triple directly (e.g. both apple-darwin arches).
-  for (const triple of routing.host) {
-    descriptors.push(await buildClientBundle(env, channel, { triple }));
-  }
-  // Drivers: each environment builds its triples' installers and ships the
-  // bundles + descriptors back into the host's dist/. Every desktop installer
-  // (Windows MSI/NSIS, Linux AppImage) carries the Tauri updater `.sig`, so the
-  // minisign key transits to each build environment.
-  for (const { env: drv, triples: envTriples } of routing.byEnv) {
-    if (!drv.buildClient) {
-      info(
-        colors.yellow(`${drv.id} can't build the client; ${envTriples.join(", ")} carry forward`),
-      );
-      continue;
-    }
-    const ds = await withEnvironment(drv, () =>
-      drv.buildClient!({
-        triples: envTriples,
-        channel,
-        secrets: {
-          signingPublicKeyB64: encodeBase64(env.signingPublicKey),
-          tauriPublicKey: env.tauriUpdaterPublicKey,
-          tauriPrivateKey: env.tauriUpdaterPrivateKey,
-          tauriPassword: env.tauriUpdaterPassword,
-        },
-      }),
-    );
-    descriptors.push(...ds);
-  }
-  return descriptors;
-}
-
-// ---------------------------------------------------------------------------
 // release item
 
 // The desktop client bundles the Tauri shell + the shared UI; its source hash
@@ -644,70 +561,15 @@ export const clientItem: ReleaseItem = {
 
   async apply(env: DeployEnv, channel: ReleaseChannel, opts: ApplyOpts): Promise<void> {
     const version = await readClientVersion();
-    // Prebuilt mode (CI publish): compose over the descriptors the desktop build
-    // runners produced. All-targets mode: build this host's OS triples + route
-    // the rest to on-demand driver environments. Host-only mode: just this host's
-    // bundle (the live manifest carries forward the other platforms at version).
-    const descriptors = opts.prebuilt
-      ? opts.prebuilt.clientDescriptors
-      : opts.environments?.length
-        ? await buildClientUnified(opts.triples, env, channel, opts.environments)
-        : [await buildClientBundle(env, channel)];
+    // Compose over the descriptors the desktop build runners produced. The native
+    // installers are NOT published here: each runner packages its own OS in
+    // ci-build.ts and the coordinator publishes them via uploadInstallers before
+    // the release plan runs.
+    const descriptors = opts.prebuilt.clientDescriptors;
     if (descriptors.length === 0) {
       info(colors.yellow("no client bundles produced; skipping client publish"));
       return;
     }
     await composeAndUploadClient(env, channel, version, descriptors, opts);
-    // Native installers for a LOCAL release: package this host OS's installers
-    // (the unified pkg/exe wrapping the bundle just built, or the Linux Core
-    // deb/rpm) and publish installers.json. In CI each build runner packages
-    // its own OS in ci-build.ts and the coordinator publishes (opts.prebuilt),
-    // so this path is local-only. Cross-OS installers in local all-targets mode
-    // inherit the host-OS-only gap: only this host's OS gets its installers;
-    // the CI matrix covers the full set.
-    if (!opts.prebuilt) {
-      await buildAndUploadHostInstallers(env, channel, version, descriptors, opts);
-    }
   },
 };
-
-/** Build + publish the HOST OS's native installers from a local release run:
- *  macOS/Windows wrap the host descriptor's just-built client bundle around the
- *  Core payload materialized from the live core.json (fresh when the core item
- *  published earlier in this run); Linux packages the Core alone (its client
- *  stays the AppImage). Skips with a note when the host bundle is missing or
- *  the packaging tools are absent. */
-async function buildAndUploadHostInstallers(
-  env: DeployEnv,
-  channel: ReleaseChannel,
-  clientVersion: string,
-  descriptors: ClientDescriptor[],
-  opts: ApplyOpts,
-): Promise<void> {
-  const hostTriple = detectHostTriple();
-  const hostDescriptor = descriptors.find((d) => d.triple === hostTriple);
-  if (!hostDescriptor) {
-    info(colors.yellow("no host client bundle in this run; skipping the native installers"));
-    return;
-  }
-  const { version: coreVersion, built } = await materializeCorePayload(env, channel, hostTriple);
-  const unifiedOpts = { coreVersion, clientVersion, channel, triple: hostTriple, env };
-  const installers: InstallerAsset[] = [];
-  if (hostTriple.endsWith("apple-darwin")) {
-    installers.push(...(await buildMacUnified(built, unifiedOpts)));
-  } else if (hostTriple.endsWith("pc-windows-msvc")) {
-    installers.push(...(await buildWindowsUnified(built, hostDescriptor.relPath, unifiedOpts)));
-  } else if (hostTriple.endsWith("unknown-linux-gnu")) {
-    installers.push(
-      ...(await buildLinuxCoreInstallers(built, {
-        version: coreVersion,
-        channel,
-        triple: hostTriple,
-        env,
-      })),
-    );
-  }
-  if (installers.length > 0) {
-    await uploadInstallers(env, channel, { coreVersion, clientVersion }, installers, opts);
-  }
-}

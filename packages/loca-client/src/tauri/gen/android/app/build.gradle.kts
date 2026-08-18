@@ -49,6 +49,66 @@ android {
         resValue("string", "app_name", locaAppLabel)
         resValue("string", "main_activity_title", locaAppLabel)
     }
+    // The sherpa-onnx runtime libraries, packaged from the vendored tree rather
+    // than copied into `src/main/jniLibs`.
+    //
+    // `libloca_lib.so` links these two dynamically (the Android arm of
+    // sherpa-onnx-sys is the crate's `shared` mode, because upstream's android
+    // release ships exactly this pair and no static archive), so without them in
+    // the APK the app fails at dlopen with an unresolved dependency: the process
+    // dies on launch, before any Loca code runs.
+    //
+    // Read straight out of `vendor/` because that is where scripts/vendor-sherpa.ts
+    // puts them and the digest it pins is the only thing vouching for these
+    // bytes. Copying into the source tree would put unpinned binaries a build
+    // step away from the signed package. AGP merges srcDirs and matches ABI
+    // directory names, so the four-ABI universal build gets the right pair per
+    // ABI with no per-ABI wiring here.
+    //
+    // The archive also carries two libraries this app never calls; the
+    // `packaging` block below drops them.
+    //
+    // The NDK's `libc++_shared.so` is NOT staged here and must not be: the Tauri
+    // CLI already symlinks it into `src/main/jniLibs/<abi>/` on every build,
+    // alongside `libloca_lib.so`. Adding a second source for it fails the build
+    // with "Duplicate resources" at the jniLibs merge, which is how this comment
+    // came to exist. Those symlinks only appear after a build has run, so an
+    // untouched tree looks like the runtime is missing when it is not.
+    //
+    // The path is asserted rather than trusted: a `srcDir` that does not exist
+    // contributes nothing SILENTLY, so the first version of this line was one
+    // directory short (gen/android sits six levels below the repo root, not
+    // five) and produced an APK that built cleanly, shipped no sherpa libraries,
+    // and would have died at launch on the `DT_NEEDED` for
+    // `libsherpa-onnx-c-api.so`. That failure is exactly the kind this project
+    // keeps finding, so it fails the build here instead.
+    val sherpaJniLibs = rootProject.file("../../../../../../vendor/sherpa-onnx/android/jniLibs")
+    if (!sherpaJniLibs.isDirectory) {
+        throw GradleException(
+            "vendor/sherpa-onnx is not staged (looked in $sherpaJniLibs). The APK would build " +
+                "without the speech libraries and fail at launch.\n" +
+                "Run: deno run -A scripts/vendor-sherpa.ts",
+        )
+    }
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(sherpaJniLibs)
+        }
+    }
+    packaging {
+        jniLibs {
+            // The android archive also carries `libsherpa-onnx-jni.so` (the JNI
+            // wrapper, a different API surface from the C API this binds) and
+            // `libsherpa-onnx-cxx-api.so`. Roughly 5 MB per ABI of code nothing
+            // in this app calls, so they are dropped at packaging rather than
+            // filtered at the source set: AGP's `jniLibs` source directory set
+            // has no `exclude`, and this is the DSL that does.
+            excludes += setOf(
+                "**/libsherpa-onnx-jni.so",
+                "**/libsherpa-onnx-cxx-api.so",
+            )
+        }
+    }
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
@@ -99,6 +159,31 @@ android {
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+        }
+    }
+    // Per-ABI release APKs. The universal APK is 56 MiB and 94.9% of it is four
+    // copies of libloca_lib.so (measured: 55,782,804 of 58,787,702 bytes), so an
+    // arm64-only APK is roughly 17 MiB. That headroom is what makes room for the
+    // Rust core, llama.cpp and sherpa: four copies of those would be untenable,
+    // while one is smaller than what ships today.
+    //
+    // AGP's `splits` block is variant-wide: there is no per-buildType splits DSL,
+    // so it is gated on the invoked task instead. `tauri android dev` builds and
+    // installs a single APK by name, and emitting four from the debug variant
+    // would leave the CLI installing whichever it happened to find first. The
+    // dev loop is not worth a release-size win.
+    //
+    // `isUniversalApk = true` keeps publishing the fat APK alongside the splits.
+    // It costs one artifact and it is what an older client falls back to when it
+    // cannot report its own ABI (see lib/platform/mobile.ts): without it, such a
+    // client declines every update instead of taking the safe one.
+    val splitAbis = gradle.startParameter.taskNames.any { it.contains("Release") }
+    splits {
+        abi {
+            isEnable = splitAbis
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
         }
     }
     kotlinOptions {

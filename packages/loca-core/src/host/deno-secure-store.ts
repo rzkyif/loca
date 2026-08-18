@@ -30,7 +30,26 @@ function keychainService(): string {
 }
 
 function useOsKeychain(): boolean {
-  return channel() !== "dev";
+  if (channel() === "dev") return false;
+  // An explicit opt-out for a core under test on another channel, read
+  // identically by the Rust core (`secrets/store.rs`). Both must read it or the
+  // two diverge off `dev` invisibly: the Rust core seals in the real OS keychain
+  // and can hang asking a human about an item another binary owns, while this
+  // core's keychain helper is a stub in a seeded home and silently falls back to
+  // the file store. A differential run across that gap compares two different
+  // configurations.
+  //
+  // No new storage mode: the dev branch above already takes this path, and
+  // Android ships on it. `=0` means off, matching the other boolean env vars.
+  const forced = Deno.env.get("LOCA_VAULT_FILE_STORE");
+  if (forced === "1" || forced?.toLowerCase() === "true") {
+    log.warn(
+      "LOCA_VAULT_FILE_STORE is set: keeping the vault master key in a file " +
+        "rather than the OS keychain. This is for testing; unset it for a normal install.",
+    );
+    return false;
+  }
+  return true;
 }
 
 // File fallback path for one key: a hidden dotfile under the channel root, e.g.

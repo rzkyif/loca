@@ -58,12 +58,13 @@ export async function readSessionAttachment(path: string): Promise<string> {
   const client = cores().currentClient();
   if (!client) throw new Error("no paired core selected");
   // The stored `path` is `<baseUrl>/api/v1/sessions/.../attachments/...`, so we
-  // fetch it through the pinned net layer with the same bearer header CoreClient
-  // would. `endpoint` is a public readonly field on CoreClient, so no cast is needed.
-  const res = await platform().net.fetch({
+  // fetch it through the client's own transport with the same bearer header
+  // CoreClient would. Its transport rather than the net layer directly: the
+  // selected core may be the one inside this app, which has no origin to reach
+  // over the network. `endpoint` is a public readonly field, so no cast is needed.
+  const res = await client.fetchRaw({
     url: path,
     headers: { Authorization: `Bearer ${client.endpoint.token}` },
-    ...client.netTrust(),
   });
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`fetch ${path}: ${res.status}`);

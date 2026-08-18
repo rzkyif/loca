@@ -44,7 +44,13 @@ export const llmGroup: SettingGroup = {
           name: "Image Attachments",
           description: "Let yourself attach images to messages. The model must support vision.",
           type: "boolean",
-          defaultValue: true,
+          // Off until asked for. Turning this on makes the projector a required
+          // download (205 MB to 1.2 GB), and selecting a vision model already
+          // writes `llm.mmprojPath`, so a default of on would pull that file in
+          // on every fresh install whose preset happens to ship one. Requirement
+          // computation and the mobile fit budget both read this key as the
+          // user's answer, not as a capability.
+          defaultValue: false,
           descriptionTier: "ondemand",
         },
         {
@@ -396,9 +402,19 @@ export const llmGroup: SettingGroup = {
         },
         {
           id: "llm.mmap",
+          // On by default, and neither hidden nor forced. Turning it off makes
+          // the weight pages resident anonymous memory instead of file-backed
+          // and evictable, which on a phone invites an OS kill. That argues for
+          // the default being on, not for the switch being unreachable, and it
+          // is the user's own device either way (D-178).
+          //
+          // It is also a CORE setting: it governs the machine the model loads
+          // on, which is not the machine rendering this panel. `desktopOnly`
+          // filters on the device, so marking it would have hidden the control
+          // from a phone driving a desktop Core, where it is entirely live.
           name: "Memory-Mapped Loading",
           description:
-            "Load the model straight from disk for faster startup and lower RAM use. Turn off only if you hit stability issues.",
+            "Load the model straight from disk for faster startup and much lower RAM use. Turning it off can crash the core on a phone.",
           type: "boolean",
           defaultValue: true,
           descriptionTier: "ondemand",

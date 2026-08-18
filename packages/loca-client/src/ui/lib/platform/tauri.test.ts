@@ -262,3 +262,22 @@ describe("Tauri platform: openExternal", () => {
     expect(openUrl).toHaveBeenCalledWith("https://example.com");
   });
 });
+
+describe("Tauri platform: the local Core", () => {
+  it("carries none: the desktop Core is a separate process reached over TLS", () => {
+    // `localCore !== null` is the single predicate lib/core uses to decide
+    // whether this device hosts a Core at all. A non-null here would offer the
+    // desktop user a "run it on this device" branch that leads nowhere and put
+    // a reserved entry into their cores list.
+    expect(p.localCore).toBeNull();
+  });
+
+  it("still answers the installed-core questions through its own commands", async () => {
+    // The desktop local Core is a real binary and a real port, so these keep
+    // their original meanings rather than the embedded ones.
+    await p.pairing.isLocalCoreInstalled();
+    expect(invoke).toHaveBeenCalledWith("local_core_installed");
+    await p.pairing.localCoreBaseUrl();
+    expect(invoke).toHaveBeenCalledWith("local_core_base_url");
+  });
+});

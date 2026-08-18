@@ -6,9 +6,13 @@ export type { CoreEndpoint, WsListener } from "./client";
 
 export {
   cores,
+  dropTokenlessCores,
+  dropUnauthorizedCore,
   ensureLocalCoreUpIfNeeded,
+  isLocalCoreEntry,
   isLoopbackUrl,
   isThisDevicesCore,
+  LOCAL_CORE_ID,
   pruneUninstalledLocalCores,
 } from "./cores";
 export type { PairedCoreEntry } from "./cores";

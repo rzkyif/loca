@@ -1,0 +1,72 @@
+[package]
+name = "loca-core-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "The mobile frontend to Loca Core: boots the core in process inside the Tauri app and marshals HTTP and WebSocket traffic across the Tauri command boundary, so the phone embeds the real core rather than a reimplementation of it. Desktop builds never link it."
+publish = false
+
+[lib]
+# rlib, not staticlib. D-004's intent is that a desktop `cargo build` never pays
+# to archive llama.cpp and sherpa-onnx into a static library nothing links; its
+# letter said this crate declares `staticlib`/`cdylib`, and that is not
+# implementable. On mobile the TAURI crate is already the staticlib
+# (`crate-type = ["staticlib", "cdylib", "rlib"]`) and this crate's only consumer
+# is Rust, so declaring `staticlib` here would make it unusable as a dependency
+# without a hand-written C ABI between two Rust crates. The mobile target gate on
+# the dependency edge is what keeps desktop clean. See D-135.
+crate-type = ["rlib"]
+
+[features]
+# Forwards the core's in-process llama.cpp to whoever links this crate.
+#
+# **Not on by default, and the default is not the shipping configuration.** A
+# plain host build of this crate (its own lint and test tasks, and any
+# workspace-wide `cargo build`) must not turn `local-inference` on, because
+# `vendor/llama.cpp` is a gitignored clone and CI runs from fresh checkouts. The
+# TAURI crate enables it inside its `cfg(any(android, ios))` dependency block, so
+# the feature is on exactly where the artifact ships and off everywhere else.
+#
+local-inference = ["loca-core/local-inference"]
+
+# The same, for in-process Whisper STT and Kokoro TTS, and off by default for the
+# same reason.
+#
+# What made this hard was never sherpa-onnx: it was `sherpa-onnx-sys`'s prebuilt
+# TABLE, which covers linux, macos and windows and panics on anything else
+# ("Unsupported target for sherpa-onnx prebuilt libs"). Stage 3 took sherpa as a
+# crate dependency and that table quietly decided the mobile scope. Upstream
+# publishes android and ios artifacts at the exact pinned version, and
+# `SHERPA_ONNX_LIB_DIR` short-circuits the download AND the target match
+# (`sherpa-onnx-sys/build.rs:100-110`), so `scripts/vendor-sherpa.ts` stages them
+# and the mobile builds point at them. See D-176.
+local-speech = ["loca-core/local-speech"]
+
+[dependencies]
+loca-core = { package = "loca-core-rs", path = "../loca-core-rs" }
+# The command boundary is JSON, and a body is arbitrary bytes, so it crosses as
+# base64 exactly as `net_fetch`'s does. Same pin as the core's.
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+# `rt` for the one spawned task per WebSocket connection, `sync` for the
+# start-once cell and the per-connection channel. No `macros` and no
+# `rt-multi-thread`: this crate never builds a runtime, it runs on the Tauri
+# app's.
+tokio = { version = "1", features = ["rt", "sync"] }
+tracing = "0.1"
+
+[dev-dependencies]
+# `in-memory` is what exposes `loca_core::transport::testing`, so the pump and
+# marshalling tests drive a real router over an in-memory database rather than a
+# double. A dev-dependency feature does not reach a plain `cargo build`, so the
+# shipped mobile artifact never carries it.
+loca-core = { package = "loca-core-rs", path = "../loca-core-rs", features = ["in-memory"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"

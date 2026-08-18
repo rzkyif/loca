@@ -5,6 +5,19 @@ import type NewCoreWizardView from "../components/new-core/NewCoreWizardView.sve
 const DOCS_URL = "https://loca.rzkyif.com/manual/maintenance/cores";
 
 export const newCoreWizardSamples = {
+  // First boot on a build that carries a Core of its own: the welcome header
+  // over the fork between running it here and connecting to one elsewhere.
+  choose: {
+    step: "choose",
+    locked: true,
+    coreSetupDocsUrl: DOCS_URL,
+  },
+  // The same fork reached from Settings > Cores rather than onboarding: no
+  // welcome header, so the step states its own lead and offers a close.
+  chooseUnlocked: {
+    step: "choose",
+    coreSetupDocsUrl: DOCS_URL,
+  },
   // First boot with an installer-provided local core: the welcome header over
   // the silent auto-pair spinner.
   connectLocal: {

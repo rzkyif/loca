@@ -15,6 +15,19 @@ Deno.test("GET /api/v1/health: open without auth and returns the running version
     const body = await res.json();
     assertEquals(body.status, "ok");
     assertEquals(typeof body.version, "string");
+    // The capability block a Client caches on connect. This binary only ever
+    // runs as a desktop service, so every flag is true; the Rust core is where
+    // they vary. Asserted here so a Client reading a field this Core never
+    // sends is a failing test rather than a silently-undefined gate.
+    assertEquals(body.capabilities, {
+      extensions: true,
+      localInference: true,
+      localSpeech: true,
+      scheduledPrompts: true,
+      stdioMcp: true,
+      pairing: true,
+      coreUpdate: true,
+    });
   } finally {
     await env.teardown();
   }

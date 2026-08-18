@@ -706,16 +706,15 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 // Build the native helper binaries from source and link them into the dev
 // core's bin dir. Production downloads these via the signed manifest at install
 // time; dev has no such download, so without this they are absent and core
-// fails its boot-time helper check (see ensureHelperBinaries in main.ts). The
-// crate name is also the on-disk base name; core looks them up channel-suffixed
-// ("-dev"). All four build + run on every platform (ptyhost uses a ConPTY on
-// Windows, a PTY on unix).
-const HELPER_CRATES = [
-  "loca-core-keychain",
-  "loca-core-updater",
-  "loca-core-hwinfo",
-  "loca-core-ptyhost",
-];
+// fails its boot-time helper check. The crate name is also the on-disk base
+// name; core looks them up channel-suffixed ("-dev").
+//
+// ONE crate, since the Rust core absorbed the other three: the keychain into
+// `secrets/**`, the hardware probe into `models/hardware.rs` (via `sysinfo`),
+// and the PTY host into `extensions/pty/**`. The updater stays separate because
+// a process cannot replace the executable it is running from on Windows, which
+// is a boundary rather than a leftover.
+const HELPER_CRATES = ["loca-core-updater"];
 
 async function provisionHelpers(): Promise<void> {
   const exe = Deno.build.os === "windows" ? ".exe" : "";
@@ -751,85 +750,56 @@ async function provisionHelpers(): Promise<void> {
   }
 }
 
-// The Kokoro phonemizer data. Production bakes it into the speech binary's
-// archive (consent-gated with the binary download); dev fetches the standalone
-// bundle once. bzip2, so shell out to system tar - Deno has gzip but not bzip2.
-const ESPEAK_DATA_URL =
-  "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2";
+// The speech sidecar and its espeak-ng-data staging used to live here. Both are
+// gone rather than disabled: N3 absorbed sherpa-onnx into the core behind
+// `local-speech`, and the Kokoro phonemizer data is now a committed archive the
+// crate pulls in with `include_bytes!` and extracts on first synthesis. Dev
+// therefore fetches nothing for speech and stages no second binary.
 
-// Build + stage the loca-core-speech sidecar (Whisper STT + Kokoro TTS) into
-// the dev bin dir. Production downloads it from the signed binaries manifest and
-// extracts espeak-ng-data alongside; dev has no such download (it is self-hosted,
-// so devManifest skips it). Unlike the small helper crates, this one statically
-// links the sherpa-onnx ONNX runtime (a heavy build), so we build it ONCE rather
-// than on every dev start - on unix the symlink follows a later manual
-// `cargo build -p loca-core-speech`; delete the staged binary to force a rebuild
-// here. Sidecar binaries are NOT channel-suffixed (binaryName() = the bare name).
-async function provisionSpeechSidecar(): Promise<void> {
-  const exe = Deno.build.os === "windows" ? ".exe" : "";
-  const binDir = join(DEV_CORE_DIR, "bin");
-  const dest = join(binDir, `loca-core-speech${exe}`);
-  try {
-    let staged = false;
-    try {
-      // Deno.stat follows the symlink, so a dangling link (its target removed by
-      // a `cargo clean` or an interleaved mobile cross-build) reads as NOT staged
-      // and forces a rebuild - lstat would see the dead link and wrongly skip it,
-      // leaving the dev core with a missing binary the speech manifest can't
-      // resolve (STT/TTS then show a stuck "loca-core-speech" pending download).
-      await Deno.stat(dest);
-      staged = true;
-    } catch {
-      /* not staged (or a dangling symlink) */
-    }
-    if (!staged) {
-      const out = await new Deno.Command("cargo", {
-        args: ["build", "-p", "loca-core-speech"],
-        stdout: "piped",
-        stderr: "piped",
-      }).output();
-      if (!out.success) {
-        const tail = new TextDecoder().decode(out.stderr).trim().split("\n").at(-1) ?? "";
-        devLog(`speech sidecar build failed (${tail}); STT/TTS will stay Disabled in dev`);
-        return;
-      }
-      await ensureDir(binDir);
-      const built = join(ROOT, "target", "debug", `loca-core-speech${exe}`);
-      // Clear a stale (possibly dangling) link first: symlink/copy fail if dest
-      // already exists, which it does when we're re-staging over a dead link.
-      await Deno.remove(dest).catch(() => {});
-      if (Deno.build.os === "windows") await Deno.copyFile(built, dest);
-      else await Deno.symlink(built, dest);
-      devLog("built + linked loca-core-speech sidecar into the dev bin dir");
-    }
-    await ensureEspeakData(join(binDir, "lib", "loca-core-speech"));
-  } catch (err) {
-    devLog(`could not provision speech sidecar (${err instanceof Error ? err.message : err})`);
-  }
-}
-
-// Fetch + unpack espeak-ng-data into <libDir>/espeak-ng-data once, mirroring
-// where the binaries manager extracts it in production.
-async function ensureEspeakData(libDir: string): Promise<void> {
-  const dataDir = join(libDir, "espeak-ng-data");
-  try {
-    if ((await Deno.stat(dataDir)).isDirectory) return; // already staged
-  } catch {
-    /* not staged yet */
-  }
-  await ensureDir(libDir);
-  const tmp = join(libDir, "espeak-ng-data.tar.bz2");
-  const res = await fetch(ESPEAK_DATA_URL);
-  if (!res.ok) throw new Error(`espeak-ng-data fetch HTTP ${res.status}`);
-  await Deno.writeFile(tmp, new Uint8Array(await res.arrayBuffer()));
-  const out = await new Deno.Command("tar", {
-    args: ["-xjf", tmp, "-C", libDir],
+/// Build the Rust core for dev and return the path to the binary.
+///
+/// Debug rather than release, so an edit-rebuild cycle is bearable; both native
+/// features on, so dev is shaped like production. The first build is slow (it
+/// compiles the vendored llama.cpp tree) and every later one is incremental.
+///
+/// There is no `--watch` equivalent here and that is a real change from the
+/// TypeScript core, which hot-reloaded. A core change now needs a dev restart.
+async function buildDevCore(): Promise<string> {
+  // `vendor/` is gitignored, so a fresh clone has no llama.cpp and `build.rs`
+  // fails in a way that reads as a compiler error. Idempotent and near-instant
+  // once the tree is at the pin.
+  const vendored = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", join(ROOT, "scripts", "vendor-llama.ts")],
     stdout: "piped",
     stderr: "piped",
   }).output();
-  await Deno.remove(tmp).catch(() => {});
-  if (!out.success) throw new Error("tar -xjf espeak-ng-data failed");
-  devLog("fetched espeak-ng-data for the dev speech sidecar");
+  if (!vendored.success) {
+    const tail = new TextDecoder().decode(vendored.stderr).trim().split("\n").at(-1) ?? "";
+    devLog(`could not vendor llama.cpp for the dev core: ${tail}`);
+    Deno.exit(1);
+  }
+
+  devLog("building the Rust core (local-inference + local-speech)");
+  const out = await new Deno.Command("cargo", {
+    args: [
+      "build",
+      "--manifest-path",
+      join(ROOT, "packages", "loca-core-rs", "Cargo.toml"),
+      "--bin",
+      "loca-core",
+      "--features",
+      "local-inference,local-speech",
+    ],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  if (!out.success) {
+    devLog("the dev core did not build");
+    Deno.exit(1);
+  }
+
+  const exe = Deno.build.os === "windows" ? ".exe" : "";
+  return join(ROOT, "target", "debug", `loca-core${exe}`);
 }
 
 // Core-side setup + the core process itself are skipped under --client-only,
@@ -852,13 +822,19 @@ if (!CLIENT_ONLY) {
   // its boot-time helper check passes and the first tool call can spawn in
   // prompt-capable mode.
   await provisionHelpers();
-  await provisionSpeechSidecar();
+
+  // Build the Rust core before spawning it. `provisionSpeechSidecar` is gone
+  // with the sidecar it staged: speech is in process now, behind `local-speech`,
+  // and so is inference behind `local-inference`. Dev builds BOTH, so what a
+  // developer runs is shaped like what ships; a dev core without them would
+  // report "no local model" for reasons that exist nowhere in production.
+  const coreBin = await buildDevCore();
 
   children.push(
     spawn(
       "core",
       "36",
-      ["deno", "run", "--watch", "--allow-all", "packages/loca-core/src/main.ts"],
+      [coreBin],
       undefined,
       // Worker .ts files live in the source tree during dev so edits hot-
       // reload via --watch. Without this override, paths().workersDir would
@@ -870,13 +846,11 @@ if (!CLIENT_ONLY) {
         // unreachable). The self-signed cert is still pinned at pairing, so this
         // only widens reachability, not trust.
         ...(MOBILE ? { LOCA_CORE_HOST: "0.0.0.0" } : {}),
+        // The tool worker is still TypeScript run under the pinned `deno`, so
+        // this override still points into the source tree and edits to it still
+        // take effect on the next tool call. It is the one part of the old core
+        // package the Rust core genuinely consumes rather than replaces.
         LOCA_WORKERS_DIR: `${ROOT}packages/loca-core/src/workers`,
-        // Core runs under `deno run --watch`. On a file change the watcher sends
-        // SIGTERM and waits for the program to wind down so it can re-run the
-        // module in-process. This flag tells core's SIGTERM handler to skip its
-        // Deno.exit(0) (which would hard-kill the watcher and end the dev session)
-        // and instead let the event loop drain for the restart. See main.ts.
-        LOCA_DEV_WATCH: "1",
         // dev.ts owns the timestamp + badge column, so core emits bare console
         // lines (no ISO timestamp). Its stderr is piped here (not a TTY), so force
         // color on so level coloring survives.

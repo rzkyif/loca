@@ -78,13 +78,24 @@ export const LOOP_RESISTANT_SAMPLER_ORDER: readonly string[] = [
 
 /** Fallback sampling for a model with no catalog-specific values, and the
  *  default shown for the `llm.*` sampling fields. Conservative values that suit
- *  a small instruct model. */
+ *  a small instruct model.
+ *
+ *  `topP` and `repeatPenalty` match every family in the catalog (Qwen 3.5,
+ *  Qwen 3.6, Gemma 4), which is not a coincidence: both vendors publish these
+ *  same two numbers as their recommendation. They previously read 0.8 and 1.05,
+ *  which matched no catalog model and no vendor, and disagreed with the schema
+ *  defaults the settings panel displays. That disagreement was invisible while
+ *  the core read settings sparsely, because the hardcoded fallback here won and
+ *  the schema value never arrived; resolving defaults (D-037) is what made the
+ *  two sources meet. Keep them in step with the catalog families, and if a
+ *  future family needs different numbers, give that family its own `sampling`
+ *  rather than moving these. See D-072. */
 export const DEFAULT_SAMPLING: Sampling = {
   temperature: 0.7,
-  topP: 0.8,
+  topP: 0.95,
   topK: 20,
   minP: 0,
-  repeatPenalty: 1.05,
+  repeatPenalty: 1.0,
   // A moderate DRY multiplier on by default: small local models loop without it,
   // and 0.8 is gentle enough to leave normal prose untouched. 0 turns it off.
   dryMultiplier: 0.8,

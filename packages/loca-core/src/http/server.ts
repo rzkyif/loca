@@ -6,7 +6,7 @@
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { HealthResponse } from "@loca/shared";
+import type { CoreCapabilities, HealthResponse } from "@loca/shared";
 import { CORE_VERSION } from "../config.ts";
 import { coreStatus } from "../services/core-status.ts";
 import { authService } from "../services/auth.ts";
@@ -32,6 +32,33 @@ import { wsRoutes } from "./routes/ws.ts";
 // (or the unauthenticated /pairing/claim caller) can't exhaust memory. WS
 // frames are not affected (the upgrade path bypasses app.fetch).
 const MAX_BODY_BYTES = 100 * 1024 * 1024; // 100 MiB
+
+// What this Core can do, served on /health so a Client negotiates capability
+// instead of inferring it from the device it renders on.
+//
+// Every flag is true, and that is a fact about this binary rather than a
+// placeholder: it only ever runs as a desktop service under Deno.serve, so it
+// always has a listener (pairing, scheduled prompts), a process it can spawn
+// (stdio MCP, extension tool workers), an updater helper beside it, and
+// downloadable llama-server / loca-core-speech sidecars for local inference and
+// speech. A constant rather than a computation for the same reason: nothing
+// here varies at runtime, and a derivation would imply a false case that does
+// not exist.
+//
+// The Rust core is where these become real, because it also runs embedded in
+// the mobile app with no listener and no spawner, and it links the two engines
+// in at compile time behind default-off features. So the two cores legitimately
+// disagree on localInference and localSpeech, which the conformance suite masks
+// rather than asserts (tests/conformance/cases/foundation/health.ts).
+const CAPABILITIES: CoreCapabilities = {
+  extensions: true,
+  localInference: true,
+  localSpeech: true,
+  scheduledPrompts: true,
+  stdioMcp: true,
+  pairing: true,
+  coreUpdate: true,
+};
 
 export function buildApp(): Hono {
   const app = new Hono();
@@ -68,6 +95,7 @@ export function buildApp(): Hono {
       core: coreStatus().snapshot(),
       adminPasswordSet: authService().hasAdminPassword(),
       behindProxy: isBehindProxy(),
+      capabilities: CAPABILITIES,
     };
     return c.json(body);
   });

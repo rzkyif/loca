@@ -86,6 +86,10 @@ export async function resolveEndpoint(
     baseUrl: `http://${llmHost}:${port}/v1`,
     apiKey: "sk-local",
     model: "default",
+    // The core spawned this one, so it is what the scheduler's semaphore is
+    // sized against. True regardless of `llm.host`: a LAN bind address does not
+    // stop it being the process we run with a single slot.
+    isLocalProvider: true,
     reasoning,
     temperature,
     topP,

@@ -39,8 +39,11 @@ export class PairingApi {
   constructor(private readonly client: CoreClient) {}
 
   // Mint a code on this (already-paired) core. Requires the on-disk admin token.
+  // Goes through the client's own transport rather than reaching for
+  // `platform().net`: this is an operation on an ALREADY-SELECTED core, so
+  // whichever transport reaches that core is the right one.
   async mintCode(adminToken: string, req: PairingCodeRequest = {}): Promise<PairingCodeResponse> {
-    const res = await platform().net.fetch({
+    const res = await this.client.fetchRaw({
       url: `${this.client.endpoint.baseUrl}/api/v1/pairing/codes`,
       method: "POST",
       headers: {
@@ -48,7 +51,6 @@ export class PairingApi {
         "X-Admin-Token": adminToken,
       },
       body: JSON.stringify(req),
-      ...this.client.netTrust(),
     });
     if (!ok(res)) throw new Error(`mint pairing code: HTTP ${res.status}`);
     return JSON.parse(text(res)) as PairingCodeResponse;

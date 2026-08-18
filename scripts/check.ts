@@ -12,7 +12,9 @@ const cmd = new Deno.Command("deno", {
   args: [
     "check",
     "--quiet",
-    "scripts/release/main.ts",
+    "scripts/build.ts",
+    "scripts/release/ci-build.ts",
+    "scripts/release/ci-publish.ts",
     "scripts/website/dev.ts",
     "scripts/website/build.ts",
     "scripts/pkg.ts",

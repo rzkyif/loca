@@ -1,0 +1,17 @@
+{
+  "name": "loca-core-rs",
+  "exports": {},
+  "tasks": {
+    "build": "cargo build --release",
+    "//dev": "Runs the core from source with both native features on, which is what `deno task dev` spawns and what ships. Needs `deno run -A scripts/vendor-llama.ts` once; the full dev environment (admin token, seeded extension manifest, client) is `deno task dev` from the repo root, and this is the core-only half of it.",
+    "dev": "cargo run --bin loca-core --features local-inference,local-speech",
+    "//mobile-check": "Cross-compiles for both mobile triples. NOT decoration: the crate silently stopped building for Android and iOS and nothing noticed (D-117), because cargo test and cargo build are host-target and the client's check:android/check:ios check the TAURI crate, which does not depend on this one until M1 lands loca-core-ffi. The mobile half of this project had no build coverage at all. Deliberately NOT named `check`, so scripts/pkg.ts does not fan it into `deno task check`: the iOS half needs a macOS runner with Xcode and would fail the ubuntu check job. CI runs the android half in the existing `android` job, which already has the NDK; the iOS half is local-only until a macOS runner exists.",
+    "mobile-check": "cargo check -q --target aarch64-apple-ios && cargo check -q --target aarch64-linux-android",
+    "//native-check": "Builds and tests the features that compile a vendored third-party C/C++ tree, which are OFF by default because CI's fresh checkouts have no vendor/ and a cold cmake build does not fit the standard job's budget. Deliberately NOT named `check`/`test`/`lint`, so scripts/pkg.ts does not fan it into the default gate: it needs `deno run -A scripts/vendor-llama.ts` first and takes many minutes cold. CI runs it as the `native` job, which is the thing that stops these tests from guarding nothing (F2).",
+    "native-check": "cargo clippy -q --all-targets --features local-inference -- -D warnings && cargo test -q --lib --features local-inference inference::shim",
+    "lint": "cargo clippy -q --all-targets -- -D warnings",
+    "fmt": "cargo fmt",
+    "fmt:check": "cargo fmt --check",
+    "test": "cargo test -q"
+  }
+}

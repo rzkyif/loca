@@ -104,7 +104,12 @@ export async function probeSource(
       const cl = noRedirect.headers.get("content-length");
       if (cl) {
         const n = Number(cl);
-        if (Number.isFinite(n)) sizeBytes = n;
+        // Zero means the REDIRECT's own body, not the resource's. A 302 carries
+        // no body and plenty of servers say so explicitly, so accepting 0 here
+        // reports the file as empty and skips the followed-HEAD fallback that
+        // would have found its real size. `if (cl)` does not catch this: the
+        // string "0" is truthy.
+        if (Number.isFinite(n) && n > 0) sizeBytes = n;
       }
     }
     if (sizeBytes === undefined) {

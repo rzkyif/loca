@@ -25,6 +25,7 @@ import {
 import { sidecarManager } from "../sidecars/manager.ts";
 import { llmScheduler } from "@loca/core-engine/services/llm-scheduler";
 import { llmIdle } from "./llm-idle.ts";
+import { POOL_KEYS, poolConfigFrom, workerPool } from "../extensions/worker-pool.ts";
 import { loadCoreSettings, subscribeCoreSettings } from "@loca/core-engine/services/core-settings";
 import { strSetting } from "@loca/core-engine/services/settings-access";
 import { downloadManager } from "../downloads/manager.ts";
@@ -59,16 +60,27 @@ const LLAMA_KEYS = new Set([
 
 // Keys that, when changed, reconcile the speech sidecar. STT and TTS share one
 // process: stt.threads drives the process thread count and the rest gate which
-// engines load, so tts.enabled lives here too. The TTS model-selection keys are
-// included so switching preset/model (which writes tts.modelType/modelFiles, not
-// tts.enabled) reloads the engine in place instead of leaving the old voice
-// resident until the user manually toggles TTS off and on.
+// engines load, so tts.enabled lives here too. The model-selection keys are
+// included for BOTH engines so switching preset/model (which writes
+// modelType/modelFiles, not the enabled flag) reloads the engine in place
+// instead of leaving the old model resident until the user manually toggles the
+// module off and on.
+//
+// This set must cover every key speechDesiredState reads. It did not: the STT
+// model-selection pair was missing while the TTS pair was present, so selecting
+// a new transcription model wrote stt.modelFiles and the running engine kept the
+// old weights until something unrelated reconciled it. tts.provider was missing
+// for the same reason, so switching TTS to an external provider left the local
+// model resident.
 const SPEECH_KEYS = new Set([
   "stt.enabled",
   "stt.provider",
+  "stt.modelType",
   "stt.modelPath",
+  "stt.modelFiles",
   "stt.threads",
   "tts.enabled",
+  "tts.provider",
   "tts.modelType",
   "tts.modelPath",
   "tts.modelFiles",
@@ -110,6 +122,10 @@ export async function initSidecarBoot(): Promise<void> {
   });
   const settings = await loadCoreSettings();
   llmIdle().configure(settings);
+  // The extension pool's three tunables. Applied here and on change because the
+  // panel has always offered them and `setConfig` had no caller anywhere, so the
+  // pool ran on its constants and changing a value did nothing.
+  workerPool().setConfig(poolConfigFrom(settings));
   await applyLlama(settings).catch(logErr("llama"));
   await applyLlamaEmbed(settings).catch(logErr("llama-embed"));
   await applySpeech(settings).catch(logErr("speech"));
@@ -128,6 +144,9 @@ export async function initSidecarBoot(): Promise<void> {
     if (anyOverlap(changed, SPEECH_KEYS)) {
       void applySpeech(next).catch(logErr("speech"));
     }
+    // Synchronous: it swaps three numbers, and the next call and the next idle
+    // timer read them. A call already running keeps the budget it started with.
+    if (anyOverlap(changed, POOL_KEYS)) workerPool().setConfig(poolConfigFrom(next));
   });
   // When an llm/stt model file finishes downloading, retry the affected
   // sidecar. Without this hook the user has to manually toggle settings

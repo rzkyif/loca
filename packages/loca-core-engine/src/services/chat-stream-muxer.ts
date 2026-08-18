@@ -55,8 +55,7 @@ export class StreamMuxer {
   ): Promise<TurnResult> {
     const stream = this.stream;
     const writer = this.writer;
-    const isLocal =
-      endpoint.baseUrl.includes("127.0.0.1") || endpoint.baseUrl.includes("localhost");
+    const isLocal = endpoint.isLocalProvider === true;
     let assistantContent = "";
     let reasoning = "";
     // Skeletons born on the first delta of each kind, so the client gets a

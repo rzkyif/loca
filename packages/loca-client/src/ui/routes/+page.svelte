@@ -29,6 +29,8 @@
   import type { AppMode } from "$stores/view.svelte";
   import {
     cores,
+    dropTokenlessCores,
+    dropUnauthorizedCore,
     ensureLocalCoreUpIfNeeded,
     isLoopbackUrl,
     pruneUninstalledLocalCores,
@@ -191,15 +193,14 @@
   // The core rejected our bearer token (e.g. its DB was reset, so it no longer
   // knows this client). The stored token is permanently dead, so silently drop
   // the core and fall back to onboarding instead of stranding the user. Mirrors
-  // the manual unpair flow in CoresField. currentEntry() guards re-entry: it's
-  // null once removed, so the effect can't act twice.
+  // the manual unpair flow in CoresField. dropUnauthorizedCore owns which cores
+  // that even applies to, and guards re-entry: nothing is current once removed,
+  // so the effect can't act twice.
   $effect(() => {
     if (!connectionState.unauthorized) return;
-    const dead = cores().currentEntry();
-    if (!dead) return;
     void (async () => {
       try {
-        await cores().removePaired(dead.id);
+        if (!(await dropUnauthorizedCore())) return;
         const remaining = await cores().list();
         if (remaining.length === 0) viewState.setLocked(true);
         else if (!cores().currentEntry()) await cores().select(remaining[0].id);
@@ -213,28 +214,12 @@
   // leave no core active when a paired entry's token is gone from the keychain
   // (e.g. after a dev reset): select() throws "no token" before any connection,
   // so connectionState never reaches "unauthorized" and the effect never fires.
-  // Drop those tokenless cores and fall back to onboarding instead of hanging in
-  // "Connecting to core...". A keychain *error* (get throws) is left alone so a
-  // transient glitch can't unpair a still-valid core.
+  // Drop those tokenless cores (dropTokenlessCores, which owns the rules about
+  // which cores that question even applies to) and fall back to onboarding
+  // instead of hanging in "Connecting to core...".
   async function dropTokenlessCoresAndMaybeOnboard(): Promise<void> {
     if (cores().currentEntry()) return; // a core selected fine; nothing to do
-    for (const c of await cores().list()) {
-      let token: string | null = null;
-      try {
-        token = await platform().keychain.get(c.id);
-      } catch (e) {
-        log.error(`keychain check failed for core "${c.name}"; leaving it paired:`, e);
-        continue;
-      }
-      if (!token) {
-        log.warn(`core "${c.name}" has no stored token; unpairing`);
-        try {
-          await cores().removePaired(c.id);
-        } catch (e) {
-          log.error("auto-unpair of tokenless core failed:", e);
-        }
-      }
-    }
+    await dropTokenlessCores();
     const remaining = await cores().list();
     if (remaining.length === 0) viewState.setLocked(true);
     else if (!cores().currentEntry()) {

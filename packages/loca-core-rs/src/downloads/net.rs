@@ -60,6 +60,18 @@ pub enum Redirect {
 /// router either.
 pub const SMALL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// What every outbound request identifies itself as.
+///
+/// reqwest sends NO `User-Agent` unless one is configured, and the GitHub REST
+/// API answers a request without one with **403 Forbidden**, not 401 or 400, so
+/// the binary resolver failed on `/repos/{repo}/releases/tags/{tag}` in a way
+/// that reads as an auth or rate-limit problem and is neither. Deno's `fetch`
+/// sends `Deno/<version>` on its own, which is why the TypeScript core never
+/// needed this and its absence here was invisible until a real install ran.
+fn user_agent() -> String {
+    format!("loca-core/{}", crate::config::CORE_VERSION)
+}
+
 /// The outbound side of the download engine.
 pub struct Net {
     follow: reqwest::Client,
@@ -312,6 +324,7 @@ impl NetBody {
 fn build_client(policy: reqwest::redirect::Policy) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .redirect(policy)
+        .user_agent(user_agent())
         .build()
         .map_err(|err| {
             AppError::new(
@@ -397,6 +410,37 @@ mod tests {
             .unwrap();
         assert_eq!(json["ok"], serde_json::Value::Bool(true));
         assert_eq!(net.calls(), 3);
+    }
+
+    #[tokio::test]
+    async fn every_verb_identifies_itself_to_the_host() {
+        // The GitHub REST API answers a request with no User-Agent with 403,
+        // and reqwest sends none unless one is configured. See `user_agent`.
+        let net = Net::new().unwrap();
+        let cancel = CancellationToken::new();
+        let server = Upstream::start(Serve::Json("{\"ok\":true}".into())).await;
+
+        bounded(net.head(&server.url("/probe"), Redirect::Follow, &cancel))
+            .await
+            .unwrap();
+        let mut body = bounded(net.get_range(&server.url("/probe"), None, &cancel))
+            .await
+            .unwrap();
+        while bounded(body.next_chunk()).await.is_some() {}
+        bounded(net.json(&server.url("/probe"), &cancel))
+            .await
+            .unwrap();
+
+        let wanted = format!("loca-core/{}", crate::config::CORE_VERSION);
+        for call in server.calls() {
+            assert_eq!(
+                call.user_agent.as_deref(),
+                Some(wanted.as_str()),
+                "{} {} carried no User-Agent",
+                call.method,
+                call.path
+            );
+        }
     }
 
     #[tokio::test]

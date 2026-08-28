@@ -52,7 +52,12 @@ use super::{Booted, Frontend};
 /// The `TempDir` is returned rather than dropped because dropping it deletes
 /// the home out from under the core that is still holding it open.
 async fn booted(frontend: Frontend) -> (Booted, tempfile::TempDir) {
-    let dir = tempfile::tempdir().expect("tempdir");
+    booted_in(frontend, tempfile::tempdir().expect("tempdir")).await
+}
+
+/// [`booted`] over a home a test prepared first, for the boot passes that read
+/// the disk on their way up.
+async fn booted_in(frontend: Frontend, dir: tempfile::TempDir) -> (Booted, tempfile::TempDir) {
     let booted = super::boot_with_store(
         Config {
             channel: Channel::Stable,
@@ -313,4 +318,226 @@ async fn a_real_boot_can_restart_a_subsystem() {
          validation error and there is no recovery path short of restarting the \
          whole core",
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_seeds_a_new_connection_with_the_core_status() {
+    // `boot.rs`'s `frames.add_seed(CoreStatusSeed(..))`.
+    //
+    // The client's bar is fed by `core.status` frames and by nothing else
+    // (`core-status.svelte.ts:28`; `/api/v1/health` is read for capabilities
+    // only), and it is constructed holding `starting_up`. Emission is
+    // edge-only, so without the seed a client joining a steady core is never
+    // told anything and the bar reads "Starting Up" for the whole session.
+    let (booted, _dir) = booted(Frontend::Service).await;
+    let mut conn = booted.core.frames().register("seam-probe");
+
+    let Some(crate::transport::Outbound::Frame(first)) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), conn.next())
+            .await
+            .expect("the connection was seeded with nothing within 5s")
+    else {
+        panic!("expected a frame");
+    };
+    assert!(
+        first.contains("core.status"),
+        "a new connection was not seeded with the core status, so the client bar \
+         stays on the value it was constructed with: {first}",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_broadcasts_every_core_status_edge() {
+    // `boot.rs`'s `status.subscribe()` loop.
+    //
+    // The seed alone leaves the bar frozen at whatever was true at connect: no
+    // Busy while a turn streams, no Downloading while a model is fetched, no
+    // Updating, no Error. `CoreStatusService::subscribe` is documented "every
+    // edge, for the hub to broadcast" and had no subscriber at all, which is
+    // why the aggregate every other package feeds moved an object nobody read.
+    let (booted, _dir) = booted(Frontend::Service).await;
+    let mut conn = booted.core.frames().register("seam-probe");
+    // Drain the seed, so what follows can only be an edge.
+    tokio::time::timeout(std::time::Duration::from_secs(5), conn.next())
+        .await
+        .expect("no seed arrived");
+
+    // An edge no other signal produces at rest, so nothing else can satisfy it.
+    booted.status.note_update_staged();
+
+    let Some(crate::transport::Outbound::Frame(next)) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), conn.next())
+            .await
+            .expect("the status edge was never broadcast within 5s")
+    else {
+        panic!("expected a frame");
+    };
+    assert!(
+        next.contains("core.status") && next.contains("updating"),
+        "a core status edge did not reach the connection, so the bar is frozen \
+         at whatever was true when the client connected: {next}",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_fills_every_storage_seam() {
+    // `boot.rs`'s four `StorageDeps::with_*` calls. The mount landed with only
+    // `models` and `requirements` filled, and `Unwired` answers three of the
+    // other four with an EMPTY list rather than an error, so the storage screen
+    // reported no sessions, no extensions and no binaries whatever was on disk
+    // and nothing anywhere went red.
+    //
+    // Each probe below is chosen because `Unwired` cannot produce it: the two
+    // deletes fail there with "not wired into this core", the reset fails, and
+    // the lock set is empty. None of them depends on the temp home containing
+    // any data.
+    let (booted, _dir) = booted(Frontend::Service).await;
+    let storage = &booted.storage;
+
+    // Sessions: an unknown id is a no-op for the real store, an error for the stub.
+    storage
+        .sessions
+        .delete("no-such-session")
+        .await
+        .expect("the sessions seam is unwired, so the storage screen lists none");
+
+    // Extensions: the real registry answers extension_not_found; the stub
+    // answers an internal "not wired".
+    let err = storage
+        .extensions
+        .delete("no-such-extension")
+        .await
+        .expect_err("deleting an extension that does not exist should fail");
+    assert_eq!(
+        err.code,
+        crate::error::ErrorCode::ExtensionNotFound,
+        "the extensions seam is unwired, so the storage screen lists none: {}",
+        err.message,
+    );
+
+    // Binaries: `deno` is required wherever a tool worker can be spawned, and
+    // the lock is what stops the screen offering to delete it.
+    assert_eq!(
+        storage.binaries.locked_kinds().await.unwrap(),
+        crate::requirements::required_binary_kinds()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<std::collections::HashSet<_>>(),
+        "the binaries seam is unwired, so every installed binary reads as safe \
+         to delete and the binaries category is empty",
+    );
+
+    // Settings: the one seam that FAILS rather than degrading, because a
+    // factory reset that silently does nothing is worse than one that says it
+    // could not run.
+    storage.settings.factory_reset().await.expect(
+        "the settings seam is unwired, so Clear on the settings category \
+                 answers an error instead of resetting anything",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_reconciles_the_memories_on_disk() {
+    // `boot.rs`'s `memories.rescan()` pass.
+    //
+    // The oracle reconciles at boot (`main.ts:217-226`) and the port did not,
+    // so a memory added or edited while the core was down stayed invisible or
+    // stale until the user happened to find the Rescan button in settings.
+    // Nothing else in the crate covers this: the store's rescan is D5's and is
+    // tested there, and the line that runs it at boot is boot's.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let memories = dir.path().join("memories");
+    std::fs::create_dir_all(&memories).expect("memories dir");
+    std::fs::write(
+        memories.join("placed-by-hand.md"),
+        "# Placed by hand\n\nDropped in while the core was down.\n",
+    )
+    .expect("write");
+
+    let (booted, _dir) = booted_in(Frontend::Service, dir).await;
+
+    let listed = booted.memories.list().await.expect("list");
+    assert!(
+        listed.iter().any(|m| m.filename == "placed-by-hand.md"),
+        "a memory file present before boot was never adopted, so it stays \
+         invisible until someone presses Rescan: {listed:?}",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_gives_the_binaries_installer_its_requirements_notifier() {
+    // `boot.rs`'s `binaries.attach_requirements(..)`.
+    //
+    // A binaries row reaches `Completed` when its ARCHIVE lands, before the
+    // extract and before the version is recorded, so `requirements::edges`
+    // refuses those rows and this notification is the ONLY thing that can take
+    // an installed binary out of `missing`. Without it the queue shows the
+    // download finished and the client's gate stays on "Downloading..." with no
+    // further edge to correct it.
+    let (booted, _dir) = booted(Frontend::Service).await;
+    assert!(
+        booted.binaries.has_requirements(),
+        "the installer has no requirements notifier, so finishing a binary \
+         install never clears it from the pending-downloads gate",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_real_boot_recomputes_requirements_on_a_download_edge() {
+    // `boot.rs`'s `if edges.note(&entries) { requirements.changed(); }` inside
+    // the existing queue subscription.
+    //
+    // The whole join, end to end: a model row reaching a terminal state has to
+    // reach the coalescing recompute worker and come back out as a broadcast,
+    // or a file that finished downloading stays in `missing` and the client
+    // gates the app on it forever. Every piece is unit-tested on its own and
+    // the line that connects them is boot's.
+    let (booted, dir) = booted(Frontend::Service).await;
+    let mut conn = booted.core.frames().register("seam-probe");
+    // Drain the core-status seed, so what follows is not it.
+    tokio::time::timeout(std::time::Duration::from_secs(5), conn.next())
+        .await
+        .expect("no seed arrived");
+
+    // The queue's fast path: a file already on disk is recorded `Completed` and
+    // broadcast with no network and no worker.
+    let rel = "models--seam--probe/blobs/probe.gguf";
+    let path = dir.path().join("models").join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).expect("model dir");
+    std::fs::write(&path, b"weights").expect("write");
+    booted
+        .downloads
+        .enqueue(&crate::downloads::EnqueueSpec {
+            source: "@seam/probe/main/probe.gguf".into(),
+            destination: crate::contract::api::DownloadEntryDestination::Models,
+            group_id: "seam-probe".into(),
+            size_hint: None,
+            sha256: None,
+            url: None,
+            rel_path: Some(rel.into()),
+            filename: Some("probe.gguf".into()),
+        })
+        .await
+        .expect("enqueue");
+
+    let deadline = std::time::Duration::from_secs(10);
+    let started = tokio::time::Instant::now();
+    loop {
+        assert!(
+            started.elapsed() < deadline,
+            "a completed download never produced a requirements.snapshot, so a \
+             file that finished downloading stays in `missing` and the client's \
+             download gate never clears",
+        );
+        let Some(crate::transport::Outbound::Frame(json)) =
+            tokio::time::timeout(deadline, conn.next())
+                .await
+                .expect("the connection went quiet")
+        else {
+            continue;
+        };
+        if json.contains("requirements.snapshot") {
+            break;
+        }
+    }
 }

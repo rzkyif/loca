@@ -91,6 +91,7 @@ pub struct Call {
     pub method: String,
     pub path: String,
     pub range: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 struct Shared {
@@ -212,6 +213,7 @@ async fn handle(State(shared): State<Arc<Shared>>, req: Request) -> Response<Bod
             method: method.to_string(),
             path: path.clone(),
             range: header(&headers, "range"),
+            user_agent: header(&headers, "user-agent"),
         });
 
     if matches!(shared.serve, Serve::Never) {

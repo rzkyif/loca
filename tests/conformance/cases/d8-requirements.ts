@@ -161,6 +161,48 @@ export const cases: Case[] = [
     ],
   },
   {
+    // Its own core: the PATCH below is a settings write every neighbour sharing
+    // the boot would inherit.
+    isolate: true,
+    id: "d8.requirements.a-settings-change-rebroadcasts-the-snapshot",
+    package: "D8",
+    routes: ["PATCH /api/v1/settings"],
+    auth: "paired",
+    watch: ["requirements.snapshot"],
+    steps: [
+      {
+        // The one assertion no unit test can make, because a test that built the
+        // wiring would be testing its own copy of it: settings is what PUTS a
+        // file in `missing`, so a core that recomputes on nothing leaves every
+        // client on the snapshot it fetched at connect. The client gates the
+        // whole app on that set, which is the "downloads all finished, settings
+        // still says Downloading" shape.
+        //
+        // Any schema key does: both cores recompute on the change edge rather
+        // than on which key moved. `llm.contextSize` is the cheapest one that
+        // touches no model file.
+        request: {
+          method: "PATCH",
+          path: "/api/v1/settings",
+          body: { "llm.contextSize": 8192 },
+        },
+        expect: {
+          status: 200,
+          frames: [
+            {
+              kind: "requirements.snapshot",
+              // Held at `<any>`: the rows themselves are asserted exactly by the
+              // GET case above, and the binary half differs between the cores
+              // for the reason the module header records.
+              required: "<any>",
+              missing: "<any>",
+            },
+          ],
+        },
+      },
+    ],
+  },
+  {
     // Its own core: a greeting mints a session and starts a turn on it, which is
     // global state a neighbour sharing the boot would see in its session list.
     isolate: true,

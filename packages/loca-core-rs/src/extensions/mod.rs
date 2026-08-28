@@ -394,6 +394,47 @@ impl Extensions {
     }
 }
 
+/// The storage screen's view of the installed extensions.
+///
+/// The facts cross the seam and the copy does not: `seeded`, `builtin` and
+/// `has_enabled_tools` are what the lock rules need, and the storage package
+/// turns them into the tooltip a user reads.
+#[async_trait]
+impl crate::storage::deps::ExtensionsSource for Extensions {
+    async fn list(&self) -> Result<Vec<crate::storage::deps::ExtensionSummary>> {
+        let mut out = Vec::new();
+        for extension in self.registry().list().await? {
+            // Per extension rather than one join, matching the oracle
+            // (`storage.ts:81-89`), and a read failure for one must not blank
+            // the whole view: an extension whose tools cannot be listed is
+            // reported as having none, which only ever makes it MORE deletable
+            // in the same way the oracle's catch does.
+            let has_enabled_tools = self
+                .registry()
+                .list_tools(&extension.id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .any(|tool| tool.enabled);
+            out.push(crate::storage::deps::ExtensionSummary {
+                builtin: extension.id == BUILTIN_EXTENSION_ID,
+                seeded: extension.source == crate::contract::api::ExtensionSource::Seeded,
+                display_name: extension.display_name,
+                id: extension.id,
+                has_enabled_tools,
+            });
+        }
+        Ok(out)
+    }
+
+    /// The full removal, not the dependency-revert: the storage screen offers
+    /// to reclaim the disk, and leaving the source files behind would reclaim
+    /// almost none of it.
+    async fn delete(&self, extension_id: &str) -> Result<()> {
+        self.delete_extension(extension_id).await
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

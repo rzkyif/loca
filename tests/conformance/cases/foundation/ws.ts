@@ -25,6 +25,36 @@ export const cases: Case[] = [
     ],
   },
   {
+    id: "f6.ws.a-new-connection-is-seeded-with-the-core-status",
+    package: "F6",
+    routes: ["GET /ws/v1"],
+    auth: "paired",
+    watch: ["core.status"],
+    steps: [
+      {
+        // The frame is asserted on the CONNECT, not on the request: the watcher
+        // opens its socket before the first step and buffers, so this GET is
+        // only something for the step to be. Emission is edge-only on both
+        // cores, so a client joining a steady core learns its status from this
+        // seed or from nothing at all, and the client's bar reads `core.status`
+        // frames and no other source.
+        request: { method: "GET", path: "/api/v1/health" },
+        expect: {
+          status: 200,
+          frames: [
+            {
+              kind: "core.status",
+              // The aggregate itself is not contractual between the cores: the
+              // Rust core absorbs the sidecars, so its `subsystems` list is a
+              // different set. That a snapshot ARRIVES is the assertion.
+              snapshot: "<any>",
+            },
+          ],
+        },
+      },
+    ],
+  },
+  {
     id: "f6.ws.heartbeat-round-trip",
     package: "F6",
     routes: ["GET /ws/v1"],

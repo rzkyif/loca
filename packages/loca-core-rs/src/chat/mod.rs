@@ -523,6 +523,59 @@ impl ChatEngine for Chat {
     }
 }
 
+/// The storage screen's view of the sessions on disk.
+///
+/// On `Chat` rather than on `SessionsStore`, because the seam asks two
+/// questions and only one of them is the store's: which sessions have an agent
+/// mid-turn is this module's fact, and the alternative is boot assembling a
+/// pair-holding adapter that would then be the only place the two are joined.
+#[async_trait::async_trait]
+impl crate::storage::deps::SessionsSource for Chat {
+    async fn list(&self) -> Result<Vec<crate::storage::deps::SessionSummary>> {
+        Ok(self
+            .inner
+            .sessions
+            .list_all()
+            .await
+            .into_iter()
+            .map(|footprint| crate::storage::deps::SessionSummary {
+                id: footprint.id,
+                title: footprint.title,
+                updated_at_ms: footprint.updated_at_ms,
+                size_bytes: footprint.size_bytes,
+            })
+            .collect())
+    }
+
+    async fn active_ids(&self) -> Result<std::collections::HashSet<String>> {
+        Ok(self.active_session_ids())
+    }
+
+    /// Owner-agnostic: the storage screen deletes by directory, and a session
+    /// belonging to another paired client is still this core's disk.
+    async fn delete(&self, session_id: &str) -> Result<()> {
+        if let Some(deleted) = self.inner.sessions.delete_by_id(session_id).await {
+            for path in deleted.attachment_paths {
+                // Removing the session directory already took the attachments
+                // stored inside it, so a missing file is the normal case. Same
+                // handling as the delete route (`sessions/routes.rs:180-193`),
+                // where a real failure is worth a warning and never fails the
+                // delete.
+                match crate::sessions::store::remove_file(path.clone()).await {
+                    Ok(()) => {}
+                    Err(err) if err.code == crate::error::ErrorCode::NotFound => {}
+                    Err(err) => tracing::warn!(
+                        target: "loca::storage",
+                        "session delete: failed to remove attachment {}: {}",
+                        path.display(), err.message,
+                    ),
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl MemoryIndexer for Chat {
     fn schedule(&self, memory_id: Option<&str>) {
         let inner = Arc::clone(&self.inner);

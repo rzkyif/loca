@@ -3460,6 +3460,40 @@ async fn drain_until(conn: &mut Connection, kind: &str) -> Vec<Value> {
 }
 
 #[tokio::test]
+async fn a_turn_persists_the_token_usage_it_broadcast() {
+    // Live equals reload, for the context gauge. The port kept the oracle's
+    // `chat.usage` frame and dropped the `setTokenUsage` on the line beneath it
+    // (`chat-stream-muxer.ts:371-378`), so the gauge was correct while the turn
+    // streamed and empty every time the session was reopened.
+    let env = chat_env(
+        Arc::new(crate::llm::testing::ScriptedProvider::text("hello world")),
+        ChatDeps::unwired(),
+    )
+    .await;
+    use_local_provider(&env.settings).await;
+    let session = new_session(&env.store, ALICE).await;
+    env.store
+        .insert_message_after(&session, user_message("hi"), None)
+        .await
+        .unwrap();
+    let mut conn = env.frames.register(ALICE);
+    let _ = drain(&mut conn);
+
+    env.chat.start(ALICE, start_frame(&session, "s1")).await;
+    let frames = drain_until(&mut conn, "chat.done").await;
+    assert!(kinds(&frames).contains(&"chat.usage".to_string()));
+
+    let usage = env
+        .store
+        .get_or_throw(ALICE, &session)
+        .await
+        .unwrap()
+        .token_usage
+        .expect("the usage the client was sent was never written to the session");
+    assert_eq!((usage.prompt, usage.completion, usage.total), (10, 3, 13));
+}
+
+#[tokio::test]
 async fn a_turn_streams_announces_and_persists_its_assistant_message() {
     let env = chat_env(
         Arc::new(crate::llm::testing::ScriptedProvider::text("hello world")),

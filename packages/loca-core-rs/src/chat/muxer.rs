@@ -85,6 +85,11 @@ pub struct TurnResult {
     pub interrupted: bool,
     pub truncated: bool,
     pub error: Option<AppError>,
+    /// What this hop reported, for the caller to PERSIST. Broadcasting it is
+    /// not enough on its own: the client renders the context gauge from the
+    /// session document on load, so a usage that only ever rode a live frame is
+    /// gone the moment the session is reopened.
+    pub usage: Option<TokenUsage>,
 }
 
 /// Where a resolved tool name lives.
@@ -322,6 +327,7 @@ impl StreamMuxer {
             reasoning: turn.reasoning,
             tool_calls: resolved,
             truncated,
+            usage: turn.usage,
             ..TurnResult::default()
         }
     }

@@ -306,6 +306,25 @@ pub(super) async fn run(
             .run(deltas, &mut writer, &stream.cancel, &resolve)
             .await;
 
+        // Persisted, not only broadcast. The oracle does both on the same two
+        // lines (`chat-stream-muxer.ts:371-378`) and the port kept only the
+        // frame, so the context gauge was live-only: correct while the turn
+        // streamed and empty again the next time the session was opened.
+        // Owner-agnostic and a missing session is a no-op, because a stream can
+        // outlive the session it was reporting for.
+        if let Some(usage) = result.usage.clone() {
+            if let Err(err) = chat
+                .sessions
+                .set_token_usage(&stream.session_id, Some(usage))
+                .await
+            {
+                tracing::warn!(
+                    target: "loca::chat",
+                    "could not persist token usage for {}: {}", stream.session_id, err.message,
+                );
+            }
+        }
+
         // Already finalized inside the muxer, at the first content delta or on
         // its way out, which is what keeps reasoning persisting before the
         // assistant. Here it only joins the transcript.

@@ -29,12 +29,12 @@ use crate::paths::Paths;
 use crate::secrets::Vault;
 use crate::sessions::SessionsStore;
 use crate::sidecars::Manager;
-use crate::storage::deps::StorageDeps;
+use crate::storage::deps::{RequirementsNotifier, StorageDeps};
 use crate::transport::router::Services;
 use crate::transport::state::{AppContext, ClientAuth, ClientIdentity, StatusProvider};
 use crate::transport::status::{CoreStatusService, SidecarSource};
 use crate::transport::tls::{self, TlsMaterial};
-use crate::transport::{Core, FrameBus};
+use crate::transport::{ConnectionSeed, Core, FrameBus};
 
 use tokio::sync::broadcast;
 
@@ -73,6 +73,22 @@ async fn raw_settings(paths: &Paths) -> RawSettings {
             );
             RawSettings(Default::default())
         }
+    }
+}
+
+/// Seeds a just-connected client with the current core status.
+///
+/// Registered on the frame bus rather than sent from the WS upgrade handler,
+/// because the bus queues seeds inside `register` and the embedded frontend
+/// registers there too: sending it from one transport would leave the other
+/// connecting to a core whose bar never moves off "Starting Up".
+struct CoreStatusSeed(Arc<CoreStatusService>);
+
+impl ConnectionSeed for CoreStatusSeed {
+    fn seed(&self, _client_id: &str) -> Vec<ServerToClientFrame> {
+        vec![ServerToClientFrame::CoreStatus {
+            snapshot: self.0.snapshot(),
+        }]
     }
 }
 
@@ -307,6 +323,23 @@ pub struct Booted {
     /// `None` when `behindProxy` is set: a terminating proxy owns TLS and the
     /// core has no certificate of its own to pin.
     pub tls: Option<TlsMaterial>,
+    /// The download queue, the binaries installer, and the memories store.
+    ///
+    /// Read ports for the boot-seam suite (D-165), each covering a boot line
+    /// whose loss is silent everywhere else: the queue subscription that
+    /// recomputes requirements on a download edge, the installer's requirements
+    /// notifier, and the boot-time memory reconcile. Every one is a handle boot
+    /// already holds, cloned rather than rebuilt.
+    pub downloads: crate::downloads::queue::DownloadQueue,
+    pub binaries: crate::downloads::binaries::installer::BinariesInstaller,
+    pub memories: crate::memories::MemoriesStore,
+    /// The storage screen's seams, as the router holds them.
+    ///
+    /// A read port for the boot-seam suite (D-165). Four of the six were left at
+    /// `Unwired` after the mount, and three of those report EMPTY rather than
+    /// failing, so nothing anywhere went red while the screen showed no
+    /// sessions, no extensions and no binaries.
+    pub storage: StorageDeps,
     /// The identity the embedded frontend makes every in-process request as.
     /// `None` for [`Frontend::Service`], which has no such client.
     ///
@@ -497,6 +530,42 @@ pub async fn boot_with_store(
         Arc::clone(&sidecars) as Arc<dyn SidecarSource>
     ));
     sidecars.attach_status((*status).clone());
+    // The aggregate's only route to a client. Both halves are needed and the
+    // oracle has both: the seed (`hub.ts:189-199`) because emission is
+    // edge-only, so a client joining a steady core would otherwise never learn
+    // its status at all, and the subscription (`hub.ts:481-486`) because
+    // nothing else carries an edge. The client's bar reads `core.status`
+    // frames and nothing else, so without this pair it renders the value it was
+    // constructed with, `starting_up`, for the life of the connection.
+    //
+    // Before the listener binds, which is what makes the seed unmissable: a
+    // connection registered after this point queues its seed inside `register`.
+    frames.add_seed(Arc::new(CoreStatusSeed(Arc::clone(&status))) as Arc<dyn ConnectionSeed>);
+    {
+        let mut changes = status.subscribe();
+        let current = Arc::clone(&status);
+        let frames = Arc::clone(&frames);
+        tokio::spawn(async move {
+            loop {
+                match changes.recv().await {
+                    Ok(snapshot) => {
+                        frames.broadcast_all(&ServerToClientFrame::CoreStatus { snapshot });
+                    }
+                    // A lagged subscriber missed edges, and the aggregate is a
+                    // whole-value snapshot, so re-reading the CURRENT one is a
+                    // complete recovery. Skipping it would leave every client on
+                    // a stale bar until the next unrelated change.
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(target: "loca::ws", "core status feed lagged {n}");
+                        frames.broadcast_all(&ServerToClientFrame::CoreStatus {
+                            snapshot: current.snapshot(),
+                        });
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
     // Hoisted out of the context literal: the settings store broadcasts through
     // the same bus the transport serves from, and exactly one store exists.
     // Two would mean two caches and two locks over one file, which is the lost
@@ -663,17 +732,20 @@ pub async fn boot_with_store(
             )),
     );
 
-    // Download activity has two consumers, and both were built and then left
-    // unwired: `note_downloads` had no caller outside its own tests, and the
-    // contract's `downloads.snapshot` frame was never broadcast by anything. So
-    // the core bar read Idle straight through a running download and no client
-    // ever saw the queue move. Mirrors `main.ts:158-159` and `ws/hub.ts:454-455`.
+    // Download activity has three consumers, and each was built and then left
+    // unwired: `note_downloads` had no caller outside its own tests, the
+    // contract's `downloads.snapshot` frame was never broadcast by anything, and
+    // no queue movement recomputed requirements. So the core bar read Idle
+    // straight through a running download, no client ever saw the queue move,
+    // and a model that finished downloading stayed in `missing` (which is the
+    // app-level gate) until something unrelated recomputed. Mirrors
+    // `main.ts:158-159` and `ws/hub.ts:454-470`.
     //
-    // NOT wired here: the requirements recompute the oracle drives off this same
-    // subscription (`hub.ts:456-470`). It carries a load-bearing guard against
-    // the download-vs-present race, and it belongs to D8 with the rest of
-    // requirements. Adding the broadcast without the guard would reintroduce the
-    // race, so D8 owns extending this loop, not duplicating it.
+    // The recompute goes through `DownloadEdges` rather than firing on every
+    // snapshot, because the queue emits one per progress tick and the guard
+    // inside it is load-bearing: a BINARIES row completing is pre-extract, so
+    // recomputing there would answer "still missing". Binary readiness arrives
+    // on the install lifecycle instead (`installer.attach_requirements` below).
     // One `Arc<dyn LocalSpeech>`, shared by the route slice and the module
     // broker's speech seam. Two would be two local engines with two queues, so
     // two callers would each believe they had the engine to themselves.
@@ -695,6 +767,13 @@ pub async fn boot_with_store(
         let status = Arc::clone(&status);
         let frames = Arc::clone(&ctx.frames);
         let speech_downloads = speech_reconciler.clone();
+        // Deliberately NOT primed from `initial` below, matching the oracle,
+        // whose subscribe() is fire-on-change only
+        // (`downloads/manager.ts:246-249`): a core that boots with completed
+        // rows spends one redundant recompute rather than risking a real
+        // completion being read as already-seen.
+        let edges = crate::requirements::DownloadEdges::new();
+        let requirements = Arc::clone(&deferred_requirements);
         // Prime both consumers before the first change. A core that boots with
         // rows already in the table otherwise reports Idle, and shows an empty
         // queue, until something happens to move it.
@@ -717,6 +796,9 @@ pub async fn boot_with_store(
                         frames.broadcast_all(&ServerToClientFrame::DownloadsSnapshot {
                             items: (*entries).clone(),
                         });
+                        if edges.note(&entries) {
+                            requirements.changed();
+                        }
                         if let Some(reconciler) = &speech_downloads {
                             // NOT awaited. `note_downloads` chains into a model
                             // load, and awaiting it here freezes this consumer:
@@ -766,6 +848,8 @@ pub async fn boot_with_store(
     // the ONLY thing that clears one left behind by a killed core. Without it
     // the core bar sticks on "Downloading" forever with no worker behind it.
     // Matches `main.ts:152-153`.
+    // Cloned before the installer takes it: every clone drives the one queue.
+    let downloads_port = queue.clone();
     let binaries = crate::downloads::binaries::installer::BinariesInstaller::new(
         Arc::clone(&net),
         queue,
@@ -773,6 +857,13 @@ pub async fn boot_with_store(
         ctx.config.channel,
         &ctx.config.binary_manifest_url(),
     );
+    // The other half of the download-edge wiring above, and the ONLY thing that
+    // can take an installed binary out of `missing`: the queue's `Completed` for
+    // a binaries row is pre-extract, so `requirements::edges` skips those rows
+    // and readiness is reported from `finish` / `record_failure` instead.
+    // `hub.ts:434-435`.
+    binaries
+        .attach_requirements(Arc::clone(&deferred_requirements) as Arc<dyn RequirementsNotifier>);
     binaries.reconcile_interrupted_installs().await;
 
     // One `Mcp`, and the reason it is built here rather than in the router is
@@ -1118,6 +1209,51 @@ pub async fn boot_with_store(
     // `HostedTools` is the one type that knows about extensions, MCP and the
     // LLM at once, which is why it is orchestrator-owned (`tool_host.rs`) and
     // why nothing else could have wired it.
+    // The provider -> base-dir map an extension's shipped memories resolve their
+    // content through is IN MEMORY, and the only thing that writes it is an
+    // install (`register_extension_memories`). The rows outlive the process and
+    // the map does not, so after a restart every knowledge memory and skill an
+    // extension ships is a row pointing at a provider the store cannot place.
+    // The oracle re-registers all of them at boot for exactly this reason
+    // (`main.ts:198-205`), and this is that pass.
+    match extensions.registry().list().await {
+        Ok(installed) => {
+            for extension in installed {
+                memories.register_provider(&extension.id, ctx.paths.extensions_dir());
+            }
+        }
+        Err(err) => tracing::warn!(
+            target: "loca::memories",
+            "extension memory provider registration failed: {}", err.message,
+        ),
+    }
+
+    // Reconcile the store with the files on disk and queue the stale summaries
+    // and embeddings behind it (`main.ts:217-226`). Both halves matter and only
+    // the first is visible: without the rescan a memory edited while the core
+    // was down keeps its old body until the user finds the Rescan button, and
+    // without the indexing pass nothing re-embeds after a relevance-model
+    // change, so relevance quietly ranks on stale vectors.
+    //
+    // Awaited, like the oracle's, because a memory the model can be given on
+    // the first turn should not depend on a race with boot. Failure is a
+    // warning: a store that cannot be reconciled is still readable.
+    match memories.rescan().await {
+        Ok(out) => {
+            if out.added + out.removed + out.changed > 0 {
+                tracing::info!(
+                    target: "loca::memories",
+                    "memory rescan: {} added, {} removed, {} changed",
+                    out.added, out.removed, out.changed,
+                );
+            }
+            indexer.schedule(None);
+        }
+        Err(err) => tracing::warn!(
+            target: "loca::memories", "memory rescan failed: {}", err.message,
+        ),
+    }
+
     // Read here, while `chat` is still in scope: it moves into `Services` below.
     // Read AFTER the set, obviously, since that is the line under test.
     let tools_wired_check = |chat: &crate::chat::Chat| chat.tools_live();
@@ -1207,9 +1343,26 @@ pub async fn boot_with_store(
         Arc::clone(&ctx.frames),
     );
     // Closes the cycle. Until this line the four `deps.requirements.changed()`
-    // call sites in `models/routes.rs` and `storage/mod.rs` run and do nothing,
-    // which is the failure mode that reads as wired.
+    // call sites in `models/routes.rs` and `storage/mod.rs`, the download-edge
+    // subscription and the binaries installer all run and do nothing, which is
+    // the failure mode that reads as wired.
     let _ = deferred_requirements.0.set(requirements.clone());
+    // A settings change is the fourth trigger (`hub.ts:388-389`): picking a
+    // different model is what puts a file in `missing` in the first place, and
+    // without this the client only learns on its next HTTP fetch.
+    {
+        let mut changes = ctx.settings.subscribe();
+        let requirements = requirements.clone();
+        tokio::spawn(async move {
+            // A lagged subscriber missed changes rather than learning nothing
+            // happened, and the recompute reads the store fresh, so one is
+            // exactly the right response to both. Only a closed channel (the
+            // store is gone, which is shutdown) ends the task.
+            while let Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) = changes.recv().await {
+                requirements.changed();
+            }
+        });
+    }
     let greetings = crate::requirements::Greetings::new(
         chat.clone(),
         Arc::new(crate::chat::LlmLoading::new(
@@ -1218,6 +1371,25 @@ pub async fn boot_with_store(
         )),
     );
 
+    // Cloned before the literal moves `chat`, and it is the same object: the
+    // storage screen's "is an agent mid-turn on this session" comes off the live
+    // stream registry, so a second `Chat` would answer no every time.
+    let chat_for_storage = chat.clone();
+    let storage = StorageDeps::unwired()
+        .with_models(Arc::new(models.clone()))
+        .with_requirements(Arc::clone(&deferred_requirements)
+            as Arc<dyn crate::storage::deps::RequirementsNotifier>)
+        .with_binaries(Arc::new(binaries.clone()))
+        // The same `Chat` again: it answers both halves of the seam, and a
+        // second one would report an empty active-turn set, which reads as
+        // "every session is safe to delete".
+        .with_sessions(Arc::new(chat_for_storage))
+        .with_extensions(Arc::new(extensions.clone()))
+        .with_settings(Arc::new(ctx.settings.clone()));
+    // Cloned rather than rebuilt: one store, one installer, two references
+    // each. See `Booted`.
+    let memories_port = memories.clone();
+    let binaries_port = binaries.clone();
     let services = Services {
         auth,
         memories,
@@ -1227,10 +1399,12 @@ pub async fn boot_with_store(
         memory_indexer: Arc::new(chat.clone()),
         sessions,
         chat: Arc::new(chat),
-        storage: StorageDeps::unwired()
-            .with_models(Arc::new(models.clone()))
-            .with_requirements(Arc::clone(&deferred_requirements)
-                as Arc<dyn crate::storage::deps::RequirementsNotifier>),
+        // Every seam, not two. Four were left at `Unwired` after the mount, and
+        // `Unwired` reports EMPTY rather than failing for three of them, so the
+        // storage screen showed no sessions, no extensions and no binaries
+        // whatever was on disk, and the factory reset was the one that does
+        // fail: "the settings store is not wired into this core".
+        storage: storage.clone(),
         sidecars: Arc::clone(&sidecars),
         llm: Arc::clone(&llm),
         speech,
@@ -1322,6 +1496,10 @@ pub async fn boot_with_store(
         local_engine,
         llm,
         embedding: embedding_port,
+        downloads: downloads_port,
+        binaries: binaries_port,
+        memories: memories_port,
+        storage,
         tls,
         local_client,
     })

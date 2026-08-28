@@ -37,6 +37,25 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Plant an empty `loca-core-updater` where the boot-time helper check looks.
+///
+/// The desktop frontend refuses to start without it (D-025), which is the whole
+/// point of that check: a core with no relauncher discovers it mid-update.
+/// Nothing here runs the file, so an empty one is enough, and the conformance
+/// harness seeds the same stub for the same reason
+/// (`tests/conformance/harness/home.ts:80-81`). The name carries the `-dev`
+/// channel suffix because these runs set `LOCA_CHANNEL=dev`.
+fn seed_updater_stub(home: &std::path::Path) {
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).expect("bin dir");
+    let name = if cfg!(target_os = "windows") {
+        "loca-core-updater-dev.exe"
+    } else {
+        "loca-core-updater-dev"
+    };
+    std::fs::write(bin.join(name), b"").expect("updater stub");
+}
+
 /// The distinctive line `mint-code` prints while it waits (`pair.rs:158`).
 const MINTING: &str = "waiting for core's TLS cert";
 /// The distinctive line a BOOT prints once it is serving (`boot.rs`).
@@ -51,6 +70,7 @@ const SERVING: &str = "listening on";
 /// seconds to learn what two seconds of output already says.
 fn run_briefly(args: &[&str], budget: Duration) -> String {
     let home = tempfile::tempdir().expect("tempdir");
+    seed_updater_stub(home.path());
     let mut child = Command::new(env!("CARGO_BIN_EXE_loca-core"))
         .args(args)
         // `dev`, so `secrets::store::select` keeps the vault master key in a
@@ -127,5 +147,168 @@ fn empty_argv_still_boots_rather_than_being_treated_as_nothing_to_do() {
         output.contains(SERVING),
         "a bare launch did not reach `boot`, so launchd would start a core that never \
          serves. Output was:\n{output}",
+    );
+}
+
+/// Run the built binary to COMPLETION and return `(exit code, output)`.
+///
+/// Separate from [`run_briefly`] because the two outcomes below exit on their
+/// own: one refuses to start and one rolls back, and the exit CODE is half of
+/// what each asserts.
+fn run_to_exit(home: &std::path::Path, port: &str, budget: Duration) -> (Option<i32>, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_loca-core"))
+        .env("LOCA_CHANNEL", "dev")
+        .env("LOCA_CORE_HOME", home)
+        // Its own port. Neither outcome here should bind anything, but a
+        // REGRESSION in either boots a full core, and on the shared dev port
+        // that would fail the neighbouring test instead of this one.
+        .env("LOCA_CORE_PORT", port)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the core binary");
+
+    let started = Instant::now();
+    let mut status = None;
+    while started.elapsed() < budget {
+        if let Some(exited) = child.try_wait().ok().flatten() {
+            status = Some(exited);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // Reaped on both paths, not just the timeout one: a process that exited on
+    // its own was already collected by `try_wait`, and calling `wait` again on
+    // it is a no-op that keeps the "always waited" rule readable.
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut out);
+    }
+    let mut err = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut err);
+    }
+    (status.and_then(|s| s.code()), format!("{out}{err}"))
+}
+
+#[test]
+fn a_missing_updater_stops_the_core_starting_at_all() {
+    // `main`'s `ensure_helper_binaries` call (D-025).
+    //
+    // Without it a core with no `loca-core-updater` starts happily and finds
+    // out mid-update that nothing can relaunch it, which turns a broken install
+    // into a core that is DOWN rather than one that refused to come up. The
+    // check is in the frontend rather than in `boot()` on purpose: `boot()` is
+    // shared with the mobile embed, which has no updater and no self-update.
+    let home = tempfile::tempdir().expect("tempdir");
+    // Deliberately NOT seeded: this is the one test that wants it missing.
+    let (code, output) = run_to_exit(home.path(), "7741", Duration::from_secs(15));
+
+    assert!(
+        output.contains("missing helper binaries"),
+        "a core with no updater started without complaining, so the missing \
+         relauncher will surface mid-update instead. Output was:\n{output}",
+    );
+    assert!(
+        !output.contains(SERVING),
+        "a core with no updater bound a listener instead of refusing. Output was:\n{output}",
+    );
+    assert_eq!(code, Some(1), "the refusal must be a failure exit");
+}
+
+#[test]
+fn a_spent_update_marker_rolls_back_and_exits_75() {
+    // `main`'s `handle_update_marker_on_boot` call.
+    //
+    // The write half of this was already wired (`commit_update` in `boot`), so
+    // markers were being CLEARED on healthy boots and never CONSULTED on
+    // unhealthy ones: a core that self-updated into a binary that cannot start
+    // would crash-loop forever with its own recovery sitting unused on disk.
+    //
+    // **Exit 75, not 0.** launchd relaunches on any exit, but systemd's
+    // `Restart=on-failure` and Task Scheduler's only relaunch on a failure
+    // exit, so a clean exit would leave the rolled-back binary stopped on two
+    // of three platforms.
+    let home = tempfile::tempdir().expect("tempdir");
+    seed_updater_stub(home.path());
+    let paths = loca_core::paths::Paths::rooted(home.path());
+
+    // The rollback moves the LIVE binary aside and renames the anchor into its
+    // place, so both files have to exist where an install would have put them.
+    // The process under test runs from cargo's target dir, which is why this is
+    // planted rather than assumed.
+    let live = home
+        .path()
+        .join("bin")
+        .join(if cfg!(target_os = "windows") {
+            "loca-core-dev.exe"
+        } else {
+            "loca-core-dev"
+        });
+    std::fs::write(&live, b"the core that cannot start").expect("live binary");
+    // The anchor the rollback restores. Non-empty, because an empty one is what
+    // an interrupted copy leaves and the rollback refuses it by design.
+    let anchor = home
+        .path()
+        .join("bin")
+        .join(if cfg!(target_os = "windows") {
+            "loca-core-dev.exe.old"
+        } else {
+            "loca-core-dev.old"
+        });
+    std::fs::write(&anchor, b"the previous core").expect("anchor");
+    // Executable, because the rollback inspects the anchor rather than trusting
+    // its existence and refuses to install one it can see is unrunnable.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        for path in [&live, &anchor] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("mode");
+        }
+    }
+
+    // A marker for THIS version whose retry budget is already spent, which is
+    // the state two failed boots leave behind.
+    let runtime = tokio::runtime::Runtime::new().expect("runtime");
+    runtime.block_on(async {
+        loca_core::update::marker::write(&paths, loca_core::config::CORE_VERSION, "0.0.1")
+            .await
+            .expect("marker");
+        let loca_core::update::marker::MarkerState::Present(marker) =
+            loca_core::update::marker::read(&paths).await
+        else {
+            panic!("the marker was not written");
+        };
+        // Re-read between bumps: `bump` writes `marker.attempts + 1` from the
+        // snapshot it is given, so bumping the same one twice still lands on 1.
+        let mut marker = marker;
+        for _ in 0..loca_core::update::rollback::MAX_BOOT_ATTEMPTS {
+            loca_core::update::marker::bump(&paths, &marker)
+                .await
+                .expect("bump");
+            let loca_core::update::marker::MarkerState::Present(next) =
+                loca_core::update::marker::read(&paths).await
+            else {
+                panic!("the marker vanished mid-bump");
+            };
+            marker = next;
+        }
+    });
+
+    let (code, output) = run_to_exit(home.path(), "7742", Duration::from_secs(20));
+
+    assert_eq!(
+        code,
+        Some(75),
+        "a spent update marker did not roll back and exit 75, so a core that \
+         updated into a broken binary crash-loops with its recovery unused. \
+         Output was:\n{output}",
+    );
+    assert!(
+        !output.contains(SERVING),
+        "the rollback path bound a listener instead of exiting. Output was:\n{output}",
     );
 }

@@ -110,6 +110,46 @@ fn main() -> ExitCode {
             return ExitCode::from(code as u8);
         }
 
+        // Before `boot`, and the whole point is that it runs before anything a
+        // broken new binary could fail at. A self-update writes an anchor and a
+        // marker; this is the only thing that ever READS them, so without it a
+        // core that updated into a binary that cannot start crash-loops forever
+        // with its own recovery sitting unused on disk. `commit_update` in
+        // `boot` is the other half and was already wired, which is the shape
+        // that hid this: the marker was being cleared on healthy boots and
+        // never consulted on unhealthy ones.
+        //
+        // **Exit 75, not 0.** launchd relaunches on any exit, but systemd's
+        // `Restart=on-failure` and Task Scheduler's restart-on-failure only
+        // relaunch on a FAILURE exit, so a clean exit here would leave the
+        // rolled-back binary stopped on two of three platforms: worse than the
+        // crash-loop it just fixed.
+        if loca_core::update::rollback::handle_update_marker_on_boot(&config, &paths).await {
+            tracing::warn!(
+                target: "loca::update",
+                "rolled back to the previous core; exiting 75 so the supervisor relaunches it",
+            );
+            return ExitCode::from(75);
+        }
+
+        // Also before `boot`, and deliberately NOT inside it: `boot` is shared
+        // with the mobile embed, which has no updater binary and no self-update
+        // at all, so a check in there would make every mobile core refuse to
+        // start. The oracle's own call site is the desktop entry point too
+        // (`main.ts:135`).
+        //
+        // Refuse rather than degrade (D-025): a core with no `loca-core-updater`
+        // starts happily and then discovers mid-update that nothing can relaunch
+        // it, turning a broken install into a core that is down. It also REPAIRS
+        // the one state `swap::commit_rename` can leave behind, where a hard
+        // kill between its two renames leaves no file at the live path and the
+        // previous one beside it as `<path>.old`; nothing else restores that,
+        // because the process that would is the one that died.
+        if let Err(e) = loca_core::update::helpers::ensure_helper_binaries(&config, &paths).await {
+            tracing::error!(target: "loca::boot", "boot failed: {e}");
+            return ExitCode::FAILURE;
+        }
+
         let booted = match boot::boot(config, paths).await {
             Ok(booted) => booted,
             Err(e) => {

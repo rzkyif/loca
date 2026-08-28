@@ -42,6 +42,7 @@ use crate::downloads::queue::DownloadQueue;
 use crate::downloads::EnqueueSpec;
 use crate::error::{AppError, ErrorCode, Result};
 use crate::paths::Paths;
+use crate::storage::deps::RequirementsNotifier;
 
 /// The kinds this core can actually install.
 ///
@@ -79,6 +80,12 @@ struct Inner {
     /// The last install failure per kind, cleared when a fresh attempt starts or
     /// succeeds. Read by the requirements snapshot.
     failures: Mutex<BTreeMap<String, String>>,
+    /// Told whenever an install SETTLES, so the requirements snapshot is
+    /// recomputed off the install lifecycle rather than off the download queue.
+    /// See [`BinariesInstaller::attach_requirements`]. `None` until boot fills
+    /// it, which is what keeps every other construction site (the tests, the
+    /// unwired router) from having to name a notifier it has no use for.
+    requirements: Mutex<Option<Arc<dyn RequirementsNotifier>>>,
 }
 
 impl BinariesInstaller {
@@ -97,7 +104,40 @@ impl BinariesInstaller {
                 channel,
                 manifest_url: manifest_url.to_string(),
                 failures: Mutex::new(BTreeMap::new()),
+                requirements: Mutex::new(None),
             }),
+        }
+    }
+
+    /// Where an install SETTLING is reported, so the requirements snapshot can
+    /// be recomputed and rebroadcast.
+    ///
+    /// This is the only signal that can clear a binary out of `missing`, and
+    /// the download queue cannot stand in for it. A binaries row reaches
+    /// `Completed` when its ARCHIVE has landed, which is before
+    /// [`Self::finish`] extracts it and records the version, so a recompute
+    /// driven off the queue answers "still missing" and then never runs again:
+    /// the queue is idle, so there is no further edge, and the client sits on a
+    /// download that is done and a gate that never opens. That is why
+    /// `requirements::edges` refuses binaries rows outright and why readiness
+    /// arrives here instead. Ports `hub.ts:434-435`.
+    pub fn attach_requirements(&self, requirements: Arc<dyn RequirementsNotifier>) {
+        *lock(&self.inner.requirements) = Some(requirements);
+    }
+
+    /// Whether a requirements notifier was attached.
+    ///
+    /// A read port for the boot-seam suite (D-165), reading the LIVE field
+    /// rather than restating what boot intended.
+    pub fn has_requirements(&self) -> bool {
+        lock(&self.inner.requirements).is_some()
+    }
+
+    /// Fire-and-forget, and a no-op on a core that wired no notifier.
+    fn notify_requirements(&self) {
+        let notifier = lock(&self.inner.requirements).clone();
+        if let Some(notifier) = notifier {
+            notifier.changed();
         }
     }
 
@@ -113,6 +153,10 @@ impl BinariesInstaller {
         // binary they asked for is still missing.
         tracing::error!(target: "loca::downloads", "install {kind}: {message}");
         lock(&self.inner.failures).insert(kind.to_string(), message.to_string());
+        // A failure settles the install too: the snapshot turns the row from a
+        // reasonless missing entry into a retryable one, and only a recompute
+        // puts that reason in front of the user.
+        self.notify_requirements();
     }
 
     fn clear_failure(&self, kind: BinaryKind) {
@@ -518,6 +562,10 @@ impl BinariesInstaller {
         self.write_installed_version(kind, &resolved.version)
             .await?;
         self.clear_failure(kind);
+        // After the version is recorded, never before: this is the first moment
+        // `list()` reports the binary as installed, so a recompute any earlier
+        // would broadcast the pre-extract answer.
+        self.notify_requirements();
         Ok(())
     }
 
@@ -612,6 +660,44 @@ const GROUP_ID_PREFIX: &str = "binaries:";
 /// (`manager.ts:331`), and load-bearing rather than cosmetic: it is what lets a
 /// degraded row still be a row.
 const UNKNOWN_VERSION: &str = "unknown";
+
+/// The storage screen's view of the helper binaries.
+///
+/// Implemented here rather than in `storage/`, following `ModelLocks for
+/// Models`: the fact lives with the package that owns it, and the storage
+/// package holds only the question.
+#[async_trait::async_trait]
+impl crate::storage::deps::BinariesSource for BinariesInstaller {
+    /// Only what is actually on disk, so the screen never offers to reclaim a
+    /// row that would free nothing.
+    async fn installed(&self) -> Result<Vec<crate::storage::deps::InstalledBinary>> {
+        Ok(self
+            .list()
+            .await?
+            .into_iter()
+            .filter(|status| status.installed)
+            .filter_map(|status| {
+                status
+                    .path
+                    .map(|path| crate::storage::deps::InstalledBinary {
+                        kind: status.kind.to_string(),
+                        path: PathBuf::from(path),
+                    })
+            })
+            .collect())
+    }
+
+    /// The oracle unions the required kinds with the kinds a RUNNING sidecar
+    /// executes (`storage.ts:71-75`). This core has no second half to union:
+    /// llama.cpp and sherpa are in-process (D14), so no live subsystem is a
+    /// spawned binary, and `deno` is required whenever it is installable.
+    async fn locked_kinds(&self) -> Result<std::collections::HashSet<String>> {
+        Ok(crate::requirements::required_binary_kinds()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect())
+    }
+}
 
 /// The on-disk name of a binary. Not channel-suffixed: downloaded binaries are
 /// isolated by the per-channel `bin` directory and keep their original names.
@@ -738,6 +824,132 @@ mod tests {
             .failure(BinaryKind::LlamaServer)
             .expect("the failure was swallowed rather than recorded");
         assert!(failure.contains("llama-server"), "{failure}");
+    }
+
+    /// Records what the on-disk install record said at the MOMENT it was told,
+    /// which is the only way to prove the notification is not pre-extract.
+    struct RecordingNotifier {
+        versions: PathBuf,
+        seen: Mutex<Vec<bool>>,
+        tx: tokio::sync::mpsc::UnboundedSender<()>,
+    }
+
+    impl RequirementsNotifier for RecordingNotifier {
+        fn changed(&self) {
+            let recorded =
+                std::fs::read_to_string(&self.versions).is_ok_and(|text| text.contains("\"deno\""));
+            lock(&self.seen).push(recorded);
+            let _ = self.tx.send(());
+        }
+    }
+
+    fn recording(
+        installer: &BinariesInstaller,
+    ) -> (
+        Arc<RecordingNotifier>,
+        tokio::sync::mpsc::UnboundedReceiver<()>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let notifier = Arc::new(RecordingNotifier {
+            versions: installer.versions_path(),
+            seen: Mutex::new(Vec::new()),
+            tx,
+        });
+        installer.attach_requirements(Arc::clone(&notifier) as Arc<dyn RequirementsNotifier>);
+        (notifier, rx)
+    }
+
+    fn zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(&mut buf);
+        let options: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, contents) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(contents).unwrap();
+        }
+        writer.finish().unwrap();
+        buf.into_inner()
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        format!("{:x}", hasher.finalize())
+    }
+
+    #[tokio::test]
+    async fn a_finished_install_tells_requirements_once_the_binary_reads_as_installed() {
+        // The regression this exists for: a binaries row hits `Completed` when
+        // its ARCHIVE lands, so a client that recomputes off the download queue
+        // is told "still missing" and then never asked again, leaving the
+        // downloads list finished and the settings gate stuck on Downloading.
+        // Only this notification, after the version is recorded, clears it.
+        let exe = binary_name(BinaryKind::Deno);
+        let archive = zip_bytes(&[(exe.as_str(), b"EXE-BYTES")]);
+        let asset = Upstream::start(Serve::Ranged(archive.clone())).await;
+        let release = serde_json::json!({
+            "tag_name": "v2.8.2",
+            "assets": [{
+                "name": format!("deno-{}.zip", crate::config::host_triple()),
+                "browser_download_url": asset.url("/deno.zip"),
+                "state": "uploaded",
+                "digest": format!("sha256:{}", sha256_hex(&archive)),
+                "size": archive.len(),
+            }],
+        });
+        let github = Upstream::start(Serve::Json(release.to_string())).await;
+        let _guard = GithubHost::set(github.base());
+        let trust = Trusted::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (installer, _queue) =
+            installer_with(&dir, Channel::Latest, "http://127.0.0.1:1/binaries.json");
+        stage_cache(&installer, &trust, published_latest_manifest()).await;
+        let (notifier, mut told) = recording(&installer);
+
+        installer
+            .install(Some(vec![BinaryKind::Deno]))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(20), told.recv())
+            .await
+            .expect("the install settled without telling requirements anything")
+            .expect("the notifier was dropped");
+
+        assert_eq!(
+            lock(&notifier.seen).as_slice(),
+            [true],
+            "requirements was told before the installed version was recorded, so the \
+             recompute it triggers answers \"still missing\""
+        );
+        let deno = installer
+            .list()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|s| s.kind == BinaryKind::Deno)
+            .expect("deno is on the contract");
+        assert!(deno.installed);
+    }
+
+    #[tokio::test]
+    async fn a_failed_install_tells_requirements_too() {
+        // A failure settles the install as much as a success does: the snapshot
+        // turns the row from a reasonless missing entry into a retryable one,
+        // and nothing puts that reason in front of the user without a recompute.
+        let dir = tempfile::tempdir().unwrap();
+        let installer = installer(&dir);
+        let (notifier, mut told) = recording(&installer);
+
+        installer
+            .install(Some(vec![BinaryKind::LlamaServer]))
+            .await
+            .unwrap();
+
+        told.recv().await.expect("the notifier was dropped");
+        assert_eq!(lock(&notifier.seen).len(), 1);
     }
 
     #[tokio::test]

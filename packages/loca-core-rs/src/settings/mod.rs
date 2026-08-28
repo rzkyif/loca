@@ -529,5 +529,20 @@ async fn read_file(file: &Path) -> Result<SettingsRecord> {
     }
 }
 
+/// The storage screen's factory reset.
+///
+/// Both halves, and the second is the one that is easy to miss: leaving the
+/// per-client overlays would keep each client's inference overrides and agent
+/// personality intact through a "clear settings" that told the user it had
+/// reset everything. The secrets vault is cleared by the storage package
+/// alongside this call, since the vault is a foundation rather than a domain.
+#[async_trait::async_trait]
+impl crate::storage::deps::SettingsReset for Settings {
+    async fn factory_reset(&self) -> Result<()> {
+        self.reset().await?;
+        self.reset_all_clients().await
+    }
+}
+
 #[cfg(test)]
 mod tests;

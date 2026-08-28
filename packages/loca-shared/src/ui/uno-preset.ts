@@ -17,10 +17,16 @@ export function locaUnoBase(): UserConfig {
   return {
     presets: [
       presetWind4({ dark: "class" }),
+      // Every icon collection either app draws from has to be listed here.
+      // `collections` REPLACES presetIcons' automatic loader, so a class naming
+      // an unlisted collection generates no CSS at all and renders as an empty
+      // box (the exact silent failure check-icon-classes.ts guards against for
+      // misspelled names).
       presetIcons({
         collections: {
           "material-symbols": () => lookupCollection("material-symbols"),
           "line-md": () => lookupCollection("line-md"),
+          mdi: () => lookupCollection("mdi"),
         },
       }),
       presetTypography(),

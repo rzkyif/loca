@@ -12,6 +12,9 @@
 
 **Open source local AI assistant.**
 
+> **Note:** Loca's development is currently suspended as the author focuses on
+> other projects.
+
 Loca takes care of all the hassle in running a complete state-of-the-art local
 AI assistant on your PC, with speech-to-text, LLM inference, text-to-speech, and
 a bunch of other quality of life features.
@@ -31,8 +34,9 @@ a bunch of other quality of life features.
 
 ## Getting Started
 
-The latest client can be downloaded from the official website at
-[loca.rzkyif.com](https://loca.rzkyif.com).
+Loca is not available for installation while development is suspended. The
+website at [loca.rzkyif.com](https://loca.rzkyif.com) still hosts the feature
+showcase and the user manual.
 
 ## Contributing
 

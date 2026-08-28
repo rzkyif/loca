@@ -28,7 +28,7 @@ const rowActive = "bg-surface-inset text-default-900";
 ---
 
 {
-  /* The sticky top chrome: a thin pre-release banner stacked above the navbar
+  /* The sticky top chrome: a thin notice banner stacked above the navbar
     bar, pinned together so both stay visible while the page scrolls under them.
     transition:persist keeps the header mounted across view transitions (so the
     knob can slide to the new page, updated by the script below); persist alone
@@ -40,18 +40,12 @@ const rowActive = "bg-surface-inset text-default-900";
 }
 <header transition:persist="chrome" class="vt-chrome sticky top-0 z-50">
   {
-    /* Pre-release notice. Auto-height (no fixed height) so it grows to two-plus
-      lines when the copy wraps on narrow screens; the header's measured height
-      feeds --chrome-h (see BaseLayout) so everything below tracks it. */
+    /* Suspended-development notice. Auto-height (no fixed height) so it grows to
+      two-plus lines when the copy wraps on narrow screens; the header's measured
+      height feeds --chrome-h (see BaseLayout) so everything below tracks it. */
   }
   <div class="bg-accent-yellow-300 px-4 py-1 text-center text-xs text-accent-yellow-900">
-    Warning: Loca is still in its early testing phase<br />Please report issues
-    <a class="underline" href="mailto:rizky@rzkyif.com">via email</a> or <a
-      class="underline"
-      href="https://github.com/rzkyif/loca/issues"
-    >
-      at the GitHub repository</a
-    >
+    Note: Loca's development is currently suspended as the author focuses on other projects
   </div>
   <nav class="h-14 bg-surface">
     <div

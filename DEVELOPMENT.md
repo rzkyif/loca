@@ -16,15 +16,13 @@ Svelte+Tauri app that talks to one or more paired cores over an HTTP+WS API.
 ```mermaid
 flowchart TD
     client["loca-client (Tauri+Svelte): window, capture, audio, VAD, global shortcuts, paired-cores UI"]
-    core["loca-core (Deno service): sessions, chat, tools, TTS/STT, model/binary mgmt, pairing"]
-    llama["llama-server (chat + a 2nd instance for embeddings)"]
-    speech["loca-core-speech (Speech-to-Text + Text-to-Speech)"]
+    core["loca-core (Rust service): sessions, chat, tools, in-process LLM + STT/TTS, model mgmt, pairing"]
     workers["tool workers (Deno): one per extension, permission-flagged"]
+    mcp["MCP servers (stdio / remote)"]
 
     client -->|HTTP+WS bearer| core
-    core --> llama
-    core --> speech
     core --> workers
+    core --> mcp
 ```
 
 **Packages** (each links to its own README for layout and internals):
@@ -32,35 +30,19 @@ flowchart TD
 - [`packages/loca-shared/`](packages/loca-shared/README.md): TypeScript
   types + Zod schemas (API contract, `loca.json` schema, WS frame discriminated
   unions).
-- [`packages/loca-core/`](packages/loca-core/README.md): Deno service that
-  hosts the engine and owns the runtime/OS-bound layer: HTTPS/WSS transport, TLS +
-  pairing, sidecar supervision, npm-based extension installation, self-update.
-- [`packages/loca-core-engine/`](packages/loca-core-engine/README.md):
-  runtime-agnostic heart of core (sessions, chat/LLM streaming, settings,
-  memories + relevance, external STT/TTS, remote MCP) behind a `Host` abstraction,
-  so the same source runs in the Deno service and, later, the mobile webview.
+- [`packages/loca-core-rs/`](packages/loca-core-rs/README.md): the Rust core.
+  One library that runs as the `loca-core` service on desktop and links into the
+  Tauri app on mobile: HTTPS/WSS transport, TLS + pairing, sessions, chat, LLM
+  streaming (llama.cpp in-process), settings, memories, speech (sherpa-onnx
+  in-process), model downloads, extensions (tool workers under a pinned `deno`,
+  with a PTY host for permission prompts), MCP, OS keychain, self-update. Its
+  `workers/` holds the TypeScript tool worker the core spawns.
+- [`packages/loca-core-ffi/`](packages/loca-core-ffi/): the thin crate the
+  mobile Tauri build links to embed the core.
 - [`packages/loca-core-updater/`](packages/loca-core-updater/README.md):
   standalone Rust binary that swaps in a staged core build during self-update,
-  then restarts core.
-- [`packages/loca-core-keychain/`](packages/loca-core-keychain/README.md):
-  native Rust helper that stores the core's master key in the OS keychain over a
-  stdio protocol.
-- [`packages/loca-core-hwinfo/`](packages/loca-core-hwinfo/README.md): native
-  Rust helper that reports RAM, physical cores, and GPU/VRAM for the on-device
-  model fit engine.
-- [`packages/loca-core-ptyhost/`](packages/loca-core-ptyhost/README.md):
-  native Rust helper that runs a tool worker under a pseudo-terminal (a unix PTY,
-  or a ConPTY on Windows) so Deno's runtime permission prompts can pause the tool
-  and be answered from chat. On Windows the worker protocol rides a loopback
-  socket since the ConPTY reflows stdout.
-
-These four helper binaries (updater, keychain, hwinfo, ptyhost) ship in the
-signed release manifest and are placed in the bin dir at install time. Core
-verifies they are present at boot and **refuses to start** if any are missing,
-rather than silently degrading (file-backed secrets, guessed hardware, tool
-workers without permission prompts). `deno task dev` builds them from source and
-links them into the dev bin dir before core boots, so dev matches a real
-install; a build failure surfaces in the dev log and core declines to start.
+  then restarts core. It ships in the signed release manifest; core refuses to
+  boot without it. `deno task dev` builds it before core boots.
 
 - [`packages/loca-client/`](packages/loca-client/README.md): Tauri 2 + Svelte
   5 + Vite + UnoCSS desktop UI.
@@ -83,12 +65,12 @@ install; a build failure surfaces in the dev log and core declines to start.
 
 - **Deno 2.8+** (`brew install deno` / `winget install DenoLand.Deno` / see
   https://deno.com/).
-- **Rust toolchain** for building the Tauri shell and the core-keychain helper
+- **Rust toolchain** for building the core and the Tauri shell
   (`packages/loca-client/src/tauri/rust-toolchain.toml` pins the version).
 - **Cargo + Tauri 2 prerequisites**: see
   https://v2.tauri.app/start/prerequisites/. On Debian/Ubuntu the full set
-  (Tauri/webkit, PipeWire + ALSA for capture/audio, libsecret for the keychain
-  helper) is:
+  (Tauri/webkit, PipeWire + ALSA for capture/audio, libsecret for the keychain)
+  is:
 
   ```bash
   sudo apt-get install -y \
@@ -181,18 +163,17 @@ its own `deno.json` (`check`, `test`, and where they apply `dev` / `build`),
 reachable two ways:
 
 ```bash
-deno task check:core            # run one package's verb from the repo root (<verb>:<pkg>)
-cd packages/loca-core && deno task check   # or from inside the package
+deno task check:shared          # run one package's verb from the repo root (<verb>:<pkg>)
+cd packages/loca-shared && deno task check   # or from inside the package
 ```
 
 `dev:core`, `dev:client`, and `dev:website` start a single component's dev loop.
 The client's `dev` is the full Tauri shell; it runs the Vite frontend server
 itself through the Tauri `beforeDevCommand` (inlined in `tauri.conf.json`), so
-there is no separate Vite-only verb to confuse with `dev:website`. The five Rust
-helper crates expose cargo-wrapper verbs (`lint`/`fmt`/`test`/`build`; clippy is
-their compile-check, so they carry no separate `check`), so
-`deno task lint:core-keychain` and
-`cd packages/loca-core-keychain && deno task lint` work identically to the Deno
+there is no separate Vite-only verb to confuse with `dev:website`. The Rust
+crates expose cargo-wrapper verbs (`lint`/`fmt`/`test`/`build`; clippy is their
+compile-check, so they carry no separate `check`), so `deno task lint:core-rs`
+and `cd packages/loca-core-rs && deno task lint` work identically to the Deno
 packages.
 
 ### Android (Tauri-mobile) client
@@ -344,11 +325,10 @@ stock scaffolding; re-apply the customizations if it overwrites them.
 The repo separates two axes that used to be tangled in the root task list:
 
 - A **package** is a unit of development: a workspace member with the
-  standardized verbs above. The 12 packages are the `workspace` array in the
-  root `deno.json` (7 Deno + 5 Rust crates), the single source of truth for the
-  fan-out (`scripts/pkg.ts`).
+  standardized verbs above. The packages are the `workspace` array in the root
+  `deno.json`, the single source of truth for the fan-out (`scripts/pkg.ts`).
 - A **release item** is a unit of distribution and may compose several packages.
-  `core` bundles `loca-core`, `loca-core-engine`, `loca-shared`, and the native helper crates;
+  `core` bundles `loca-core-rs`, `loca-shared`, and `loca-core-updater`;
   `client` and `website` each pull `loca-shared`. Release items live in
   `scripts/release/*.ts`; each declares the `packages` it is built from, and the
   ones whose source hash is "each package's src + manifest" derive that hash
@@ -378,20 +358,18 @@ build never collides with a stable install:
 `deno task dev` sets `dev` automatically. Models are the one exception: they
 stay shared at `~/.loca/models` so multi-GB weights aren't re-downloaded per
 channel. Reset dev state with `deno task clean --dev-state` (or
-`rm -rf ~/.loca/dev`); it never touches a stable install. How core stores
-secrets in dev (and how not to lose them) is covered in
-[packages/loca-core/README.md](packages/loca-core/README.md).
+`rm -rf ~/.loca/dev`); it never touches a stable install.
 
 Channels are built to **coexist and run at the same time**, not just isolate
 data: binaries get a channel suffix (`loca-core` → `loca-core-latest`), the
 desktop app is a distinct bundle, service labels are suffixed, and default ports
 are offset so two cores can bind at once:
 
-| channel | core | llama (`llm.port`) | speech | embed |
-| ------- | ---- | ------------------ | ------ | ----- |
-| stable  | 7800 | 7701               | 7702   | 7703  |
-| latest  | 7810 | 7711               | 7712   | 7713  |
-| dev     | 7820 | 7721               | 7722   | 7723  |
+| channel | core |
+| ------- | ---- |
+| stable  | 7800 |
+| latest  | 7810 |
+| dev     | 7820 |
 
 (Explicit settings still win; only the defaults shift.)
 
@@ -439,16 +417,16 @@ oxfmt/oxlint once over the whole tree (they also cover root-level files) and add
 ### Gate output
 
 The fan-out keeps the console concise. A passing package prints one line
-(`ok @loca/core test (8.2s)`); a failing one prints the last 20 lines of its
+(`ok @loca/shared test (8.2s)`); a failing one prints the last 20 lines of its
 output (the child runners use quiet/dot reporters, so that tail is the failing
 test/file list), the path to the complete log, and a copy-pasteable rerun
 command:
 
 ```
-!! @loca/core test failed (exit 1, 12.4s)
+!! @loca/shared test failed (exit 1, 12.4s)
 <last 20 output lines>
-full: .gate-logs/test-loca-core.log
-rerun: deno task --cwd packages/loca-core test
+full: .gate-logs/test-loca-shared.log
+rerun: deno task --cwd packages/loca-shared test
 ```
 
 Nothing is hidden: every package run, pass or fail, writes its complete output
@@ -470,7 +448,7 @@ runs in parallel on the Rust runners.
 deno task test               # every package's tests (deno test + vitest + cargo test)
 deno task test:js            # just the TS half (deno test + vitest, no cargo)
 deno task test:client        # just the client (vitest + the Tauri crate's cargo test)
-deno task test:core          # just loca-core
+deno task test:core-rs       # just the core (worker .ts tests + cargo test)
 deno task test:e2e           # tauri-driver E2E smoke (manual, opt-in)
 deno task test:e2e:headless  # headless integration E2E (manual, opt-in)
 ```

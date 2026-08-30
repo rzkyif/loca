@@ -1,4 +1,5 @@
 import gsap from "gsap";
+import { SETTINGS_SCHEMA } from "@loca/shared/domain/settings/engine";
 
 // Helpers for scripting a feature-showcase timeline: a virtual cursor that moves
 // to, hovers, and clicks elements inside a stage, plus simulated typing and
@@ -7,6 +8,31 @@ import gsap from "gsap";
 
 export type Timeline = gsap.core.Timeline;
 type Pos = number | string | undefined;
+
+/** What every stage hands back to `Showcase` once its timeline is built. */
+export interface StageHandle {
+  timeline: Timeline;
+  reset: () => void;
+}
+
+/** The props every stage component takes. */
+export interface StageProps {
+  register: (h: StageHandle) => void;
+}
+
+/** A stage whose content height is measured at runtime, so the frame can size
+ *  itself to the tallest state instead of a hardcoded value. */
+export interface SizedStageProps extends StageProps {
+  reportHeight: (h: number) => void;
+}
+
+/** The settings sidebar entries the settings-panel stages render. */
+export const settingsShowcaseGroups = SETTINGS_SCHEMA.filter((g) => !g.hidden).map((g) => ({
+  id: g.id,
+  name: g.name,
+  icon: g.icon,
+  iconInactive: g.iconInactive ?? g.icon,
+}));
 
 // App-surface dimensions, derived from the client's fixed 700x1200 window
 // (tauri.conf.json) and rendered 1:1 in the demo.

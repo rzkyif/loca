@@ -1,16 +1,10 @@
-//! What the extension supervisor reaches speech through.
+//! What the extension supervisor reaches speech through. [`ToolSpeech`] is
+//! DECLARED by `extensions::broker` and implemented here over the same
+//! [`SpeechService`] the routes call.
 //!
-//! [`ToolSpeech`] is DECLARED by `extensions::broker` (the consumer declares, so
-//! nothing under `extensions/` imports a `speech::` type) and implemented here,
-//! over the same [`SpeechService`] the STT and TTS routes call.
-//!
-//! # The two caps are not restated here
-//!
-//! 25 MB of audio and 2,000 characters of text are enforced inside
-//! [`SpeechService::transcribe`] and [`SpeechService::synthesize`], one layer
-//! below both entry points. A second copy at this seam would be a constant that
-//! could drift from the one the routes enforce, and the divergence would show up
-//! as a tool that accepts a clip the HTTP route rejects.
+//! The two caps are deliberately not restated here: they are enforced inside
+//! [`SpeechService`], one layer below both entry points, so a second copy could
+//! drift and let a tool accept a clip the HTTP route rejects.
 
 use async_trait::async_trait;
 
@@ -180,10 +174,8 @@ mod tests {
         );
     }
 
-    /// The claim this seam is built on: the caps are enforced BELOW it, so a
-    /// tool cannot reach past what the routes allow. If a second copy of either
-    /// bound is ever added at the seam, this still passes; if the seam ever
-    /// stops going through `SpeechService`, it does not.
+    /// The caps are enforced BELOW this seam, so a tool cannot reach past what
+    /// the routes allow.
     #[tokio::test]
     async fn the_route_bounds_apply_to_a_tool_call_too() {
         let (seam, local) = seam();

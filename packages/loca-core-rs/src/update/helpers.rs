@@ -1,43 +1,11 @@
-//! The boot-time helper-binary check, narrowed to the one helper that stays.
+//! The boot-time helper-binary check: refuse to start without
+//! `loca-core-updater` rather than silently degrade, since without it a
+//! background-mode self-update has no relauncher.
 //!
-//! The Deno core refuses to start without four helpers (`binaries/helpers.ts`)
-//! and says why: each has a quiet runtime fallback that is right when the
-//! helper RUNS and its OS facility is unavailable, and wrong when the binary is
-//! absent. A missing binary means a broken install, and the fallbacks hide it as
-//! file-backed secrets, guessed hardware, and tool workers spawned without
-//! permission prompts.
-//!
-//! The Rust core absorbs three of the four (keychain F5, hwinfo D6, ptyhost
-//! D12), so this narrows to `loca-core-updater` and keeps the reasoning: refuse
-//! rather than silently degrade. Without it, background-mode self-update has no
-//! relauncher at all, which `apply` already treats as fatal at apply time.
-//! Refusing at boot turns a failure discovered mid-update into one discovered at
-//! start. D-025.
-//!
-//! # Called from the desktop frontend, not from `boot()`
-//!
-//! `boot()` is shared with the mobile embed (M1), and a phone has no updater
-//! binary and no self-update, so a check inside `boot()` would make every
-//! mobile core refuse to start. The oracle's own call site is `main.ts:135`,
-//! which is the desktop entry point, so this is both the mobile-safe placement
-//! and the one that matches.
-//!
-//! # It repairs the one state the swap can leave
-//!
-//! `swap::commit_rename` moves a locked Windows target aside to `<path>.old`
-//! before renaming the new one in, and a hard kill between those two renames
-//! leaves NO file at the live path with the previous one recoverable beside it.
-//! Nothing in the swap can fix that, because the process that would is the one
-//! that died. So the check does not merely report a missing updater: when the
-//! aside is present it restores it and continues.
-//!
-//! **What that does not cover, stated rather than implied.** Only the helper
-//! this check names. A worker script or a future helper left in the same state
-//! is not restored here, because nothing at boot knows which of them should
-//! exist; the general answer is for the update to record what it was committing
-//! before it commits it, which is more machinery than one helper justifies
-//! today. If a second helper ever returns, this is the code that has to grow
-//! rather than be copied.
+//! Called from the desktop frontend, not `boot()`, which the mobile embed
+//! shares and which has no updater. It also repairs the one state the swap can
+//! leave: a hard kill between `commit_rename`'s two renames leaves the helper
+//! at `<path>.old` and nothing at the live path.
 
 use std::path::Path;
 
@@ -47,9 +15,6 @@ use crate::paths::Paths;
 use crate::update::swap::anchor_path;
 
 /// The helpers a core of this generation cannot start without.
-///
-/// One entry, and it is a list rather than a constant so that adding the second
-/// one is an edit to data instead of a rewrite of the logic.
 const REQUIRED_HELPERS: &[&str] = &["loca-core-updater"];
 
 /// Refuse to boot when a required helper is missing, after trying to recover
@@ -82,12 +47,8 @@ pub async fn ensure_helper_binaries(config: &Config, paths: &Paths) -> Result<()
     ))
 }
 
-/// Put `<path>.old` back at `path`, for the window described in the module docs.
-///
-/// Returns whether the live path is usable afterwards. Deliberately quiet about
-/// a missing aside (that is the ordinary "helper was never installed" case) and
-/// loud about one that exists and could not be moved, because that is a repair
-/// that was available and did not happen.
+/// Put `<path>.old` back at `path`. Quiet about a missing aside (the helper was
+/// never installed), loud about one that exists and could not be moved.
 async fn restore_from_aside(path: &Path) -> bool {
     let aside = anchor_path(path);
     if !is_file(&aside) {
@@ -157,9 +118,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_updater_refuses_the_boot_and_says_why() {
-        // Refusing rather than degrading is the whole decision, so the message
-        // has to carry the reason: this is the last thing anyone sees before
-        // the core does not come up.
         let (_d, config, paths) = env(Channel::Stable);
         let err = ensure_helper_binaries(&config, &paths).await.unwrap_err();
         assert!(err.message.contains("loca-core-updater"), "{}", err.message);
@@ -168,9 +126,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_check_is_channel_aware() {
-        // A latest core needs `loca-core-updater-latest`, and stable's binary
-        // sitting in the same dir does not satisfy it. Invisible on the default
-        // channel, which is where this would otherwise be tested.
         let (_d, config, paths) = env(Channel::Latest);
         assert!(updater(&config, &paths)
             .to_string_lossy()
@@ -183,9 +138,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_updater_left_aside_by_an_interrupted_update_is_restored() {
-        // The state `commit_rename` leaves if the process dies between its two
-        // renames. Without this the core refuses to boot forever with its own
-        // updater sitting one rename away.
         let (_d, config, paths) = env(Channel::Stable);
         let live = updater(&config, &paths);
         std::fs::write(anchor_path(&live), "the previous updater").unwrap();
@@ -196,18 +148,11 @@ mod tests {
             std::fs::read_to_string(&live).unwrap(),
             "the previous updater"
         );
-        assert!(
-            !anchor_path(&live).exists(),
-            "the aside is consumed rather than left to be restored again next boot"
-        );
+        assert!(!anchor_path(&live).exists(), "the aside is consumed");
     }
 
     #[tokio::test]
     async fn a_directory_at_the_aside_is_not_mistaken_for_a_recoverable_helper() {
-        // `is_file` rather than an existence check, for the same reason
-        // `inspect_anchor` refuses a directory: a path that exists is not a
-        // binary, and treating it as one turns a clear refusal into a confusing
-        // one at the next spawn.
         let (_d, config, paths) = env(Channel::Stable);
         let live = updater(&config, &paths);
         std::fs::create_dir_all(anchor_path(&live)).unwrap();
@@ -217,9 +162,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_present_helper_is_never_replaced_by_a_stale_aside() {
-        // The ordering that matters: an aside left by an update that DID
-        // complete must not overwrite the helper that completed it. Checking
-        // the live path first is what makes the repair safe to run every boot.
         let (_d, config, paths) = env(Channel::Stable);
         let live = updater(&config, &paths);
         std::fs::write(&live, "the new updater").unwrap();

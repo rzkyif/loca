@@ -204,9 +204,8 @@ async fn a_reset_empties_the_file_and_reports_every_previous_key() {
 
 #[tokio::test]
 async fn concurrent_patches_do_not_lose_each_others_writes() {
-    // The tripwire for the write lock. Without it, each task reads the same
-    // base record and the last rename wins, so most of these keys vanish.
-    // Verified by removing the lock and watching this fail.
+    // The tripwire for the write lock: without it each task reads the same base
+    // record and the last write wins, so most of these keys vanish.
     let env = env();
     let mut tasks = Vec::new();
     for i in 0..50 {
@@ -274,11 +273,10 @@ async fn an_overlay_is_layered_over_the_shared_store_for_its_owner_only() {
 
 #[tokio::test]
 async fn the_resolved_effective_read_carries_defaults_under_the_overlay() {
-    // The two halves existed and neither was correct for a chat turn:
-    // `load_resolved` drops the overlay, `load_effective` stays sparse. Reading
-    // sparse is what made the two advertised thinking budgets resolve to 0 on
-    // every install, because `num_setting` falls back to its CALLER's value, not
-    // the schema's. See D-037 / D-072.
+    // Neither half alone is correct for a chat turn: `load_resolved` drops the
+    // overlay and `load_effective` stays sparse. Reading sparse resolves an
+    // unset thinking budget to 0, because `num_setting` falls back to its
+    // CALLER's value rather than the schema's.
     let env = env();
     env.add_client("c1");
     env.settings
@@ -466,11 +464,8 @@ async fn a_vault_change_rides_the_same_frame_as_a_name_list() {
 }
 
 /// Deleting the last secret must put an EMPTY list on the wire, not omit the
-/// field. The client does `if (secretNames) configuredSecrets = new Set(...)`,
-/// and `[]` is truthy in JavaScript, so the empty list is what clears every
-/// "saved" placeholder; an absent field leaves them showing a secret that is
-/// gone until the client refetches. The frame was unsendable while the
-/// generated field was a bare `Vec` that skipped serializing when empty.
+/// field: the client clears its "saved" placeholders from `[]`, and an absent
+/// field leaves them showing a secret that is gone until it refetches.
 #[tokio::test]
 async fn clearing_the_last_secret_broadcasts_an_empty_name_list() {
     let env = env();

@@ -178,10 +178,9 @@ async fn delete_one(
 ) -> Result<Response> {
     let attachments = state.store.delete(&client.id, &id).await?;
     for path in attachments {
-        // Removing the session directory already took the attachments stored
-        // inside it, so a missing file is the normal case. A real failure
-        // (permissions, a directory in the way) is worth a warning but never
-        // fails the delete.
+        // Removing the session directory already took the attachments inside it,
+        // so a missing file is the normal case. A real failure is worth a
+        // warning but never fails the delete.
         match store::remove_file(path.clone()).await {
             Ok(()) => {}
             Err(err) if err.code == ErrorCode::NotFound => {}
@@ -257,9 +256,7 @@ fn to_stored(input: &MessageInput) -> Result<StoredMessage> {
 
 // --- attachments -------------------------------------------------------------
 
-/// Bounded by the router-wide request body limit, and by nothing else. There is
-/// no attachment-specific cap in the core, and adding one would be a new
-/// behaviour rather than a port.
+/// Bounded by the router-wide request body limit, and by nothing else.
 async fn upload_attachment(
     State(state): State<SessionsState>,
     client: AuthedClient,

@@ -1,13 +1,6 @@
-//! SQLite-backed CRUD over `scheduled_prompts`, owner-scoped.
-//!
-//! Every write path in the subsystem passes through here, which is why
-//! [`spec::validate_spec`] is called from this module rather than from a route
-//! handler. There are three ways a row is created and only one of them is an
-//! HTTP request of ours: `POST`, `PATCH`, and the agent schedule-confirm flow,
-//! which arrives through
-//! [`SchedulePersist`](crate::chat::SchedulePersist) and touches no handler
-//! here at all. A guard in a handler would leave that third path open, and it is
-//! the path the user is least able to inspect.
+//! SQLite-backed CRUD over `scheduled_prompts`, owner-scoped. Every write path
+//! (POST, PATCH, the agent schedule-confirm flow) passes through here, which is
+//! why validation lives here rather than in a route handler.
 
 use rusqlite::{Connection, OptionalExtension, Row as SqlRow};
 use serde::{Deserialize, Serialize};
@@ -18,30 +11,16 @@ use crate::error::{not_found, validation, Result};
 
 use super::spec::{next_occurrence, validate_spec};
 
-/// Bound the table per owner. Schedules are user-curated, so an unbounded list
-/// only arises from a runaway tool proposing them in a loop.
-/// `services/prompt-scheduler.ts:135`.
+/// Per-owner bound; only a runaway tool proposing schedules in a loop hits it.
 const MAX_SCHEDULES_PER_OWNER: i64 = 100;
 
 const COLUMNS: &str = "id, owner_client_id, title, instruction, schedule_json, \
                        run_missed, enabled, last_run_at_ms, next_run_at_ms, \
                        created_at_ms, updated_at_ms";
 
-/// A stored schedule as the client reads it.
-///
-/// Hand-written rather than generated, and that is a gap rather than a choice:
-/// `ScheduledPrompt` (`@loca/shared` `domain/scheduled-prompt.ts:32-41`) is
-/// reachable from no type in `api/http.ts`, so the contract bridge never sees
-/// it and `contract::api` carries only the DRAFT. The client types the response
-/// with an inline cast for the same reason
-/// (`loca-client/src/ui/lib/core/scheduled-prompts.ts:20-23`). Filed on the
-/// interfaces queue to F2; until it lands this struct and that cast are two
-/// hand-maintained copies of one shape.
-///
-/// `last_run_at_ms` and `next_run_at_ms` are OMITTED when absent rather than
-/// sent as `null`, because `rowToPrompt` spreads them conditionally
-/// (`prompt-scheduler.ts:116-117`) and an absent `nextRunAtMs` is how the client
-/// tells a dormant schedule from an armed one.
+/// A stored schedule as the client reads it. Hand-written because the contract
+/// bridge only sees the draft. The two timestamps are omitted when absent, not
+/// `null`: an absent `nextRunAtMs` is how the client tells dormant from armed.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScheduledPrompt {
     pub id: String,
@@ -63,10 +42,8 @@ pub struct ScheduledPrompt {
     pub updated_at_ms: i64,
 }
 
-/// The row as stored, with `schedule_json` still a string.
-///
-/// The tick reads rows rather than prompts on purpose: a row whose JSON will not
-/// parse has to be parked, and that decision needs the row.
+/// The row as stored, with `schedule_json` still a string so the tick can park
+/// a row whose JSON will not parse.
 #[derive(Clone, Debug)]
 pub struct Row {
     pub id: String,
@@ -100,11 +77,6 @@ impl Row {
     }
 
     /// The stored schedule, or an error naming the row.
-    ///
-    /// Fallible because `schedule_json` is a text column: a hand-edited database
-    /// or a schema this build no longer understands is a row that cannot be
-    /// interpreted, and the tick parks it rather than throwing the whole
-    /// subsystem into a re-arm loop.
     pub fn schedule(&self) -> Result<ScheduleSpec> {
         serde_json::from_str(&self.schedule_json).map_err(|err| {
             validation(format!(
@@ -143,13 +115,8 @@ pub struct Patch {
     pub enabled: Option<bool>,
 }
 
-/// A validated, fully-derived row on its way into the table.
-///
-/// Everything that can fail without touching the database happens in
-/// [`NewRow::prepare`], and everything that needs the connection happens in
-/// [`NewRow::insert`]. That split is what lets the async and the synchronous
-/// create paths share one implementation instead of holding two copies of the
-/// same guards.
+/// A validated, fully-derived row on its way into the table. `prepare` needs no
+/// connection and `insert` does, so the async and blocking creates share both.
 struct NewRow {
     id: String,
     owner_client_id: String,
@@ -163,13 +130,9 @@ struct NewRow {
 
 impl NewRow {
     fn prepare(owner_client_id: &str, draft: &ScheduledPromptDraft) -> Result<Self> {
-        // Before the resource limit, so a malformed schedule always gets the
-        // message describing what is malformed. See `validate_spec`: seven of
-        // these constraints exist nowhere else on the Rust side.
         validate_spec(&draft.schedule)?;
         let now = now_ms();
-        // Only a passed `once` reaches here with no occurrence: saving it would
-        // create a schedule that reports success and can never fire.
+        // Only a passed `once` has no occurrence; saving it could never fire.
         let next_run_at_ms = next_occurrence(&draft.schedule, now)
             .ok_or_else(|| validation("the scheduled time is already in the past"))?;
         let schedule_json = serde_json::to_string(&draft.schedule).map_err(|err| {
@@ -246,9 +209,7 @@ impl Store {
                 Ok(rows)
             })
             .await?;
-        // A row whose schedule will not parse is dropped from the LIST rather
-        // than failing it, so one corrupt row cannot make the manager
-        // unopenable. The tick parks the same row, which is what surfaces it.
+        // Drop an unparseable row rather than fail the list; the tick parks it.
         Ok(rows
             .into_iter()
             .filter_map(|row| {
@@ -297,17 +258,7 @@ impl Store {
         self.get(owner_client_id, &id).await
     }
 
-    /// [`Self::create`] from a synchronous caller.
-    ///
-    /// The agent schedule-confirm path, and the reason it is synchronous is
-    /// D4's: `SchedulePersist::create` runs INSIDE the response handler, before
-    /// the tool is unblocked, so the tool's "scheduled" report is only ever sent
-    /// for a draft that was actually stored (`chat.ts:196-206`).
-    ///
-    /// Shares [`NewRow`] with the async path rather than restating the
-    /// preparation, so there is one copy of the validation, the occurrence
-    /// derivation and the cap. Two copies of a guard is how one of them loses a
-    /// check.
+    /// [`Self::create`] for the synchronous schedule-confirm path.
     pub fn create_blocking(
         &self,
         owner_client_id: &str,
@@ -330,10 +281,8 @@ impl Store {
         let schedule = patch.schedule.clone().unwrap_or(current.schedule);
         let enabled = patch.enabled.unwrap_or(current.enabled);
 
-        // Keep the armed occurrence unless something that DEFINES it changed:
-        // disabling parks the row, and a new schedule or a re-enable re-derives
-        // it. Recomputing unconditionally would silently push a schedule
-        // forward every time the user renamed it.
+        // Keep the armed occurrence unless something that defines it changed;
+        // recomputing on a rename would silently push the schedule forward.
         let next = if !enabled {
             None
         } else if patch.schedule.is_some() || !current.enabled {
@@ -377,8 +326,7 @@ impl Store {
     }
 
     pub async fn delete(&self, owner_client_id: &str, id: &str) -> Result<()> {
-        // The read first, so a foreign or unknown id is `not_found` rather than
-        // a silent no-op that reports success.
+        // Read first so a foreign or unknown id is `not_found`.
         self.row(owner_client_id, id).await?;
         let target = id.to_string();
         self.db
@@ -423,11 +371,7 @@ impl Store {
             .await
     }
 
-    /// Re-read one row by id, ignoring ownership.
-    ///
-    /// The tick uses this and not [`Self::row`]: it already holds the row's
-    /// owner, and it needs to see a row that was disabled or advanced while it
-    /// was awaiting the loading probe.
+    /// Re-read one row by id, ignoring ownership (the tick's post-await re-read).
     pub async fn by_id(&self, id: &str) -> Result<Option<Row>> {
         let wanted = id.to_string();
         self.db
@@ -440,11 +384,8 @@ impl Store {
             .await
     }
 
-    /// Record a run and move the armed occurrence on.
-    ///
-    /// Called BEFORE the turn starts, which is what makes firing at-most-once: a
-    /// crash mid-run skips that occurrence instead of duplicating the automated
-    /// session on the next boot.
+    /// Record a run and move the armed occurrence on. Called BEFORE the turn
+    /// starts, which is what makes firing at-most-once.
     pub async fn advance(&self, id: &str, last_run_at_ms: i64, next: Option<i64>) -> Result<()> {
         let target = id.to_string();
         self.db
@@ -474,11 +415,8 @@ impl Store {
             .await
     }
 
-    /// Clear the armed occurrence, leaving the row enabled but dormant.
-    ///
-    /// What a corrupt `schedule_json` gets. A user edit revives it; throwing
-    /// instead would wedge the whole subsystem in a throw-and-re-arm loop over
-    /// one bad row.
+    /// Clear the armed occurrence, leaving the row enabled but dormant (what a
+    /// corrupt `schedule_json` gets; a user edit revives it).
     pub async fn park(&self, id: &str) -> Result<()> {
         self.reschedule(id, None).await
     }

@@ -4,11 +4,7 @@ members = [
   "packages/loca-client/src/tauri",
   "packages/loca-core-rs",
   "packages/loca-core-ffi",
-  "packages/loca-core-keychain",
   "packages/loca-core-updater",
-  "packages/loca-core-hwinfo",
-  "packages/loca-core-ptyhost",
-  "packages/loca-core-speech",
 ]
 # `reference/` is a local-only, git-ignored area (e.g. old app versions kept for
 # reference); keep anything inside it out of the workspace.
@@ -36,10 +32,8 @@ debug = false
 [profile.dev.build-override]
 debug = false
 
-# Single shared release profile for every Rust crate. In a workspace the member
-# crates' own [profile.*] sections are ignored, and `lto`/`panic` can't be
-# overridden per-package; only `opt-level` can. So the helpers inherit the
-# workspace's thin LTO + abort and just drop their opt-level to "z" below.
+# Single shared release profile for every Rust crate; only `opt-level` can be
+# overridden per package.
 [profile.release]
 opt-level = "s"
 lto = "thin"
@@ -47,15 +41,6 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
-# The keychain/updater helpers ship as tiny standalone binaries, so squeeze size.
-[profile.release.package.loca-core-keychain]
-opt-level = "z"
-
+# The updater ships as a tiny standalone binary, so squeeze size.
 [profile.release.package.loca-core-updater]
-opt-level = "z"
-
-[profile.release.package.loca-core-hwinfo]
-opt-level = "z"
-
-[profile.release.package.loca-core-ptyhost]
 opt-level = "z"

@@ -1,21 +1,5 @@
-//! The seam onto the binary installer, which is D7's.
-//!
-//! Declared here and implemented for D7's concrete type in the same file,
-//! rather than asked of D7: nothing about the installer needs to change, and a
-//! trait plus a four-method forwarding impl is cheaper than a cross-package
-//! edit. It follows `storage/deps.rs` and `models/deps.rs` in shape.
-//!
-//! # Why a seam at all, when `BinariesInstaller` is constructible in a test
-//!
-//! Two of its four methods reach upstream. `probe` resolves a GitHub release
-//! for a resolver entry, which every entry on this core is, so a test over the
-//! real type would either hit `api.github.com` or assert around a failure. The
-//! seam is what lets the size-hint path and the consent assertion be tested at
-//! all.
-//!
-//! The models side needs no equivalent, because `Models` already carries D6's
-//! `Downloads` seam and a test injects a fake through
-//! `ModelsDeps::with_downloads`.
+//! The seam onto the binary installer. `probe` reaches GitHub, so tests need a
+//! fake to cover the size-hint path and the consent assertion.
 
 use async_trait::async_trait;
 
@@ -27,8 +11,7 @@ use crate::error::Result;
 /// The binary installer, as the requirements snapshot uses it.
 #[async_trait]
 pub trait Binaries: Send + Sync {
-    /// Install state per kind. Network-free (D-061), which is what lets the
-    /// always-on snapshot call it.
+    /// Install state per kind. Network-free, so the always-on snapshot may call it.
     async fn list(&self) -> Result<Vec<BinaryStatus>>;
 
     /// Download size and resolved version for the confirm modal. **Reaches
@@ -39,7 +22,7 @@ pub trait Binaries: Send + Sync {
     fn failure(&self, kind: BinaryKind) -> Option<String>;
 
     /// Install the named kinds, answering one queue-row id per kind that
-    /// started. Never called with an empty list; see the route.
+    /// started. Never called with an empty list.
     async fn install(&self, kinds: Vec<BinaryKind>) -> Result<Vec<String>>;
 }
 
@@ -50,9 +33,8 @@ impl Binaries for BinariesInstaller {
     }
 
     async fn probe(&self, kinds: &[BinaryKind]) -> Result<Vec<BinaryProbeResult>> {
-        // A fresh token per call rather than one threaded from the request:
-        // the oracle's probe has no cancellation either, and a token shared
-        // across calls would let one abandoned probe cancel the next.
+        // A fresh token per call: one shared across calls would let an
+        // abandoned probe cancel the next.
         BinariesInstaller::probe(self, kinds, &CancellationToken::new()).await
     }
 
@@ -61,8 +43,7 @@ impl Binaries for BinariesInstaller {
     }
 
     async fn install(&self, kinds: Vec<BinaryKind>) -> Result<Vec<String>> {
-        // `Some`, always: `None` means "everything missing" (D-028) and this
-        // caller has already decided exactly which kinds it wants.
+        // `None` means "everything missing"; this caller already chose.
         BinariesInstaller::install(self, Some(kinds)).await
     }
 }
@@ -76,8 +57,7 @@ mod tests {
     use crate::config::Channel;
     use crate::transport::testing::context;
 
-    /// A real installer over an unwired queue, following `Services::unwired`.
-    /// Every method reached below is network-free.
+    /// A real installer over an unwired queue; every method reached is network-free.
     fn installer() -> BinariesInstaller {
         let ctx = context();
         let net = Arc::new(crate::downloads::net::Net::new().unwrap());
@@ -99,36 +79,23 @@ mod tests {
         )
     }
 
-    /// The forwarder reaches the REAL methods, which a four-line impl can get
-    /// wrong silently: a `list` wired to something else would answer a plausible
-    /// empty vec and every binary would read as missing forever.
-    ///
-    /// Driven through `dyn Binaries`, because that is the only form the snapshot
-    /// holds it in.
     #[tokio::test]
     async fn the_seam_forwards_to_the_installer_rather_than_answering_for_it() {
         let binaries: Arc<dyn Binaries> = Arc::new(installer());
 
-        // `list` enumerates every kind on the wire contract, not just the one
-        // this core installs: the client renders a row per kind.
         let listed = binaries.list().await.unwrap();
-        assert_eq!(listed.len(), 3, "{listed:?}");
+        assert_eq!(listed.len(), 2, "{listed:?}");
         let deno = listed
             .iter()
             .find(|s| s.kind == BinaryKind::Deno)
             .expect("the worker runtime is listed");
         assert!(!deno.installed, "nothing is on disk in a fresh temp root");
-        // Only the installable kind advertises a desired variant, which is the
-        // narrowing this core carries; a forwarder answering from somewhere else
-        // would not reproduce it.
         assert!(deno.desired_variant.is_some());
         assert!(listed
             .iter()
             .filter(|s| s.kind != BinaryKind::Deno)
             .all(|s| s.desired_variant.is_none()));
 
-        // `failure` reads the installer's own map, which is empty until an
-        // install has failed.
         assert_eq!(binaries.failure(BinaryKind::Deno), None);
     }
 }

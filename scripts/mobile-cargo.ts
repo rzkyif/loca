@@ -4,15 +4,12 @@
 //
 // # What it sets, and why it cannot be a config file
 //
-// `sherpa-onnx-sys` resolves its libraries from the `SHERPA_ONNX_LIB_DIR`
-// environment variable and from nothing else (its `build.rs` reads the var
-// directly). Cargo's `.cargo/config.toml` has an `[env]` table but no per-target
-// form of it, so there is no declarative place to say "this directory for
-// android, that one for ios". A wrapper is the mechanism that exists.
+// `sherpa-onnx-sys` resolves its libraries from `SHERPA_ONNX_LIB_DIR` and
+// nothing else, and cargo's `[env]` table has no per-target form, so there is no
+// declarative place to say "this directory for android, that one for ios".
 //
 // It also verifies the vendored tree is staged before handing off, so a missing
-// `vendor/sherpa-onnx` fails here with the one command that fixes it rather than
-// fifty lines deep in a build script.
+// `vendor/sherpa-onnx` fails here with the command that fixes it.
 //
 // # This is for single-target invocations only
 //

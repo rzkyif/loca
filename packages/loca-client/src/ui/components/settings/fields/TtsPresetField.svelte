@@ -2,7 +2,7 @@
   import type { PresetOption, SettingField, TtsCatalogModel } from "@loca/shared";
   import { primaryFileSpec, TTS_PRIMARY_ROLE } from "@loca/shared";
   import { settingsState } from "../../../state";
-  import { ttsModelsState } from "../../../state/tts-models.svelte";
+  import { ttsModelsState } from "$stores/speech-models.svelte";
   import { cores } from "$lib/core";
   import FieldCard from "./FieldCard.svelte";
   import TtsPresetFieldView from "@loca/shared/ui/components/settings/TtsPresetFieldView.svelte";

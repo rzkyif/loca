@@ -7,39 +7,23 @@
 //! private key, so what is at stake is the pairing trust root rather than a
 //! convenience.
 //!
-//! # The split, and why it is here rather than in the frontend
-//!
-//! The KeyStore itself is reachable only through the JVM, so the cryptography
-//! lives in `SecretBox.kt` in the Android app and the JNI call lives in the
-//! Tauri crate, which is the crate that owns the Android dependency block.
-//! Everything in THIS file is the part that has no JNI in it: the on-disk
-//! framing, the migration from a plaintext file, and what happens when an
-//! envelope cannot be opened. That split is deliberate and it is D-117's
-//! lesson: `cargo test` is host-target, so any logic left on the far side of a
-//! `#[cfg(target_os = "android")]` has no coverage at all. The rules with an
-//! ordering or a failure mode to get wrong are all on this side, driven by a
-//! [`SecretBox`] double.
+//! The KeyStore is reachable only through the JVM, so the cryptography lives in
+//! `SecretBox.kt` and the JNI call in the Tauri crate. Everything in THIS file
+//! has no JNI in it (the on-disk framing, the migration from a plaintext file,
+//! and what happens when an envelope cannot be opened), because `cargo test` is
+//! host-target and anything behind `#[cfg(target_os = "android")]` has no
+//! coverage at all. It is driven by a [`SecretBox`] double.
 //!
 //! # The file format, which this module owns outright
 //!
-//! One path, the same `.master-key` the plaintext build used, holding either:
-//!
-//! - `LOCAK1:<base64 of iv||ciphertext+tag>`, or
-//! - the bare plaintext value an older build wrote.
-//!
-//! Reusing the path rather than adding a `.enc` sibling is not tidiness. The
-//! sandbox deny list names `secrets::master_key_file` and
-//! `secrets::master_key_tmp_file` exactly (`extensions/sandbox.rs:533-537`), so
-//! a second path would need a matching entry, and a deny list that misses a
-//! secret is the failure D-013 filed. One path means the existing entries keep
-//! covering it. (No extension worker runs on Android at all today, since
-//! `extensions::worker::spawner` is gated off both mobile targets, so the deny
-//! list is unreachable there; the point is that whoever changes that later
-//! inherits the coverage rather than having to notice its absence.)
-//!
-//! Keeping the path also makes migration fall out for free: a read that finds
-//! no version marker has found a plaintext key from an older build, returns it,
-//! and re-seals it in place.
+//! One path, the same `.master-key` the plaintext build used, holding either
+//! `LOCAK1:<base64 of iv||ciphertext+tag>` or the bare plaintext an older build
+//! wrote. Reusing the path is not tidiness: the sandbox deny list names
+//! `secrets::master_key_file` and `secrets::master_key_tmp_file` exactly, so a
+//! second path would need a matching entry, and a deny list that misses a secret
+//! is the failure it exists to prevent. Keeping the path also makes migration
+//! free: a read that finds no version marker has found a plaintext key, returns
+//! it, and re-seals it in place.
 //!
 //! The marker lives here rather than inside the ciphertext so that there is NO
 //! constant shared across the JNI boundary. `SecretBox.kt` deals in raw bytes
@@ -65,10 +49,9 @@ pub const SEALED_PREFIX: &str = "LOCAK1:";
 /// is a JNI round trip into the platform provider, which the vault already runs
 /// inside `spawn_blocking`.
 ///
-/// `Debug` is required and implementations print the type name and nothing
-/// else. A derive would put an alias, and one refactor later a plaintext, into
-/// any `{:?}` that reaches a log line or a panic message. That is D-017's rule
-/// applied before there is an error type to get it wrong with.
+/// `Debug` is required and implementations print the type name and nothing else:
+/// a derive would put an alias, and one refactor later a plaintext, into any
+/// `{:?}` that reaches a log line or a panic message.
 pub trait SecretBox: Send + Sync + std::fmt::Debug {
     /// `iv || ciphertext+tag`. Generates the key on first use.
     fn seal(&self, plaintext: &[u8]) -> Result<Vec<u8>>;
@@ -170,13 +153,12 @@ impl SecureStore for SealedStore {
     /// build, returned and re-sealed in place. Framed and NOT openable: treated
     /// as **absent**, with the file renamed aside.
     ///
-    /// That last choice is D-079's shape. The state is reachable without an
-    /// attacker (a credential reset destroys the KeyStore key while leaving the
-    /// file), and the alternatives are worse in both directions: propagating
-    /// the error fails the boot, so a rotated key becomes a phone that will not
-    /// start; deleting the file destroys the only evidence a support case would
-    /// have. Absent means the vault regenerates, the user re-pairs, and the
-    /// bytes are still on disk if anyone asks.
+    /// That last state is reachable without an attacker, because a credential
+    /// reset destroys the KeyStore key while leaving the file, and both
+    /// alternatives are worse: propagating the error turns a rotated key into a
+    /// phone that will not start, and deleting the file destroys the only
+    /// evidence a support case would have. Absent means the vault regenerates,
+    /// the user re-pairs, and the bytes are still on disk if anyone asks.
     fn get(&self, key: &str) -> Result<Option<String>> {
         let Some(stored) = self.file.get(key)? else {
             return Ok(None);
@@ -218,9 +200,8 @@ impl SecureStore for SealedStore {
                 }
             },
             Err(err) => {
-                // `err.message`, never `{err:?}`: D-017's rule, and the reason it
-                // exists is that a Debug rendering of a crypto error is exactly
-                // where a byte buffer leaks into a log.
+                // `err.message`, never `{err:?}`: a Debug rendering of a crypto
+                // error is exactly where a byte buffer leaks into a log.
                 self.quarantine(key, &err.message);
                 Ok(None)
             }
@@ -230,18 +211,12 @@ impl SecureStore for SealedStore {
     /// Seal and write. **A seal failure falls back to plaintext with a loud
     /// warning rather than propagating.**
     ///
-    /// F-K found the asymmetry: swapping this store in for `LayeredStore` on
-    /// Android removed the one fallback the desktop path has. `LayeredStore`
-    /// answers a refusing keychain by writing the dotfile and warning
-    /// (`store.rs`, `seal_verified`); this propagated with `?`, and the master
-    /// key's first write is on the boot path, so a provider hiccup on a fresh
-    /// install was a phone that does not start.
-    ///
-    /// Bricking is the outcome this whole failure policy was written to avoid,
-    /// and D-125 already settled the shape for a degraded secret store: the
-    /// mitigation is LOUDNESS, not restriction. So the value lands, the warning
-    /// says exactly what happened, and the next successful write re-seals it
-    /// (the read path migrates any unframed value it finds).
+    /// `LayeredStore` answers a refusing keychain by writing the dotfile and
+    /// warning, and the master key's first write is on the boot path, so
+    /// propagating here would turn a provider hiccup on a fresh install into a
+    /// phone that does not start. The mitigation for a degraded secret store is
+    /// LOUDNESS, not restriction: the value lands, the warning says exactly what
+    /// happened, and the next successful write re-seals it.
     fn set(&self, key: &str, value: &str) -> Result<()> {
         match self.boxed.seal(value.as_bytes()) {
             Ok(sealed) => self.file.set(key, &frame(&sealed)),
@@ -294,10 +269,10 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    /// A [`SecretBox`] double. XOR is not encryption and is not pretending to
-    /// be: what these tests exercise is the framing, the migration and the
-    /// failure handling, none of which depends on the cipher. The real box is
-    /// JNI and is unreachable from a host test binary at all (D-117).
+    /// A [`SecretBox`] double. XOR is not encryption and is not pretending to be:
+    /// these tests exercise the framing, the migration and the failure handling,
+    /// none of which depends on the cipher, and the real box is unreachable from
+    /// a host test binary.
     #[derive(Default)]
     struct FakeBox {
         fail_unseal: Mutex<bool>,

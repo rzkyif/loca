@@ -57,10 +57,8 @@ async fn autocorrect(
     State(service): State<Utility>,
     Json(body): Json<AutocorrectRequest>,
 ) -> Result<Json<AutocorrectResponse>> {
-    // Deserialising the generated type is the type check; the contract declares
-    // a plain `string` with no minimum, so emptiness is the one rule left to
-    // enforce here. An empty transcription is a no-op call, not a completion
-    // worth a round trip to the model.
+    // The contract declares a plain `string` with no minimum, so emptiness is
+    // the one rule left here: a no-op call, not a round trip to the model.
     if body.text.is_empty() {
         return Err(validation("body must be { text: string }"));
     }
@@ -84,10 +82,9 @@ async fn autocorrect(
             endpoint,
             overrides: Overrides {
                 temperature: Some(UTILITY_TEMPERATURE),
-                // Autocorrect sits on the dictation hot path, where thinking
-                // costs seconds for little gain, so the Cleanup Thinking Budget
-                // defaults to 0 (off). A positive budget opts in and caps the
-                // `<think>` block.
+                // On the dictation hot path, where thinking costs seconds for
+                // little gain, so the budget defaults to 0 (off); a positive
+                // one opts in and caps the `<think>` block.
                 reasoning_budget: Some(thinking_budget(
                     &settings,
                     "prompts.autocorrectThinkingBudget",
@@ -162,11 +159,9 @@ async fn merge(
     Ok(Json(MergeTranscriptionResponse { text }))
 }
 
-/// The user's prompt for `key`, or the schema's default.
-///
-/// An empty stored value means the user cleared the field, which reads as "use
-/// the default" rather than "send no system prompt": a cleared prompt would
-/// otherwise turn the utility call into an open-ended chat completion.
+/// The user's prompt for `key`, or the schema's default. An empty stored value
+/// means the field was cleared, which reads as "use the default": no system
+/// prompt at all would turn the utility call into an open-ended completion.
 fn prompt(settings: &SettingsRecord, key: &str) -> String {
     let configured = str_setting(settings, key, "");
     if !configured.is_empty() {
@@ -216,37 +211,53 @@ mod tests {
         fixture_with(ScriptedProvider::text("corrected text"))
     }
 
-    async fn post_json(
-        router: &Router,
-        path: &str,
-        body: Value,
-        bearer: bool,
-    ) -> (StatusCode, Value) {
-        let mut request = Request::builder()
-            .method("POST")
-            .uri(path)
-            .header("content-type", "application/json");
-        if bearer {
-            request = request.header("authorization", "Bearer token");
+    impl Fixture {
+        async fn post_as(&self, path: &str, body: Value, bearer: bool) -> (StatusCode, Value) {
+            let mut request = Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/json");
+            if bearer {
+                request = request.header("authorization", "Bearer token");
+            }
+            let response = self
+                .router
+                .clone()
+                .oneshot(request.body(Body::from(body.to_string())).unwrap())
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            (
+                status,
+                serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+            )
         }
-        let response = router
-            .clone()
-            .oneshot(request.body(Body::from(body.to_string())).unwrap())
-            .await
-            .unwrap();
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
-            .await
-            .unwrap();
-        let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        (status, value)
+
+        async fn post(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.post_as(path, body, true).await
+        }
+
+        /// The messages of the `n`th request the provider was handed.
+        fn messages(&self, n: usize) -> Value {
+            serde_json::to_value(&self.provider.requests()[n].messages).unwrap()
+        }
+
+        async fn set_prompt(&self, value: &str) {
+            let Value::Object(map) = json!({ "prompts.autocorrectPrompt": value }) else {
+                unreachable!()
+            };
+            self.settings.patch(map).await.unwrap();
+        }
     }
 
     #[tokio::test]
     async fn both_routes_require_a_paired_client() {
         let fixture = fixture();
         for path in ["/api/v1/llm/autocorrect", "/api/v1/llm/merge"] {
-            let (status, body) = post_json(&fixture.router, path, json!({}), false).await;
+            let (status, body) = fixture.post_as(path, json!({}), false).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
             assert_eq!(body["error"]["code"], json!("missing_token"), "{path}");
         }
@@ -256,13 +267,7 @@ mod tests {
     async fn autocorrect_rejects_a_missing_empty_or_wrong_typed_text() {
         let fixture = fixture();
         for body in [json!({}), json!({ "text": "" }), json!({ "text": 42 })] {
-            let (status, response) = post_json(
-                &fixture.router,
-                "/api/v1/llm/autocorrect",
-                body.clone(),
-                true,
-            )
-            .await;
+            let (status, response) = fixture.post("/api/v1/llm/autocorrect", body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
             assert_eq!(
                 response["error"]["code"],
@@ -284,8 +289,7 @@ mod tests {
             json!({ "existing": "x", "next": "" }),
             json!({ "next": "y" }),
         ] {
-            let (status, response) =
-                post_json(&fixture.router, "/api/v1/llm/merge", body.clone(), true).await;
+            let (status, response) = fixture.post("/api/v1/llm/merge", body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
             assert_eq!(
                 response["error"]["code"],
@@ -293,32 +297,24 @@ mod tests {
                 "{body}"
             );
         }
-        let (status, _) = post_json(
-            &fixture.router,
-            "/api/v1/llm/merge",
-            json!({ "existing": "", "next": "y" }),
-            true,
-        )
-        .await;
+        let (status, _) = fixture
+            .post("/api/v1/llm/merge", json!({ "existing": "", "next": "y" }))
+            .await;
         assert_eq!(status, StatusCode::OK, "a blank input box is not an error");
     }
 
     #[tokio::test]
     async fn autocorrect_returns_the_completion_and_sends_the_default_prompt() {
         let fixture = fixture();
-        let (status, body) = post_json(
-            &fixture.router,
-            "/api/v1/llm/autocorrect",
-            json!({ "text": "helo wrld" }),
-            true,
-        )
-        .await;
+        let (status, body) = fixture
+            .post("/api/v1/llm/autocorrect", json!({ "text": "helo wrld" }))
+            .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({ "text": "corrected text" }));
 
         let sent = fixture.provider.requests();
         assert_eq!(sent.len(), 1);
-        let messages = serde_json::to_value(&sent[0].messages).unwrap();
+        let messages = fixture.messages(0);
         assert_eq!(
             messages[1],
             json!({ "role": "user", "content": "helo wrld" })
@@ -337,18 +333,16 @@ mod tests {
     #[tokio::test]
     async fn merge_wraps_the_two_texts_in_the_template_the_prompt_describes() {
         let fixture = fixture_with(ScriptedProvider::text("merged"));
-        let (status, body) = post_json(
-            &fixture.router,
-            "/api/v1/llm/merge",
-            json!({ "existing": "one", "next": "two" }),
-            true,
-        )
-        .await;
+        let (status, body) = fixture
+            .post(
+                "/api/v1/llm/merge",
+                json!({ "existing": "one", "next": "two" }),
+            )
+            .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({ "text": "merged" }));
-        let messages = serde_json::to_value(&fixture.provider.requests()[0].messages).unwrap();
         assert_eq!(
-            messages[1]["content"],
+            fixture.messages(0)[1]["content"],
             json!("<existing>\none\n</existing>\n<new>\ntwo\n</new>"),
             "the tags are what the merge prompt tells the model to expect",
         );
@@ -357,42 +351,18 @@ mod tests {
     #[tokio::test]
     async fn a_configured_prompt_wins_and_a_cleared_one_falls_back() {
         let fixture = fixture();
+        fixture.set_prompt("MINE").await;
         fixture
-            .settings
-            .patch(match json!({ "prompts.autocorrectPrompt": "MINE" }) {
-                Value::Object(map) => map,
-                _ => unreachable!(),
-            })
-            .await
-            .unwrap();
-        post_json(
-            &fixture.router,
-            "/api/v1/llm/autocorrect",
-            json!({ "text": "x" }),
-            true,
-        )
-        .await;
-        let messages = serde_json::to_value(&fixture.provider.requests()[0].messages).unwrap();
-        assert_eq!(messages[0]["content"], json!("MINE"));
+            .post("/api/v1/llm/autocorrect", json!({ "text": "x" }))
+            .await;
+        assert_eq!(fixture.messages(0)[0]["content"], json!("MINE"));
 
+        fixture.set_prompt("").await;
         fixture
-            .settings
-            .patch(match json!({ "prompts.autocorrectPrompt": "" }) {
-                Value::Object(map) => map,
-                _ => unreachable!(),
-            })
-            .await
-            .unwrap();
-        post_json(
-            &fixture.router,
-            "/api/v1/llm/autocorrect",
-            json!({ "text": "x" }),
-            true,
-        )
-        .await;
-        let messages = serde_json::to_value(&fixture.provider.requests()[1].messages).unwrap();
+            .post("/api/v1/llm/autocorrect", json!({ "text": "x" }))
+            .await;
         assert!(
-            messages[0]["content"]
+            fixture.messages(1)[0]["content"]
                 .as_str()
                 .unwrap()
                 .starts_with("You are a transcription corrector."),
@@ -402,20 +372,14 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreachable_provider_answers_500_internal_error() {
-        // What the TypeScript's error middleware does with an unclassified
-        // provider throw. The chat path classifies instead; these two routes
-        // deliberately do not, so a port that "improved" this to 502 would
-        // diverge from the oracle on a route the conformance suite covers.
+        // Unclassified: the chat path classifies instead, and these two routes
+        // deliberately do not.
         let fixture = fixture_with(ScriptedProvider::failing(ProviderError::transport(
             "http://127.0.0.1:7701/v1 is unreachable: connection refused",
         )));
-        let (status, body) = post_json(
-            &fixture.router,
-            "/api/v1/llm/autocorrect",
-            json!({ "text": "x" }),
-            true,
-        )
-        .await;
+        let (status, body) = fixture
+            .post("/api/v1/llm/autocorrect", json!({ "text": "x" }))
+            .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["error"]["code"], json!("internal_error"));
     }

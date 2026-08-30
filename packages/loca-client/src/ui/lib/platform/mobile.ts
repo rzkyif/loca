@@ -1,18 +1,14 @@
 // Mobile (Tauri-mobile) implementation of the Platform interface, shared by
-// Android and iOS. Like tauri.ts it runs inside a Tauri webview and may import
-// `@tauri-apps/*` (the no-tauri-import rule only restricts code outside
-// lib/platform/). The handful of spots that differ between the two mobile OSes
-// (self-update, the back affordance, the font picker) branch on osPlatform().
+// Android and iOS. The few spots that differ between the two (self-update, the
+// back affordance, the font picker) branch on osPlatform().
 //
-// Reuse vs. not-supported: the namespaces that call cross-platform Rust
-// commands (net, client files, storage, keychain, process, logging,
-// resolvePath) or cross-platform plugins (fs, dialog, opener, app version)
-// are identical to desktop. The desktop-only host features (windowing,
-// global shortcuts, screen capture, system-volume ducking, autostart, native
-// menus, local-core install) are stubbed: they either no-op or reject with a
-// clear "not supported on mobile" error, and the UI hides their affordances
-// behind UiContext.platform === "mobile". See the capability matrix in the
-// Android plan and the per-feature notes inline.
+// The namespaces backed by cross-platform Rust commands or plugins (net, client
+// files, storage, keychain, process, logging, resolvePath, fs, dialog, opener,
+// app version) are identical to desktop. The desktop-only host features
+// (windowing, global shortcuts, screen capture, volume ducking, autostart,
+// native menus, local-core install) no-op or reject with a "not supported on
+// mobile" error, and the UI hides their affordances behind
+// UiContext.platform === "mobile".
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -49,19 +45,15 @@ export function installMobilePlatform(): void {
 
 // --- Self-hosted APK updater ----------------------------------------------
 //
-// Tauri's updater plugin has no Android support, so mobile self-updates are
-// checked against the same R2-hosted, Ed25519-signed manifest the release
-// pipeline publishes (scripts/release/android.ts -> android.json). The manifest
-// is fetched over an unpinned connection, so before ANY field is trusted its
-// detached signature (android.json.sig) is verified against the committed
-// signing key, and the downloaded APK is checked against the signed sha256
-// before it is staged for install. Without those two checks this would be an
-// unauthenticated fetch-and-install path. The keystore signature Android
-// enforces at install time is a final backstop, not the trust gate.
+// Tauri's updater plugin has no Android support, so mobile self-updates read the
+// same R2-hosted, Ed25519-signed manifest the release pipeline publishes. The
+// manifest arrives over an unpinned connection, so before ANY field is trusted
+// its detached signature is verified against the committed key, and the APK is
+// checked against the signed sha256 before staging. Without both this would be
+// an unauthenticated fetch-and-install path; Android's install-time keystore
+// check is a backstop, not the trust gate.
 //
-// Ed25519 signing public key: the trust root for release manifests. Mirrors the
-// value in packages/loca-core/data/signing-keys.json (baked into every compiled
-// core). If the signing key is ever rotated, update it here too.
+// Mirrors packages/loca-core-rs/data/signing-keys.json. Update both on rotation.
 const ANDROID_MANIFEST_PUBKEY = "KghrHOIqu76Hpl/xX8RHUuDA2n1NGCOj9gD1Jrn5H+M=";
 
 interface AndroidManifest {
@@ -135,22 +127,14 @@ async function checkAndroidUpdate(): Promise<UpdateHandle | null> {
     return null;
   }
   if (!manifest?.version || !isNewerVersion(manifest.version, current)) return null;
-  // Pick the APK built for THIS device's ABI, and decline rather than guess.
-  //
-  // This used to prefer `android-arm64`, then a universal fat APK, then
-  // whatever the manifest happened to carry first. That was correct only by
-  // accident: the release script publishes a single `android-universal` key for
-  // a fat APK, so the arm64 arm never matched. The moment per-ABI splits ship
-  // the accident inverts and every armv7 or x86_64 device downloads an arm64
-  // APK whose native library its CPU cannot load. **A self-update that breaks
-  // the app is worse than one that does nothing**, and it happens after the
-  // signature and hash checks pass, so nothing else here would catch it.
+  // Pick the APK built for THIS device's ABI, and decline rather than guess: an
+  // APK whose native library the CPU cannot load passes the signature and hash
+  // checks, so nothing else here would catch it, and a self-update that breaks
+  // the app is worse than one that does nothing.
   //
   // `client_abi` reports the ABI this build was compiled for, which IS the ABI
-  // running, because the native library is compiled once per ABI. The universal
-  // fallback stays for as long as fat APKs are published; the "first entry"
-  // fallback is gone, because a coin flip that installs an unloadable APK is
-  // strictly worse than telling the user there is no update.
+  // running. The universal fallback stays while fat APKs are published; there is
+  // deliberately no "first entry" fallback.
   let abi: string | null = null;
   try {
     abi = (await invoke<string | null>("client_abi")) ?? null;
@@ -206,13 +190,9 @@ async function checkAndroidUpdate(): Promise<UpdateHandle | null> {
 // --- The Core inside this app ----------------------------------------------
 //
 // The phone IS a Core: `loca-core` is linked into the app and driven in process
-// through the `core_*` commands (see src/tauri/src/commands/core.rs). There is
-// no loopback listener and that is load bearing, so none of these carry a TLS
-// mode, a pin, or a socket URL.
-//
-// This object is the whole reason `lib/core/local-transport.ts` needs no
-// `@tauri-apps/*` import: every `invoke` and every `listen` for the embedded
-// Core is here, inside lib/platform/, where the boundary rule allows them.
+// through the `core_*` commands. There is no loopback listener, so none of these
+// carry a TLS mode, a pin, or a socket URL. Keeping every `invoke` / `listen`
+// for it here is what lets `lib/core/local-transport.ts` stay import-free.
 const localCore: LocalCore = {
   start: () => invoke<LocalCoreInfo>("core_start"),
   running: () => invoke<boolean>("core_running"),
@@ -424,14 +404,10 @@ const impl: Platform = {
     delete: (coreId) => invoke("keychain_delete_token", { coreId }),
   },
   pairing: {
-    // This device DOES host a Core, but it hosts it in process rather than as a
-    // separate binary on a port, so the desktop-shaped questions get the answers
-    // that are true of an embedded Core rather than the inert ones.
-    //
-    // No admin token and no boot breadcrumb: both are files a supervised core
-    // process writes, and there is no such process. An embedded Core also mints
-    // no pairing codes, because nothing can pair to it (no listener), which is
-    // the same fact its `capabilities.pairing: false` reports.
+    // This device hosts a Core in process rather than as a binary on a port, so
+    // the desktop-shaped questions get an embedded Core's answers. No admin token
+    // and no boot breadcrumb (both are files a supervised process writes), and no
+    // pairing codes, since nothing can pair to a Core with no listener.
     readAdminToken: () => Promise.resolve(null),
     readLocalCoreBootError: () => Promise.resolve(null),
     // Always present: the Core is compiled into this app, so it cannot be
@@ -449,14 +425,11 @@ const impl: Platform = {
     localCoreBaseUrl: () => Promise.resolve(""),
     localSidecarPorts: () => Promise.resolve({ llm: 0, stt: 0 }),
     // Dev-only onboarding autofill, the mobile analogue of the desktop
-    // `--core-url` / `--pairing-code` launch arguments (which a mobile build has
-    // no argv to receive). `deno task dev:android` exports both as Vite env vars
-    // baked into this dev bundle: VITE_DEV_CORE_URL points at the host core on
-    // the device-reachable address (emulator 10.0.2.2 or TAURI_DEV_HOST for a
-    // physical device), and VITE_DEV_PAIRING_CODE carries the code it minted.
-    // Falls back to deriving the address from the dev-server host (location) on
-    // the channel's core port (stable 7800, latest 7810, dev 7820) when the URL
-    // env is absent. Both fields are only prefilled, never locked.
+    // `--core-url` / `--pairing-code` arguments (a mobile build has no argv).
+    // `deno task dev:android` bakes VITE_DEV_CORE_URL (the host core at a
+    // device-reachable address) and VITE_DEV_PAIRING_CODE into the dev bundle;
+    // without the URL env the address is derived from the dev-server host on the
+    // channel's core port. Both fields are prefilled, never locked.
     launchPrefill: async () => {
       if (!import.meta.env.DEV) return null;
       const pairingCode = (import.meta.env.VITE_DEV_PAIRING_CODE as string | undefined)?.trim();

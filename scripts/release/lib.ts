@@ -26,19 +26,12 @@ import { publishGithubRelease } from "./github-release.ts";
 
 export const REPO_ROOT = resolve(dirname(fromFileUrl(import.meta.url)), "../..");
 export const WEBSITE_DIR = join(REPO_ROOT, "packages/loca-website");
-export const CORE_DIR = join(REPO_ROOT, "packages/loca-core");
 export const SHARED_DIR = join(REPO_ROOT, "packages/loca-shared");
 export const DIST_DIR = join(REPO_ROOT, "dist");
 export const ENV_PATH = join(REPO_ROOT, ".env");
 export const ENV_EXAMPLE_PATH = join(REPO_ROOT, ".env.example");
-export const SIGNING_KEYS_PATH = join(CORE_DIR, "data/signing-keys.json");
-export const CONFIG_PATH = join(CORE_DIR, "src/config.ts");
-/** The SHIPPED core's version constant.
- *
- *  `CONFIG_PATH` belongs to the TypeScript core, which is retained only as the
- *  conformance oracle and ships nowhere. Since the build cutover the artifact
- *  is built from `loca-core-rs`, so the version a running core REPORTS comes
- *  from here, and this is the one the release manifest must agree with. */
+export const SIGNING_KEYS_PATH = join(REPO_ROOT, "packages/loca-core-rs/data/signing-keys.json");
+/** The shipped core's version constant; the release manifest must agree with it. */
 export const CORE_CONFIG_RS = join(REPO_ROOT, "packages/loca-core-rs/src/config.rs");
 
 // ---------------------------------------------------------------------------
@@ -133,11 +126,9 @@ export function decodeBase64(s: string): Uint8Array {
 export interface DeployEnv {
   signingPrivateKey: Uint8Array;
   signingPublicKey: Uint8Array;
-  /** Cloudflare token + account id. The account id also forms the R2 S3 endpoint
-   *  host (`<account>.r2.cloudflarestorage.com`). The token authenticates the
-   *  landing-page Worker deploy via wrangler (see wranglerEnv); R2 object I/O uses
-   *  the S3 credentials below, not this token. Empty when the user relies on a
-   *  stored `wrangler login` OAuth session for the Worker deploy. */
+  /** The account id also forms the R2 S3 endpoint host. The token authenticates
+   *  the Worker deploy via wrangler (R2 object I/O uses the S3 credentials
+   *  below); empty when relying on a stored `wrangler login` session. */
   cloudflareApiToken: string;
   cloudflareAccountId: string;
   /** R2 S3-API credentials (an "Object Read & Write" R2 API token) used for every
@@ -154,25 +145,19 @@ export interface DeployEnv {
   tauriUpdaterPrivateKey: string;
   tauriUpdaterPassword: string;
   /** Android release keystore (base64 of the .jks) + its passwords/alias. Empty
-   *  when the user hasn't set up Android signing yet; the release orchestrator
-   *  skips the android item with a yellow warning when the keystore is missing.
-   *  Unlike the desktop client, the APK is not self-update-signed by Tauri (the
-   *  updater plugin has no Android support); the keystore signs the APK for
-   *  install and the Ed25519 signingPrivateKey signs android.json. */
+   *  skips the android item with a warning. The APK is not self-update-signed by
+   *  Tauri (the updater plugin has no Android support): this keystore signs the
+   *  APK for install, and signingPrivateKey signs android.json. */
   androidKeystoreB64: string;
   androidKeystorePassword: string;
   androidKeyAlias: string;
   androidKeyPassword: string;
   /** Apple Developer ID signing + notarization for the macOS client bundle. All
-   *  optional and empty by default: when unset, the macOS build keeps ad-hoc
-   *  signing (tauri.conf.json's signingIdentity "-") and skips notarization, so
-   *  the pipeline behaves exactly as before. When filled, buildClient injects
-   *  them into the Tauri build env (see client.ts). Tauri reads the identity from
-   *  APPLE_SIGNING_IDENTITY (or the base64 .p12 in APPLE_CERTIFICATE +
-   *  APPLE_CERTIFICATE_PASSWORD on CI) and notarizes with either the Apple ID
-   *  trio (appleId/applePassword/appleTeamId) or the App Store Connect API key
-   *  trio (appleApiKey/appleApiIssuer/appleApiKeyPath). macOS builds host-natively
-   *  (Tauri can't cross-sign), so these ride only on a macOS host/runner. */
+   *  optional: when unset the build keeps ad-hoc signing and skips notarization.
+   *  When filled, buildClient injects them into the Tauri build env. Tauri reads
+   *  the identity from APPLE_SIGNING_IDENTITY (or the base64 .p12 on CI) and
+   *  notarizes with either the Apple ID trio or the App Store Connect API key
+   *  trio. macOS builds host-natively, so these ride only on a macOS runner. */
   appleSigningIdentity: string;
   appleCertificateB64: string;
   appleCertificatePassword: string;
@@ -182,29 +167,22 @@ export interface DeployEnv {
   appleApiKey: string;
   appleApiIssuer: string;
   appleApiKeyPath: string;
-  /** base64 of the App Store Connect .p8, primarily for CI: a runner cannot
-   *  carry a file path as a secret, so the release entry points materialize this
-   *  to a temp file and fill appleApiKeyPath themselves (see
-   *  materializeAppleApiKey in apple-toolchain.ts). Locally prefer leaving it
-   *  empty and pointing APPLE_API_KEY_PATH at the real .p8. */
+  /** base64 of the App Store Connect .p8, for CI: a runner cannot carry a file
+   *  path as a secret, so materializeAppleApiKey writes it to a temp file and
+   *  fills appleApiKeyPath. Locally point APPLE_API_KEY_PATH at the real .p8. */
   appleApiKeyB64: string;
-  /** Developer ID INSTALLER identity for productsign (the macOS .pkg
-   *  installer). Distinct from appleSigningIdentity: that is an Application
-   *  cert, which productsign rejects. When unset the .pkg ships unsigned (with
-   *  a note), exactly as before. The base64 .p12 (+ password) is CI-only: it is imported into an
-   *  ephemeral keychain for the productsign run (see materializeInstallerKeychain
-   *  in apple-toolchain.ts); locally leave both empty and rely on the cert in
-   *  the login keychain. */
+  /** Developer ID INSTALLER identity for productsign, distinct from
+   *  appleSigningIdentity (an Application cert, which productsign rejects). When
+   *  unset the .pkg ships unsigned. The base64 .p12 is CI-only, imported into an
+   *  ephemeral keychain; locally rely on the cert in the login keychain. */
   appleInstallerSigningIdentity: string;
   appleInstallerCertificateB64: string;
   appleInstallerCertificatePassword: string;
-  /** Windows Authenticode code-signing, DORMANT by default (no cert yet). When
-   *  `windowsCertificateThumbprint` (or `windowsSignCommand`) is set, the client
-   *  NSIS installer + the Core NSIS installer are Authenticode-signed at build
-   *  time; when empty the installers ship unsigned and the install flow keeps
-   *  stripping Mark-of-the-Web. Mirrors the inert-by-default Apple signing, but
-   *  Tauri reads Windows signing from tauri.conf.json (not env), so it is applied
-   *  as a build-time config patch (see injectWindowsSigning in client.ts). */
+  /** Windows Authenticode code-signing, DORMANT by default. When
+   *  `windowsCertificateThumbprint` (or `windowsSignCommand`) is set, both NSIS
+   *  installers are signed at build time; when empty they ship unsigned and the
+   *  install flow keeps stripping Mark-of-the-Web. Tauri reads Windows signing
+   *  from tauri.conf.json, so injectWindowsSigning patches it at build time. */
   windowsCertificateThumbprint: string;
   windowsSignCommand: string;
   windowsTimestampUrl: string;
@@ -373,38 +351,20 @@ export async function writeSigningKeys(publicKeyB64: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // item versions
 
+// Captures the CORE_VERSION declaration in three groups (prefix, value, quote)
+// so the same pattern reads and rewrites it.
+const CORE_VERSION_RE = /(pub\s+const\s+CORE_VERSION\s*:\s*&str\s*=\s*")([^"]+)(")/;
+
 export async function readCoreVersion(): Promise<string> {
-  const rust = await readRustCoreVersion();
-  const ts = await readTsCoreVersion();
-  // Refused rather than reconciled. The manifest is signed with ONE version and
-  // the binary reports the other; if they disagree, an update check compares a
-  // manifest version against a core that calls itself something else and either
-  // re-offers an update forever or never offers one again. Both are silent.
-  //
-  // They must also agree for the conformance suite: `version` is on
-  // `GET /api/v1/health`, so a differential run would report the port and the
-  // oracle as disagreeing about a field neither implements wrongly.
-  if (rust !== ts) {
-    fail(
-      `CORE_VERSION disagrees: ${rel(CORE_CONFIG_RS)} says ${rust}, ` +
-        `${rel(CONFIG_PATH)} says ${ts}. The Rust value is what ships; bump both.`,
-    );
-  }
-  return rust;
-}
-
-async function readRustCoreVersion(): Promise<string> {
-  const text = await Deno.readTextFile(CORE_CONFIG_RS);
-  const match = text.match(/pub\s+const\s+CORE_VERSION\s*:\s*&str\s*=\s*"([^"]+)"/);
+  const match = (await Deno.readTextFile(CORE_CONFIG_RS)).match(CORE_VERSION_RE);
   if (!match) fail(`could not parse CORE_VERSION from ${rel(CORE_CONFIG_RS)}`);
-  return match[1];
+  return match[2];
 }
 
-async function readTsCoreVersion(): Promise<string> {
-  const text = await Deno.readTextFile(CONFIG_PATH);
-  const match = text.match(/export\s+const\s+CORE_VERSION\s*=\s*"([^"]+)"/);
-  if (!match) fail(`could not parse CORE_VERSION from ${rel(CONFIG_PATH)}`);
-  return match[1];
+/** The top-level JSON `"version"` field, anchored on its current value so a
+ *  same-valued nested `"version"` is never touched. */
+function jsonVersionRe(current: string): RegExp {
+  return new RegExp(`("version"\\s*:\\s*")${escapeRegExp(current)}(")`);
 }
 
 /** Read the top-level `version` field from a JSON file (deno.json, the
@@ -421,26 +381,12 @@ export function bumpPatch(v: string): string {
   return `${maj}.${min}.${patch + 1}`;
 }
 
-/** Surgically bump `CORE_VERSION` in config.ts to the next patch, preserving the
- *  rest of the file byte-for-byte. Returns the new version. */
+/** Bump `CORE_VERSION` in config.rs to the next patch, preserving the rest of
+ *  the file byte-for-byte. Returns the new version. */
 export async function bumpCoreVersion(): Promise<string> {
-  // Reads through the agreement check first, so a tree that has already drifted
-  // is refused here rather than bumped into a wider drift.
   const next = bumpPatch(await readCoreVersion());
-
-  const rustRe = /(pub\s+const\s+CORE_VERSION\s*:\s*&str\s*=\s*")([^"]+)(")/;
-  const rustText = await Deno.readTextFile(CORE_CONFIG_RS);
-  if (!rustRe.test(rustText)) fail(`could not parse CORE_VERSION from ${rel(CORE_CONFIG_RS)}`);
-  await Deno.writeTextFile(CORE_CONFIG_RS, rustText.replace(rustRe, `$1${next}$3`));
-
-  // The oracle follows. It ships nowhere, but conformance compares its
-  // `/health` against the port's, so leaving it behind would turn every
-  // differential run red on a field that is not a defect.
-  const tsRe = /(export\s+const\s+CORE_VERSION\s*=\s*")([^"]+)(")/;
-  const tsText = await Deno.readTextFile(CONFIG_PATH);
-  if (!tsRe.test(tsText)) fail(`could not parse CORE_VERSION from ${rel(CONFIG_PATH)}`);
-  await Deno.writeTextFile(CONFIG_PATH, tsText.replace(tsRe, `$1${next}$3`));
-
+  const text = await Deno.readTextFile(CORE_CONFIG_RS);
+  await Deno.writeTextFile(CORE_CONFIG_RS, text.replace(CORE_VERSION_RE, `$1${next}$3`));
   return next;
 }
 
@@ -451,7 +397,7 @@ export async function bumpVersionField(path: string): Promise<string> {
   const text = await Deno.readTextFile(path);
   const current = await readVersionField(path);
   const next = bumpPatch(current);
-  const re = new RegExp(`("version"\\s*:\\s*")${escapeRegExp(current)}(")`);
+  const re = jsonVersionRe(current);
   if (!re.test(text)) fail(`could not locate "version": "${current}" in ${rel(path)}`);
   await Deno.writeTextFile(path, text.replace(re, `$1${next}$2`));
   return next;
@@ -464,24 +410,18 @@ function escapeRegExp(s: string): string {
 // ---------------------------------------------------------------------------
 // version normalization for source hashing
 //
-// A release item's version lives INSIDE its hashed source (CORE_VERSION in
-// config.ts, "version" in deno.json / tauri.conf.json / the schema). Left as-is,
-// the post-release bump of that file would change the item's source hash and
-// re-trigger a full rebuild + republish on the next promotion, with no real
-// source change. These normalizers blank the version to a fixed placeholder
+// A release item's version lives INSIDE its hashed source. Left as-is, the
+// post-release bump of that file would change the item's source hash and
+// re-trigger a full rebuild + republish with no real source change. These normalizers blank the version to a fixed placeholder
 // before hashing so a version-only bump is invisible to change detection. The
-// version still ships (in the manifest) and still gates a release (the
-// version-bump gate reads version() directly); it just never TRIGGERS one. The
-// items that keep the version OUT of their hashed tree entirely - install
-// scripts (version.json excluded) and the catalog (version-free payload) - need
-// no normalizer.
+// version still ships and still gates a release (the version-bump gate reads
+// version() directly); it just never TRIGGERS one. Items that keep the version
+// out of their hashed tree entirely need no normalizer.
 
 const VERSION_HASH_PLACEHOLDER = "0.0.0";
 
 /** Return `text` with the top-level JSON `"version"` value replaced by a fixed
- *  placeholder. Anchored on the parsed top-level value exactly like
- *  bumpVersionField, so a same-valued nested `"version"` is never touched.
- *  Returns the text unchanged when there is no parseable top-level version. */
+ *  placeholder, unchanged when there is no parseable top-level version. */
 export function stripJsonVersion(text: string): string {
   let current: string | undefined;
   try {
@@ -490,16 +430,13 @@ export function stripJsonVersion(text: string): string {
     return text;
   }
   if (!current) return text;
-  const re = new RegExp(`("version"\\s*:\\s*")${escapeRegExp(current)}(")`);
-  return text.replace(re, `$1${VERSION_HASH_PLACEHOLDER}$2`);
+  return text.replace(jsonVersionRe(current), `$1${VERSION_HASH_PLACEHOLDER}$2`);
 }
 
-/** The config.ts counterpart: blank the `CORE_VERSION = "x.y.z"` constant. */
+/** The config.rs counterpart: blank the `CORE_VERSION = "x.y.z"` constant. The
+ *  type ascription is optional so both the TypeScript and Rust spellings
+ *  match. */
 export function stripCoreVersion(text: string): string {
-  // Matches BOTH spellings: `export const CORE_VERSION = "..."` (TypeScript) and
-  // `pub const CORE_VERSION: &str = "..."` (Rust). The optional type ascription
-  // is the whole difference, and missing it would leave the Rust version in the
-  // tree hash so that every bump looked like a source change.
   return text.replace(
     /(CORE_VERSION\s*(?::\s*&str\s*)?=\s*")[^"]+(")/,
     `$1${VERSION_HASH_PLACEHOLDER}$2`,
@@ -603,11 +540,10 @@ export async function wranglerDeploy(env: DeployEnv): Promise<void> {
 // R2 uploads (S3-compatible API)
 //
 // Object I/O goes straight to R2's S3 endpoint over signed `fetch`, not through
-// `wrangler r2 object`: a subprocess per object paid a ~1.5s deno+wrangler
-// cold-start each, and with 100+ objects per publish that dominated the job.
-// In-process requests have no cold-start and run concurrently (mapPool), aliases
-// become server-side copies instead of a second full upload, and the prune is a
-// fan-out of quick DELETEs. wrangler stays only for the Worker deploy.
+// `wrangler r2 object`, whose per-object subprocess cold-start dominated the job
+// at 100+ objects per publish. In-process requests run concurrently (mapPool),
+// aliases become server-side copies, and the prune is a fan-out of DELETEs.
+// wrangler stays only for the Worker deploy.
 
 /** Bounded-concurrency map: runs `fn` over `items` with at most `concurrency`
  *  requests in flight, preserving result order. Overlaps the many independent R2
@@ -665,12 +601,40 @@ function r2ObjectUrl(env: DeployEnv, key: string): string {
  *  fails over to a retry instead of hanging until the job timeout. */
 const R2_REQUEST_TIMEOUT_MS = 120_000;
 
+/** Run `attempt` up to `attempts` times, backing off `backoffMs * n` between
+ *  tries and reporting each failure under `label`. Resolves to the value, or to
+ *  the last error message when every attempt failed. */
+async function retrying<T>(
+  label: string,
+  attempts: number,
+  backoffMs: number,
+  attempt: () => Promise<T>,
+): Promise<{ value: T; error?: undefined } | { value?: undefined; error: string }> {
+  let lastErr = "";
+  for (let n = 1; n <= attempts; n++) {
+    try {
+      return { value: await attempt() };
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err);
+    }
+    if (n < attempts) {
+      const delay = n * backoffMs;
+      info(
+        colors.yellow(
+          `${label} failed (attempt ${n}/${attempts}: ${lastErr}); retrying in ${delay / 1000}s`,
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return { error: lastErr };
+}
+
 /** Signed R2 request with bounded retry on transient failures (network error,
  *  5xx, 429). Object writes are idempotent (same key + bytes), so a retry is
- *  safe; the AWS SDK behind `wrangler` retried these internally, so this keeps a
- *  single blip mid-upload from aborting the whole publish. A non-transient status
- *  (4xx: auth, bad request) is returned as-is so the caller fails fast with the
- *  response body. Exhausting all attempts aborts loudly. */
+ *  safe and a single blip mid-upload cannot abort the whole publish. A
+ *  non-transient status (4xx: auth, bad request) is returned as-is so the caller
+ *  fails fast with the response body. */
 async function r2SignedFetch(
   env: DeployEnv,
   url: string,
@@ -678,29 +642,39 @@ async function r2SignedFetch(
   label: string,
 ): Promise<Response> {
   const client = r2Client(env);
-  let lastErr = "";
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    try {
-      const res = await client.fetch(url, {
-        ...init,
-        signal: AbortSignal.timeout(R2_REQUEST_TIMEOUT_MS),
-      });
-      if (res.ok || (res.status < 500 && res.status !== 429)) return res;
-      lastErr = `${res.status} ${res.statusText}`;
-      await res.body?.cancel();
-    } catch (err) {
-      lastErr = err instanceof Error ? err.message : String(err);
-    }
-    if (attempt < 4) {
-      info(
-        colors.yellow(
-          `r2 ${label} failed (attempt ${attempt}/4: ${lastErr}); retrying in ${attempt * 2}s`,
-        ),
-      );
-      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
-    }
+  const out = await retrying(`r2 ${label}`, 4, 2000, async () => {
+    const res = await client.fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(R2_REQUEST_TIMEOUT_MS),
+    });
+    if (res.ok || (res.status < 500 && res.status !== 429)) return res;
+    await res.body?.cancel();
+    throw new Error(`${res.status} ${res.statusText}`);
+  });
+  if (out.error !== undefined) {
+    fail(`r2 ${label} failed after 4 attempts: ${out.error}. Re-run the task.`);
   }
-  fail(`r2 ${label} failed after 4 attempts: ${lastErr}. Re-run the task.`);
+  return out.value;
+}
+
+/** Signed PUT to `key`, then verify the stored object against `localFile`. */
+async function r2Write(
+  env: DeployEnv,
+  key: string,
+  init: RequestInit,
+  label: string,
+  localFile: string,
+): Promise<void> {
+  const res = await r2SignedFetch(env, r2ObjectUrl(env, key), init, label);
+  const text = await res.text();
+  if (!res.ok) fail(`r2 ${label} failed: ${res.status} ${res.statusText}\n${text}`);
+  await verifyR2Upload(env, key, localFile);
+}
+
+function r2Headers(contentType: string, cacheControl?: string): Record<string, string> {
+  const headers: Record<string, string> = { "content-type": contentType };
+  if (cacheControl) headers["cache-control"] = cacheControl;
+  return headers;
 }
 
 export async function r2Put(
@@ -710,18 +684,9 @@ export async function r2Put(
   contentType: string,
   cacheControl?: string,
 ): Promise<void> {
-  const headers: Record<string, string> = { "content-type": contentType };
-  if (cacheControl) headers["cache-control"] = cacheControl;
   const body = await Deno.readFile(file);
-  const res = await r2SignedFetch(
-    env,
-    r2ObjectUrl(env, key),
-    { method: "PUT", body, headers },
-    `put ${key}`,
-  );
-  const text = await res.text();
-  if (!res.ok) fail(`r2 put ${key} failed: ${res.status} ${res.statusText}\n${text}`);
-  await verifyR2Upload(env, key, file);
+  const headers = r2Headers(contentType, cacheControl);
+  await r2Write(env, key, { method: "PUT", body, headers }, `put ${key}`, file);
 }
 
 /** Server-side copy of an already-uploaded object to a second key, replacing the
@@ -735,25 +700,15 @@ export async function r2Copy(
   contentType: string,
   cacheControl?: string,
 ): Promise<void> {
-  const headers: Record<string, string> = {
+  const headers = {
+    ...r2Headers(contentType, cacheControl),
     "x-amz-copy-source": `/${env.r2Bucket}/${srcKey}`,
     "x-amz-metadata-directive": "REPLACE",
-    "content-type": contentType,
   };
-  if (cacheControl) headers["cache-control"] = cacheControl;
-  const res = await r2SignedFetch(
-    env,
-    r2ObjectUrl(env, destKey),
-    { method: "PUT", headers },
-    `copy ${srcKey} -> ${destKey}`,
-  );
-  const text = await res.text();
-  if (!res.ok) {
-    fail(`r2 copy ${srcKey} -> ${destKey} failed: ${res.status} ${res.statusText}\n${text}`);
-  }
-  // The alias must be byte-identical to its source; verify against the local file
-  // (this also catches S3's "200 OK with an error in the body" copy quirk).
-  await verifyR2Upload(env, destKey, localFile);
+  // The alias must be byte-identical to its source, and verifying against the
+  // local file also catches S3's "200 OK with an error in the body" copy quirk.
+  const label = `copy ${srcKey} -> ${destKey}`;
+  await r2Write(env, destKey, { method: "PUT", headers }, label, localFile);
 }
 
 // Verify an upload actually landed AND matches byte-for-byte: GET the public URL
@@ -763,38 +718,20 @@ export async function r2Copy(
 async function verifyR2Upload(env: DeployEnv, key: string, file: string): Promise<void> {
   const url = `https://${env.storageDomain}/${key}?_v=${Date.now()}`;
   // A freshly-uploaded object can be slow to serve from the edge, and the GET
-  // occasionally hangs indefinitely (no server response, no socket error), which
-  // silently burned ~20 min per stall in CI. Bound each attempt with a timeout
-  // and retry with backoff so a stuck fetch fails fast instead of blocking.
-  let remoteBytes: Uint8Array | undefined;
-  let lastErr = "";
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-      if (!res.ok || !res.body) {
-        lastErr = `GET returned ${res.status} ${res.statusText}`;
-      } else {
-        remoteBytes = new Uint8Array(await res.arrayBuffer());
-        break;
-      }
-    } catch (err) {
-      lastErr = err instanceof Error ? err.message : String(err);
-    }
-    if (attempt < 5) {
-      info(
-        colors.yellow(
-          `r2 verify ${key} failed (attempt ${attempt}/5: ${lastErr}); retrying in ${attempt * 3}s`,
-        ),
-      );
-      await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
-    }
-  }
-  if (!remoteBytes) {
+  // occasionally hangs indefinitely (no server response, no socket error), so
+  // each attempt is bounded by a timeout.
+  const out = await retrying(`r2 verify ${key}`, 5, 3000, async () => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    if (!res.ok || !res.body) throw new Error(`GET returned ${res.status} ${res.statusText}`);
+    return new Uint8Array(await res.arrayBuffer());
+  });
+  if (out.error !== undefined) {
     fail(
-      `r2 put ${key}: post-upload GET failed after 5 attempts (${lastErr}). ` +
+      `r2 put ${key}: post-upload GET failed after 5 attempts (${out.error}). ` +
         `The upload may not have propagated. Re-run the task.`,
     );
   }
+  const remoteBytes = out.value;
   const remoteHash = encodeHex(
     new Uint8Array(await crypto.subtle.digest("SHA-256", remoteBytes.buffer as ArrayBuffer)),
   );
@@ -854,14 +791,9 @@ export async function r2Delete(env: DeployEnv, key: string): Promise<boolean> {
 // ---------------------------------------------------------------------------
 // idempotency probes (HTTPS GETs against R2 / Worker)
 
-/** GET an R2-hosted JSON at `https://${storageDomain}/${r2Key}`. Returns null
- *  on 404 (treated as "not yet published"). Throws on other non-2xx. */
-export async function fetchLiveJson<T>(env: DeployEnv, r2Key: string): Promise<T | null> {
-  return await fetchHttpsJson<T>(`https://${env.storageDomain}/${r2Key}`);
-}
-
-/** GET a JSON document at an arbitrary HTTPS URL. Returns null on 404. */
-export async function fetchHttpsJson<T>(url: string): Promise<T | null> {
+/** GET `url`. Resolves to null on 404 ("not yet published"); any other non-2xx
+ *  or a network error aborts. */
+async function fetchPublic(url: string): Promise<Response | null> {
   let res: Response;
   try {
     res = await fetch(url);
@@ -870,6 +802,18 @@ export async function fetchHttpsJson<T>(url: string): Promise<T | null> {
   }
   if (res.status === 404) return null;
   if (!res.ok) fail(`fetch ${url} returned ${res.status} ${res.statusText}`);
+  return res;
+}
+
+/** GET an R2-hosted JSON at `https://${storageDomain}/${r2Key}`. */
+export async function fetchLiveJson<T>(env: DeployEnv, r2Key: string): Promise<T | null> {
+  return await fetchHttpsJson<T>(`https://${env.storageDomain}/${r2Key}`);
+}
+
+/** GET a JSON document at an arbitrary HTTPS URL. Returns null on 404. */
+export async function fetchHttpsJson<T>(url: string): Promise<T | null> {
+  const res = await fetchPublic(url);
+  if (!res) return null;
   try {
     return (await res.json()) as T;
   } catch (err) {
@@ -877,18 +821,10 @@ export async function fetchHttpsJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/** GET an R2-hosted file body. Returns null on 404. Throws on other non-2xx. */
+/** GET an R2-hosted file body. Returns null on 404. */
 export async function fetchR2Bytes(env: DeployEnv, r2Key: string): Promise<Uint8Array | null> {
-  const url = `https://${env.storageDomain}/${r2Key}`;
-  let res: Response;
-  try {
-    res = await fetch(url);
-  } catch (err) {
-    fail(`network error fetching ${url}: ${err instanceof Error ? err.message : err}`);
-  }
-  if (res.status === 404) return null;
-  if (!res.ok) fail(`fetch ${url} returned ${res.status} ${res.statusText}`);
-  return new Uint8Array(await res.arrayBuffer());
+  const res = await fetchPublic(`https://${env.storageDomain}/${r2Key}`);
+  return res ? new Uint8Array(await res.arrayBuffer()) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -967,35 +903,25 @@ export async function hashPaths(inputs: HashInput[]): Promise<string> {
 // ---------------------------------------------------------------------------
 // packages
 //
-// A "package" is a unit of development (a workspace member). PACKAGES is the
-// release side's view of the same package list the root deno.json `workspace`
-// array owns: each package's source dir and its manifest kind. Release items
-// reference packages by id (their `packages` field) to declare what they are
-// built from, and items whose source hash is exactly "each package's src +
-// manifest" derive that hash here via packagesHashInputs.
+// A "package" is a unit of development (a workspace member); this is the release
+// side's view of the root deno.json `workspace` list. Release items reference
+// packages by id to declare what they are built from, and items hashed as "each
+// package's src + manifest" derive that hash via packagesHashInputs.
 
 export type PackageKind = "deno" | "rust";
 
 export const PACKAGES: Record<string, { dir: string; kind: PackageKind }> = {
   shared: { dir: "packages/loca-shared", kind: "deno" },
-  "core-engine": { dir: "packages/loca-core-engine", kind: "deno" },
-  core: { dir: "packages/loca-core", kind: "deno" },
   client: { dir: "packages/loca-client", kind: "deno" },
   website: { dir: "packages/loca-website", kind: "deno" },
   extension: { dir: "packages/loca-extension-builtin", kind: "deno" },
   catalog: { dir: "packages/loca-model-catalog", kind: "deno" },
-  // The crate the shipped core is built from since the cutover.
   "core-rs": { dir: "packages/loca-core-rs", kind: "rust" },
-  // Not in any release item's package list today: it is a library the Tauri
-  // crate links on mobile, so it reaches users through the CLIENT release
-  // rather than the core one. Registered so a future item can name it without
-  // re-deriving the path.
+  // Not in any release item's package list today: the Tauri crate links it on
+  // mobile, so it reaches users through the CLIENT release. Registered so a
+  // future item can name it without re-deriving the path.
   "core-ffi": { dir: "packages/loca-core-ffi", kind: "rust" },
   "core-updater": { dir: "packages/loca-core-updater", kind: "rust" },
-  "core-keychain": { dir: "packages/loca-core-keychain", kind: "rust" },
-  "core-hwinfo": { dir: "packages/loca-core-hwinfo", kind: "rust" },
-  "core-ptyhost": { dir: "packages/loca-core-ptyhost", kind: "rust" },
-  "core-speech": { dir: "packages/loca-core-speech", kind: "rust" },
 };
 
 /** Source-hash inputs for one package: its source tree + its manifest. */
@@ -1139,11 +1065,9 @@ export function promptYesNo(message: string): boolean {
 // items after confirmation.
 
 export interface ApplyOpts {
-  /** Pre-built artifacts collected from CI build runners: the core/client/android
-   *  items compose+sign+upload these rather than building anything themselves
-   *  (the publish half of the CI build/publish split). The platform-independent
-   *  items (extension, catalog, schemas, website) build on the coordinator and
-   *  ignore this. */
+  /** Pre-built artifacts from CI build runners: the core/client/android items
+   *  compose+sign+upload these rather than building anything. The
+   *  platform-independent items build on the coordinator and ignore it. */
   prebuilt: PrebuiltStaging;
   /** Build + sign locally but skip every R2 upload. */
   dryRun: boolean;
@@ -1151,9 +1075,8 @@ export interface ApplyOpts {
    *  prefix) here so the orchestrator can record it in the cursor and prune older
    *  versions. Latest-only items (manifests/schemas/scripts) ignore it. */
   recordVersionedKey?(key: string): void;
-  /** Items append the local file + flat asset name of each artifact they want
-   *  mirrored to the GitHub Release (installers, APKs, binaries). The
-   *  orchestrator uploads them after R2 when githubRelease is on. Manifests are
+  /** Local file + flat asset name of each artifact to mirror to the GitHub
+   *  Release. Uploaded after R2 when githubRelease is on; manifests are
    *  collected separately by the publisher. */
   recordReleaseAsset?(localPath: string, assetName: string): void;
 }
@@ -1163,11 +1086,9 @@ export interface ReleaseItem {
   label: string;
   /** channel-specific items publish per channel; shared items publish once. */
   scope: "channel" | "shared";
-  /** Package ids (keys of PACKAGES) this item is built from. A release item is
-   *  a unit of distribution and may compose several packages (e.g. `core`).
-   *  This is the explicit package -> release-item mapping; for items whose
-   *  source hash is exactly "each package's src + manifest" it also derives the
-   *  hash (see packagesHashInputs), so the package list cannot drift. */
+  /** Package ids (keys of PACKAGES) this item is built from; a release item may
+   *  compose several. For items whose source hash is exactly "each package's src
+   *  + manifest" this also derives the hash, so the list cannot drift. */
   packages: string[];
   /** Where to bump the version when this item changed without a bump. */
   bumpHint?: string;

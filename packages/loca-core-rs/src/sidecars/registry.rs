@@ -24,24 +24,17 @@ pub struct Manager {
 }
 
 struct Inner {
-    /// A `BTreeMap`, and the ordering is load-bearing rather than incidental.
-    /// `transport::status` compares the `subsystems` array POSITIONALLY, so an
-    /// unordered map would reorder on rehash, look like a change, and broadcast
-    /// a `core.status` frame to every connected client for nothing. The symptom
-    /// would be a client repainting with nothing in the log to explain it.
-    ///
-    /// `SidecarKind` derives `Ord` in declaration order (llama, llama-embed,
-    /// speech, tool), which is the order the client renders the subsystem rows
-    /// in. Reordering the TypeScript union reorders that list.
+    /// A `BTreeMap`, and the ordering is load-bearing: `transport::status`
+    /// compares the `subsystems` array positionally, so an unordered map would
+    /// reorder on rehash and broadcast a `core.status` frame for nothing.
+    /// `SidecarKind` derives `Ord` in declaration order, which is the order the
+    /// client renders the rows in.
     states: Mutex<BTreeMap<SidecarKind, SidecarSnapshot>>,
     children: Mutex<Vec<Weak<tokio::sync::Mutex<Child>>>>,
-    /// Set once by boot, after the aggregator is constructed. The dependency is
-    /// circular by construction (`CoreStatusService::new` takes the
-    /// `SidecarSource`), and this is an instance field rather than a process
-    /// global, so two cores in one process still get one aggregator each
-    /// (D-010). Never attaching is not fatal: the aggregator re-pulls
-    /// `statuses()` on every pushed signal, so the only cost is that a
-    /// subsystem change alone does not trigger a recompute.
+    /// Set once by boot, after the aggregator is constructed, because
+    /// `CoreStatusService::new` takes the `SidecarSource`. Never attaching is
+    /// not fatal: the aggregator re-pulls `statuses()` on every pushed signal,
+    /// so only a subsystem change alone stops triggering a recompute.
     status: OnceLock<CoreStatusService>,
     control: OnceLock<Arc<dyn SubsystemControl>>,
     jobs: JobObject,
@@ -77,11 +70,9 @@ impl Manager {
     /// Apply the current settings to a subsystem again: the `start` / `restart`
     /// route, and the client's Retry on a row stuck in `Error`.
     ///
-    /// Set-once like [`Manager::attach_status`], and absent until boot wires it.
-    /// An unwired or uncontrollable kind answers a validation error rather than
-    /// silently succeeding, because the caller is a human pressing Retry and a
-    /// no-op that returns 204 tells them the subsystem was restarted when
-    /// nothing happened.
+    /// Set-once, and absent until boot wires it. An unwired or uncontrollable
+    /// kind answers a validation error rather than a 204 that did nothing,
+    /// because the caller is a human pressing Retry.
     pub fn attach_control(&self, control: Arc<dyn SubsystemControl>) -> bool {
         self.inner.control.set(control).is_ok()
     }
@@ -104,10 +95,8 @@ impl Manager {
     /// the language model, N3 for speech, D12 for tools.
     ///
     /// A snapshot equal to the stored one is dropped rather than recomputed, so
-    /// a subsystem that re-reports its state on a timer costs nothing. Returns
-    /// whether anything changed: the aggregator dedupes as well, so the guard
-    /// is an optimisation, and returning the bool is what makes it assertable
-    /// instead of invisible.
+    /// a subsystem re-reporting on a timer costs nothing. The aggregator dedupes
+    /// too, so the returned bool is what makes this guard assertable.
     pub fn publish(&self, snapshot: SidecarSnapshot) -> bool {
         {
             let mut states = lock(&self.inner.states);
@@ -143,10 +132,8 @@ impl Manager {
 
     /// Start a child, tracked for orphan cleanup and for shutdown.
     ///
-    /// The only spawn entry point, so the Windows Job Object membership cannot
-    /// be forgotten at a call site. That is not hypothetical: the Deno core
-    /// tracked only its own sidecars, and the extension worker spawns went
-    /// straight to `Deno.Command`, so a killed core left tool workers running.
+    /// The only spawn entry point, so Windows Job Object membership cannot be
+    /// forgotten at a call site and a killed core leaves no tool workers.
     pub fn spawn(&self, spec: Spawn) -> Result<ChildHandle> {
         let child = process::spawn(spec, &self.inner.jobs)?;
         let handle = Arc::new(tokio::sync::Mutex::new(child));
@@ -159,41 +146,26 @@ impl Manager {
     /// Enrol a child this manager did NOT spawn, so a hard core kill still
     /// takes it down.
     ///
-    /// [`Self::spawn`] above is the only spawn entry point precisely so Job
-    /// Object membership cannot be forgotten, and that is the right default.
-    /// One path genuinely cannot go through it: a PTY-mode extension worker.
+    /// One path cannot go through [`Self::spawn`]: a PTY-mode extension worker.
     /// On unix its stdin and stderr must BE the slave fd and it needs a
-    /// `pre_exec` for `setsid` plus `TIOCSCTTY`, none of which [`Spawn`] can
-    /// express; on Windows `portable-pty` performs the spawn itself, so there
-    /// is no `Spawn` in the path at all. Widening `Spawn` to carry raw fds and
-    /// a `pre_exec` closure would put platform-specific terminal setup into the
-    /// one API whose value is that it has no special cases.
+    /// `pre_exec` for `setsid` plus `TIOCSCTTY`; on Windows `portable-pty`
+    /// performs the spawn itself. So it is enrolled after the fact through
+    /// `AssignProcessToJobObject` instead.
     ///
-    /// So the child is enrolled after the fact instead.
-    /// `AssignProcessToJobObject` is designed for this and is what the Windows
-    /// case needs; without it a prompting worker never joins the job and
-    /// survives a hard kill, which is the exact bug `spawn`'s doc comment above
-    /// describes the Deno core having.
-    ///
-    /// **What this does NOT give you, and the difference matters.** It enrols
-    /// the process for the Job Object backstop only. It does not add the child
-    /// to `children`, so [`Self::shutdown`] will not terminate it gracefully:
-    /// the caller still owns that, because the caller is the only one holding
-    /// the PTY handle needed to close it cleanly. Use this in addition to your
+    /// **This enrols the Job Object backstop only.** The child is not added to
+    /// `children`, so [`Self::shutdown`] will not stop it gracefully: the
+    /// caller owns that, holding the PTY handle. Use this in addition to your
     /// own shutdown path, never instead of it.
     ///
-    /// A no-op off Windows. On unix the child has deliberately left this
-    /// process group via `setsid`, so the backstop there is the supervisor's
-    /// own scope (the systemd cgroup, the launchd session), not this manager.
+    /// A no-op off Windows: on unix the child has left this process group via
+    /// `setsid`, so the backstop is the supervisor's own scope.
     pub fn track_external(&self, pid: u32, label: &str) {
         self.inner.jobs.track(pid, label);
     }
 
-    /// Terminate every child still alive. Called by the frontend's signal
-    /// handler before the listener closes.
-    ///
-    /// A child whose owner has already dropped it is skipped: the drop backstop
-    /// killed it, and its pid may have been reused by now.
+    /// Terminate every child still alive, before the listener closes. A child
+    /// whose owner already dropped it is skipped: the drop backstop killed it,
+    /// and its pid may have been reused.
     pub async fn shutdown(&self) {
         let live: Vec<ChildHandle> = {
             let mut children = lock(&self.inner.children);
@@ -228,9 +200,8 @@ impl std::fmt::Debug for Manager {
 }
 
 impl SidecarSource for Manager {
-    /// Published kinds only, in kind order. A kind nobody has published does
-    /// not occupy a subsystem row, matching the Deno core, where a sidecar that
-    /// was never started did not appear in `getStatuses()`.
+    /// Published kinds only, in kind order: a kind nobody has published
+    /// occupies no subsystem row.
     fn statuses(&self) -> Vec<SidecarSnapshot> {
         lock(&self.inner.states).values().cloned().collect()
     }
@@ -248,8 +219,7 @@ pub(super) fn disabled(kind: SidecarKind) -> SidecarSnapshot {
     }
 }
 
-/// Field by field: the generated contract types derive no `PartialEq`, and
-/// comparing serialized forms would allocate on every publish.
+/// Field by field: the contract types derive no `PartialEq`.
 fn same(a: &SidecarSnapshot, b: &SidecarSnapshot) -> bool {
     a.kind == b.kind
         && a.status == b.status
@@ -264,11 +234,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Re-apply the current settings to an in-process subsystem.
-///
-/// Lives here rather than in the owning packages because the routes are here and
-/// neither `inference` nor `speech` may name the other. Boot implements it; see
-/// `boot.rs`.
+/// Re-apply the current settings to an in-process subsystem. Lives here because
+/// the routes do and neither `inference` nor `speech` may name the other; boot
+/// supplies the one implementation.
 #[async_trait::async_trait]
 pub trait SubsystemControl: Send + Sync {
     async fn restart(&self, kind: SidecarKind) -> crate::error::Result<()>;

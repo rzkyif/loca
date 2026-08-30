@@ -1,41 +1,20 @@
 //! Which process supervisor owns this core install.
 //!
-//! `resolveSupervisor` (`install/service.ts:54-71`). The self-update flow
-//! consults it so it can restart THROUGH the single owner rather than racing
-//! it: on macOS launchd's `KeepAlive` relaunches core on any exit, so a second
-//! relauncher fought it over the port, which is the bug the current design
-//! removed.
+//! The self-update flow consults it so it can restart THROUGH the single owner
+//! rather than racing it: launchd's `KeepAlive` relaunches core on any exit, so
+//! a second relauncher would fight it over the port.
 //!
-//! # Detected from the definition, never from the install flag
+//! Detected from the definition on disk (the plist, the unit, the task), never
+//! from `LOCA_INSTALL_SERVICE`, which is set at install time and absent from a
+//! running core, so reading it would misread a background install as a service.
+//! No definition means background mode, where the client owns liveness.
 //!
-//! `LOCA_INSTALL_SERVICE` is set at install time and is absent from a running
-//! core's environment, so reading it here would misread a background install as
-//! a service (`install/service.ts:50-53`). The probe is the artefact
-//! `installService` actually wrote: the launchd plist, the systemd unit, the
-//! scheduled task. No definition means background mode, where the client owns
-//! liveness.
-//!
-//! # Both axes are parameters
-//!
-//! The OS and the command runner are injected, for the reason the whole package
-//! injects platform decisions: `cfg!(target_os = ...)` has one answer on the
-//! machine the fleet runs on, so a mapping written over it is asserted by tests
-//! that cannot fail on it. Here all four branches run on any host.
-//!
-//! # The definitions are text, and the text is where the behaviour lives
-//!
-//! [`plist_xml`], [`systemd_unit`], [`scheduled_task_script`] and
-//! [`uninstall_command`] are pure functions of a channel and a few paths. That
-//! split is what makes this package testable on one machine: whether
-//! `KeepAlive` is set, whether the systemd unit restarts on failure, whether a
-//! non-stable scheduled task carries its channel, and whether the Windows
-//! uninstall string self-elevates are all decisions taken HERE, and every one
-//! of them is asserted on every channel from any host.
-//!
-//! What that does not cover, stated rather than implied: whether launchd,
-//! systemd and Task Scheduler interpret the text as intended. That is a
-//! platform fact, exercised per OS at release time, and it is the same gap
-//! `proc.rs` records for its argv.
+//! The OS and the command runner are both injected, so all four branches run on
+//! any host. The definitions ([`plist_xml`], [`systemd_unit`],
+//! [`scheduled_task_script`], [`uninstall_command`]) are pure functions of a
+//! channel and a few paths, which is what makes them assertable here; whether
+//! launchd, systemd and Task Scheduler interpret the text as intended is
+//! exercised per OS at release time.
 
 use std::path::{Path, PathBuf};
 
@@ -62,13 +41,9 @@ pub enum Supervisor {
 }
 
 impl Supervisor {
-    /// The string `start-service` puts on stdout.
-    ///
-    /// A wire contract rather than an internal name: the Client keys off
-    /// `supervisor == "background"` to decide whether it owns the core's
-    /// lifetime (`loca-client/src/tauri/src/commands/pairing.rs:249`). Renaming
-    /// any of the other three makes the Client treat a supervised core as one
-    /// it started, and quitting the Client would then stop the service.
+    /// The string `start-service` puts on stdout. A wire contract: the Client
+    /// keys off `supervisor == "background"` to decide whether it owns the
+    /// core's lifetime, so renaming any of the four is a behaviour change.
     pub fn kind(&self) -> &'static str {
         match self {
             Supervisor::Launchd { .. } => "launchd",
@@ -153,8 +128,8 @@ pub async fn resolve_supervisor(
     }
 }
 
-/// A unit file with no user manager to run it is a background install, which is
-/// the fallback `installSystemd` itself takes (`install/service.ts:329-332`).
+/// A unit file with no user manager to run it is a background install, the
+/// same fallback the systemd installer takes.
 async fn have_systemd_user(runner: &dyn Runner) -> bool {
     runner
         .run(&["systemctl", "--user", "--version"])
@@ -162,11 +137,9 @@ async fn have_systemd_user(runner: &dyn Runner) -> bool {
         .success()
 }
 
-/// `schtasks.exe` rather than the PowerShell module: it ships on every Windows,
-/// exits 0 only when the task exists, and is the same tool the updater uses to
-/// run the task. Misdetecting a real task as absent falls back to background
-/// mode, so the most universally available probe is the right one
-/// (`install/service.ts:73-81`).
+/// `schtasks.exe` rather than the PowerShell module: it ships on every Windows
+/// and exits 0 only when the task exists. Misdetecting a real task as absent
+/// falls back to background mode, so the most available probe is the right one.
 async fn scheduled_task_exists(runner: &dyn Runner, task: &str) -> bool {
     runner
         .run(&["schtasks", "/Query", "/TN", task])
@@ -184,13 +157,9 @@ fn log_files(logs_dir: &Path) -> (PathBuf, PathBuf) {
     )
 }
 
-/// The launchd LaunchAgent (`install/service.ts:282-295`).
-///
-/// `KeepAlive` is what makes launchd the single owner of this core's lifetime,
-/// and it is why `apply.rs`'s launchd branch does nothing at all: exiting IS
-/// the restart. Dropping it would leave a staged update with no relauncher on
-/// macOS, and the failure would look like "the core never came back" rather
-/// than like a missing key in a plist.
+/// The launchd LaunchAgent. `KeepAlive` makes launchd the single owner of this
+/// core's lifetime, which is why `apply.rs`'s launchd branch only exits:
+/// exiting IS the restart, and without the key nothing relaunches.
 pub fn plist_xml(channel: Channel, bin: &Path, logs_dir: &Path) -> String {
     let (out, err) = log_files(logs_dir);
     format!(
@@ -216,12 +185,9 @@ pub fn plist_xml(channel: Channel, bin: &Path, logs_dir: &Path) -> String {
     )
 }
 
-/// The systemd user unit (`install/service.ts:338-353`).
-///
-/// `Restart=on-failure` rather than `always` is the half that pairs with the
-/// update flow: a core that staged an update exits non-zero and is relaunched,
-/// and a core that was asked to stop exits zero and stays stopped. `always`
-/// would make `systemctl --user stop` a race against the restart.
+/// The systemd user unit. `Restart=on-failure` rather than `always` pairs with
+/// the update flow: a core that staged an update exits non-zero and is
+/// relaunched, and one asked to stop exits zero and stays stopped.
 pub fn systemd_unit(channel: Channel, bin: &Path, logs_dir: &Path) -> String {
     let (out, err) = log_files(logs_dir);
     format!(
@@ -249,18 +215,12 @@ WantedBy=default.target
     )
 }
 
-/// The PowerShell that registers the Windows scheduled task
-/// (`install/service.ts:399-412`).
-///
-/// Two lines in here are load-bearing and neither reads that way:
-///
-/// - a scheduled task has no environment field, so every non-stable channel
-///   launches through `cmd.exe /c set LOCA_CHANNEL=...` instead of running the
-///   binary directly. Without it a `dev` task boots a core that resolves the
-///   STABLE subtree.
-/// - `RestartCount`/`RestartInterval` double as the self-update backstop, and
-///   `MultipleInstances IgnoreNew` is what dedupes that backstop against the
-///   updater's own `Start-ScheduledTask`. Dropping it runs two cores.
+/// The PowerShell that registers the Windows scheduled task. Two load-bearing
+/// details: a task has no environment field, so every non-stable channel
+/// launches through `cmd.exe /c set LOCA_CHANNEL=...` or it would resolve the
+/// STABLE subtree; and `RestartCount`/`RestartInterval` are the self-update
+/// backstop, deduped against the updater's own `Start-ScheduledTask` by
+/// `MultipleInstances IgnoreNew`.
 pub fn scheduled_task_script(channel: Channel, bin: &Path) -> String {
     let task = unit_name(channel);
     let bin = bin.display();
@@ -290,10 +250,9 @@ Start-ScheduledTask -TaskName '{task}'
     )
 }
 
-/// The PowerShell that removes the scheduled task
-/// (`install/service.ts:429-431`). Issued twice by `removeScheduledTask`: once
-/// plainly, and once wrapped in a self-elevation when the task survived, since
-/// unregistering a root-folder task can need admin.
+/// The PowerShell that removes the scheduled task. Issued once plainly, then
+/// wrapped in a self-elevation when the task survived, since unregistering a
+/// root-folder task can need admin.
 pub fn scheduled_task_teardown_script(channel: Channel) -> String {
     let task = unit_name(channel);
     format!(
@@ -302,7 +261,7 @@ Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction Silentl
     )
 }
 
-/// The per-user Add/Remove Programs key (`install/service.ts:451-453`).
+/// The per-user Add/Remove Programs key.
 pub fn windows_uninstall_key(channel: Channel) -> String {
     format!(
         "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{}",
@@ -311,7 +270,7 @@ pub fn windows_uninstall_key(channel: Channel) -> String {
 }
 
 /// The name a person sees in Settings > Apps, parenthesised per channel to
-/// match the Client's "Loca (latest)" convention (`install/service.ts:457-460`).
+/// match the Client's "Loca (latest)" convention.
 pub fn windows_display_name(channel: Channel) -> String {
     match channel {
         Channel::Stable => "Loca Core".to_string(),
@@ -319,20 +278,12 @@ pub fn windows_display_name(channel: Channel) -> String {
     }
 }
 
-/// The Add/Remove Programs `UninstallString` (`install/service.ts:489-513`).
-///
-/// Three things it must carry, each of which fails silently if lost:
-///
-/// - the `LOCA_CHANNEL` prefix, because an ARP launch carries no environment
-///   and the binary resolves its channel from one;
-/// - self-elevation **only** for a service install, because a service's task
-///   lives in the root Task Scheduler folder and needs admin to unregister
-///   while Settings > Apps runs this string unelevated. Without it the task
-///   removal fails quietly and a dead task pointing at a deleted binary fires
-///   at every logon. A background install has no task, so it runs directly and
-///   never prompts;
-/// - the empty-channel-dir sweep, so uninstalling the last channel does not
-///   leave `~/.loca/<channel>` behind.
+/// The Add/Remove Programs `UninstallString`. Three things it must carry, each
+/// of which fails silently if lost: the `LOCA_CHANNEL` prefix, since an ARP
+/// launch carries no environment; self-elevation **only** for a service
+/// install, whose root-folder task needs admin to unregister while Settings >
+/// Apps runs unelevated (a background install has no task, so it never
+/// prompts); and the empty-channel-dir sweep.
 pub fn uninstall_command(
     as_service: bool,
     bin: &Path,
@@ -364,13 +315,9 @@ if ((Test-Path -LiteralPath $cd) -and -not (Get-ChildItem -Force -LiteralPath $c
     )
 }
 
-/// Base64(UTF-16LE) for PowerShell's `-EncodedCommand`
-/// (`install/service.ts:465-475`).
-///
-/// Handing a script across the `Start-Process -Verb RunAs` relaunch as one
-/// opaque token is what sidesteps nested quoting entirely. `encode_utf16`
-/// yields the same code units `charCodeAt` does, surrogate pairs included, so a
-/// character outside the BMP encodes identically on both cores.
+/// Base64(UTF-16LE) for PowerShell's `-EncodedCommand`. Handing a script across
+/// the `Start-Process -Verb RunAs` relaunch as one opaque token sidesteps
+/// nested quoting entirely.
 pub fn encode_pwsh_command(cmd: &str) -> String {
     let mut bytes = Vec::with_capacity(cmd.len() * 2);
     for unit in cmd.encode_utf16() {
@@ -380,8 +327,7 @@ pub fn encode_pwsh_command(cmd: &str) -> String {
 }
 
 /// Escape a value for interpolation INSIDE a single-quoted PowerShell literal;
-/// doubling is PowerShell's single-quote escape (`install/service.ts:741-743`).
-/// Callers write `'{psq(v)}'`.
+/// doubling is PowerShell's single-quote escape. Callers write `'{psq(v)}'`.
 pub fn psq(s: &str) -> String {
     s.replace('\'', "''")
 }
@@ -434,9 +380,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_systemd_unit_needs_a_user_manager_to_count() {
-        // Both halves, because either alone is a different install: a unit file
-        // with no `systemd --user` is the background fallback `installSystemd`
-        // itself takes, and asserting only the file would classify it wrong.
+        // Both halves: a unit file with no `systemd --user` is the background
+        // fallback, and asserting only the file would classify it wrong.
         let h = home();
         let unit = systemd_unit_path(h.path(), Channel::Stable);
         std::fs::create_dir_all(unit.parent().unwrap()).unwrap();
@@ -479,10 +424,8 @@ mod tests {
 
     #[tokio::test]
     async fn every_os_branch_answers_on_this_host() {
-        // The point of injecting the OS. `cfg!(target_os = ...)` has one answer
-        // here, so a resolver written over it would have three branches no test
-        // on this machine could enter, and deleting any of them would stay
-        // green. All four run.
+        // The point of injecting the OS: `cfg!(target_os = ...)` has one
+        // answer here, leaving three branches no test could enter.
         let h = home();
         let runner = RecordingRunner::new();
         for os in [Os::Macos, Os::Linux, Os::Windows, Os::Other] {
@@ -508,10 +451,8 @@ mod tests {
 
     #[test]
     fn the_launchd_agent_keeps_the_core_alive_and_starts_it_at_login() {
-        // Both keys are the design. `RunAtLoad` is the boot start; `KeepAlive`
-        // is what makes launchd the single owner, which is why apply.rs's
-        // launchd branch does nothing but exit. Without it a staged update on
-        // macOS has no relauncher at all.
+        // `RunAtLoad` is the boot start; `KeepAlive` makes launchd the single
+        // owner, which is why apply.rs's launchd branch does nothing but exit.
         let xml = plist_xml(
             Channel::Stable,
             Path::new("/u/.loca/stable/core/bin/loca-core"),
@@ -521,9 +462,8 @@ mod tests {
         assert!(xml.contains("<key>KeepAlive</key>       <true/>"));
         assert!(xml.contains("<string>com.rzkyif.loca.core</string>"));
         assert!(xml.contains("<array><string>/u/.loca/stable/core/bin/loca-core</string></array>"));
-        // The KEY is part of each assertion. Without it, swapping the two log
-        // filenames leaves both strings present and the test green, while
-        // launchd writes stdout into the file a reader opens for errors.
+        // The KEY is part of each assertion: without it, swapping the two log
+        // filenames leaves both strings present and the test green.
         assert!(xml.contains(
             "<key>StandardOutPath</key> <string>/u/.loca/stable/core/logs/core.stdout.log</string>"
         ));
@@ -537,9 +477,7 @@ mod tests {
     #[test]
     fn every_channel_bakes_its_own_channel_into_its_definitions() {
         // The daemon resolves ~/.loca/<channel>/core from LOCA_CHANNEL, so a
-        // definition that omits it starts a core against the WRONG subtree,
-        // which presents as "my dev core lost its sessions" rather than as a
-        // missing key.
+        // definition that omits it starts a core against the WRONG subtree.
         for ch in [Channel::Stable, Channel::Dev, Channel::Latest] {
             let bin = Path::new("/b/loca-core");
             let logs = Path::new("/l");
@@ -571,10 +509,9 @@ mod tests {
 
     #[test]
     fn the_systemd_unit_restarts_on_failure_rather_than_always() {
-        // The pairing with the update flow: a core that staged an update exits
-        // non-zero and is relaunched, and a core that was asked to stop exits
-        // zero and STAYS stopped. `always` would make `systemctl --user stop` a
-        // race against the restart.
+        // A core that staged an update exits non-zero and is relaunched; one
+        // asked to stop exits zero and STAYS stopped. `always` would make
+        // `systemctl --user stop` a race against the restart.
         let unit = systemd_unit(Channel::Dev, Path::new("/b/loca-core-dev"), Path::new("/l"));
         assert!(unit.contains("\nRestart=on-failure\n"));
         assert!(!unit.contains("Restart=always"));
@@ -590,8 +527,7 @@ mod tests {
     fn a_non_stable_scheduled_task_carries_its_channel() {
         // A scheduled task has no environment field, so every non-stable
         // channel launches through cmd.exe to set LOCA_CHANNEL before exec.
-        // Stable needs no wrapper and does not get one, which is the half that
-        // makes this a branch rather than a constant.
+        // Stable needs no wrapper and does not get one.
         let bin = Path::new(r"C:\Users\a\.loca\dev\core\bin\loca-core-dev.exe");
         let dev = scheduled_task_script(Channel::Dev, bin);
         assert!(dev.contains(
@@ -608,10 +544,8 @@ mod tests {
 
     #[test]
     fn the_task_dedupes_the_update_backstop_against_the_updater() {
-        // RestartCount/RestartInterval ARE the self-update backstop on Windows:
-        // core exits non-zero after staging, and the restart-on-failure
-        // relaunches the swapped binary if the updater's fast path never lands.
-        // IgnoreNew is what stops that backstop and the updater's own
+        // RestartCount/RestartInterval ARE the self-update backstop on
+        // Windows; IgnoreNew stops that backstop and the updater's own
         // Start-ScheduledTask from producing two cores.
         let script = scheduled_task_script(Channel::Latest, Path::new(r"C:\b\c.exe"));
         assert!(script.contains("-RestartCount 5"));
@@ -625,16 +559,10 @@ mod tests {
 
     #[test]
     fn the_task_is_unregistered_before_it_is_registered_and_started() {
-        // Order, not presence. Registering over a live task fails, and starting
-        // before registering starts the OLD definition, so both mistakes leave
-        // a task that looks installed and points at the previous binary.
-        //
-        // Anchored to the start of a line, and that is not fussiness: the
-        // script's own comment mentions `Start-ScheduledTask`, and a bare
-        // substring search found THAT and reported the start as happening
-        // first. "Register-ScheduledTask" is a substring of
-        // "Unregister-ScheduledTask" too, so an unanchored search there would
-        // have passed for the wrong reason rather than failing loudly.
+        // Order, not presence: registering over a live task fails, and
+        // starting first starts the OLD definition. Anchored to a line start,
+        // because the script's own comment mentions `Start-ScheduledTask` and
+        // "Register-" is a substring of "Unregister-".
         let script = scheduled_task_script(Channel::Stable, Path::new(r"C:\b\c.exe"));
         let unregister = script.find("\nUnregister-ScheduledTask").unwrap();
         let register = script.find("\nRegister-ScheduledTask -TaskName").unwrap();
@@ -659,10 +587,9 @@ mod tests {
 
     #[test]
     fn only_a_service_uninstall_self_elevates() {
-        // A service's task lives in the root Task Scheduler folder and needs
-        // admin to unregister, but Settings > Apps runs this string
-        // UNELEVATED. A background install has no task, so prompting there
-        // would be a UAC dialog for nothing.
+        // A service's root-folder task needs admin to unregister, but Settings
+        // > Apps runs this string UNELEVATED. A background install has no task,
+        // so prompting there would be a UAC dialog for nothing.
         let bin = Path::new(r"C:\b\loca-core.exe");
         let root = Path::new(r"C:\u\.loca\stable\core");
         let cd = Path::new(r"C:\u\.loca\stable");
@@ -679,9 +606,8 @@ mod tests {
 
     #[test]
     fn the_uninstall_string_carries_its_channel_and_sweeps_an_empty_channel_dir() {
-        // Asserted on the BACKGROUND form because that is the one where the
-        // teardown is readable; the service form carries the same text
-        // base64'd, which the next test decodes rather than assuming.
+        // The background form is the one where the teardown is readable; the
+        // service form carries the same text base64'd, decoded by the next test.
         let cmd = uninstall_command(
             false,
             Path::new("/b/loca-core-dev"),
@@ -690,7 +616,7 @@ mod tests {
             Channel::Dev,
         );
         // An ARP launch carries no environment, so without this the binary
-        // resolves the STABLE subtree and uninstalls the wrong channel.
+        // uninstalls the STABLE channel.
         assert!(cmd.contains("$env:LOCA_CHANNEL='dev';"));
         assert!(cmd.contains("& '/b/loca-core-dev' uninstall-service;"));
         assert!(cmd.contains("Remove-Item -LiteralPath '/u/.loca/dev/core' -Recurse -Force"));
@@ -706,10 +632,8 @@ mod tests {
 
     #[test]
     fn the_elevated_form_carries_the_same_teardown_it_would_have_run_directly() {
-        // Decoded rather than assumed. The elevated path is the one a user
-        // actually hits (a service install is the default), and it is the one
-        // whose payload is unreadable, so an encoder that dropped or truncated
-        // the script would look identical to one that did not.
+        // Decoded rather than assumed: the elevated path is the default and
+        // its payload is unreadable, so a truncating encoder would look fine.
         let bin = Path::new("/b/loca-core");
         let root = Path::new("/u/.loca/stable/core");
         let cd = Path::new("/u/.loca/stable");
@@ -737,9 +661,8 @@ mod tests {
 
     #[test]
     fn a_value_with_a_quote_cannot_break_out_of_a_powershell_literal() {
-        // A home directory can contain an apostrophe. Unescaped, it closes the
-        // literal and the rest of the path becomes PowerShell to execute, in a
-        // string this code hands to a SELF-ELEVATED shell.
+        // An apostrophe in a home directory would close the literal and make
+        // the rest of the path PowerShell run by a SELF-ELEVATED shell.
         assert_eq!(psq("/Users/o'brien/x"), "/Users/o''brien/x");
         assert_eq!(psq("a'b'c"), "a''b''c");
         assert_eq!(psq("no quotes"), "no quotes");
@@ -756,26 +679,23 @@ mod tests {
 
     #[test]
     fn the_encoded_command_is_base64_of_utf16le() {
-        // Exact vectors rather than a round trip: a round trip through this
-        // file's own decoder passes for any self-consistent encoding, and the
-        // consumer is PowerShell, which accepts exactly one.
+        // Exact vectors: a round trip through this file's own decoder passes
+        // for any self-consistent encoding, and PowerShell accepts one.
         assert_eq!(encode_pwsh_command("hi"), "aABpAA==");
         assert_eq!(
             encode_pwsh_command("Stop-ScheduledTask"),
             "UwB0AG8AcAAtAFMAYwBoAGUAZAB1AGwAZQBkAFQAYQBzAGsA"
         );
-        // Non-ASCII, which is where a hand-rolled UTF-16 encoder goes wrong:
-        // UTF-8 would encode this as two bytes rather than one code unit.
+        // Non-ASCII: UTF-8 would encode this as two bytes, not one code unit.
         assert_eq!(encode_pwsh_command("\u{e9}"), "6QA=");
-        // Outside the BMP, so this is a surrogate PAIR. `encode_utf16` and
-        // `charCodeAt` agree here; a scalar-value encoder would not.
+        // Outside the BMP, so a surrogate PAIR rather than a scalar value.
         assert_eq!(encode_pwsh_command("\u{1f600}"), "PdgA3g==");
         assert_eq!(encode_pwsh_command(""), "");
     }
 
     #[test]
     fn the_add_remove_entry_is_named_and_keyed_per_channel() {
-        // Two channels are installed side by side, so one entry per channel or
+        // Two channels install side by side, so one entry per channel or
         // installing dev overwrites stable's uninstaller.
         assert_eq!(
             windows_uninstall_key(Channel::Stable),
@@ -792,9 +712,9 @@ mod tests {
 
     #[test]
     fn the_names_are_channel_namespaced() {
-        // Two channels coexist, so a dev core must not detect stable's agent
-        // and restart it. The label doubles as the keychain service name, which
-        // is a byte-exact parity surface (D-012), so it is asserted literally.
+        // Two channels coexist, so a dev core must not detect stable's agent.
+        // The label doubles as the keychain service name, a byte-exact parity
+        // surface, so it is asserted literally.
         assert_eq!(service_label(Channel::Stable), "com.rzkyif.loca.core");
         assert_eq!(service_label(Channel::Dev), "com.rzkyif.loca.core-dev");
         assert_eq!(unit_name(Channel::Latest), "loca-core-latest");

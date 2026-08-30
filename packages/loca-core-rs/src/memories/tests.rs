@@ -1,9 +1,9 @@
-//! D5's suite.
+//! The memories suite.
 //!
-//! The arithmetic is tested against bit patterns emitted from the frozen
-//! TypeScript, never approximately: an approximate comparison passes on the
-//! `f32`-accumulating implementation that this whole fixture exists to catch,
-//! which would make it worse than no test at all. See [`fixture`].
+//! The relevance arithmetic is tested against bit patterns from a frozen
+//! fixture, never approximately: an approximate comparison passes on the
+//! `f32`-accumulating implementation the fixture exists to catch. See
+//! [`fixture`].
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -66,23 +66,17 @@ impl Env {
     }
 }
 
-// --- the arithmetic oracle ---------------------------------------------------
+// --- the arithmetic fixture --------------------------------------------------
 
 mod fixture {
-    //! Bit-exact comparison against `testdata/relevance_vectors.json`, emitted by
-    //! `docs/rust-port/packages/D5/emit-relevance-vectors.ts` from the real
-    //! `services/relevance.ts`.
+    //! Bit-exact comparison against the frozen `testdata/relevance_vectors.json`.
     //!
-    //! Two properties are asserted, and the second is the one that makes the
-    //! first mean anything:
-    //!
-    //! 1. Every recorded case matches, compared as IEEE-754 bits.
-    //! 2. The fixture still **discriminates**: enough of its cases produce a
-    //!    different answer under an `f32` accumulator, or under a normalisation
-    //!    that rounds twice, that a regression could not slip through. The
-    //!    emitter refuses to write a fixture that fails this, and the count is
-    //!    re-checked here so a hand-edited or partially regenerated file cannot
-    //!    quietly stop guarding anything.
+    //! Two properties, and the second is what makes the first mean anything:
+    //! every recorded case matches as IEEE-754 bits, AND the fixture still
+    //! DISCRIMINATES, in that enough of its cases answer differently under an
+    //! `f32` accumulator or a double-rounding normalisation that a regression
+    //! could not slip through. The count is re-checked here so a hand-edited or
+    //! partially regenerated file cannot quietly stop guarding anything.
 
     use super::*;
     use crate::memories::embedding::{l2_normalize, LocalEmbedder, EMBED_REPO};
@@ -229,16 +223,11 @@ mod fixture {
         }
     }
 
-    /// The highest-consequence line in the package.
-    ///
     /// The local model's identity is hashed into every stored
-    /// `embedding_source_hash`. A core that spells it differently reads a real
-    /// install's entire vector store as stale and stops injecting memories until
-    /// a full reindex completes, with no error anywhere. So the constant is
-    /// pinned against the value the TypeScript itself emitted into the fixture,
-    /// not against a copy of it made here, and the default a `LocalEmbedder`
-    /// reports is pinned to the same constant so N2 gets it right by writing
-    /// nothing.
+    /// `embedding_source_hash`, so a core that spells it differently reads a real
+    /// install's whole vector store as stale and stops injecting memories, with
+    /// no error anywhere. Pinned against the fixture's own value rather than a
+    /// copy made here.
     #[test]
     fn the_local_embed_identity_is_the_string_the_typescript_emits() {
         let doc = doc();
@@ -253,9 +242,8 @@ mod fixture {
             crate::memories::embedding::NoLocalEmbedder.model_id(),
             EMBED_REPO,
         );
-        // And the composition around it is the TypeScript's: sha256 over
-        // `${modelId}\n${text}`, taken here from the case the emitter computed
-        // with the REAL embedSourceHash rather than by re-deriving it.
+        // The composition is sha256 over `${modelId}\n${text}`, taken from the
+        // case the emitter computed rather than re-derived here.
         let case = &doc["defaultIdentityHash"];
         assert_eq!(
             embed_source_hash(EMBED_REPO, case["text"].as_str().unwrap()),
@@ -263,8 +251,7 @@ mod fixture {
         );
     }
 
-    /// The consequence, stated as a test rather than as a comment: change the
-    /// identity by one character and every previously stored hash misses.
+    /// Change the identity by one character and every stored hash misses.
     #[test]
     fn a_different_identity_spelling_invalidates_every_stored_hash() {
         let text = memory_embed_text("Recipes", "Pasta recipes and cooking notes.");
@@ -302,9 +289,8 @@ mod relevance {
     }
 
     /// Why callers pre-filter by width: one stale vector otherwise takes the
-    /// whole batch with it. This is the shape of the memory-injection bug the
-    /// pre-filter in `injection` exists to prevent, pinned so the pre-filter
-    /// cannot be removed as redundant.
+    /// whole batch with it. Pinned so the pre-filter in `injection` cannot be
+    /// removed as redundant.
     #[test]
     fn one_incomparable_vector_aborts_the_whole_batch() {
         let query = vec![1.0f32, 0.0];
@@ -418,14 +404,11 @@ mod skill_frontmatter {
         assert_eq!(parts.body, "---\n---\nbody");
     }
 
-    /// The closing `---` does **not** have to end its line: the pattern's
-    /// trailing `\r?\n?` is optional, so `----`, `--- ` and `---trailing` all
-    /// close the block and their extra characters head the body.
-    ///
-    /// Every expectation here was read off the real `parseSkill`, not reasoned
-    /// out. The stake is that the same parser runs in the client's memory
-    /// editor: a core that rejected these would seed no summary and publish no
-    /// `suggestedTools` for a file the client shows as having both.
+    /// The closing `---` does NOT have to end its line: the trailing `\r?\n?` is
+    /// optional, so `----`, `--- ` and `---trailing` all close the block and
+    /// their extra characters head the body. The same parser runs in the
+    /// client's memory editor, so a core that rejected these would seed no
+    /// summary for a file the client shows as having one.
     #[test]
     fn a_closing_delimiter_need_not_end_its_line() {
         for (input, body) in [
@@ -573,9 +556,9 @@ mod store {
         assert_eq!(sibling.filename, "meeting-notes-q3-2.md");
     }
 
-    /// SQLite's `NOCASE` is ASCII-only, and the port must not "improve" on that
-    /// with a Unicode-aware comparison: two titles differing only in an accent's
-    /// case are two rows in the TypeScript and must stay two rows here.
+    /// SQLite's `NOCASE` is ASCII-only, and a Unicode-aware comparison would be
+    /// an "improvement" that merges two titles differing only in an accent's
+    /// case, which must stay two rows.
     #[tokio::test]
     async fn title_collision_is_ascii_case_folding_only() {
         let env = env();
@@ -649,8 +632,8 @@ mod store {
         assert!(env.store.get_file(&skill.id, "../secret").await.is_err());
     }
 
-    /// A skill declaring no tools reports the field ABSENT, not empty: D-028's
-    /// distinction, and the client renders the two differently.
+    /// A skill declaring no tools reports the field ABSENT, not empty; the
+    /// client renders the two differently.
     #[tokio::test]
     async fn a_skill_without_tools_omits_the_field_entirely() {
         let env = env();
@@ -930,12 +913,9 @@ mod store {
     }
 
     /// A name whose kind flipped is re-adopted in the SAME pass: the row is
-    /// dropped and the disk entry is left for the adoption loop, so one rescan
-    /// reports `{added: 1, removed: 1}` and the store ends with a skill.
-    ///
-    /// Consuming the entry while deciding to drop the row loses the addition
-    /// until a second rescan, and the counts the client is shown say nothing
-    /// arrived.
+    /// dropped and the disk entry left for the adoption loop, so one rescan
+    /// reports `{added: 1, removed: 1}`. Consuming the entry while dropping the
+    /// row would lose the addition until a second rescan.
     #[tokio::test]
     async fn rescan_readopts_a_name_whose_kind_flipped_in_one_pass() {
         let env = env();
@@ -1052,13 +1032,9 @@ mod store {
 
         // The gate hides it without dropping the row.
         //
-        // This drives a FAKE, and that is worth naming rather than leaving
-        // implicit: a gate test over a double passes whether or not anything
-        // ever installs a gate in production, which is how `set_provider_gate`
-        // came to have zero production callers while looking covered (D-141).
-        // The test that closes that is
-        // `extensions::tests::an_uninstalled_extensions_memories_leave_every_listing`,
-        // which drives the real registry through the real implementation.
+        // This drives a FAKE, so it passes whether or not anything installs a
+        // gate in production. The test that closes that gap is
+        // `extensions::tests::an_uninstalled_extensions_memories_leave_every_listing`.
         struct Gate;
         #[async_trait::async_trait]
         impl super::super::store::ProviderGate for Gate {
@@ -1192,8 +1168,7 @@ mod store {
         assert_eq!(blob, vec![0x00, 0x00, 0x80, 0x3f]);
     }
 
-    /// A truncated blob loses one row rather than the whole load. The TypeScript
-    /// throws here, which drops every memory for the turn.
+    /// A truncated blob loses one row rather than the whole load.
     #[tokio::test]
     async fn a_malformed_embedding_blob_is_skipped_not_fatal() {
         let env = env();
@@ -1257,8 +1232,7 @@ mod store {
         assert_eq!(state.embedding_source_hash.as_deref(), Some("e"));
     }
 
-    /// The content hash is `sha256` of exactly the bytes on disk, which is also
-    /// what the conformance cases assert across both cores.
+    /// The content hash is `sha256` of exactly the bytes on disk.
     #[tokio::test]
     async fn the_content_hash_is_sha256_of_the_content() {
         let env = env();
@@ -1320,8 +1294,7 @@ mod injection {
     };
     use crate::memories::relevance::memory_embed_text;
 
-    /// Score + format in one call, which is what the TypeScript's test helper
-    /// does.
+    /// Score and format in one call.
     async fn prompt(
         env: &Env,
         query: Option<&str>,
@@ -1631,9 +1604,8 @@ mod injection {
         assert!(out.contains("[Knowledge @node.js \"node.js\""), "{out}");
     }
 
-    /// Rust's `\w` is Unicode and JavaScript's is not. Written with the default
-    /// class, the pattern stops matching after an accented letter and this case
-    /// returns nothing.
+    /// The prefix class is ASCII: written with Rust's Unicode-aware `\w` the
+    /// pattern stops matching after an accented letter and this returns nothing.
     #[tokio::test]
     async fn a_token_after_an_accented_letter_still_matches() {
         let env = env();
@@ -1642,8 +1614,7 @@ mod injection {
             .await
             .unwrap();
         // The accented letter must be IMMEDIATELY before the trigger: with a
-        // space between them the prefix class matches either way, which is why
-        // the first version of this test passed on the mutated pattern.
+        // space between them the prefix class matches either way.
         let out = blocks(&env, "café@notes").await;
         assert!(out.is_some(), "the Unicode \\w class crept back in");
         // The ASCII word char it is contrasted with still blocks the match, so
@@ -1653,7 +1624,7 @@ mod injection {
 
     /// `#` and `/` resolve too, because the user picks their own trigger symbol,
     /// but the whole pass is gated on the message containing an `@`. That reads
-    /// like a bug and is the TypeScript's behaviour; changing it would start
+    /// like a bug and is the specified behaviour; changing it would start
     /// expanding messages the shipping core leaves alone.
     #[tokio::test]
     async fn other_trigger_symbols_resolve_only_when_an_at_is_present() {
@@ -1822,16 +1793,11 @@ mod injection {
         assert!(blocks(&env, "@off").await.is_none());
     }
 
-    /// The floor is inclusive, and it is 0.25.
-    ///
-    /// Two mutations used to survive here: moving the constant to 0.30, and
-    /// flipping `>=` to `>`. The existing ranking test scores 1.0 and 0.0, so
-    /// it cannot see either. A memory sitting exactly ON the boundary sees
-    /// both, because inclusive-at-0.25 is the only rule that keeps it.
-    ///
-    /// The vector is chosen so the cosine is exactly representable: the query
-    /// is the first basis vector, so the score is the memory's first component
-    /// and nothing else, and 0.25 is exact in binary. No epsilon needed.
+    /// The floor is inclusive, and it is 0.25. A memory sitting exactly ON the
+    /// boundary is the only case that sees both the constant's value and the
+    /// `>=`. The vector makes the cosine exactly representable: the query is the
+    /// first basis vector, so the score is the memory's first component, and
+    /// 0.25 is exact in binary. No epsilon needed.
     #[tokio::test]
     async fn a_memory_exactly_at_the_floor_is_kept() {
         let env = env();
@@ -1868,13 +1834,9 @@ mod injection {
     }
 
     /// The total budget is 256k, which is exactly four memories at the 64k
-    /// per-memory cap.
-    ///
-    /// Halving the constant used to leave the suite green, because the existing
-    /// budget test uses five oversized memories and still ends in an omission
-    /// at either value. Landing the boundary exactly on a memory count is what
-    /// makes the number itself observable: at 256k the fourth still fits and
-    /// the fifth cannot, and at 128k the third already cannot.
+    /// per-memory cap. Landing the boundary exactly on a memory count is what
+    /// makes the number itself observable: at 256k the fourth still fits and the
+    /// fifth cannot, and at 128k the third already cannot.
     #[tokio::test]
     async fn the_request_budget_is_exactly_four_capped_memories() {
         let env = env();
@@ -2176,9 +2138,9 @@ mod embedding {
         assert_eq!(vectors[0][1].to_bits(), 0.8f32.to_bits());
     }
 
-    /// An engine hosting a different model reports a different identity, and
-    /// every hash moves with it. This is the mechanism that makes a model switch
-    /// re-embed instead of mis-scoring.
+    /// An engine hosting a different model reports a different identity and every
+    /// hash moves with it, which is what makes a model switch re-embed instead of
+    /// mis-scoring.
     #[tokio::test]
     async fn the_local_identity_flows_into_the_staleness_hash() {
         let env = env();
@@ -2578,9 +2540,33 @@ mod routes {
             (status, value)
         }
 
+        async fn get(&self, path: &str) -> (StatusCode, Value) {
+            self.call("GET", path, None).await
+        }
+
+        async fn del(&self, path: &str) -> (StatusCode, Value) {
+            self.call("DELETE", path, None).await
+        }
+
+        async fn post(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("POST", path, Some(body)).await
+        }
+
+        async fn post_none(&self, path: &str) -> (StatusCode, Value) {
+            self.call("POST", path, None).await
+        }
+
+        async fn patch(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("PATCH", path, Some(body)).await
+        }
+
+        async fn put(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("PUT", path, Some(body)).await
+        }
+
         async fn create(&self, title: &str) -> Value {
             let (status, body) = self
-                .call("POST", "/api/v1/memories", Some(json!({ "title": title })))
+                .post("/api/v1/memories", json!({ "title": title }))
                 .await;
             assert_eq!(status, StatusCode::CREATED);
             body
@@ -2599,21 +2585,20 @@ mod routes {
         assert_eq!(created["content"], "");
         assert_eq!(h.indexer.one.load(Ordering::SeqCst), 1);
 
-        let (status, list) = h.call("GET", "/api/v1/memories", None).await;
+        let (status, list) = h.get("/api/v1/memories").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(list["memories"].as_array().unwrap().len(), 1);
         // The listing carries metadata only.
         assert!(list["memories"][0].get("content").is_none());
 
-        let (status, got) = h.call("GET", &format!("/api/v1/memories/{id}"), None).await;
+        let (status, got) = h.get(&format!("/api/v1/memories/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got["id"], json!(id));
 
         let (status, patched) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/memories/{id}"),
-                Some(json!({ "title": "Renamed", "content": "body", "enabled": false })),
+                json!({ "title": "Renamed", "content": "body", "enabled": false }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -2622,12 +2607,10 @@ mod routes {
         assert_eq!(patched["enabled"], json!(false));
 
         // A delete answers `{ok: true}` with a 200, not a 204.
-        let (status, deleted) = h
-            .call("DELETE", &format!("/api/v1/memories/{id}"), None)
-            .await;
+        let (status, deleted) = h.del(&format!("/api/v1/memories/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(deleted, json!({ "ok": true }));
-        let (status, _) = h.call("GET", &format!("/api/v1/memories/{id}"), None).await;
+        let (status, _) = h.get(&format!("/api/v1/memories/{id}")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
@@ -2636,16 +2619,13 @@ mod routes {
         let h = harness();
         let id = h.create("Notes").await["id"].as_str().unwrap().to_string();
         let before = h.indexer.one.load(Ordering::SeqCst);
-        let (status, body) = h
-            .call("PATCH", &format!("/api/v1/memories/{id}"), Some(json!({})))
-            .await;
+        let (status, body) = h.patch(&format!("/api/v1/memories/{id}"), json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["title"], "Notes");
         assert_eq!(h.indexer.one.load(Ordering::SeqCst), before + 1);
     }
 
-    /// The bodies are `.strict()` in `@loca/shared`, so an unknown key is a 400.
-    /// Nothing here re-checks that: it is what the deserializer does.
+    /// The bodies are strict, so an unknown key is a 400 from the deserializer.
     #[tokio::test]
     async fn unknown_and_wrongly_typed_fields_are_rejected() {
         let h = harness();
@@ -2655,16 +2635,15 @@ mod routes {
             json!({ "title": "X", "kind": "other" }),
             json!({}),
         ] {
-            let (status, response) = h.call("POST", "/api/v1/memories", Some(body.clone())).await;
+            let (status, response) = h.post("/api/v1/memories", body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
             assert_eq!(response["error"]["code"], "validation_error");
         }
         let id = h.create("Real").await["id"].as_str().unwrap().to_string();
         let (status, _) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/memories/{id}"),
-                Some(json!({ "unknown": true })),
+                json!({ "unknown": true }),
             )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2674,9 +2653,7 @@ mod routes {
     async fn an_empty_title_is_rejected_by_the_store() {
         let h = harness();
         for title in ["", "   "] {
-            let (status, body) = h
-                .call("POST", "/api/v1/memories", Some(json!({ "title": title })))
-                .await;
+            let (status, body) = h.post("/api/v1/memories", json!({ "title": title })).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{title:?}");
             assert_eq!(body["error"]["code"], "validation_error");
         }
@@ -2687,11 +2664,7 @@ mod routes {
         let h = harness();
         h.create("Notes").await;
         let (status, body) = h
-            .call(
-                "POST",
-                "/api/v1/memories",
-                Some(json!({ "title": "notes" })),
-            )
+            .post("/api/v1/memories", json!({ "title": "notes" }))
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "conflict");
@@ -2701,10 +2674,9 @@ mod routes {
     async fn the_file_routes_round_trip_and_guard_the_body() {
         let h = harness();
         let (status, skill) = h
-            .call(
-                "POST",
+            .post(
                 "/api/v1/memories",
-                Some(json!({ "kind": "skill", "title": "Deploy", "content": "steps" })),
+                json!({ "kind": "skill", "title": "Deploy", "content": "steps" }),
             )
             .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -2712,53 +2684,39 @@ mod routes {
         assert_eq!(skill["files"], json!([]));
 
         let (status, ok) = h
-            .call(
-                "PUT",
+            .put(
                 &format!("/api/v1/memories/{id}/files/checklist.md"),
-                Some(json!({ "content": "1. check" })),
+                json!({ "content": "1. check" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(ok, json!({ "ok": true }));
 
         let (status, file) = h
-            .call(
-                "GET",
-                &format!("/api/v1/memories/{id}/files/checklist.md"),
-                None,
-            )
+            .get(&format!("/api/v1/memories/{id}/files/checklist.md"))
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(file, json!({ "content": "1. check" }));
 
-        let (status, memory) = h.call("GET", &format!("/api/v1/memories/{id}"), None).await;
+        let (status, memory) = h.get(&format!("/api/v1/memories/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(memory["files"], json!(["checklist.md"]));
 
         // The instruction body is not reachable through the file API.
         let (status, _) = h
-            .call(
-                "PUT",
+            .put(
                 &format!("/api/v1/memories/{id}/files/SKILL.md"),
-                Some(json!({ "content": "x" })),
+                json!({ "content": "x" }),
             )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
         let (status, _) = h
-            .call(
-                "DELETE",
-                &format!("/api/v1/memories/{id}/files/checklist.md"),
-                None,
-            )
+            .del(&format!("/api/v1/memories/{id}/files/checklist.md"))
             .await;
         assert_eq!(status, StatusCode::OK);
         let (status, _) = h
-            .call(
-                "GET",
-                &format!("/api/v1/memories/{id}/files/checklist.md"),
-                None,
-            )
+            .get(&format!("/api/v1/memories/{id}/files/checklist.md"))
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
@@ -2767,7 +2725,7 @@ mod routes {
     async fn rescan_reports_counts_and_schedules_every_memory() {
         let h = harness();
         std::fs::write(h.env.memories_dir().join("dropped-in.md"), "hello").unwrap();
-        let (status, body) = h.call("POST", "/api/v1/memories/rescan", None).await;
+        let (status, body) = h.post_none("/api/v1/memories/rescan").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({ "added": 1, "removed": 0, "changed": 0 }));
         assert_eq!(h.indexer.all.load(Ordering::SeqCst), 1);
@@ -2779,19 +2737,13 @@ mod routes {
         let id = h.create("Notes").await["id"].as_str().unwrap().to_string();
         let before = h.indexer.one.load(Ordering::SeqCst);
 
-        let (status, body) = h
-            .call("POST", &format!("/api/v1/memories/{id}/reindex"), None)
-            .await;
+        let (status, body) = h.post_none(&format!("/api/v1/memories/{id}/reindex")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({ "ok": true }));
         assert_eq!(h.indexer.one.load(Ordering::SeqCst), before + 1);
 
         let (status, _) = h
-            .call(
-                "POST",
-                "/api/v1/memories/01ZZZZZZZZZZZZZZZZZZZZZZZZ/reindex",
-                None,
-            )
+            .post_none("/api/v1/memories/01ZZZZZZZZZZZZZZZZZZZZZZZZ/reindex")
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(
@@ -2843,10 +2795,9 @@ mod routes {
         let id = h.env.store.list().await.unwrap()[0].id.clone();
 
         let (status, body) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/memories/{id}"),
-                Some(json!({ "content": "rewritten" })),
+                json!({ "content": "rewritten" }),
             )
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -2854,10 +2805,9 @@ mod routes {
 
         // Silencing it is still allowed.
         let (status, _) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/memories/{id}"),
-                Some(json!({ "enabled": true })),
+                json!({ "enabled": true }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import gsap from "gsap";
-  import { getDefaultSettings, SETTINGS_SCHEMA } from "@loca/shared/domain/settings/engine";
+  import { getDefaultSettings } from "@loca/shared/domain/settings/engine";
   import { makeUiContext, setUiContext } from "@loca/shared/ui/context";
   import { BASE_MS } from "@loca/shared/ui/animations";
   import SettingsShellView from "@loca/shared/ui/components/settings/SettingsShellView.svelte";
@@ -10,9 +10,9 @@
   import type { SettingField } from "@loca/shared/domain/settings/types";
   import SettingsDemoFooter from "../demos/SettingsDemoFooter.svelte";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, settingsShowcaseGroups as groups, type StageProps } from "../../lib/showcase";
 
-  let { register }: { register: (h: { timeline: Timeline; reset: () => void }) => void } = $props();
+  let { register }: StageProps = $props();
 
   // Reactive values so each control visibly moves AND the subtree UI context
   // re-derives from them: flipping `appearance.bubbleBlurEnabled` re-runs the
@@ -29,13 +29,6 @@
       animationDurationMs: (ms = BASE_MS) => (reduce ? 0 : ms),
     }),
   );
-
-  const groups = SETTINGS_SCHEMA.filter((g) => !g.hidden).map((g) => ({
-    id: g.id,
-    name: g.name,
-    icon: g.icon,
-    iconInactive: g.iconInactive ?? g.icon,
-  }));
 
   type Shell = {
     selectGroup: (id: string) => void;

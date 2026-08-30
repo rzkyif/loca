@@ -1,113 +1,24 @@
 //! The sherpa-onnx slots: building the engines, decoding, and synthesising.
-//!
 //! The only file in this package that names a sherpa type, and the only one
-//! behind `#[cfg(feature = "local-speech")]`. Everything that decides anything
-//! (the queue, the config derivation, the reconciler's decision table, the WAV
-//! codec, the voice tables) is beside it in the default build, so it is tested
-//! and mutation-proven without the C++ library.
+//! behind `#[cfg(feature = "local-speech")]`.
 //!
-//! # What can still terminate the process
+//! What can still terminate the process, because `Result` does not cover it:
+//! most of sherpa answers data it dislikes by calling `_Exit()`, which skips
+//! `atexit` handlers and static destructors and cannot be caught. 116 of
+//! `libsherpa-onnx-core.a`'s 228 members import it, including the whole
+//! transcription and synthesis path; the STT feature extractor and espeak-ng's
+//! top-level API can `exit()` too. In-process linkage makes that fatal to the
+//! whole Core rather than to a sidecar, and that trade was deliberate: the
+//! sidecar cannot be linked into a mobile app at all.
 //!
-//! This is the residual of the containment work described in [`super`], and it
-//! is here because the next person to read `LocalSpeech` will assume the
-//! `Result` covers it. It does not.
-//!
-//! ## How this was established, so the next reader can judge it rather than trust it
-//!
-//! By enumerating undefined-symbol imports (`nm -o`) across **all 15 static
-//! archives** of the pinned `sherpa-onnx-v1.13.3-osx-arm64-static-lib`,
-//! including the 65 MB `libonnxruntime.a`, for six termination classes: `exit`,
-//! `_Exit`, POSIX `_exit`, `abort`, `std::terminate` and `__cxa_throw`.
-//!
-//! **This header has been wrong twice, both times from an incomplete
-//! enumeration, so the method matters as much as the conclusion.** The first
-//! version reasoned from upstream behaviour without checking the archive. The
-//! second checked 6 archives of 15 and grepped only for `_exit`, and that grep
-//! is the trap: Mach-O spells C `_Exit()` as `__Exit`, which a `_exit` pattern
-//! does not match. `_Exit` is sherpa-onnx's dominant die-on-bad-input idiom, so
-//! the narrow grep produced a confident "this path is clean" for paths that are
-//! not.
-//!
-//! An import proves only that some code path in that object CAN call the symbol.
-//! It cannot show the call is reachable from our inputs. Everything below is
-//! possibility, not certainty, and is deliberately stated that way.
-//!
-//! ## The finding: the exposure is broad, not a short list
-//!
-//! **116 of `libsherpa-onnx-core.a`'s 228 members import `_Exit()`**, and they
-//! are not an obscure corner: they include `offline-stream.cc.o`,
-//! `features.cc.o`, `resample.cc.o`, `file-utils.cc.o`, `text-utils.cc.o`,
-//! `offline-whisper-model.cc.o`, `offline-sense-voice-model.cc.o`,
-//! `offline-tts-kokoro-model.cc.o`, `piper-phonemize-lexicon.cc.o` and
-//! `kokoro-multi-lang-lexicon.cc.o`. That is the whole path a transcription or a
-//! synthesis takes. `offline-recognizer-impl.cc.o` and `offline-tts-impl.cc.o`
-//! are in the harshest class, importing both `exit()` and `_Exit()`.
-//!
-//! `_Exit` is harsher than `exit`: it skips `atexit` handlers, static
-//! destructors and stream flushing. There is no hook, and nothing to catch.
-//!
-//! Two more, both on live paths:
-//!
-//! - **The STT feature extractor can `exit()`**: `feature-window.cc.o` and
-//!   `rfft.cc.o` in `libkaldi-native-fbank-core.a`. This is what makes the
-//!   sample-rate bound in [`super::wav`] a containment control rather than
-//!   tidiness, since the rate is client-controlled and reaches that code.
-//! - **espeak-ng can `exit()`**, in exactly one of its 27 members
-//!   (`espeak_api.c.o`, the top-level API), which is where `espeak_Initialize`
-//!   lives. A corrupt or version-mismatched phonemizer tree is therefore a
-//!   plausible kill, which is why [`super::espeak`] validates the same four
-//!   files sherpa validates and why `build_tts` re-checks the directory.
-//!
-//! ## What that means for the design
-//!
-//! **The accepted residual is wider than "a mis-specified model file", and
-//! naming it precisely is the point of this section.** Once bytes reach sherpa,
-//! most of the library can terminate the process on data it dislikes. In-process
-//! linkage is what makes that fatal to the whole Core rather than to a sidecar,
-//! and that trade was made deliberately (the sidecar cannot be linked into a
-//! mobile app at all). What this module can do, and does, is keep everything it
-//! CAN validate away from that boundary:
-//!
-//! - audio never crosses as a container, only as `f32` samples this code
-//!   produced, **with a bounded sample rate** ([`super::wav`]);
-//! - the espeak language comes from a closed set with bundled dictionaries
-//!   ([`super::voices`]);
-//! - every model role a family needs is resolved and confirmed present before a
-//!   config is built ([`super::config`]);
-//! - the phonemizer tree is content-checked, not stamp-checked
-//!   ([`super::espeak`]).
-//!
-//! What remains uncontained is the content of a model file that exists and has
-//! the right role but is not the model it claims to be, and, more broadly, any
-//! malformed data inside a well-formed model. A subprocess probe would close it
-//! and would reintroduce exactly the boundary this package removes, so it is
-//! recorded rather than engineered around. If a crash report ever traces here,
-//! this is the decision to revisit.
-//!
-//! ## Corrections to earlier versions of this comment
-//!
-//! - "`Wave::read` terminates on a malformed container" was asserted, then
-//!   retracted on the strength of "`wave.cc` imports no `_exit`". **Both were
-//!   wrong.** There is no `wave.cc.o`: the members are `wave-reader.cc.o` and
-//!   `wave-writer.cc.o`, and both import `std::terminate` and `__cxa_throw`
-//!   though neither imports any exit. So that path can die by unhandled
-//!   exception across the FFI boundary rather than by exit, which is a different
-//!   class and not a clean one. **Decoding in Rust stands**, and its
-//!   justification is the [`super::wav`] list: a `CString::new().unwrap()` panic
-//!   in the wrapper, keeping attacker-controlled bytes out of the C++, and
-//!   avoiding a 25 MB temp-file round trip.
-//! - "A missing model file terminates" does not hold: each config's `Validate()`
-//!   returns false and the wrapper turns that into `None`. The existence checks
-//!   in [`super::config`] stay, for a different job: they make "not loaded" a
-//!   normal state rather than a failed load.
-//! - The FST `exit` sites (`fst-utils`, `lodr-fst`, the two `*-ctc-fst-decoder`)
-//!   need `rule_fsts`, `rule_fars` or a CTC decoding graph, all left empty here.
-//!   Note `libsherpa-onnx-fst.a` is also the only `abort()` source in the stack
-//!   and has no exception machinery at all, so an FST error either returns or
-//!   dies depending on `FST_FLAGS_fst_error_fatal`, whose runtime value is not
-//!   readable from the archive.
-//! - No archive imports `assert()` at all: this is an `NDEBUG` build, so nothing
-//!   here dies by assertion.
+//! So everything this module CAN validate is kept away from that boundary:
+//! audio crosses only as `f32` samples this code produced, with a bounded
+//! sample rate ([`super::wav`]); the espeak language comes from a closed set
+//! ([`super::voices`]); every model role is confirmed present before a config
+//! is built ([`super::config`]); the phonemizer tree is content-checked
+//! ([`super::espeak`]). What remains uncontained is malformed data inside a
+//! well-formed model file. A subprocess probe would close it and would
+//! reintroduce the boundary this package exists to remove.
 
 use std::sync::{Arc, Mutex};
 
@@ -126,25 +37,15 @@ use super::config::{Desired, SttConfig, TtsConfig};
 use super::reconcile::Slots;
 use super::voices;
 
-/// The ONNX Runtime execution provider.
-///
-/// Always CPU. GPU speech was one downloadable binary flavour (Linux x64 CUDA
-/// only) and does not survive absorption: in process the provider is fixed by
-/// what the core binary linked, and ONNX Runtime has no equivalent of
-/// llama.cpp's loadable backends. Recorded as a deliberate capability loss that
-/// degrades to CPU, which is what every Mac, Windows and non-NVIDIA Linux user
-/// already gets.
+/// The ONNX Runtime execution provider. Always CPU: in process the provider is
+/// fixed by what the core binary linked, and ONNX Runtime has no equivalent of
+/// llama.cpp's loadable backends.
 const PROVIDER: &str = "cpu";
 
-/// The bundled espeak-ng phonemizer data, repacked as a gzipped tar.
-///
-/// 8.6 MB compressed, 18 MB and 355 files unpacked, sha256
-/// `2b78a08e0c46d49e2d6379bcc71842b4c61f89ee36247706ea2968ed92ba87b7`, repacked
-/// from the bz2 asset `scripts/release/core.ts` already pins by hash. Embedded
-/// rather than downloaded because the user has already consented to speech by
-/// enabling it, and fetching a required resource afterwards would be a
-/// background network call, which the repo's one absolute rule forbids. Only
-/// linked in under `local-speech`, so a default build pays nothing for it.
+/// The bundled espeak-ng phonemizer data, repacked as a gzipped tar: 8.6 MB
+/// compressed, 18 MB and 355 files unpacked. Embedded rather than downloaded,
+/// because fetching a required resource after the user enabled speech would be
+/// a background network call. Only linked in under `local-speech`.
 const ESPEAK_ARCHIVE: &[u8] = include_bytes!("../../../data/espeak-ng-data.tar.gz");
 
 /// The resident engines.
@@ -162,11 +63,10 @@ pub struct Engines {
     threads: std::sync::atomic::AtomicI32,
 }
 
-/// The TTS engine plus the espeak language it was built with.
-///
-/// Separate from the STT slot because multilingual Kokoro fixes its phonemizer
-/// language at load time, so a synthesis for a voice in another language has to
-/// rebuild it. That is the one piece of engine state a request can mutate.
+/// The TTS engine plus the espeak language it was built with. Separate from the
+/// STT slot because multilingual Kokoro fixes its phonemizer language at load
+/// time, so a voice in another language rebuilds it: the one piece of engine
+/// state a request can mutate.
 struct TtsSlot {
     config: TtsConfig,
     lang: String,
@@ -222,17 +122,13 @@ impl Engines {
         };
 
         // Multilingual Kokoro bakes its phonemizer language in at load time, so
-        // a voice in another language needs the engine rebuilt for it. Build
-        // before swapping, so a failed rebuild keeps the working engine. Other
-        // families fix their language by model and never reload here.
+        // a voice in another language needs the engine rebuilt. Build before
+        // swapping, so a failed rebuild keeps the working engine.
         //
-        // **This is the one path where the "every role file exists" invariant is
-        // stale by construction.** `config::desired` checked those paths at
-        // reconcile time; a model deleted from the storage screen since then
-        // changes no watched setting, so nothing reconciled, and this reads them
-        // again. Contained rather than guarded: `Validate()` returns a null
-        // engine, so the caller gets a `provider_error` and the resident engine
-        // survives the failed rebuild.
+        // The one path where the "every role file exists" invariant is stale by
+        // construction: a model deleted since the last reconcile changes no
+        // watched setting. Contained rather than guarded, since `Validate()`
+        // returns a null engine and the resident one survives.
         let want_lang = voices::request_lang(voice);
         if resident.config.family == TtsFamily::Kokoro && resident.lang != want_lang {
             let rebuilt = build_tts(&resident.config, threads, want_lang)?;
@@ -300,14 +196,10 @@ impl super::speech::EngineOps for Engines {
 }
 
 impl Slots for Engines {
-    /// Make the resident models equal `desired`.
-    ///
-    /// Build before swap, per slot: a failed load leaves the working engine
-    /// resident rather than tearing it down, so a bad model selection degrades
-    /// to "the old voice is still here" instead of "speech is gone". Dropping a
-    /// slot runs sherpa's C destructor and frees that model's memory with the
-    /// other engine untouched, which is the whole reason the sidecar held both
-    /// in one process.
+    /// Make the resident models equal `desired`. Build before swap, per slot: a
+    /// failed load leaves the working engine resident, so a bad selection
+    /// degrades to "the old voice is still here". Dropping a slot runs sherpa's
+    /// destructor and frees that model with the other engine untouched.
     fn apply(&self, desired: &Desired) -> Result<(), String> {
         let mut failures = Vec::new();
         self.threads
@@ -333,11 +225,9 @@ impl Slots for Engines {
             if current != desired.tts.as_ref() {
                 match &desired.tts {
                     Some(config) => {
-                        // Extracted HERE rather than at boot: 18 MB of
-                        // dictionaries should not be written by a core whose
-                        // user never turns synthesis on. `ensure` is idempotent
-                        // and verifies content, so this costs a stat on every
-                        // later load.
+                        // Here rather than at boot: 18 MB of dictionaries
+                        // should not be written for a user who never turns
+                        // synthesis on. `ensure` is idempotent.
                         if let Err(err) = super::espeak::ensure(&self.root, ESPEAK_ARCHIVE) {
                             failures.push(err.message);
                             return Err(failures.join("; "));
@@ -366,12 +256,10 @@ impl Slots for Engines {
     }
 }
 
-/// The path for a role the family requires.
-///
-/// `config` cannot be built without every required role, so a miss here is a
-/// disagreement between this file and `config::stt_required_roles` rather than
-/// anything a user can cause. It still returns an error rather than unwrapping,
-/// because the failure mode of being wrong is a null path reaching sherpa.
+/// The path for a role the family requires. A miss is a disagreement between
+/// this file and `config::stt_required_roles` rather than anything a user can
+/// cause, but it errors rather than unwrapping: the failure mode of being wrong
+/// is a null path reaching sherpa.
 fn role(config: &SttConfig, name: &str) -> Result<String, String> {
     config
         .roles
@@ -454,9 +342,9 @@ fn build_recognizer(config: &SttConfig, threads: i32) -> Result<OfflineRecognize
 }
 
 fn build_tts(config: &TtsConfig, threads: i32, lang: &str) -> Result<OfflineTts, String> {
-    // Checked HERE rather than trusted from the config derivation, because the
-    // one espeak-ng object that imports `exit()` is `espeak_api.c.o`, where
-    // `espeak_Initialize` lives, and this is the argument that reaches it.
+    // Checked here rather than trusted from the config derivation: the one
+    // espeak-ng object that can `exit()` holds `espeak_Initialize`, and this is
+    // the argument that reaches it.
     if !config.data_dir.is_dir() {
         return Err(format!(
             "the phonemizer data is missing at {}",
@@ -518,12 +406,9 @@ fn build_tts(config: &TtsConfig, threads: i32, lang: &str) -> Result<OfflineTts,
     .ok_or_else(|| "the voice model could not be loaded".to_string())
 }
 
-/// Remove SenseVoice's inline metadata tokens (`<|en|>`, `<|EMO_UNKNOWN|>`,
-/// `<|Speech|>`, `<|woitn|>`, ...) that it prepends to the transcript.
-///
-/// Lives here rather than in a shared module because it is one family's quirk,
-/// and applying it to every family would silently eat any transcript that
-/// legitimately contained `<|`.
+/// Remove SenseVoice's inline metadata tokens (`<|en|>`, `<|EMO_UNKNOWN|>`, ...)
+/// that it prepends to the transcript. One family's quirk: applying it to every
+/// family would eat a transcript that legitimately contained `<|`.
 pub fn strip_special_tokens(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;

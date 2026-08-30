@@ -65,11 +65,9 @@ pub fn deletable(_category: StorageCategoryId) -> bool {
 
 /// Build one category's rows.
 ///
-/// Total by construction: every filesystem failure inside is already a zero or
-/// an empty list, and everything a seam owns arrived in [`Facts`] and was
-/// degraded there. So a broken corner of the tree yields an empty category
-/// rather than an error, which is the TypeScript's `safeBuildNodes` guarantee
-/// reached without a catch.
+/// Total by construction: every filesystem failure inside is already a zero or an
+/// empty list, and everything a seam owns arrived in [`Facts`] already degraded.
+/// A broken corner of the tree yields an empty category rather than an error.
 pub fn build_nodes(category: StorageCategoryId, paths: &Paths, facts: &Facts) -> Vec<StorageNode> {
     match category {
         StorageCategoryId::Models => match &facts.required_model_paths {

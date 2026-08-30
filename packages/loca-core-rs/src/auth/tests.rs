@@ -15,10 +15,9 @@ const SERVER_PIN: &str = "server-cert-pin";
 struct Env {
     auth: Auth,
     clock: Clock,
-    /// The same handle `auth` holds, so a test can assert on a column the
-    /// service deliberately does not expose. `token_hash` is the one that
-    /// matters: it is the whole security property of the reserved local row,
-    /// and no public method returns it.
+    /// The same handle `auth` holds, so a test can read `token_hash`, which no
+    /// public method returns and which is the security property of the
+    /// reserved local row.
     db: Db,
     _dir: TempDir,
 }
@@ -35,6 +34,13 @@ fn env() -> Env {
         db,
         _dir: dir,
     }
+}
+
+/// [`env`] with a pairing code already minted.
+async fn minted_env() -> (Env, PairingCode) {
+    let env = env();
+    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    (env, minted)
 }
 
 /// The stored `token_hash` of one client row.
@@ -90,8 +96,7 @@ async fn run_pake(auth: &Auth, code: &str, opts: PakeOpts<'_>) -> Result<PakeFin
             opts.server_pin,
         )
         .await?;
-    // The client derives its own key from Core's reply and confirms under the
-    // pin IT observed.
+    // The client confirms under the pin IT observed.
     let isk = initiator.finish(&started.msg_b).unwrap();
     let confirm_c = cpace::confirm_tag(
         &isk,
@@ -120,8 +125,7 @@ fn assert_err<T: std::fmt::Debug>(result: Result<T>, code: ErrorCode, contains: 
 
 #[tokio::test]
 async fn a_minted_code_is_six_digits_with_a_future_expiry() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     assert_eq!(minted.code.len(), 6);
     assert!(minted.code.chars().all(|c| c.is_ascii_digit()));
     assert_eq!(
@@ -145,8 +149,7 @@ async fn a_new_code_supersedes_every_outstanding_one() {
     let env = env();
     let first = env.auth.mint_pairing_code(None).await.unwrap();
     env.auth.mint_pairing_code(None).await.unwrap();
-    // Core now answers with the NEW code, so a handshake keyed by the old one
-    // derives a different key and fails confirmation.
+    // Core answers with the new code, so the old one derives a different key.
     assert_err(
         run_pake(&env.auth, &first.code, PakeOpts::default()).await,
         ErrorCode::InvalidPairingCode,
@@ -156,8 +159,7 @@ async fn a_new_code_supersedes_every_outstanding_one() {
 
 #[tokio::test]
 async fn minting_drops_every_in_flight_handshake() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let sid = [1u8; 16];
     let mut initiator = cpace::initiator_with(
         &minted.code,
@@ -197,8 +199,7 @@ async fn minting_drops_every_in_flight_handshake() {
 
 #[tokio::test]
 async fn the_happy_path_pairs_and_claims_the_code() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let finished = run_pake(
         &env.auth,
         &minted.code,
@@ -229,10 +230,9 @@ async fn the_happy_path_pairs_and_claims_the_code() {
 
 #[tokio::test]
 async fn the_client_can_authenticate_core_from_its_confirmation() {
-    // The reverse direction of the handshake, which is what proves to the Client
-    // that it is talking to the real Core and that its pin is correct.
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    // The reverse direction: what proves to the Client that it reached the
+    // real Core and that its pin is right.
+    let (env, minted) = minted_env().await;
     let sid = [2u8; 16];
     let mut initiator = cpace::initiator_with(
         &minted.code,
@@ -275,10 +275,8 @@ async fn the_client_can_authenticate_core_from_its_confirmation() {
 
 #[tokio::test]
 async fn a_substituted_certificate_fails_confirmation() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
-    // The client knows the right code but observed a different certificate than
-    // Core serves: exactly the active man-in-the-middle-at-pairing case.
+    let (env, minted) = minted_env().await;
+    // The right code, a different certificate: man in the middle at pairing.
     assert_err(
         run_pake(
             &env.auth,
@@ -296,12 +294,10 @@ async fn a_substituted_certificate_fails_confirmation() {
 
 #[tokio::test]
 async fn a_client_folding_no_pin_against_a_self_signed_core_fails() {
-    // The trust-mode boundary: Core behind no proxy always folds its real
-    // fingerprint, so a webpki-mode client (or one a proxy stripped the pin
-    // from) cannot complete. Empty on both sides is only reachable when the
-    // operator actually set server.behindProxy.
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    // The trust-mode boundary: an unproxied Core always folds its real
+    // fingerprint, so a webpki-mode client cannot complete. Empty on both sides
+    // needs the operator to have set server.behindProxy.
+    let (env, minted) = minted_env().await;
     assert_err(
         run_pake(
             &env.auth,
@@ -319,8 +315,7 @@ async fn a_client_folding_no_pin_against_a_self_signed_core_fails() {
 
 #[tokio::test]
 async fn behind_a_proxy_both_sides_fold_nothing_and_pairing_works() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let finished = run_pake(
         &env.auth,
         &minted.code,
@@ -341,8 +336,7 @@ async fn behind_a_proxy_both_sides_fold_nothing_and_pairing_works() {
 
 #[tokio::test]
 async fn five_failed_confirmations_poison_the_code() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let wrong = {
         let mut digits: Vec<char> = minted.code.chars().collect();
         let last = digits[5].to_digit(10).unwrap();
@@ -350,8 +344,8 @@ async fn five_failed_confirmations_poison_the_code() {
         digits.into_iter().collect::<String>()
     };
     for i in 0..MAX_ATTEMPTS_PER_CODE {
-        // Each guess from its own address, so the per-IP limiter is not what
-        // stops this: the per-code attempt cap is.
+        // Each guess from its own address, so the per-code cap is what stops
+        // this rather than the per-IP limiter.
         let ip = format!("10.0.0.{}", i + 1);
         assert_err(
             run_pake(
@@ -377,10 +371,9 @@ async fn five_failed_confirmations_poison_the_code() {
 
 #[tokio::test]
 async fn a_malformed_start_message_does_not_burn_an_attempt() {
-    // Counting a structurally invalid message would let an unpaired peer destroy
-    // the legitimate user's code with five cheap junk requests.
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    // Counting junk would let an unpaired peer destroy the user's code with
+    // five cheap requests.
+    let (env, minted) = minted_env().await;
     for i in 0..10 {
         let ip = format!("10.1.0.{i}");
         assert_err(
@@ -418,8 +411,7 @@ async fn an_expired_code_is_rejected() {
 
 #[tokio::test]
 async fn an_unknown_or_replayed_handshake_is_rejected() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     assert_err(
         env.auth
             .pake_finish("never-started", &[0u8; 32], SERVER_PIN)
@@ -498,8 +490,7 @@ async fn a_handshake_past_its_own_ttl_is_rejected() {
 #[tokio::test]
 async fn the_twenty_first_start_from_one_address_is_refused() {
     let env = env();
-    // No active code, so each start fails for its own reason. The IP gate runs
-    // first, so the bucket fills regardless.
+    // Each start fails for its own reason, but the IP gate runs first.
     for _ in 0..CLAIMS_PER_IP_MAX {
         assert_err(
             env.auth
@@ -553,10 +544,9 @@ fn pruning_drops_expired_handshakes() {
     assert_eq!(sessions.len(), 1);
 }
 
-/// The rule that matters: a flood from one address evicts its OWN oldest, so it
-/// cannot push out another peer's single legitimate handshake and make that
-/// user's finish fail with "unknown or expired". Evicting the globally oldest
-/// instead looks equivalent and hands an attacker exactly that.
+/// A flood from one address evicts its OWN oldest, so it cannot push out
+/// another peer's single legitimate handshake. Evicting the globally oldest
+/// looks equivalent and hands an attacker exactly that.
 #[test]
 fn eviction_targets_the_heaviest_address_not_the_globally_oldest() {
     let mut sessions = IndexMap::new();
@@ -635,16 +625,14 @@ async fn authentication_rejects_missing_unknown_and_revoked_tokens() {
 
 #[tokio::test]
 async fn last_seen_is_written_at_most_once_a_minute() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let finished = run_pake(&env.auth, &minted.code, PakeOpts::default())
         .await
         .unwrap();
     let token = finished.token.expose().to_owned();
 
-    // The debounce is in memory and starts empty, so the first authenticated
-    // request after a boot always writes. That is deliberate: it is what makes
-    // "last seen" useful after a restart.
+    // The debounce starts empty, so the first request after a boot always
+    // writes, which is what makes "last seen" useful after a restart.
     env.clock.advance(1234);
     let first = env.clock.now_ms();
     env.auth.authenticate(Some(&token)).await.unwrap();
@@ -675,12 +663,12 @@ async fn last_seen(auth: &Auth, client_id: &str) -> i64 {
 
 /// The stored value is `sha256` of the token STRING's bytes, not of the 32 raw
 /// bytes behind the base64url. Hashing the wrong one invalidates every
-/// already-paired client, with no diagnosis beyond "nothing authenticates".
+/// already-paired client.
 #[tokio::test]
 async fn a_token_hash_written_by_the_typescript_still_authenticates() {
     let env = env();
-    // A token exactly as `@std/encoding`'s encodeBase64Url produces, and its
-    // sha256 as `shared/hash.ts` computes it.
+    // An unpadded base64url token and its sha256, as already-paired clients
+    // hold them.
     let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     let token_hash = secretgen::sha256_hex(token);
     let now = env.clock.now_ms();
@@ -696,8 +684,7 @@ async fn a_token_hash_written_by_the_typescript_still_authenticates() {
 
 #[tokio::test]
 async fn rotating_a_token_invalidates_the_previous_one() {
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    let (env, minted) = minted_env().await;
     let finished = run_pake(&env.auth, &minted.code, PakeOpts::default())
         .await
         .unwrap();
@@ -744,8 +731,8 @@ async fn revoking_a_client_that_is_not_there_reports_so() {
     assert!(!env.auth.revoke_client("nope").await.unwrap());
 }
 
-/// The hooks default to no-ops that do nothing deliberately, and a wired hook
-/// fires with the revoked client's id. D1, D2 and F6 each owe one.
+/// The hooks default to deliberate no-ops, and a wired one fires with the
+/// revoked client's id.
 #[tokio::test]
 async fn the_revocation_hooks_fire_for_the_client_that_went() {
     use std::sync::Mutex as StdMutex;
@@ -785,8 +772,7 @@ async fn the_revocation_hooks_fire_for_the_client_that_went() {
         ]
     );
 
-    // Rotating closes the sockets too: they were authenticated with the old
-    // token, which no longer exists.
+    // Rotating closes the sockets: they held the old token.
     seen.lock().unwrap().clear();
     let minted = auth.mint_pairing_code(None).await.unwrap();
     let finished = run_pake(&auth, &minted.code, PakeOpts::default())
@@ -827,7 +813,7 @@ async fn a_ws_ticket_expires_thirty_seconds_after_it_is_minted() {
 async fn the_admin_token_is_compared_against_the_one_on_disk() {
     let env = env();
     let file = env.auth.paths.admin_token_file();
-    // A trailing newline is what `bootstrap` leaves behind on some paths.
+    // `bootstrap` leaves a trailing newline on some paths.
     std::fs::write(&file, "secret-admin\n").unwrap();
 
     env.auth
@@ -966,10 +952,9 @@ async fn the_password_locks_out_after_the_per_key_cap() {
         .unwrap();
 }
 
-/// The throttle runs before every other check, which is what stops a compromised
-/// client turning argon2id into a CPU denial of service. A locked key reports
-/// `admin_password_rate_limited` even when the request carries no password at
-/// all, which it could only do if the throttle came first.
+/// The throttle runs before every other check, so argon2id cannot be turned
+/// into a CPU denial of service. A locked key reports
+/// `admin_password_rate_limited` even for a request carrying no password.
 #[tokio::test]
 async fn the_throttle_is_checked_before_anything_expensive() {
     let env = env();
@@ -1019,8 +1004,7 @@ async fn a_correct_guess_clears_the_budget_it_had_spent() {
     }
 }
 
-/// A failure is charged to the client id AND the peer address, so rotating
-/// either one alone does not buy a fresh budget.
+/// A failure is charged to the client id AND the peer address.
 #[tokio::test]
 async fn rotating_the_client_id_or_the_address_alone_buys_nothing() {
     let env = env();
@@ -1052,8 +1036,7 @@ async fn rotating_the_client_id_or_the_address_alone_buys_nothing() {
 
 // --- secret hygiene ----------------------------------------------------------
 
-/// Nothing that holds a token, a password, a code, or a derived key may print
-/// it. `scrub_secrets` is a backstop, not permission.
+/// Nothing holding a token, password, code or derived key may print it.
 #[test]
 fn no_secret_bearing_type_prints_its_contents() {
     let session = session("10.0.0.1", 0);
@@ -1069,10 +1052,8 @@ fn no_secret_bearing_type_prints_its_contents() {
 
 // --- the in-process client ---------------------------------------------------
 //
-// The reserved row the embedded (mobile) frontend acts as. It exists for its
-// foreign keys: `client_settings.client_id` and
-// `scheduled_prompts.owner_client_id` both reference `clients(id)`, so the
-// in-process identity cannot be a value invented at the call site.
+// The reserved row the embedded frontend acts as. It exists for its foreign
+// keys, so the in-process identity cannot be invented at the call site.
 
 #[tokio::test]
 async fn ensure_local_client_creates_the_reserved_row_and_is_idempotent() {
@@ -1081,9 +1062,8 @@ async fn ensure_local_client_creates_the_reserved_row_and_is_idempotent() {
     assert_eq!(first.id, LOCAL_CLIENT_ID);
     assert_eq!(first.name, LOCAL_CLIENT_NAME);
 
-    // Called on every start, so a second call must return the same row rather
-    // than failing on the primary key or minting a second identity whose
-    // per-client settings the first could not see.
+    // Called on every start, so a second call returns the same row rather than
+    // failing or minting a second identity.
     let second = env.auth.ensure_local_client().await.unwrap();
     assert_eq!(second, first);
     assert_eq!(
@@ -1094,10 +1074,9 @@ async fn ensure_local_client_creates_the_reserved_row_and_is_idempotent() {
 
 #[tokio::test]
 async fn no_bearer_can_authenticate_as_the_reserved_row() {
-    // The row's `token_hash` is the literal id, and `authenticate` compares
-    // `sha256_hex(bearer)`, which is always 64 lowercase hex characters. So the
-    // one identity that bypasses the bearer check by construction is
-    // unreachable from the wire, which is what makes it safe to have at all.
+    // `token_hash` is the literal id, and `authenticate` compares a
+    // 64-character `sha256_hex(bearer)`, so the identity that bypasses the
+    // bearer check by construction is unreachable from the wire.
     let env = env();
     env.auth.ensure_local_client().await.unwrap();
 
@@ -1111,8 +1090,7 @@ async fn no_bearer_can_authenticate_as_the_reserved_row() {
 
 #[tokio::test]
 async fn the_reserved_row_is_listed_like_any_other_client() {
-    // Shown rather than hidden: it genuinely owns `client_settings` rows, and a
-    // list that omitted it would disagree with the foreign keys pointing at it.
+    // Shown rather than hidden: it owns `client_settings` rows.
     let env = env();
     env.auth.ensure_local_client().await.unwrap();
     let listed = env.auth.list_clients(LOCAL_CLIENT_ID).await.unwrap();
@@ -1123,9 +1101,8 @@ async fn the_reserved_row_is_listed_like_any_other_client() {
 
 #[tokio::test]
 async fn the_reserved_row_cannot_be_revoked() {
-    // Revoking cascades its `client_settings` and `scheduled_prompts` away and
-    // strands the identity the embedded frontend is already holding, and there
-    // is no pairing flow on a phone to make another one.
+    // Revoking strands the identity the embedded frontend holds, and a phone
+    // has no pairing flow to make another.
     let env = env();
     env.auth.ensure_local_client().await.unwrap();
 
@@ -1143,10 +1120,8 @@ async fn the_reserved_row_cannot_be_revoked() {
 
 #[tokio::test]
 async fn the_reserved_row_cannot_have_its_token_rotated() {
-    // Sharper than symmetry with revoke: rotating replaces the unmatchable
-    // `token_hash` with a real digest, which would mint a working bearer for
-    // the one identity that is pre-authenticated by construction. Any other
-    // paired client could ask for it by id.
+    // Rotating would replace the unmatchable `token_hash` with a real digest,
+    // minting a working bearer any other paired client could ask for by id.
     let env = env();
     env.auth.ensure_local_client().await.unwrap();
 
@@ -1158,23 +1133,17 @@ async fn the_reserved_row_cannot_have_its_token_rotated() {
         "no access token",
     );
 
-    // The property that would actually have been lost: the stored hash is
-    // UNCHANGED, so it is still the literal id and still unmatchable.
-    //
-    // An earlier version of this asserted `authenticate(Some("local"))` fails,
-    // which cannot fail either way: a successful rotation would store
-    // `sha256_hex(<random>)`, and `sha256_hex("local")` does not match that
-    // either. The comment claimed it checked this; it did not.
+    // The stored hash is unchanged, so it is still the literal id and still
+    // unmatchable. Asserting `authenticate(Some("local"))` fails would not
+    // measure this: it fails either way.
     assert_eq!(token_hash(&env.db, LOCAL_CLIENT_ID), before);
     assert_eq!(before, LOCAL_CLIENT_ID);
 }
 
 #[tokio::test]
 async fn revoking_and_rotating_still_work_for_a_real_paired_client() {
-    // The guard must be the reserved id and nothing wider. Without this, a
-    // refusal that matched every id would pass every test above.
-    let env = env();
-    let minted = env.auth.mint_pairing_code(None).await.unwrap();
+    // The guard must be the reserved id and nothing wider.
+    let (env, minted) = minted_env().await;
     let finished = run_pake(&env.auth, &minted.code, PakeOpts::default())
         .await
         .unwrap();

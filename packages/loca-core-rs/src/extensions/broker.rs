@@ -1,10 +1,9 @@
 //! The module broker: the gate a tool's `module_request` passes through, and
 //! the containment screen on the SQL it may run.
 //!
-//! Ports the gating half of `packages/loca-core/src/services/module-broker.ts`.
-//! The dispatch half reaches into five other subsystems and does so through the
-//! traits in [`super::worker::call`], so this module imports no `memories::`,
-//! `llm::` or `speech::` and the module graph stays acyclic.
+//! Dispatch reaches five other subsystems through the traits in
+//! [`super::worker::call`], so this module imports no `memories::`, `llm::` or
+//! `speech::` and the module graph stays acyclic.
 //!
 //! This is the non-PTY counterpart of the runtime permission prompt: an access
 //! that is declared but not granted pauses the call on the SAME client prompt,
@@ -28,22 +27,17 @@ use super::sandbox::{permission_key, permission_kind_of};
 use super::worker::call::{ModuleCall, ModuleDispatch, ModulePrompt, ModulePrompter};
 use super::worker::protocol::ModuleName;
 
-/// A query returning more rows than this is refused rather than truncated.
-///
-/// Truncation would hand the tool a silently partial answer, which is the
-/// failure that produces wrong output rather than a visible error.
+/// A query returning more rows than this is refused rather than truncated: a
+/// silently partial answer is worse than a visible error.
 pub const SQL_QUERY_MAX_ROWS: usize = 10_000;
 
 /// Everything the registry knows that the gate needs, for one (extension,
-/// tool) pair.
-///
-/// Passed in rather than looked up here so the gate is a pure decision over
-/// stated facts. That is what lets every branch below be tested without a
-/// database, an extension on disk, or a running worker.
+/// tool) pair. Passed in rather than looked up, so the gate stays a pure
+/// decision over stated facts.
 #[derive(Debug, Clone)]
 pub struct GateFacts {
-    /// The extension declared `"database": true` in its `loca.json`, which the
-    /// user saw at install time.
+    /// The extension declared `"database": true`, which the user saw at
+    /// install time.
     pub has_database: bool,
     pub undeclared_policy: UndeclaredPolicy,
     /// The invoked tool's declared permissions, as persisted at register time.
@@ -52,14 +46,9 @@ pub struct GateFacts {
     pub grants: Vec<Grant>,
 }
 
-/// Which half of the memories API an op touches.
-///
-/// A closed enum parsed from the op string, rather than a lookup with a
-/// default. The TypeScript defaults an unknown op to `Write`, the stricter
-/// side, so a future op can never slip through under a read grant; parsing
-/// removes the default entirely, because an op that is not one of these is
-/// refused before the gate rather than gated as a write. Equivalent or
-/// stricter, and worth saying so, because a reviewer will look for the default.
+/// Which half of the memories API an op touches. Parsed rather than defaulted:
+/// an op that is not one of these is refused before the gate, so it can never
+/// slip through under the weaker access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoriesAccess {
     Read,
@@ -79,12 +68,8 @@ impl MemoriesAccess {
     }
 }
 
-/// The five memories ops, parsed once.
-///
-/// The gate and the dispatch read the same table through
-/// [`MemoriesAccess::of`], so the access an op is gated at and the code that
-/// runs for it cannot drift apart. Two tables would let a new op be added to
-/// the dispatch and gated at whatever the other table's default happened to be.
+/// The five memories ops. The gate and the dispatch read this one table, so
+/// the access an op is gated at and the code that runs for it cannot drift.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoriesOp {
     List,
@@ -124,10 +109,8 @@ pub async fn gate(
     facts: &GateFacts,
     prompter: &dyn ModulePrompter,
 ) -> Result<()> {
-    // `db` is DECLARATION gated, and only that: the extension either opted in
-    // through its manifest, which the user reviewed at install time, or it did
-    // not. There are no grant rows for it and no prompt, because there is no
-    // per-call decision to make.
+    // `db` is DECLARATION gated and only that: no grant rows, no prompt,
+    // because there is no per-call decision to make.
     if module == ModuleName::Db {
         if !facts.has_database {
             return Err(forbidden(
@@ -145,9 +128,7 @@ pub async fn gate(
         ModuleName::Db => unreachable!("handled above"),
     };
     let access = if module == ModuleName::Memories {
-        // An op with no access is not gated leniently: it is refused here, so
-        // it never reaches a dispatch that would refuse it anyway, and it can
-        // never be gated under the weaker of the two accesses.
+        // Refused here rather than gated under the weaker of the two accesses.
         Some(MemoriesAccess::of(op).ok_or_else(|| {
             AppError::new(
                 ErrorCode::ValidationError,
@@ -178,9 +159,7 @@ pub async fn gate(
         .iter()
         .find(|grant| grant.permission_key == permission_key(decl))
         .map(|grant| grant.state)
-        // No row means nobody has decided yet, which is `ask` rather than
-        // granted. A default of granted here would turn a missing row, the
-        // state every fresh install is in, into a silent approval.
+        // No row means nobody has decided yet: `ask`, never a silent approval.
         .unwrap_or(GrantState::Ask);
 
     match state {
@@ -209,11 +188,8 @@ async fn ask(
         })
         .await;
     if allowed {
-        // Deliberately NOT written to the grants table. The approval covers
-        // this request; "always allow" lives in the extension detail view,
-        // exactly as it does for Deno prompt permissions. Persisting here
-        // would turn one "allow once" into a permanent grant with no record of
-        // the user ever having chosen that.
+        // Deliberately NOT written to the grants table: the approval covers
+        // this request only. "Always allow" lives in the extension detail view.
         return Ok(());
     }
     Err(forbidden(format!(
@@ -222,12 +198,9 @@ async fn ask(
     )))
 }
 
-/// Does this declaration cover the access being attempted?
-///
-/// A `memories: write` declaration covers a read: write is strictly broader,
-/// and a tool that can edit memories can read them out of edit errors anyway,
-/// so a second grant would be ceremony rather than safety. The reverse is NOT
-/// true and that asymmetry is the whole content of this function.
+/// Does this declaration cover the access being attempted? A `memories: write`
+/// declaration covers a read; the reverse is NOT true, and that asymmetry is
+/// the whole content of this function.
 fn decl_covers(
     decl: &PermissionDecl,
     permission: PermissionKind,
@@ -270,15 +243,10 @@ fn decl_reason(decl: &PermissionDecl) -> Option<String> {
 // --- the SQL containment screen ------------------------------------------
 
 /// Refuse SQL that would reach outside the extension's own database file.
-///
-/// Extension SQL runs under Core's privileges, so `ATTACH` and `DETACH` would
-/// open arbitrary database files (`core.sqlite` among them) and `VACUUM INTO`
-/// writes a whole database to an arbitrary path. All three are containment
-/// escapes rather than merely unwanted statements, which is why this is a
-/// refusal and not a lint.
-///
-/// The screen is lexical, and it runs over [`strip_sql_literals`] output so a
-/// row of data can never be mistaken for a statement.
+/// Extension SQL runs under Core's privileges, so `ATTACH`/`DETACH` would open
+/// arbitrary database files (`core.sqlite` among them) and `VACUUM INTO` writes
+/// one to an arbitrary path. Lexical, over [`strip_sql_literals`] output, so a
+/// row of data is never mistaken for a statement.
 pub fn assert_sql_allowed(sql: &str) -> Result<()> {
     let screened = strip_sql_literals(sql).to_uppercase();
     if has_word(&screened, "ATTACH") || has_word(&screened, "DETACH") || vacuum_into(&screened) {
@@ -289,12 +257,8 @@ pub fn assert_sql_allowed(sql: &str) -> Result<()> {
     Ok(())
 }
 
-/// Replace string literals, quoted identifiers and comments with a space.
-///
-/// Without this, `SELECT 'ATTACH'` is refused: a tool storing the word in a
-/// column, or a comment mentioning it, would be indistinguishable from the
-/// statement. A screen that false-positives on data is one an author works
-/// around rather than one that protects anything.
+/// Replace string literals, quoted identifiers and comments with a space, so
+/// `SELECT 'ATTACH'` is not refused.
 fn strip_sql_literals(sql: &str) -> String {
     let bytes: Vec<char> = sql.chars().collect();
     let mut out = String::with_capacity(sql.len());
@@ -306,19 +270,10 @@ fn strip_sql_literals(sql: &str) -> String {
             while i < bytes.len() {
                 if bytes[i] == ch {
                     // A doubled quote escapes itself and does NOT close the
-                    // literal.
-                    //
-                    // Deleting this arm fails no test, and that is recorded
-                    // rather than treated as a hole. Mis-pairing the quotes
-                    // splits one literal into two ADJACENT ones covering the
-                    // same span, and since every stripped region becomes a
-                    // space the output is unchanged: a doubled quote is two
-                    // quote characters, so the parity that decides what is
-                    // inside a literal survives the mistake. The arm is kept
-                    // because that equivalence is a property of this stripper
-                    // erasing content rather than of the escape rule, and the
-                    // first change that preserves literal text (a screen that
-                    // looked at what a literal CONTAINS) would need it.
+                    // literal. Dropping this arm happens to leave the output
+                    // unchanged (adjacent literals cover the same span, and
+                    // every stripped region becomes a space), but any screen
+                    // that looked at literal CONTENT would need it.
                     if bytes.get(i + 1) == Some(&ch) {
                         i += 2;
                         continue;
@@ -383,9 +338,8 @@ fn has_word(screened: &str, word: &str) -> bool {
     false
 }
 
-/// `VACUUM` on its own is harmless and useful; only `VACUUM ... INTO` writes a
-/// database somewhere else. The two are separated by looking for `INTO` inside
-/// the same statement, which is what the `;` bound is doing.
+/// `VACUUM` alone is harmless; only `VACUUM ... INTO` writes a database
+/// elsewhere. The `;` split keeps the two words in one statement.
 fn vacuum_into(screened: &str) -> bool {
     screened
         .split(';')
@@ -394,26 +348,19 @@ fn vacuum_into(screened: &str) -> bool {
 
 // --- the seams the five modules are reached through -----------------------
 //
-// Every trait below is DECLARED here and IMPLEMENTED elsewhere, which is the
-// direction that keeps the module graph acyclic: nothing in `extensions::`
-// imports `memories::`, `llm::` or `speech::`, so those packages can call into
-// extensions (D4 does) without a cycle. It is also what makes every branch in
-// this file testable without a store, an endpoint or a model.
+// Every trait below is DECLARED here and IMPLEMENTED elsewhere, which keeps the
+// module graph acyclic and every branch here testable without a store, an
+// endpoint or a model.
 
-/// The registry, as the gate sees it.
-///
-/// One lookup per request rather than a handle on the registry, so the gate
-/// stays the pure decision it is above and this module needs no database.
+/// The registry, as the gate sees it. One lookup per request rather than a
+/// handle, so the gate stays a pure decision and needs no database.
 #[async_trait]
 pub trait RegistryFacts: Send + Sync {
     async fn gate_facts(&self, extension_id: &str, tool_name: &str) -> Result<GateFacts>;
 }
 
-/// The core settings, as the broker reads them.
-///
-/// Only two keys are read (`tts.enabled`, `stt.enabled`), and both are the
-/// user's own switch: a tool must not be able to start the speech stack by
-/// asking for it when the user has turned it off.
+/// The core settings, as the broker reads them: `tts.enabled` and
+/// `stt.enabled`, so a tool cannot start the speech stack the user turned off.
 #[async_trait]
 pub trait BrokerSettings: Send + Sync {
     async fn snapshot(&self) -> Result<SettingsRecord>;
@@ -428,24 +375,18 @@ pub struct MemoryBrief {
     pub updated_at_ms: i64,
 }
 
-/// The tool-facing memories API, implemented by D5.
+/// The tool-facing memories API.
 ///
 /// **Every method must treat a DISABLED memory as absent**, not merely hide it
-/// from `list`. "Disabled" is the user's way of taking a memory away from the
-/// model, and an agent that can still read it by title has been handed it back.
-/// The invariant lives with the store because only the store knows the flag;
-/// it is stated here because this is where it would be forgotten.
-///
-/// Titles rather than row ids throughout: a tool never sees an id, and the
-/// title is what the model already knows from the prompt's relevant-memories
-/// list.
+/// from `list`: an agent that can still read it by title has been handed back
+/// what the user took away. Titles rather than row ids throughout, because a
+/// tool never sees an id.
 #[async_trait]
 pub trait ToolMemories: Send + Sync {
     /// Enabled memories only.
     async fn list(&self) -> Result<Vec<MemoryBrief>>;
-    /// `not_found` for a missing OR disabled title. The title comes back with
-    /// the content because the STORE decides which memory a title names, and a
-    /// tool must not be handed its own spelling as the canonical one.
+    /// `not_found` for a missing OR disabled title. The STORE's title comes
+    /// back, never the caller's spelling.
     async fn get(&self, title: &str) -> Result<MemoryBody>;
     /// `not_found` for a missing OR disabled title.
     async fn get_file(&self, title: &str, name: &str) -> Result<MemoryBody>;
@@ -465,8 +406,7 @@ pub struct MemoryBody {
 /// What a write or an edit changed.
 #[derive(Debug, Clone)]
 pub struct MemoryWrite {
-    /// The stored title, which is the store's, not the argument's: a write that
-    /// landed on an existing memory reports the title that memory actually has.
+    /// The store's title, not the argument's.
     pub title: String,
     pub before: String,
     pub after: String,
@@ -479,27 +419,19 @@ pub struct ToolCompletion {
     pub system_prompt: String,
     pub user_message: String,
     pub max_tokens: u32,
-    /// Always zero, decided HERE rather than by the implementation.
-    ///
-    /// A tool gets back one string and has no way to separate a model's
-    /// `<think>` text from its answer, so any thinking budget at all lands
-    /// reasoning inside the value the tool then acts on. The tool author bounds
-    /// length with `maxTokens`; they have no knob for this one, which is why it
-    /// is not a default they could be given.
+    /// Always zero, decided HERE: a tool gets one string back and cannot
+    /// separate a model's `<think>` text from its answer.
     pub reasoning_budget: u32,
 }
 
-/// The tool-facing LLM, implemented by D3 over `single_shot`.
+/// The tool-facing LLM.
 #[async_trait]
 pub trait ToolLlm: Send + Sync {
     async fn complete(&self, req: ToolCompletion) -> Result<String>;
 }
 
-/// The tool-facing speech API, implemented by D15.
-///
-/// The two media caps (25 MB of audio, 2,000 characters of text) live behind
-/// this seam rather than being restated here, so there is one copy of each and
-/// the broker cannot drift from what the routes enforce.
+/// The tool-facing speech API. The two media caps (25 MB of audio, 2,000
+/// characters of text) live behind this seam, so there is one copy of each.
 #[async_trait]
 pub trait ToolSpeech: Send + Sync {
     async fn synthesize(&self, text: &str, voice: &str) -> Result<Vec<u8>>;
@@ -511,12 +443,9 @@ pub trait ToolSpeech: Send + Sync {
     ) -> Result<String>;
 }
 
-/// Bring the local model up before a completion. Implemented by N2.
-///
-/// A no-op implementation is CORRECT behaviour rather than a stub: with no
-/// in-process engine there is nothing to load, and the completion then fails or
-/// succeeds on the endpoint alone, exactly as it does today when the sidecar is
-/// already warm.
+/// Bring the local model up before a completion. A no-op implementation is
+/// CORRECT rather than a stub: with no in-process engine there is nothing to
+/// load.
 #[async_trait]
 pub trait EnsureModelLoaded: Send + Sync {
     async fn ensure_loaded(&self) -> Result<()>;
@@ -524,10 +453,8 @@ pub trait EnsureModelLoaded: Send + Sync {
 
 // --- the dispatch half -----------------------------------------------------
 
-/// Per-call output cap.
-///
-/// Tools get short completions (a summary, a label, a rewrite); long-form
-/// generation is the chat path's, where the user can see it stream and stop it.
+/// Per-call output cap. Tools get short completions; long-form generation is
+/// the chat path's, where the user can see it stream and stop it.
 const LLM_COMPLETE_MAX_TOKENS: u32 = 1024;
 const LLM_COMPLETE_DEFAULT_TOKENS: u32 = 512;
 
@@ -535,10 +462,8 @@ const LLM_COMPLETE_DEFAULT_TOKENS: u32 = 512;
 /// extension synthesis uses the schema-default voice.
 const BROKER_TTS_VOICE: &str = "af_bella";
 
-/// Open extension databases, at most this many at once.
-///
-/// A core that has run many extensions over its lifetime would otherwise hold a
-/// file handle and its WAL memory for every one of them forever.
+/// Open extension databases, at most this many at once, so a long-lived core
+/// does not hold a handle and its WAL memory for every extension it ever ran.
 const EXTENSION_DB_MAX_OPEN: usize = 16;
 
 /// A statement slower than this is logged. A warning only: a slow query is the
@@ -581,10 +506,8 @@ impl Broker {
     }
 
     /// Drop the cached handle for one extension, checkpointing its WAL.
-    ///
-    /// Called by uninstall before the data directory is removed, and by LRU
-    /// eviction. Removing the directory under an open handle leaves SQLite
-    /// writing into an unlinked file.
+    /// Uninstall must call this: removing the directory under an open handle
+    /// leaves SQLite writing into an unlinked file.
     pub fn close_extension_db(&self, extension_id: &str) {
         let evicted = {
             let mut open = lock(&self.dbs);
@@ -597,13 +520,9 @@ impl Broker {
         }
     }
 
-    /// The extension's own `data.sqlite`, opened on first use.
-    ///
-    /// Eviction is safe because each dispatch reopens on demand: the data is in
-    /// the file, not in the handle. It is safer here than in the specification,
-    /// where a dispatch had to run synchronously start to finish for this to
-    /// hold: [`Db`] is an `Arc`, so a call already holding one keeps its
-    /// connection alive past the eviction and only the cache slot is freed.
+    /// The extension's own `data.sqlite`, opened on first use. Eviction is
+    /// safe: [`Db`] is an `Arc`, so a call already holding one keeps its
+    /// connection past eviction, and the data is in the file anyway.
     fn extension_db(&self, extension_id: &str) -> Result<Db> {
         {
             let mut open = lock(&self.dbs);
@@ -620,10 +539,9 @@ impl Broker {
         std::fs::create_dir_all(&dir)?;
         let db = Db::open(&dir.join("data.sqlite"))?;
         db.call_blocking(|conn| {
-            // `busy_timeout` is deliberately shorter than the core's 5s. An
-            // extension's private database is rarely contended, so a stuck
-            // write should fail fast rather than hold a blocking-pool thread
-            // and the tool's own call budget for five seconds.
+            // `busy_timeout` is deliberately shorter than the core's 5s: a
+            // stuck write on a rarely-contended private database should fail
+            // fast rather than hold a blocking-pool thread.
             conn.execute_batch(
                 "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 1000;",
             )?;
@@ -632,9 +550,8 @@ impl Broker {
 
         let evicted = {
             let mut open = lock(&self.dbs);
-            // Re-check under the lock: two concurrent first uses of the same
-            // extension both reach here, and the loser must not leave a second
-            // handle in the cache under the same key.
+            // Re-check under the lock: the loser of two concurrent first uses
+            // must not leave a second handle under the same key.
             if let Some(at) = open.iter().position(|(id, _)| id == extension_id) {
                 let existing = open[at].1.clone();
                 return Ok(existing);
@@ -680,9 +597,7 @@ impl Broker {
                 let title = arg_string(args, "title", false)?;
                 let name = arg_string(args, "name", false)?;
                 let body = self.memories.get_file(&title, &name).await?;
-                // `name` is the argument's, because the store has no separate
-                // canonical spelling for a bundled filename; only the title is
-                // resolved through a lookup.
+                // `name` is the argument's: only the title is resolved.
                 serde_json::json!({ "title": body.title, "name": name, "content": body.content })
             }
             MemoriesOp::Write => {
@@ -701,8 +616,7 @@ impl Broker {
                 let find = arg_string(args, "find", false)?;
                 let replace = arg_string(args, "replace", true)?;
                 let out = self.memories.edit(&title, &find, &replace).await?;
-                // No `created`: an edit cannot create, and reporting a field
-                // that is always false invites a tool to branch on it.
+                // No `created`: an edit cannot create.
                 serde_json::json!({
                     "title": out.title,
                     "before": out.before,
@@ -731,10 +645,8 @@ impl Broker {
             })
             .min(LLM_COMPLETE_MAX_TOKENS);
 
-        // Before the endpoint is resolved, exactly as the specification orders
-        // it: a local model that is not up yet has to be brought up before the
-        // request goes out, or the completion fails on a connection refused the
-        // user can do nothing about.
+        // Before the endpoint is resolved: a cold local model would otherwise
+        // fail the completion on a connection refused.
         self.ensure_loaded.ensure_loaded().await?;
         let text = self
             .llm
@@ -760,8 +672,7 @@ impl Broker {
             ));
         }
         let text = arg_string(args, "text", false)?;
-        // The length cap is the ToolSpeech implementation's, so there is one
-        // copy of it rather than a second constant here that could drift.
+        // The length cap is the ToolSpeech implementation's, kept in one place.
         let wav = self.speech.synthesize(&text, BROKER_TTS_VOICE).await?;
         Ok(serde_json::json!({
             "dataB64": BASE64_STANDARD.encode(&wav),
@@ -796,9 +707,8 @@ impl Broker {
             .and_then(Value::as_str)
             .filter(|l| !l.is_empty())
             .map(str::to_string);
-        // The 25 MB cap is the implementation's; this path cannot reach it
-        // anyway, because the whole request arrived as one NDJSON frame and the
-        // worker reader drops a frame over 16 MB before it is ever parsed.
+        // The 25 MB cap is the implementation's; unreachable here anyway, the
+        // worker reader drops an NDJSON frame over 16 MB before parsing it.
         let text = self
             .speech
             .transcribe(bytes, &mime, language.as_deref())
@@ -870,9 +780,8 @@ impl ModuleDispatch for Broker {
 
         match call.module {
             ModuleName::Memories => {
-                // The gate refused an unrecognised op already; this is the
-                // parse that makes the dispatch's match exhaustive rather than
-                // a second screen, and it reports the same error either way.
+                // Already refused by the gate; this parse only makes the match
+                // exhaustive.
                 let op = MemoriesOp::of(&call.op)
                     .ok_or_else(|| validation(format!("unknown memories op \"{}\"", call.op)))?;
                 self.dispatch_memories(op, &call.args).await
@@ -888,11 +797,8 @@ impl ModuleDispatch for Broker {
     }
 }
 
-/// A required string argument.
-///
-/// `allow_empty` is false for anything that names something (a title, a
-/// filename, SQL): an empty name is a missing field, and letting it through
-/// produces a confusing failure two layers down instead of a clear one here.
+/// A required string argument. `allow_empty` is false for anything that names
+/// something: an empty name is a missing field.
 fn arg_string(args: &Value, key: &str, allow_empty: bool) -> Result<String> {
     match args.get(key).and_then(Value::as_str) {
         Some(value) if allow_empty || !value.is_empty() => Ok(value.to_string()),
@@ -902,11 +808,8 @@ fn arg_string(args: &Value, key: &str, allow_empty: bool) -> Result<String> {
     }
 }
 
-/// One bind parameter, restricted to what SQLite can take from JSON.
-///
-/// An object or an array is refused rather than stringified: binding
-/// `[object Object]` into a column is a silent data corruption, and the tool
-/// author would see it only much later.
+/// One bind parameter, restricted to what SQLite can take from JSON. An object
+/// or array is refused rather than stringified into a silent corruption.
 #[derive(Debug, Clone)]
 enum BindValue {
     Null,
@@ -937,8 +840,7 @@ fn db_params(args: &Value) -> Result<Vec<BindValue>> {
         .iter()
         .map(|param| match param {
             Value::Null => Ok(BindValue::Null),
-            // A JSON `true` binds as 1, which is what SQLite stores for a
-            // boolean and what the specification's driver did.
+            // A JSON `true` binds as SQLite's 1.
             Value::Bool(b) => Ok(BindValue::Integer(i64::from(*b))),
             Value::Number(n) => Ok(n
                 .as_i64()
@@ -962,9 +864,8 @@ fn run_query(conn: &mut rusqlite::Connection, sql: &str, params: &[BindValue]) -
     let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
     let mut out: Vec<Value> = Vec::new();
     while let Some(row) = rows.next()? {
-        // Bail as soon as the cap is exceeded rather than materialising every
-        // row and then counting: the answer is the same error, and a runaway
-        // query cannot cost the core an unbounded allocation on the way to it.
+        // Bail at the cap rather than materialising every row and counting, so
+        // a runaway query costs no unbounded allocation.
         if out.len() >= SQL_QUERY_MAX_ROWS {
             return Err(validation(format!(
                 "query returned more than {SQL_QUERY_MAX_ROWS} rows; narrow it with LIMIT"
@@ -981,9 +882,6 @@ fn run_query(conn: &mut rusqlite::Connection, sql: &str, params: &[BindValue]) -
 
 fn run_execute(conn: &mut rusqlite::Connection, sql: &str, params: &[BindValue]) -> Result<Value> {
     let changes = conn.execute(sql, rusqlite::params_from_iter(params.iter()))?;
-    // The accessor is fine here, where the specification had to read the rowid
-    // back through SQL: `last_insert_rowid` is an `i64` in Rust and loses
-    // nothing, where a JavaScript number silently rounds past 2^53.
     let rowid = conn.last_insert_rowid();
     Ok(serde_json::json!({
         "changes": changes,
@@ -991,13 +889,9 @@ fn run_execute(conn: &mut rusqlite::Connection, sql: &str, params: &[BindValue])
     }))
 }
 
-/// One column value, on a JSON wire.
-///
-/// The two lossy cases are the reason this exists rather than a derive. An
-/// INTEGER past 2^53 has no JSON number that round-trips through the worker's
-/// `JSON.parse`, so it becomes a decimal string, and a non-finite REAL has no
-/// JSON literal at all, so it becomes null (which is what the specification's
-/// `JSON.stringify` produced for it too).
+/// One column value, on a JSON wire. An INTEGER past 2^53 has no JSON number
+/// that round-trips through the worker's `JSON.parse`, so it becomes a decimal
+/// string; a non-finite REAL has no JSON literal, so it becomes null.
 fn sql_value_to_json(value: rusqlite::types::ValueRef<'_>) -> Value {
     use rusqlite::types::ValueRef;
     match value {
@@ -1005,10 +899,8 @@ fn sql_value_to_json(value: rusqlite::types::ValueRef<'_>) -> Value {
         ValueRef::Integer(i) => json_safe_integer(i),
         ValueRef::Real(f) => serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number),
         ValueRef::Text(bytes) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
-        // A byte-keyed object, which is what `JSON.stringify` makes of the
-        // `Uint8Array` the specification's driver returns. Not base64: an
-        // extension reading a BLOB column today gets this shape, and changing
-        // it at cutover would break the reader silently rather than loudly.
+        // Byte-keyed, not base64: `JSON.stringify(Uint8Array)`'s shape, which
+        // is what an extension reading a BLOB column already handles.
         ValueRef::Blob(bytes) => Value::Object(
             bytes
                 .iter()
@@ -1038,10 +930,8 @@ fn sql_snippet(sql: &str) -> String {
     }
 }
 
-/// The WAV sample rate: a little-endian `u32` at byte offset 24.
-///
-/// A clip too short to carry a header reports the local engine's 24 kHz rather
-/// than zero, because zero is a rate a player will divide by.
+/// The WAV sample rate: a little-endian `u32` at byte offset 24. A clip too
+/// short reports the local engine's 24 kHz, because zero is divided by.
 fn wav_sample_rate(wav: &[u8]) -> u32 {
     match wav.get(24..28) {
         Some(bytes) => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
@@ -1067,10 +957,6 @@ mod tests {
     use async_trait::async_trait;
 
     /// Records what it was asked and answers a scripted verdict.
-    ///
-    /// Recording matters as much as answering: every "this was refused without
-    /// asking" assertion below is only as good as the instrument that would
-    /// have noticed a question being asked.
     struct Scripted {
         allow: bool,
         asked: Mutex<Vec<ModulePrompt>>,
@@ -1140,10 +1026,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::Forbidden);
-        // And it must not have been turned into a question. `database` is
-        // reviewed at install time; prompting per call would train the user to
-        // approve database access they already decided about, and an
-        // always-allowing user would then defeat the declaration entirely.
+        // `database` is reviewed at install time, so it is never a prompt.
         assert!(
             prompter.asked().is_empty(),
             "an undeclared database was offered to the user as a prompt"
@@ -1169,8 +1052,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_denied_grant_refuses_without_asking() {
-        // The user already said no. Asking again is how a denial becomes a
-        // war of attrition the tool eventually wins.
         let decl = llm_decl();
         let f = facts(vec![decl.clone()], vec![grant(&decl, GrantState::Denied)]);
         let prompter = Scripted::new(true);
@@ -1186,8 +1067,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_declaration_with_no_grant_row_asks_rather_than_assuming() {
-        // Every fresh install is in this state. A default of "granted" here
-        // would make the whole grants table decorative.
         let decl = llm_decl();
         let f = facts(vec![decl.clone()], vec![]);
         let prompter = Scripted::new(true);
@@ -1202,7 +1081,6 @@ mod tests {
         );
         assert_eq!(asked[0].reason.as_deref(), Some("to summarise"));
 
-        // And a refusal is a refusal.
         let prompter = Scripted::new(false);
         assert_eq!(
             gate(ModuleName::Llm, "complete", &f, &prompter)
@@ -1215,10 +1093,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_ask_state_grant_asks_every_time_rather_than_being_remembered() {
-        // The approval is call scoped: "always allow" lives in the extension
-        // detail view. If the gate wrote the grant row on the way past, one
-        // "allow once" would become permanent with nothing recording that the
-        // user had chosen it.
+        // The approval is call scoped: "always allow" lives in the detail view.
         let decl = llm_decl();
         let f = facts(vec![decl.clone()], vec![grant(&decl, GrantState::Ask)]);
         let prompter = Scripted::new(true);
@@ -1271,9 +1146,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_declaration_of_another_kind_does_not_cover_this_one() {
-        // The lookup is by KIND, and a tool that declared `tts` has said
-        // nothing about `stt`. Matching loosely here would let one declared
-        // permission unlock the other three.
         let decl = PermissionDecl::Tts {
             optional: None,
             reason: "to speak".to_string(),
@@ -1290,9 +1162,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_declaration_covers_a_read_but_not_the_other_way_round() {
-        // Write is strictly broader, and a tool that can edit a memory can read
-        // it out of edit errors anyway, so requiring a second grant would be
-        // ceremony. The reverse is the asymmetry that matters.
         let write = memories_decl(PermissionDeclAccess::Write);
         let f = facts(
             vec![write.clone()],
@@ -1324,8 +1193,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_prompt_names_which_half_of_memories_is_being_asked_for() {
-        // The user is deciding between "let it read your notes" and "let it
-        // rewrite them". A prompt that does not say which is not a decision.
         let f = facts(vec![], vec![]);
         let f = GateFacts {
             undeclared_policy: UndeclaredPolicy::Ask,
@@ -1345,9 +1212,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_memories_op_is_refused_before_it_can_be_gated_at_all() {
-        // The TypeScript maps an unknown op to `write`, the stricter access, so
-        // a future op cannot slip through under a read grant. Refusing the
-        // parse is stricter still: there is no access it could be gated at.
         let write = memories_decl(PermissionDeclAccess::Write);
         let f = facts(
             vec![write.clone()],
@@ -1368,9 +1232,6 @@ mod tests {
 
     #[test]
     fn the_three_statements_that_reach_another_database_file_are_refused() {
-        // Not style: extension SQL runs under Core's privileges. ATTACH and
-        // DETACH open arbitrary database files, core.sqlite included, and
-        // VACUUM INTO writes a whole database to a path of the tool's choosing.
         for sql in [
             "ATTACH DATABASE '/tmp/x.db' AS x",
             "attach database '/tmp/x.db' as x",
@@ -1388,9 +1249,6 @@ mod tests {
 
     #[test]
     fn the_words_are_only_refused_as_statements_never_as_data() {
-        // A screen that false-positives on a row of data is one a tool author
-        // works around rather than one that protects anything, and working
-        // around it means not using the database at all.
         for sql in [
             "SELECT 'ATTACH'",
             "SELECT 'attach' AS word",
@@ -1412,31 +1270,20 @@ mod tests {
 
     #[test]
     fn a_literal_containing_a_doubled_quote_is_erased_whole() {
-        // What this pins is the OUTPUT: the whole literal goes, including a
-        // keyword sitting inside one that contains an escaped quote.
-        //
-        // It deliberately does NOT claim to prove the escape rule itself.
-        // Removing that arm passes this test and every other, because
-        // mis-paired quotes cover the same span with two adjacent literals and
-        // both are erased; the reason is at the site. Naming this test after
-        // the escape rule would be an overclaim of exactly the kind that lets a
-        // mutation survive unnoticed.
-        // The whole literal goes, including the `b` that follows the doubled
-        // quote. An early close leaves `b'` behind as if it were SQL.
+        // Pins the OUTPUT, not the escape rule: the whole literal goes,
+        // including the `b` after the doubled quote.
         let stripped = strip_sql_literals("SELECT 'a''b' , 1");
         assert!(!stripped.contains('b'), "literal survived: {stripped:?}");
         assert!(stripped.contains("SELECT") && stripped.contains(", 1"));
         assert!(assert_sql_allowed("SELECT 'a''ATTACH''b'").is_ok());
-        // And the reverse: an ATTACH after a correctly-closed literal is still
-        // seen. Without this the test above passes for a stripper that eats
-        // the entire remainder of the statement.
+        // The reverse, so a stripper eating the whole remainder still fails.
         assert!(assert_sql_allowed("SELECT 'a''b'; ATTACH DATABASE '/x' AS x").is_err());
     }
 
     #[test]
     fn an_unterminated_literal_or_comment_does_not_read_past_the_end() {
-        // Malformed SQL is rejected by SQLite, not here; this only has to not
-        // panic and not run off the end of the string.
+        // Malformed SQL is SQLite's to reject; this only must not run off the
+        // end.
         for sql in [
             "SELECT 'unclosed",
             "SELECT /* unclosed",
@@ -1449,10 +1296,6 @@ mod tests {
 
     #[test]
     fn vacuum_and_into_must_be_the_same_statement() {
-        // Plain VACUUM is useful and harmless, and INTO appears in ordinary
-        // SQL. Only the two together in one statement write a database
-        // somewhere else, so a screen keyed on either word alone would refuse
-        // half of normal usage.
         assert!(assert_sql_allowed("VACUUM; SELECT 1 INTO x").is_ok());
         assert!(assert_sql_allowed("VACUUM INTO '/tmp/c.db'").is_err());
     }
@@ -1483,8 +1326,8 @@ mod tests {
         }
     }
 
-    /// Every module fake writes here, so a test can assert on ORDER across two
-    /// subsystems and not only on each one's own record.
+    /// Every module fake writes here, so a test can assert on ORDER across
+    /// subsystems.
     #[derive(Default)]
     struct Trace(Mutex<Vec<String>>);
 
@@ -1621,7 +1464,6 @@ mod tests {
             });
             let speech = Arc::new(FakeSpeech {
                 trace: Arc::clone(&trace),
-                // A 44-byte RIFF header with 44,100 at offset 24.
                 wav: wav_bytes(44_100),
                 seen_voice: Mutex::new(Vec::new()),
                 seen_transcribe: Mutex::new(Vec::new()),
@@ -1663,10 +1505,24 @@ mod tests {
                 )
                 .await
         }
+
+        async fn mem(&self, op: &str, args: Value) -> Result<Value> {
+            self.call(ModuleName::Memories, op, args).await
+        }
+
+        async fn execute(&self, sql: &str) -> Result<Value> {
+            self.call(ModuleName::Db, "execute", serde_json::json!({ "sql": sql }))
+                .await
+        }
+
+        async fn query(&self, sql: &str) -> Result<Value> {
+            self.call(ModuleName::Db, "query", serde_json::json!({ "sql": sql }))
+                .await
+        }
     }
 
-    /// A minimal WAV header: "RIFF", a size, "WAVEfmt ", and the sample rate at
-    /// byte 24, which is the only field read.
+    /// A minimal WAV header with the sample rate at byte 24, the only field
+    /// read.
     fn wav_bytes(rate: u32) -> Vec<u8> {
         let mut wav = vec![0u8; 44];
         wav[..4].copy_from_slice(b"RIFF");
@@ -1675,8 +1531,8 @@ mod tests {
         wav
     }
 
-    /// Everything declared and granted, so a test about dispatch is not
-    /// accidentally a test about the gate.
+    /// Everything declared and granted, so a dispatch test is not accidentally
+    /// a gate test.
     fn open_facts() -> GateFacts {
         let decls = vec![
             memories_decl(PermissionDeclAccess::Write),
@@ -1714,10 +1570,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_gate_runs_before_the_module_is_reached_at_all() {
-        // The whole point of the broker is that a refusal happens BEFORE the
-        // side effect. A dispatch that ran first and checked afterwards would
-        // return `forbidden` from a memory it had already rewritten, and every
-        // error-code assertion in this file would still pass.
+        // A refusal must happen BEFORE the side effect; every error-code
+        // assertion in this file passes either way.
         let mut facts = open_facts();
         facts.grants = vec![grant(
             &memories_decl(PermissionDeclAccess::Write),
@@ -1725,11 +1579,7 @@ mod tests {
         )];
         let h = Harness::new(facts, &[]);
         let err = h
-            .call(
-                ModuleName::Memories,
-                "write",
-                serde_json::json!({ "title": "T", "content": "C" }),
-            )
+            .mem("write", serde_json::json!({ "title": "T", "content": "C" }))
             .await
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::Forbidden);
@@ -1744,10 +1594,7 @@ mod tests {
     async fn every_memories_op_answers_in_the_shape_the_tool_expects() {
         let h = open();
 
-        let list = h
-            .call(ModuleName::Memories, "list", Value::Null)
-            .await
-            .unwrap();
+        let list = h.mem("list", Value::Null).await.unwrap();
         assert_eq!(
             list,
             serde_json::json!([{
@@ -1759,24 +1606,17 @@ mod tests {
         );
 
         let got = h
-            .call(
-                ModuleName::Memories,
-                "get",
-                serde_json::json!({ "title": "Kitchen" }),
-            )
+            .mem("get", serde_json::json!({ "title": "Kitchen" }))
             .await
             .unwrap();
-        // The STORED title, not the one that was asked for: the store's
-        // lookup decides which memory a title names, and a tool handed its own
-        // spelling back cannot tell a near-miss from an exact match.
+        // The STORED title, so a tool can tell a near-miss from an exact match.
         assert_eq!(
             got,
             serde_json::json!({ "title": "stored:Kitchen", "content": "body" })
         );
 
         let file = h
-            .call(
-                ModuleName::Memories,
+            .mem(
                 "getFile",
                 serde_json::json!({ "title": "Kitchen", "name": "knives.md" }),
             )
@@ -1786,16 +1626,14 @@ mod tests {
             file,
             serde_json::json!({
                 "title": "stored:Kitchen",
-                // The filename IS the argument's: only the title is resolved
-                // through a lookup.
+                // The filename IS the argument's.
                 "name": "knives.md",
                 "content": "file body",
             })
         );
 
         let written = h
-            .call(
-                ModuleName::Memories,
+            .mem(
                 "write",
                 serde_json::json!({ "title": "Kitchen", "content": "" }),
             )
@@ -1813,15 +1651,13 @@ mod tests {
         );
 
         let edited = h
-            .call(
-                ModuleName::Memories,
+            .mem(
                 "edit",
                 serde_json::json!({ "title": "Kitchen", "find": "a", "replace": "" }),
             )
             .await
             .unwrap();
-        // No `created` key at all: an edit cannot create, and a field that is
-        // always false is one a tool author will eventually branch on.
+        // No `created` key at all: an edit cannot create.
         assert_eq!(
             edited,
             serde_json::json!({ "title": "stored:Kitchen", "before": "old", "after": "new" })
@@ -1838,10 +1674,7 @@ mod tests {
             ("write", serde_json::json!({ "title": "T" })),
             ("edit", serde_json::json!({ "title": "T", "find": "" })),
         ] {
-            let err = h
-                .call(ModuleName::Memories, op, args.clone())
-                .await
-                .unwrap_err();
+            let err = h.mem(op, args.clone()).await.unwrap_err();
             assert_eq!(err.code, ErrorCode::ValidationError, "{op} {args}");
         }
         assert!(
@@ -1874,9 +1707,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_tool_completion_is_never_given_a_thinking_budget() {
-        // A tool gets one string back and cannot tell a model's `<think>` text
-        // from its answer, so any budget at all lands reasoning inside the
-        // value the tool then acts on.
         let h = open();
         let out = h
             .call(
@@ -1895,9 +1725,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_model_is_brought_up_before_the_completion_goes_out() {
-        // The other order looks identical in every assertion about the RESULT,
-        // and fails only against a cold local model, which is the case a test
-        // with a fake endpoint never reaches.
+        // The other order fails only against a cold local model, which a fake
+        // endpoint never reaches.
         let h = open();
         h.call(
             ModuleName::Llm,
@@ -1932,9 +1761,8 @@ mod tests {
 
     #[tokio::test]
     async fn speech_a_tool_asks_for_is_refused_while_the_user_has_it_switched_off() {
-        // Both switches default OFF when the key is absent, which is the state
-        // a fresh install is in. A tool must not be able to start the speech
-        // stack by asking for it.
+        // Both switches default OFF when the key is absent, as on a fresh
+        // install.
         let off = Harness::new(open_facts(), &[]);
         for (module, op, args) in [
             (
@@ -1981,9 +1809,6 @@ mod tests {
 
     #[tokio::test]
     async fn synthesis_answers_with_the_clips_own_sample_rate() {
-        // A hardcoded 24,000 is right for today's local engine and wrong for
-        // every external provider, and the tool has no other way to play the
-        // bytes back at the right speed.
         let h = open();
         let out = h
             .call(
@@ -1999,14 +1824,12 @@ mod tests {
             out["dataB64"].as_str().unwrap(),
             BASE64_STANDARD.encode(wav_bytes(44_100)),
         );
-        // The voice is the schema default, because the user's `tts.voice` lives
-        // on the client and the broker has no client to read it from.
+        // The schema default: the user's `tts.voice` lives on the client.
         assert_eq!(lock(&h.speech.seen_voice)[0], "af_bella");
     }
 
     #[test]
     fn a_clip_too_short_to_carry_a_header_reports_the_local_rate() {
-        // Zero is a rate a player divides by.
         assert_eq!(wav_sample_rate(&[]), 24_000);
         assert_eq!(wav_sample_rate(&[0u8; 27]), 24_000);
         assert_eq!(wav_sample_rate(&wav_bytes(16_000)), 16_000);
@@ -2048,9 +1871,8 @@ mod tests {
 
         let seen = lock(&h.speech.seen_transcribe);
         assert_eq!(seen[0], (audio.clone(), "audio/wav".to_string(), None));
-        // An empty string is ABSENT, not a mime type of "" and not a language
-        // hint of "". Passing `Some("")` down reaches an external provider as a
-        // language field it will reject.
+        // An empty string is ABSENT: `Some("")` reaches an external provider
+        // as a language field it rejects.
         assert_eq!(seen[1], (audio.clone(), "audio/wav".to_string(), None));
         assert_eq!(
             seen[2],
@@ -2082,13 +1904,9 @@ mod tests {
     #[tokio::test]
     async fn a_query_comes_back_as_rows_of_named_columns() {
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (a INTEGER, b TEXT)" }),
-        )
-        .await
-        .unwrap();
+        h.execute("CREATE TABLE t (a INTEGER, b TEXT)")
+            .await
+            .unwrap();
         let inserted = h
             .call(
                 ModuleName::Db,
@@ -2103,14 +1921,7 @@ mod tests {
         assert_eq!(inserted["changes"], 2);
         assert_eq!(inserted["lastInsertRowId"], 2);
 
-        let rows = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT a, b FROM t ORDER BY a" }),
-            )
-            .await
-            .unwrap();
+        let rows = h.query("SELECT a, b FROM t ORDER BY a").await.unwrap();
         assert_eq!(
             rows,
             serde_json::json!([{ "a": 1, "b": "one" }, { "a": 2, "b": "two" }])
@@ -2120,38 +1931,18 @@ mod tests {
     #[tokio::test]
     async fn a_value_json_cannot_carry_is_converted_rather_than_dropped() {
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (big INTEGER, r REAL, blob BLOB, nil INTEGER)" }),
-        )
-        .await
-        .unwrap();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({
-                "sql": "INSERT INTO t VALUES (9007199254740993, 1e400, x'0141', NULL)",
-            }),
-        )
-        .await
-        .unwrap();
-        let rows = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT * FROM t" }),
-            )
+        h.execute("CREATE TABLE t (big INTEGER, r REAL, blob BLOB, nil INTEGER)")
             .await
             .unwrap();
+        h.execute("INSERT INTO t VALUES (9007199254740993, 1e400, x'0141', NULL)")
+            .await
+            .unwrap();
+        let rows = h.query("SELECT * FROM t").await.unwrap();
         let row = &rows[0];
-        // Past 2^53 the worker's own `JSON.parse` would round it, so it travels
-        // as a decimal string. A plain number here is a silently wrong id.
+        // Past 2^53 the worker's `JSON.parse` would round it, so it travels as
+        // a decimal string; Infinity has no JSON literal at all.
         assert_eq!(row["big"], "9007199254740993");
-        // Infinity has no JSON literal; `JSON.stringify` produced null for it
-        // too, so this is the shape a tool already handles.
         assert_eq!(row["r"], Value::Null);
-        // Byte-keyed, which is what `JSON.stringify(Uint8Array)` produced.
         assert_eq!(row["blob"], serde_json::json!({ "0": 1, "1": 65 }));
         assert_eq!(row["nil"], Value::Null);
     }
@@ -2159,13 +1950,7 @@ mod tests {
     #[tokio::test]
     async fn a_bind_parameter_json_has_no_column_type_for_is_refused() {
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (a)" }),
-        )
-        .await
-        .unwrap();
+        h.execute("CREATE TABLE t (a)").await.unwrap();
         for params in [
             serde_json::json!([{ "nested": 1 }]),
             serde_json::json!([[1, 2]]),
@@ -2200,75 +1985,36 @@ mod tests {
         )
         .await
         .unwrap();
-        let rows = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT a FROM t" }),
-            )
-            .await
-            .unwrap();
+        let rows = h.query("SELECT a FROM t").await.unwrap();
         assert_eq!(rows, serde_json::json!([{ "a": 1 }]));
     }
 
     #[tokio::test]
     async fn a_query_over_the_row_cap_fails_rather_than_answering_a_truncated_page() {
-        // Truncation is the dangerous half: the tool gets a plausible answer
-        // that is silently missing rows, and acts on it.
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (n INTEGER)" }),
-        )
-        .await
-        .unwrap();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({
-                "sql": "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < 10001)
+        h.execute("CREATE TABLE t (n INTEGER)").await.unwrap();
+        h.execute(
+            "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < 10001)
                         INSERT INTO t SELECT n FROM s",
-            }),
         )
         .await
         .unwrap();
 
-        let err = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT n FROM t" }),
-            )
-            .await
-            .unwrap_err();
+        let err = h.query("SELECT n FROM t").await.unwrap_err();
         assert_eq!(err.code, ErrorCode::ValidationError);
 
-        // Exactly at the cap is fine: the bound is "more than", and an
-        // off-by-one here refuses a query the specification answers.
-        let rows = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT n FROM t LIMIT 10000" }),
-            )
-            .await
-            .unwrap();
+        // Exactly at the cap is fine: the bound is "more than".
+        let rows = h.query("SELECT n FROM t LIMIT 10000").await.unwrap();
         assert_eq!(rows.as_array().unwrap().len(), 10_000);
     }
 
     #[tokio::test]
     async fn the_sql_screen_runs_before_the_database_is_even_opened() {
-        // Order matters beyond tidiness: opening creates the file and its WAL,
-        // so a refused statement that had already opened one would leave a
-        // database behind for an extension that never legitimately used it.
+        // Opening creates the file and its WAL, so a refused statement would
+        // otherwise leave a database behind.
         let h = open();
         let err = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "ATTACH DATABASE '/tmp/x.db' AS x" }),
-            )
+            .query("ATTACH DATABASE '/tmp/x.db' AS x")
             .await
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::Forbidden);
@@ -2285,13 +2031,7 @@ mod tests {
     #[tokio::test]
     async fn each_extension_gets_its_own_file_and_never_the_cores() {
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE mine (a)" }),
-        )
-        .await
-        .unwrap();
+        h.execute("CREATE TABLE mine (a)").await.unwrap();
         let file = h.broker.paths.extension_data_dir("ext").join("data.sqlite");
         assert!(file.exists(), "no per-extension database was created");
         assert_ne!(file, h.broker.paths.db_file());
@@ -2299,12 +2039,9 @@ mod tests {
 
     #[tokio::test]
     async fn the_open_handle_cache_is_bounded_and_evicts_the_least_recently_used() {
-        // Without the bound a long-lived core holds a file handle and its WAL
-        // memory for every extension it has ever run.
         assert_eq!(EXTENSION_DB_MAX_OPEN, 16, "the shipped cap moved");
         let h = open();
-        // Literal 16, not the constant: a count derived from the constant
-        // scales with any mutation of it, so the test passes at any cap at all.
+        // Literal 16, not the constant, so the count cannot scale with it.
         for n in 0..16 {
             h.broker.extension_db(&format!("e{n}")).unwrap();
         }
@@ -2332,43 +2069,19 @@ mod tests {
 
     #[tokio::test]
     async fn an_evicted_or_closed_database_still_has_its_data_on_reopen() {
-        // The whole reason eviction is safe: the data is in the file, not in
-        // the handle. If it were not, the cap would be a data-loss bug.
         let h = open();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (a)" }),
-        )
-        .await
-        .unwrap();
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "INSERT INTO t VALUES (7)" }),
-        )
-        .await
-        .unwrap();
+        h.execute("CREATE TABLE t (a)").await.unwrap();
+        h.execute("INSERT INTO t VALUES (7)").await.unwrap();
 
         h.broker.close_extension_db("ext");
         assert!(lock(&h.broker.dbs).is_empty(), "the handle was not dropped");
 
-        let rows = h
-            .call(
-                ModuleName::Db,
-                "query",
-                serde_json::json!({ "sql": "SELECT a FROM t" }),
-            )
-            .await
-            .unwrap();
+        let rows = h.query("SELECT a FROM t").await.unwrap();
         assert_eq!(rows, serde_json::json!([{ "a": 7 }]));
     }
 
     #[tokio::test]
     async fn an_extension_database_answers_a_stuck_write_in_a_second_rather_than_five() {
-        // Shorter than the core's 5s on purpose: a contended extension database
-        // otherwise holds a blocking-pool thread and the tool's own call budget
-        // for five seconds over a database only that extension uses.
         let h = open();
         let db = h.broker.extension_db("ext").unwrap();
         let timeout: i64 = db
@@ -2383,19 +2096,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_declared_database_still_needs_no_grant_row_to_be_used() {
-        // The gate's db branch and the dispatch meet here: `database: true` in
-        // the manifest is the whole authorisation, and there are no grants.
+        // `database: true` is the whole authorisation; there are no grants.
         let mut facts = open_facts();
         facts.grants = Vec::new();
         facts.required = Vec::new();
         let h = Harness::new(facts, &[]);
-        h.call(
-            ModuleName::Db,
-            "execute",
-            serde_json::json!({ "sql": "CREATE TABLE t (a)" }),
-        )
-        .await
-        .unwrap();
+        h.execute("CREATE TABLE t (a)").await.unwrap();
         assert!(
             h.prompter.asked().is_empty(),
             "a declared database prompted"

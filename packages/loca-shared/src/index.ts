@@ -8,7 +8,6 @@ export * from "./api/ws.ts";
 export * from "./domain/session.ts";
 export * from "./domain/extension.ts";
 export * from "./domain/model.ts";
-export * from "./domain/variant.ts";
 export * from "./domain/core-status.ts";
 export * from "./domain/catalog.ts";
 export * from "./domain/recommend.ts";

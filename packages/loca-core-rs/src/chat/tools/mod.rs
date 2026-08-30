@@ -1,10 +1,7 @@
-//! Tool selection and tool-call dispatch for one turn.
-//!
-//! Two halves with different shapes. [`selection`] decides WHICH tools a hop is
-//! offered, which is a ranking problem over the catalog and the relevance index.
-//! [`dispatch`] runs ONE call the model asked for, which is a state machine over
-//! a sandboxed worker and its prompts. They share nothing but the
-//! [`ToolHost`](super::deps::ToolHost) trait.
+//! Tool selection and tool-call dispatch for one turn. [`selection`] ranks the
+//! catalog to decide which tools a hop is offered; [`dispatch`] runs one call
+//! against the sandboxed worker. They share only
+//! [`ToolHost`](super::deps::ToolHost).
 
 pub mod dispatch;
 pub mod selection;

@@ -7,10 +7,9 @@
 //! auto-answers or forwards it to the user in chat. Without a terminal the same
 //! access is a hard `NotCapable`.
 //!
-//! So [`parser`] is what turns "the sandbox said no" into "ask the user", and
-//! [`matcher`] is what decides whether asking is even allowed. A parser bug is
-//! either a hang (no answer, and the worker is killed after the give-up budget)
-//! or, in the bad direction, a `y` sent to a prompt the user never saw.
+//! [`parser`] turns "the sandbox said no" into "ask the user"; [`matcher`]
+//! decides whether asking is allowed at all. A parser bug is either a hang or,
+//! in the bad direction, a `y` sent to a prompt the user never saw.
 
 /// The tripwire for the pinned `deno`: real prompts, a real terminal, real
 /// answers. Desktop only, and `#[ignore]`d by default; see the module.

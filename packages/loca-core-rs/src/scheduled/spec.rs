@@ -1,22 +1,8 @@
-//! The calendar: when does a [`ScheduleSpec`] next fire, and is it one a user
-//! can be told the truth about.
+//! The calendar: when a [`ScheduleSpec`] next fires, and spec validation.
 //!
-//! Two pure functions and one conversion. No database, no clock, no timezone
-//! other than the one handed in.
-//!
-//! # Local time is the specification, not an implementation detail
-//!
-//! Every candidate is built from a wall-clock date and time and then resolved
-//! against a timezone, never by adding 86_400_000 milliseconds per day. A 09:00
-//! weekly therefore stays 09:00 local across a DST transition, on a day that is
-//! 23 or 25 hours long. `services/prompt-scheduler.test.ts:131-156` exists in
-//! the oracle for exactly that reason, and this module keeps the property for
-//! the same one.
-//!
-//! [`next_occurrence_in`] takes the timezone as a parameter so a test can drive
-//! a zone it controls. The alternative, setting `TZ` on the process, is a
-//! process-global mutation under a threaded test runner, and this crate has
-//! already lost a day to one of those.
+//! Candidates are wall-clock dates resolved against a timezone, never
+//! `after + 86_400_000`, so a 09:00 weekly stays 09:00 local across DST.
+//! The zone is a parameter so tests never mutate the process-global `TZ`.
 
 use chrono::{Datelike, Local, LocalResult, NaiveDate, Offset, TimeDelta, TimeZone};
 
@@ -24,25 +10,12 @@ use crate::contract::api::ScheduleSpec;
 use crate::contract::inbound::ScheduleSpec as InboundScheduleSpec;
 use crate::error::{validation, Result};
 
-/// JavaScript's `Number.MAX_SAFE_INTEGER`, which is the upper bound Zod puts on
-/// every millisecond and minute field (`z.number().int()`).
+/// JavaScript's `Number.MAX_SAFE_INTEGER`, the contract's bound on integer fields.
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
-/// Re-assert every bound the contract bridge dropped on the way to Rust.
-///
-/// **D-083 and D-095.** A constraint survives the bridge only if some Rust type
-/// expresses it: `minimum: 1` becomes `NonZeroU64` and lives, `maximum: 23` has
-/// no type to become and dies silently. Seven constraints on this one type
-/// evaporate, and one of them is not cosmetic: a `weekly` spec with an empty
-/// `weekdays` list matches no day, so it is accepted, stored, shown to the user
-/// with a `nextRunAtMs`, and then never fires.
-///
-/// Called from the STORE rather than from a route handler, and that placement
-/// is load-bearing. There are three write paths into `scheduled_prompts` and
-/// only the store is on all three: `POST`, `PATCH`, and the agent
-/// schedule-confirm flow, which reaches
-/// [`SchedulePersist::create`](crate::chat::SchedulePersist::create) without
-/// passing through any handler of ours.
+/// Re-assert the bounds the generated contract types cannot express (an empty
+/// `weekdays` list would be stored and never fire). Called from the store, the
+/// only point on all three write paths (POST, PATCH, schedule-confirm).
 pub fn validate_spec(spec: &ScheduleSpec) -> Result<()> {
     match spec {
         ScheduleSpec::Once { at_ms } => {
@@ -60,8 +33,6 @@ pub fn validate_spec(spec: &ScheduleSpec) -> Result<()> {
             hour,
             minute,
         } => {
-            // The D-083 guard. The message says what to do, because the whole
-            // point of the defect is that the user currently gets silence.
             if weekdays.is_empty() {
                 return Err(validation(
                     "a weekly schedule needs at least one weekday; pick one",
@@ -112,13 +83,7 @@ fn check_day(day: i64) -> Result<()> {
 }
 
 /// The soonest occurrence of `spec` strictly after `after_ms`, in the core's
-/// local time, or `None` when there is none.
-///
-/// Only a passed `once` can genuinely yield `None` for a spec that
-/// [`validate_spec`] accepts. An empty `weekdays` list also yields `None`, but
-/// the store refuses that first, so a caller never observes it: refusing there
-/// lets the user be told about the weekdays instead of being told the time is
-/// in the past, which would be false.
+/// local time. Only a passed `once` yields `None` for a validated spec.
 pub fn next_occurrence(spec: &ScheduleSpec, after_ms: i64) -> Option<i64> {
     next_occurrence_in(&Local, spec, after_ms)
 }
@@ -140,19 +105,15 @@ pub fn next_occurrence_in<Tz: TimeZone>(
             minute,
         } => {
             let after = local_date(tz, after_ms)?;
-            // Same wall-clock time each day, so candidates ascend with the day
-            // offset and the first match is the soonest. Seven offsets covers a
-            // full week; the eighth is the same weekday as offset zero, which
-            // matters when today's occurrence has already passed.
+            // Candidates ascend with the offset; the eighth day is offset zero's
+            // weekday again, for when today's occurrence has passed.
             for offset in 0..=7u64 {
                 let date = after.checked_add_days(chrono::Days::new(offset))?;
                 let Some(at) = resolve(tz, date, *hour, *minute) else {
                     continue;
                 };
-                // The weekday of the RESOLVED instant, not of the naive date.
-                // `candidate.getDay()` in the oracle reads the constructed
-                // `Date`, so a wall clock the zone skipped is judged by where it
-                // landed rather than by where it was asked for.
+                // Weekday of the RESOLVED instant: a skipped wall clock is
+                // judged by where it landed.
                 let (weekday, ms) = at;
                 if !weekdays.contains(&weekday) {
                     continue;
@@ -208,26 +169,9 @@ fn local_date<Tz: TimeZone>(tz: &Tz, at_ms: i64) -> Option<NaiveDate> {
 /// Resolve a wall-clock date and time in `tz`, answering the resolved weekday
 /// (0 = Sunday, matching `Date.getDay()`) and the instant in milliseconds.
 ///
-/// # The two transition cases, measured rather than reasoned about
-///
-/// ECMAScript's `UTC(t)` uses the timezone offset in effect BEFORE a transition
-/// for both a skipped and a repeated local time, and V8 was measured to agree in
-/// both hemispheres before this was written:
-///
-/// ```text
-/// TZ=America/New_York   new Date(2026, 2, 8, 2, 30) -> 1772955000000  (02:30 EST, renders 03:30 EDT)
-/// TZ=America/New_York   new Date(2026,10, 1, 1, 30) -> 1793511000000  (01:30 EDT, the earlier of two)
-/// TZ=Australia/Sydney   new Date(2026, 9, 4, 2, 30) -> 1791045000000  (02:30 AEST, renders 03:30 AEDT)
-/// TZ=Australia/Sydney   new Date(2026, 3, 5, 2, 30) -> 1775316600000  (02:30 AEDT, the earlier of two)
-/// ```
-///
-/// At a fold the offset shrinks, so the pre-transition offset is the EARLIER of
-/// the two instants: `LocalResult::Ambiguous(earliest, _)`. At a gap the offset
-/// grows, so the pre-transition offset pushes the wall clock forward, and
-/// `chrono` reports `LocalResult::None` without handing back an offset to use.
-/// Walking backwards until a local time resolves recovers it, and a
-/// half-hour step is what makes that correct for Lord Howe's 30-minute gap as
-/// well as the usual hour.
+/// Matches ECMAScript, which uses the offset in effect BEFORE a DST transition:
+/// the earlier instant at a fold, and at a gap the offset recovered by walking
+/// back in half-hour steps (Lord Howe has a 30-minute gap).
 fn resolve<Tz: TimeZone>(tz: &Tz, date: NaiveDate, hour: i64, minute: i64) -> Option<(i64, i64)> {
     let naive = date.and_hms_opt(hour.try_into().ok()?, minute.try_into().ok()?, 0)?;
     let offset = match tz.offset_from_local_datetime(&naive) {
@@ -255,18 +199,11 @@ fn resolve<Tz: TimeZone>(tz: &Tz, date: NaiveDate, hour: i64, minute: i64) -> Op
     let shift = TimeDelta::try_seconds(offset.fix().local_minus_utc().into())?;
     let instant = naive.and_utc().checked_sub_signed(shift)?;
     let ms = instant.timestamp_millis();
-    // Read the weekday back off the resolved instant, which is what makes a
-    // skipped wall clock report the day it actually landed on.
     let local = tz.timestamp_millis_opt(ms).single()?;
     Some((i64::from(local.weekday().num_days_from_sunday()), ms))
 }
 
 /// Carry an out-of-range month index into the following year.
-///
-/// The oracle leans on `Date`'s own normalisation here: `daysInMonth` is
-/// `new Date(year, monthIndex + 1, 0).getDate()`, which only answers correctly
-/// for December because month index 12 means January of the next year. Doing it
-/// explicitly rather than hoping a chrono constructor overflows the same way.
 fn normalise_month(year: i32, month0: i32) -> (i32, i32) {
     (year + month0.div_euclid(12), month0.rem_euclid(12))
 }
@@ -287,17 +224,8 @@ fn days_in_month(year: i32, month0: i32) -> u32 {
     }
 }
 
-/// The Zod-generated inbound spec narrowed to the domain shape everything else
-/// speaks.
-///
-/// Both directions of the contract split meet here: a route body deserialises
-/// as [`InboundScheduleSpec`], which enforces the constraints typify DID carry
-/// (`NonZeroU64` for the four positive fields), and everything downstream, the
-/// store, the persisted JSON, and
-/// [`SchedulePersist`](crate::chat::SchedulePersist), speaks
-/// [`ScheduleSpec`]. The narrowing is fallible because `NonZeroU64` is
-/// unbounded above where the oracle caps at `MAX_SAFE_INTEGER`, so the value
-/// can genuinely not fit.
+/// The inbound spec narrowed to the domain shape. Fallible because `NonZeroU64`
+/// is unbounded above where the contract caps at `MAX_SAFE_INTEGER`.
 pub fn from_inbound(spec: &InboundScheduleSpec) -> Result<ScheduleSpec> {
     let narrowed = match spec {
         InboundScheduleSpec::Once { at_ms } => ScheduleSpec::Once {

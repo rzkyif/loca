@@ -1,11 +1,8 @@
 //! The seams onto the subsystems that own what the storage view reports on.
 //!
-//! The TypeScript `services/storage.ts` imports from ten other modules. Each of
-//! those is a separate work package, so each becomes a narrow trait here, with
+//! Each subsystem the storage view reports on becomes a narrow trait here, with
 //! a stub in this module and a real implementation in the module that owns the
-//! fact.
-//!
-//! Two rules keep the split honest:
+//! fact. Two rules keep the split honest:
 //!
 //! - **Facts cross the seam, copy does not.** [`ExtensionSummary`] carries
 //!   `seeded` and `has_enabled_tools`; this package turns those into the
@@ -18,9 +15,9 @@
 //!
 //! # Unwired seams
 //!
-//! [`StorageDeps::unwired`] is what a core boots with until the owning packages
-//! land. The enumerating seams report nothing, so their categories are empty:
-//! no sessions source means no session nodes, which means nothing to delete.
+//! [`StorageDeps::unwired`]'s enumerating seams report nothing, so their
+//! categories are empty: no sessions source means no session nodes, which means
+//! nothing to delete.
 //!
 //! The two that do not degrade quietly are deliberate. [`ModelLocks`] fails,
 //! because this package builds the models category itself and listing every

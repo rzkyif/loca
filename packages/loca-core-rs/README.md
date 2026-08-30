@@ -1,14 +1,8 @@
-# @loca/core-rs
+# loca-core-rs
 
-Loca Core in Rust: one library that runs as a service on desktop and links into
-the Tauri app on mobile, so the phone embeds the real Core rather than a
-reimplementation of it.
-
-This crate is being ported from `@loca/core` + `@loca/core-engine` and replaces
-both at cutover, at which point it takes the `loca-core` name. Until then the
-TypeScript core is what ships. The port is tracked in
-[docs/rust-port/](../../docs/rust-port/): `registry.md` is the work-package
-index, `shared/decisions.md` the ADR log.
+Loca Core in Rust: one library that runs as the `loca-core` service on desktop
+and links into the Tauri app on mobile (through `loca-core-ffi`), so the phone
+embeds the real Core rather than a reimplementation of it.
 
 ## Why Rust, why one binary
 
@@ -19,26 +13,25 @@ downloaded code outright. The inference engine has to be compiled into the app.
 Model weights are data and stay downloadable.
 
 Compiling the engine into the app only helps if the app can also _drive_ it, so
-the whole Core comes along: sessions, settings, memories, tools, speech. The
-five Rust helper binaries collapse into this crate at the same time. Only
-`loca-core-updater` stays separate, because a self-update swap has to outlive
-the process it is replacing.
+the whole Core comes along: sessions, settings, memories, tools, speech. Only
+`loca-core-updater` stays a separate binary, because a self-update swap has to
+outlive the process it is replacing.
 
 ## Layout
 
 ```
 src/
-  lib.rs        module tree; every module maps to one work package
+  lib.rs        module tree
   error.rs      AppError + the closed ErrorCode set and its status mapping
   log.rs        two scrubbed sinks: stderr for humans, core.log for machines
   config.rs     channel, ports, boot config, every hardcoded URL
+  boot.rs       wires every module together for both frontends
+  contract/     wire types generated from @loca/shared (deno task contract)
   bin/          the desktop service frontend
-  <domain>/     one module per work package, each owning its own routes.rs
+  <domain>/     one module per subsystem, each owning its own routes.rs
+workers/        the TypeScript tool worker the core spawns under deno
+data/           the committed signing trust root and espeak-ng data
 ```
-
-`lib.rs`, `error.rs`, `contract/`, `transport/router.rs` and `schema.sql` are
-shared surfaces. They are orchestrator-owned during the port; see
-[docs/rust-port/README.md](../../docs/rust-port/README.md).
 
 ## Build and test
 

@@ -1,23 +1,17 @@
-// Rejects UnoCSS icon classes that name an icon which does not exist in the
-// bundled `@iconify/json`. presetIcons silently emits NOTHING for a missing
-// icon: no CSS rule, no build error, just an invisible element. So a typo like
-// `i-material-symbols-chevron-rihgt-rounded` ships looking fine in code review
-// and renders as a blank box. This pass closes that gap by resolving every icon
-// class in the source against the actual Iconify data the build draws from, so a
-// nonexistent icon fails `deno task lint` instead of disappearing at runtime.
+// Rejects UnoCSS icon classes naming an icon absent from the bundled
+// `@iconify/json`. presetIcons emits NOTHING for a missing icon: no CSS rule, no
+// build error, just an invisible element, so a typo like
+// `i-material-symbols-chevron-rihgt-rounded` renders as a blank box.
 //
-// Resolution mirrors how presetIcons reads a class: strip the `i-` prefix and
-// any `?...` modifier, split into <collection>-<name> against the set of
-// collections that actually exist in the bundle (longest prefix wins, matching
-// presetIcons), then confirm the name is a real icon or alias in that
-// collection. A token whose prefix is NOT a known collection is a custom `i-*`
-// utility (e.g. a project shortcut), not an icon, so it is left alone: this pass
-// only flags tokens that are unambiguously icon references with a bad name.
+// Resolution mirrors presetIcons: strip the `i-` prefix and any `?...` modifier,
+// split into <collection>-<name> against the collections that exist in the
+// bundle (longest prefix wins), then confirm the name is a real icon or alias. A
+// token whose prefix is NOT a known collection is a custom `i-*` utility, not an
+// icon, and is left alone.
 //
-// Wired into `deno task lint`. Unlike the em-dash / brand passes there is no
-// companion oxlint rule: an oxlint plugin runs per-file and cannot load the
-// Iconify collections, and this walker already covers every file type uniformly
-// (.svelte markup, .ts, .astro, .mdx, .html), so it is the sole authority.
+// Wired into `deno task lint`. There is no companion oxlint rule: a plugin runs
+// per-file and cannot load the Iconify collections, and this walker already
+// covers every file type uniformly.
 
 import { lookupCollection, lookupCollections } from "npm:@iconify/json@^2.2.483";
 import { fromFileUrl, relative } from "@std/path";

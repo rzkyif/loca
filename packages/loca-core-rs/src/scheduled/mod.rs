@@ -1,32 +1,12 @@
 //! Scheduled prompts: SQLite-backed CRUD plus one armed timer that opens
 //! automated sessions when a schedule's occurrence arrives.
 //!
-//! Work package **D10** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
-//! # The arming model
-//!
-//! One task, always pointed at the soonest enabled `next_run_at_ms`, re-armed
-//! after every CRUD and every tick and capped at [`MAX_ARM_MS`] so a long wait
-//! self-heals against clock drift and the machine sleeping through it. A tick
-//! fires every due row, moves its occurrence on, and re-arms.
-//!
-//! # Missed runs
-//!
-//! A row is MISSED, rather than merely late, when its occurrence is more than
-//! [`MISSED_GRACE_MS`] in the past at tick time. That one definition covers both
-//! ways it happens: the core was off (boot catch-up, where the first tick sees
-//! an overdue row and fires immediately) and the machine slept through the
-//! deadline. A missed row fires only when its `runMissed` flag is set, and at
-//! most once, because the recompute that follows always moves the occurrence
-//! forward from now.
-//!
-//! # What this module does NOT own
-//!
-//! Opening the turn. `runAutomatedSession` is the single backend behind both
-//! greetings and scheduled prompts, so it is ported once by D8 (D-090), and so
-//! is the "is the local model mid-load" probe (D-094). Both arrive through
-//! [`deps`].
+//! One task is always parked on the soonest enabled `next_run_at_ms`, re-armed
+//! after every CRUD and tick and capped at [`MAX_ARM_MS`] so a long wait
+//! self-heals against clock drift and sleep. A row more than [`MISSED_GRACE_MS`]
+//! overdue at tick time is missed (fires only with `runMissed`, at most once);
+//! anything less is merely late and always fires. Opening the turn and the
+//! model-loading probe are shared with greetings and arrive through [`deps`].
 
 pub mod deps;
 pub mod routes;
@@ -60,11 +40,8 @@ const MISSED_GRACE_MS: i64 = 10 * 60 * 1000;
 /// How long to hold due rows when the local model is still loading.
 const SIDECAR_RETRY_MS: u64 = 10 * 1000;
 
-/// The scheduler. One per core.
-///
-/// A second instance would arm a second timer over the same table, so every due
-/// occurrence would fire twice. Cheap to clone; every clone shares one timer,
-/// one runner and one cancellation token.
+/// The scheduler. One per core: a second instance would fire every due
+/// occurrence twice. Clones share one timer, runner and cancellation token.
 #[derive(Clone)]
 pub struct Scheduler {
     inner: Arc<Inner>,
@@ -81,8 +58,7 @@ struct Inner {
     /// The delay the last tick asked for, when it asked for one. `None` means
     /// re-arm from the rows.
     retry: std::sync::Mutex<Option<Duration>>,
-    /// Whether `start` has run. Read by [`Scheduler::is_armed`]; see its doc for
-    /// why this exists rather than inferring it from behaviour.
+    /// Whether `start` has run.
     armed: std::sync::atomic::AtomicBool,
 }
 
@@ -101,24 +77,15 @@ impl Scheduler {
         }
     }
 
-    /// Give the scheduler its way to open a turn.
-    ///
-    /// Separate from [`Scheduler::new`] because there is a genuine construction
-    /// cycle: `Chat` needs the scheduler to persist a confirmed draft, and the
-    /// scheduler needs `Chat` to open a session. Set-once, following
-    /// `Manager::attach_status` and `Llm::attach_status`; a second call is
-    /// ignored, so a stray wiring cannot silently replace the live runner.
-    ///
-    /// Returns whether this call is the one that set it, which is what makes a
-    /// double-attach assertable rather than invisible.
+    /// Give the scheduler its way to open a turn. Separate from `new` because
+    /// `Chat` needs the scheduler and the scheduler needs `Chat`. Set-once;
+    /// returns whether this call set it.
     pub fn attach_automated(&self, runner: Arc<dyn AutomatedRunner>) -> bool {
         self.inner.automated.set(runner).is_ok()
     }
 
-    /// Arm the timer from the persisted rows.
-    ///
-    /// Overdue rows make the first tick fire immediately, which IS the boot
-    /// catch-up: nothing else looks for runs the core was off for.
+    /// Arm the timer from the persisted rows. Overdue rows make the first tick
+    /// fire immediately, which is the boot catch-up.
     pub fn start(&self) {
         self.inner
             .armed
@@ -126,26 +93,13 @@ impl Scheduler {
         tokio::spawn(timer::run(self.clone()));
     }
 
-    /// Whether [`Scheduler::start`] has armed the timer.
-    ///
-    /// Exists so boot's embedded arm is OBSERVABLE. `start` is a bare
-    /// `tokio::spawn` and `shutdown` cancels a token nothing exposes, so
-    /// "the arm loop did not start" had no assertion available and the mutation
-    /// that removed boot's guard survived everything (M1 review, C2 skip 3). The
-    /// alternative was a "nothing fired within N seconds" test, which is a slow
-    /// negative assertion on a timer.
+    /// Whether [`Scheduler::start`] has armed the timer; makes boot's arm
+    /// observable without a "nothing fired within N seconds" test.
     pub fn is_armed(&self) -> bool {
         self.inner.armed.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Stop the timer. Idempotent.
-    ///
-    /// Cancelling is the WHOLE mechanism: the loop selects on the token, so a
-    /// loop parked on a deadline a day out returns immediately. An earlier
-    /// version also poked `rearm` here, which worked and was worse, because it
-    /// meant shutdown had two paths out and the cancellation branch was never
-    /// the one under test. A mutation that deleted that branch survived until
-    /// this was reduced to one mechanism.
+    /// Stop the timer. Idempotent; cancelling the token is the whole mechanism.
     pub fn shutdown(&self) {
         self.inner.cancel.cancel();
     }
@@ -187,19 +141,14 @@ impl Scheduler {
         Ok(())
     }
 
-    /// Fire a schedule immediately: the settings "Run Now" action.
-    ///
-    /// Leaves the armed occurrence untouched, so a manual run is extra rather
-    /// than instead of.
+    /// Fire a schedule immediately ("Run Now"). Leaves the armed occurrence
+    /// untouched, so a manual run is extra rather than instead of.
     pub async fn run_now(&self, owner_client_id: &str, id: &str) -> Result<String> {
         let prompt = self.get(owner_client_id, id).await?;
         if !prompt.enabled {
             return Err(validation("scheduled prompt is disabled; enable it to run"));
         }
-        // The tick defers due rows while the local model loads, because a turn
-        // fired then races the load and errors. A manual run refuses for the
-        // same reason, and loudly, so the user retries rather than being handed
-        // a session that fails on its own.
+        // A turn fired mid-load races the load and errors; refuse loudly.
         if self.inner.deps.loading.still_loading().await {
             return Err(validation(
                 "the local model is still loading; try again in a moment",
@@ -220,16 +169,10 @@ impl Scheduler {
 
     // --- the tick ------------------------------------------------------------
 
-    /// Process every row due at `now`.
-    ///
-    /// `now` is a parameter rather than read from the clock so the whole of this
-    /// behaviour is testable without a test that sleeps and hopes. The timer
-    /// passes the real clock.
+    /// Process every row due at `now` (a parameter so tests need not sleep).
     pub async fn tick_at(&self, now: i64) {
         let retry = self.tick_inner(now).await;
-        // Set even when a row's processing failed: a transient error must not
-        // leave the scheduler permanently disarmed. The oracle does this in a
-        // `finally` for the same reason (`prompt-scheduler.ts:386-392`).
+        // Set even when a row failed: a transient error must not disarm us.
         self.set_retry(retry);
     }
 
@@ -244,9 +187,7 @@ impl Scheduler {
         if due.is_empty() {
             return None;
         }
-        // While the model is mid-load (boot, or a settings change restarting
-        // it), the chat path's ensure-loaded no-ops, so a turn fired now would
-        // race the load and error. Hold every due row and retry shortly.
+        // A turn fired mid-load races the load and errors; hold and retry.
         if self.inner.deps.loading.still_loading().await {
             tracing::debug!(
                 target: "loca::scheduled",
@@ -257,11 +198,8 @@ impl Scheduler {
         }
 
         for snapshot in due {
-            // The loading probe awaited above is a window in which the row could
-            // have been edited, advanced by a concurrent `run_now`, disabled, or
-            // parked. Re-read the FULL row and act on the latest state rather
-            // than on the pre-await snapshot, so a stale instruction is never
-            // fired and a freshly-advanced occurrence is never clobbered.
+            // The row may have changed during the await above; act on the
+            // latest state, never the snapshot.
             let row = match self.inner.store.by_id(&snapshot.id).await {
                 Ok(Some(row)) => row,
                 Ok(None) => continue,
@@ -284,9 +222,8 @@ impl Scheduler {
             let schedule = match row.schedule() {
                 Ok(schedule) => schedule,
                 Err(err) => {
-                    // A schedule that will not parse must not wedge the whole
-                    // subsystem in a throw-and-re-arm loop. Park the row, which a
-                    // user edit revives, and carry on with the others.
+                    // Park an unparseable row (a user edit revives it) rather
+                    // than wedge the loop.
                     tracing::error!(
                         target: "loca::scheduled",
                         "parking scheduled prompt {}: {err}",
@@ -321,9 +258,8 @@ impl Scheduler {
                 continue;
             }
 
-            // Persist the advanced occurrence BEFORE firing (at-most-once): a
-            // crash mid-run skips that occurrence instead of duplicating the
-            // automated session on reboot.
+            // Advance BEFORE firing (at-most-once): a crash mid-run skips the
+            // occurrence instead of duplicating it on reboot.
             if let Err(err) = self.inner.store.advance(&row.id, now, next).await {
                 tracing::error!(
                     target: "loca::scheduled",
@@ -375,10 +311,8 @@ impl Scheduler {
         }
     }
 
-    /// Wake the parked timer so it recomputes its deadline.
-    ///
-    /// `notify_one` stores a permit when nothing is waiting, so a poke that
-    /// lands while a tick is running is remembered rather than lost.
+    /// Wake the parked timer. `notify_one` stores a permit when nothing waits,
+    /// so a poke during a tick is not lost.
     fn poke(&self) {
         self.inner.rearm.notify_one();
     }
@@ -403,12 +337,7 @@ impl Scheduler {
         lock(&self.inner.retry).take()
     }
 
-    /// The attached runner, or a refusal.
-    ///
-    /// Refusing rather than quietly doing nothing: a scheduler that reports a
-    /// session it never created is D-083's symptom (accepted, recorded, nothing
-    /// happens) one layer up, and it is the outcome the persist-before-fire
-    /// ordering exists to prevent.
+    /// The attached runner, or a refusal (never a silent no-op).
     fn runner(&self) -> Result<Arc<dyn AutomatedRunner>> {
         self.inner.automated.get().cloned().ok_or_else(|| {
             AppError::new(
@@ -419,12 +348,8 @@ impl Scheduler {
     }
 }
 
-/// Persist an agent-proposed schedule the user confirmed.
-///
-/// Synchronous because the caller runs it inside the schedule-confirm response
-/// handler, before unblocking the tool, so a storage failure answers the tool
-/// `false` and the tool never reports "scheduled" for something that was not
-/// stored (`chat.ts:196-206`).
+/// Persist an agent-proposed schedule the user confirmed. Synchronous so a
+/// storage failure answers the tool `false` before it reports "scheduled".
 impl crate::chat::SchedulePersist for Scheduler {
     fn create(&self, client_id: &str, draft: &ScheduledPromptDraft) -> Result<()> {
         self.inner.store.create_blocking(client_id, draft)?;

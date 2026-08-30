@@ -138,15 +138,12 @@ extern "C" {
     ) -> *mut c_char;
 }
 
-// Both of ggml's convenience loaders are intentionally absent from this file and
-// from the header (D-107).
-//
-// `ggml_backend_load_all` searches the process working directory and `dlopen`s
-// anything matching `libggml-*.so` there, which is arbitrary code execution for
-// a service startable from any directory.
-//
+// Both of ggml's convenience loaders are intentionally absent from this file
+// and from the header. `ggml_backend_load_all` searches the process working
+// directory and `dlopen`s anything matching `libggml-*.so` there;
 // `ggml_backend_load_all_from_path(dir)` closes that half but then `dlopen`s
-// whatever `GGML_BACKEND_PATH` names, which is the same vector through the
-// environment. `loca_backend_load_dir` therefore enumerates the directory in C++
+// whatever `GGML_BACKEND_PATH` names. Both are arbitrary code execution for a
+// service startable from any directory, by an environment that is not always
+// the operator's. `loca_backend_load_dir` therefore enumerates the directory
 // and loads each module by path, and the shim poisons BOTH identifiers so
 // neither can be reintroduced there either.

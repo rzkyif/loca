@@ -3,9 +3,8 @@
 //! Rows hold the connection config and the user's per-tool and per-prompt
 //! enablement. The live status and the capability counts come from the
 //! [`manager`](super::manager), and the two are merged into the wire shape by
-//! [`Mcp`](super::Mcp), which is the one place that holds both. The TypeScript
-//! registry calls the manager singleton directly; here the composition moves up
-//! one level so neither half imports the other.
+//! [`Mcp`](super::Mcp), which is the one place that holds both, so neither half
+//! imports the other.
 //!
 //! A credential never reaches this table. A bearer token is recorded as the
 //! `has_auth` flag and an OAuth grant as `oauth_authorized`; both values live in
@@ -54,9 +53,8 @@ impl ServerConfig {
 /// A new server, as the route hands it over. `has_auth` and `oauth_authorized`
 /// are written by the routes that own the vault side, never inferred here.
 ///
-/// `Default` is written out rather than derived: the contract's
-/// `McpTransportKind` has no `Default`, and stdio is the default transport the
-/// TypeScript form starts on.
+/// `Default` is written out rather than derived: `McpTransportKind` has none,
+/// and stdio is the transport the form starts on.
 #[derive(Clone, Debug)]
 pub struct NewServer {
     pub name: String,
@@ -177,9 +175,8 @@ impl Registry {
         if name.is_empty() {
             return Err(validation("MCP server name required"));
         }
-        // Only an enabled server needs a connection target. A disabled draft,
-        // which is the shape a freshly added server starts in, is saved with
-        // the command or url still blank and filled in before it is enabled.
+        // Only an enabled server needs a connection target: a freshly added
+        // server starts as a disabled draft with the command or url blank.
         if input.enabled == Some(true) {
             assert_connectable(input.kind, input.command.as_deref(), input.url.as_deref())?;
         }
@@ -212,8 +209,8 @@ impl Registry {
         self.get_or_err(id).await
     }
 
-    /// No 404: deleting an unknown id is a no-op, as in the TypeScript, so a
-    /// double-click on Delete does not turn into an error the user has to read.
+    /// No 404: deleting an unknown id is a no-op, so a double-click on Delete
+    /// does not turn into an error the user has to read.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let id = id.to_string();
         self.db.call(move |conn| delete_row(conn, &id)).await
@@ -342,7 +339,7 @@ fn update_row(
     now: i64,
 ) -> Result<()> {
     // An all-whitespace name keeps the stored one rather than blanking the
-    // server in the list, which is what `input.name?.trim() || cur.name` does.
+    // server in the list.
     let name = patch
         .name
         .as_deref()
@@ -440,10 +437,9 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerConfig> {
     })
 }
 
-/// Every enum column is read leniently, matching the TypeScript's
-/// `row.kind === "remote" ? "remote" : "stdio"`: a hand-edited or
-/// future-written value falls back to the default rather than making the row
-/// unprojectable and the whole list unreadable.
+/// Every enum column is read leniently: a hand-edited or future-written value
+/// falls back to the default rather than making the row unprojectable and the
+/// whole list unreadable.
 fn parse_kind(value: &str) -> McpTransportKind {
     match value {
         "remote" => McpTransportKind::Remote,
@@ -493,8 +489,7 @@ fn flag(value: bool) -> i64 {
 }
 
 /// A stored JSON array of strings. Anything unparseable reads as empty rather
-/// than failing the row: the same defensiveness the TypeScript applies to
-/// `tool_always_available_off_json`, applied to every one of the four lists.
+/// than failing the row.
 fn parse_list(raw: &str) -> Vec<String> {
     serde_json::from_str(raw).unwrap_or_default()
 }

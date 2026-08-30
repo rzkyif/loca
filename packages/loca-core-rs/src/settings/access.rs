@@ -1,9 +1,5 @@
-//! Typed readers for a sparse settings record.
-//!
-//! A key absent from the record, or stored with the wrong type, falls back to
-//! the caller's default. Every consumer of a settings map reads through these
-//! rather than matching on `Value` itself, so "absent" and "junk" behave
-//! identically everywhere.
+//! Typed readers for a sparse settings record: an absent or wrong-typed key
+//! falls back to the caller's default.
 
 use serde_json::{Map, Value};
 
@@ -14,13 +10,9 @@ pub fn str_setting(settings: &Map<String, Value>, key: &str, def: &str) -> Strin
     }
 }
 
-/// Also accepts a non-empty numeric string, because hand-edited `settings.json`
-/// values and some form inputs arrive as strings. That is not a nicety: the port
-/// number is a `string` field and `llm.gpuLayers` is a `number` field whose
-/// default is `""`.
-///
-/// Two JavaScript warts are deliberately not carried: `Number("0x10")` is 16 and
-/// `Number("  ")` is 0, where this returns the default for both.
+/// Also accepts a non-empty numeric string (hand-edited files, form inputs, and
+/// `llm.gpuLayers` whose default is `""`). Unlike JS `Number()`, `"0x10"` and
+/// `"  "` fall back to the default.
 pub fn num_setting(settings: &Map<String, Value>, key: &str, def: f64) -> f64 {
     match settings.get(key) {
         Some(Value::Number(n)) => n.as_f64().filter(|v| v.is_finite()).unwrap_or(def),

@@ -9,17 +9,11 @@
   import Markdown, { preloadMarkdown } from "@loca/shared/ui/components/primitives/Markdown.svelte";
   import { bubbleGap, useUiContext } from "@loca/shared/ui/context";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // Two exchanges in one session: a simple question the fast default model
   // answers, then a complex one Loca auto-routes to the stronger secondary

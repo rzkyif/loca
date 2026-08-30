@@ -356,10 +356,9 @@ const descendingLadder = z
 /** Per-profile overrides. Every field is optional and means "leave the base
  *  value alone", so a profile states only what differs.
  *
- *  Why these particular fields are data rather than code: they are the ones a
- *  device measurement moves. The mobile budget fractions and the compute
- *  overhead can only be set by measuring a real phone, and a value that needs a
- *  core release to change is not a value anyone will retune. See D-158. */
+ *  These fields are data rather than code because a device measurement moves
+ *  them: the mobile budget fractions and the compute overhead can only be set
+ *  by measuring a real phone. */
 export const fitProfileOverridesSchema = z
   .object({
     budgetFraction: budgetFractionSchema.optional(),
@@ -461,10 +460,7 @@ function normaliseLadder(fit: ResolvedFit): ResolvedFit {
  *  wire would invite a client to send it.
  *
  *  Not derived from `Frontend::Embedded` either: a desktop process booted
- *  embedded still has desktop memory and would get a phone's budget, which is
- *  the line D-144 draws for tool workers. And not from a capability flag,
- *  because D-143 already ruled `llm.supportImages` the single source of truth
- *  for vision and a second one is the D-042 shape. */
+ *  embedded still has desktop memory and would get a phone's budget. */
 export function fitProfileForOs(os: string): FitProfile {
   return os === "android" || os === "ios" ? "mobile" : "desktop";
 }

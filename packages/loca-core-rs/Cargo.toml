@@ -7,9 +7,8 @@ publish = false
 
 [lib]
 name = "loca_core"
-# rlib only. The mobile staticlib/cdylib is a separate thin crate
-# (`loca-core-ffi`, M1) so a desktop `cargo build` never pays to archive
-# llama.cpp and sherpa-onnx into a static library nobody links. See D-004.
+# rlib only: the mobile staticlib/cdylib is the separate `loca-core-ffi` crate,
+# so a desktop build never archives llama.cpp and sherpa-onnx for nothing.
 crate-type = ["rlib"]
 
 [[bin]]
@@ -18,65 +17,40 @@ path = "src/bin/loca-core.rs"
 
 [features]
 # Test doubles for the OS keychain, so the secrets suite never touches the real
-# one. Off in production builds, which excludes them from the binary. Follows
-# the same opt-in the standalone keychain helper uses.
+# one. Off in production builds, which excludes them from the binary.
 in-memory = []
 
-# Compiles and links llama.cpp for in-process inference (N1). OFF by default, and
-# that is forced rather than chosen: CI runs clippy on this crate from a fresh
-# checkout across three runners, `vendor/llama.cpp` is a gitignored clone, and a
-# default-on build script would turn `main` red for the whole fleet. The cost is
-# that the three inference regression tests do not run in the default gate, which
-# a dedicated CI job covers rather than flipping this default. See D-103/D-106.
+# Compiles and links llama.cpp for in-process inference. OFF by default because
+# `vendor/llama.cpp` is a gitignored clone: a fresh checkout must still build.
 local-inference = []
 
-# Links sherpa-onnx for in-process Whisper STT and Kokoro TTS (N3). OFF by
-# default for the same reason as `local-inference`, though the mechanism differs:
-# `sherpa-onnx-sys` DOWNLOADS a prebuilt archive (18.7 MB compressed, ~83 MB of
-# static libs) when `SHERPA_ONNX_LIB_DIR` is unset, so a default-on build would
-# make every fresh checkout fetch it. That fetch is a BUILD-time fetch of a build
-# dependency, on a developer or CI machine, before any artifact exists, and it is
-# escapable with `SHERPA_ONNX_LIB_DIR`. It is NOT a breach of the repo's
-# no-non-consented-network rule, which governs the installed, running product;
-# nothing in the shipped binary fetches anything. This note is here so the next
-# reader does not have to re-derive that.
+# Links sherpa-onnx for in-process Whisper STT and Kokoro TTS. OFF by default
+# because `sherpa-onnx-sys` downloads a prebuilt archive when
+# `SHERPA_ONNX_LIB_DIR` is unset, so a fresh checkout must still build. That is a
+# build-time fetch of a build dependency, not the shipped binary reaching out.
 local-speech = ["dep:sherpa-onnx"]
 
 [build-dependencies]
-# Build-time only, so neither reaches the shipped binary. Unconditional rather
-# than feature-gated: `build.rs` must COMPILE on every build, and it only skips
-# the work (on `CARGO_FEATURE_LOCAL_INFERENCE`) rather than skipping itself.
+# Unconditional rather than feature-gated: `build.rs` must compile on every
+# build, and only skips the work on `CARGO_FEATURE_LOCAL_INFERENCE`.
 cmake = "0.1"
 cc = "1.2"
 
 [dependencies]
-# In-process speech, behind `local-speech`. Pinned exact so this crate, the CI
-# job, and any staged prebuilt lib all agree on one version; `default-features`
-# off so the link mode is selected rather than inherited.
+# Pinned exact so this crate, CI, and any staged prebuilt lib agree on one
+# version; `default-features` off so the link mode is selected, not inherited.
 sherpa-onnx = { version = "=1.13.3", default-features = false, optional = true }
 
-# The WAV decoder in `speech::local::wav`. Unconditional rather than
-# feature-gated on purpose: decoding the clip in Rust instead of handing sherpa a
-# path is a CONTAINMENT decision (sherpa's C++ calls `exit()` on several bad-input
-# paths, which in process takes the whole Core down, not a sidecar), so the codec
-# and its tests belong in the default gate. Roughly 40 KB of pure Rust, no build
-# script.
+# The WAV decoder in `speech::local::wav`. Unconditional: decoding in Rust
+# rather than handing sherpa a path is containment (sherpa's C++ calls `exit()`
+# on bad input, which in process takes the whole Core down).
 hound = "3"
 
 # The one outbound HTTP client, shared by every package that talks to an
-# external endpoint (D3 LLM, D5 embeddings, D6 catalog, D11 MCP, D13 update,
-# D15 speech). One pin so the workspace builds one copy: `tauri` already
-# resolves reqwest 0.13.4.
-#
-# `rustls` expands to `__rustls-aws-lc-rs` plus `rustls-platform-verifier`, and
-# both halves are deliberate. aws-lc-rs is the same backend the listener
-# installs in `transport/server.rs`, so there is one crypto backend rather than
-# `ring` arriving alongside it; and it needs no process-global
-# `install_default`, which `rustls-no-provider` would. Trust roots come from the
-# OS store, where Deno used its own bundled set: a user pointing Core at a
-# gateway behind a private CA has already installed that CA, and on mobile the
-# platform verifier is the only thing that honours one at all. `system-proxy`
-# keeps `HTTP(S)_PROXY` working, which Deno's `fetch` honours today.
+# external endpoint. `rustls` expands to `__rustls-aws-lc-rs` plus
+# `rustls-platform-verifier`: aws-lc-rs is the same backend the listener installs
+# in `transport/server.rs`, and OS trust roots are what honours a private CA the
+# user has already installed (the only option on mobile).
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "json",
@@ -86,19 +60,11 @@ reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "system-proxy",
 ] }
-# The MCP client, from the official `modelcontextprotocol/rust-sdk`. Core has
-# never implemented the protocol by hand and does not start here: the alternative
-# is the initialize handshake, streamable HTTP with its session header and SSE
-# resumption, and OAuth 2.1 discovery plus dynamic registration plus PKCE.
-#
-# `default-features = false` drops `server`, `macros` and `base64`, so neither
-# `schemars` nor a proc macro enters the graph. `transport-child-process` is
-# deliberately absent: it brings `process-wrap` and its own spawn path, where
-# `sidecars::process` already owns the Job Object membership, the env allowlist
-# and the graceful terminate. The stdio transport is built over the child's
-# pipes with `transport-async-rw`, which is the same newline-delimited framing
-# the TypeScript SDK used. `reqwest` here means `reqwest?/rustls`, so rmcp joins
-# the one reqwest above rather than resolving a second copy.
+# The MCP client, from the official `modelcontextprotocol/rust-sdk`.
+# `transport-child-process` is deliberately absent: it brings its own spawn path,
+# where `sidecars::process` already owns Job Object membership, the env allowlist
+# and graceful terminate. Stdio is built over the child's pipes with
+# `transport-async-rw` instead.
 rmcp = { version = "3.1.2", default-features = false, features = [
   "client",
   "transport-async-rw",
@@ -107,15 +73,10 @@ rmcp = { version = "3.1.2", default-features = false, features = [
   "reqwest",
   "auth",
 ] }
-# The secrets vault: AES-GCM-256 over the `secrets.enc` bag. `zeroize` wipes
-# decoded key material and decrypted plaintext rather than leaving it for the
-# allocator.
+# The secrets vault: AES-GCM-256 over the `secrets.enc` bag.
 aes-gcm = { version = "0.10", features = ["std"] }
 # CPace, hand-implemented over ristretto255 because no published crate targets
-# draft-21: the two that exist use different DSI strings, no lv_cat framing, and
-# a different ISK construction (F7's survey, in its plan). `subtle` is for the
-# constant-time comparisons; `argon2` drops `password-hash` because the on-disk
-# format is not PHC and the parser would be an invitation to break existing files.
+# draft-21. `argon2` drops `password-hash`: the on-disk format is not PHC.
 async-trait = "0.1"
 argon2 = { version = "0.5", default-features = false, features = ["std"] }
 curve25519-dalek = { version = "4.1", default-features = false, features = [
@@ -124,13 +85,10 @@ curve25519-dalek = { version = "4.1", default-features = false, features = [
   "zeroize",
 ] }
 base64 = "0.22"
-# Verifies the Ed25519 signature on the model catalog and the release manifests
-# against the public key committed in `config.rs`. Verification only: the private
-# half never comes near the core.
+# Verifies the Ed25519 signature on the model catalog and the release manifests.
 ed25519-dalek = "2"
-# Transport. axum's Router is a `tower::Service`, which is the seam the mobile
-# in-process path calls directly (`oneshot`), so no socket, no TLS, and no bound
-# port on a phone: 127.0.0.1 is not app-private on Android.
+# axum's Router is a `tower::Service`, the seam the mobile in-process path calls
+# directly, so no socket and no bound port on a phone.
 axum = { version = "0.8", features = ["ws", "multipart"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 file-rotate = "0.8"
@@ -142,39 +100,27 @@ hyper = "1"
 hyper-util = "0.1"
 indexmap = "2"
 keyring-core = "1"
-# The TLS SPKI pin is one of four byte-exact parity surfaces, so the key handling
-# is explicit rather than left to whatever rcgen defaults to. rcgen and rustls
-# agree with the pins the Tauri client already uses.
-# `arithmetic` is what provides `SecretKey::public_key()`, and it is a DEFAULT
-# feature, so `default-features = false` silently removes it. `ecdsa` stays off
-# on purpose: rcgen does the signing, we only need the key and its SPKI DER.
+# The TLS SPKI pin is byte-exact for already-paired clients, so key handling is
+# explicit. `arithmetic` provides `SecretKey::public_key()` and is a default
+# feature; `ecdsa` stays off since rcgen does the signing.
 p256 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
 rand = "0.9"
 rcgen = "=0.14.8"
 regex = "1"
-# The generated contract compiles Zod's `.regex()` constraints into
-# `regress::Regex` checks inside `Deserialize`. That is how inbound validation
-# comes for free; see src/contract/mod.rs.
+# The generated contract compiles Zod `.regex()` constraints into
+# `regress::Regex` checks inside `Deserialize`.
 regress = "0.10"
-# `bundled` is the mobile-critical choice: the Android NDK sysroot has no
-# libsqlite3 to link against, `cc` cross-compiles the amalgamation with the NDK
-# and iOS toolchains, and it pins one SQLite version across every target. It
-# also matches today, since `jsr:@db/sqlite` already ships its own build.
-# default-features off drops 0.40's `ffi-sqlite-wasm-rs`; `cache` is re-added
-# for `prepare_cached`.
+# `bundled` is mobile-critical: the Android NDK sysroot has no libsqlite3, and
+# it pins one SQLite version across every target. default-features off drops
+# 0.40's `ffi-sqlite-wasm-rs`; `cache` is re-added for `prepare_cached`.
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "cache"] }
 rustls = "0.23"
 serde = { version = "1", features = ["derive"] }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-# 0.10, not the 0.11 the other crates in this workspace use: `hmac 0.12` is built
-# on `digest 0.10`, and CPace needs `Hmac<Sha512>` from that generation. F6's use
-# (SHA-256 over the SPKI) is identical either way, so one copy serves both rather
-# than dragging two sha2 versions into the graph.
-# The legacy npm integrity arm. Old packages publish `dist.shasum` (SHA-1) with
-# no `dist.integrity`, and without this the installer REFUSES them rather than
-# installing unverified: correct, but it means the Rust core could not install a
-# package the TypeScript core could. Already in the workspace lock as a
-# transitive dependency, so declaring it adds nothing to the build.
+# sha1 is the legacy npm integrity arm: old packages publish `dist.shasum` with
+# no `dist.integrity`, and without it the installer refuses them. sha2 is pinned
+# to 0.10, not 0.11, because CPace needs `Hmac<Sha512>` from the `digest 0.10`
+# generation `hmac 0.12` is built on.
 sha1 = "0.10"
 sha2 = "0.10"
 serde_json = "1"
@@ -201,63 +147,38 @@ ulid = "1"
 uuid = { version = "1", features = ["v4"] }
 zeroize = "1"
 
-# Extension install (D12): npm tarballs are `.tgz`. `unpack_in` refuses `..` and
-# absolute paths, which is the zip-slip class for tar. Both are already in the
-# workspace lockfile, so neither adds a fetch.
+# npm tarballs are `.tgz`; `unpack_in` refuses `..` and absolute paths.
 tar = "0.4"
 flate2 = "1"
-# Gitignore matching for the extension content hash (D12). Hand-rolling the
-# precedence rules would change which files are hashed, which changes the digest,
-# which drifts every installed extension; this is ripgrep's implementation.
+# Gitignore matching for the extension content hash. Hand-rolled precedence
+# would change which files are hashed, drifting every installed extension.
 ignore = "0.4"
-# Tool-argument validation against the author's JSON Schema (D12). Defaults are
-# filled by an explicit pass rather than a library flag, because a pass is
-# testable and a flag is not.
+# Tool-argument validation against the author's JSON Schema.
 jsonschema = { version = "0.33", default-features = false }
-# Cancellation for in-flight transfers (D7).
+# Cancellation for in-flight transfers.
 tokio-util = { version = "0.7", default-features = false }
-# The `deno` release asset is a `.zip` on every triple (D7). `deflate` only:
-# the asset is a single deflated executable, and the other codecs would pull
-# bzip2/zstd/lzma in for archives this core never opens.
+# The `deno` release asset is a `.zip` on every triple. `deflate` only: the
+# other codecs would pull in bzip2/zstd/lzma for archives this core never opens.
 zip = { version = "4", default-features = false, features = ["deflate"] }
 
-# OS keychain backends, split per platform exactly as the standalone keychain
-# helper splits them. iOS takes `protected` rather than `keychain`: the helper
-# crate applies `keychain` to both under one cfg, which is wrong for iOS, and
-# the Tauri client already gets this right.
+# OS keychain backends, split per platform. iOS takes `protected`, not
+# `keychain`.
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["protected"] }
 
-# The Vulkan probe behind GPU detection, on the two platforms that have one.
-# Deliberately NOT `not(macos)`, which is how the standalone hwinfo helper gated
-# it: that would link Vulkan into the Android and iOS staticlib, where there is
-# no Vulkan backend for v1 and every byte is App Store payload. `loaded` keeps it
-# a runtime dlopen, so a machine with no Vulkan driver reports no Vulkan rather
-# than failing to start. See D-004.
+# The Vulkan probe behind GPU detection. Listed per-platform rather than
+# `not(macos)` so it never links into the mobile staticlib. `loaded` keeps it a
+# runtime dlopen, so a machine with no Vulkan driver still starts.
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 ash = { version = "0.38", default-features = false, features = ["loaded"] }
 
-# Android links sherpa-onnx SHARED, where every other platform links it static.
-#
-# Not a preference: it is what upstream ships. `sherpa-onnx-v1.13.3-android.tar.bz2`
-# contains exactly `libsherpa-onnx-c-api.so` and `libonnxruntime.so` per ABI,
-# which is exactly the pair the crate's `shared` mode emits. There is no static
-# android archive to link instead, and the crate's static arm would additionally
-# emit no C++ runtime link for android at all (its match has `linux` and `macos`
-# arms and a bare `_ => {}`).
-#
-# Shipping two `.so` files inside the APK is NOT a W^X problem. W^X forbids
-# executing code the app DOWNLOADED into its own storage; these are bundled
-# native libraries in the signed package, extracted by the installer into the
-# app's read-only lib dir, which is the ordinary way every NDK app ships native
-# code. `scripts/vendor-sherpa.ts` stages them and the gradle `jniLibs` config
-# packages them.
-#
-# iOS is absent here on purpose: upstream's iOS build is static, so it takes the
-# crate's default mode and needs only the staged lib dir.
+# Android links sherpa-onnx SHARED because that is all upstream ships for it
+# (there is no static android archive). The two bundled `.so` files are signed
+# APK payload, not downloaded code, so W^X does not apply. iOS is absent on
+# purpose: upstream's iOS build is static and takes the crate's default mode.
 [target.'cfg(target_os = "android")'.dependencies]
 sherpa-onnx = { version = "=1.13.3", default-features = false, features = [
   "shared",
@@ -292,24 +213,18 @@ todo = "warn"
 dbg_macro = "warn"
 
 # Sidecar supervision needs a real SIGTERM (tokio's `start_kill` is SIGKILL-only)
-# and, on Windows, a Job Object so a killed core cannot leave tool workers
-# behind. Both are already in the workspace lockfile at these versions.
+# and, on Windows, a Job Object so a killed core leaves no tool workers behind.
 [target.'cfg(unix)'.dependencies]
-# D14 needs `signal` to reap children; D12 needs `fs`, `process` and `term` for
-# the absorbed PTY host (openpty + termios). One entry with the features unioned,
-# because two entries at two versions would put two copies of nix in the graph.
+# `signal` reaps children; `fs`/`process`/`term` are the PTY host (openpty).
 nix = { version = "0.31", features = ["fs", "process", "signal", "term"] }
 
 [target.'cfg(windows)'.dependencies]
-# ConPTY for the absorbed PTY host (D12): the crate the shipping ptyhost helper
-# already uses, so the Windows path is a move rather than a rewrite.
+# ConPTY for the PTY host.
 portable-pty = "0.9"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
-  # `Win32_System_JobObjects` declares only `Win32_System`, but the module it
-  # enables references `Security::SECURITY_ATTRIBUTES` in `CreateJobObjectW`'s
-  # signature, and `pub mod Security` is gated behind this. Without it the
-  # Windows build fails to compile and no unix build ever says so.
+  # `CreateJobObjectW`'s signature names `Security::SECURITY_ATTRIBUTES`, which
+  # `Win32_System_JobObjects` does not itself enable.
   "Win32_Security",
   "Win32_System_JobObjects",
   "Win32_System_Threading",

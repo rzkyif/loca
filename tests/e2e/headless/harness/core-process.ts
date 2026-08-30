@@ -1,8 +1,8 @@
 // Spawn + supervise a real loca-core subprocess for one E2E scenario (Node).
 //
 // Each scenario gets a throwaway LOCA_CORE_HOME tempdir, the dev channel (so
-// the model catalog is built in-memory with no signed fetch), the four native
-// helper binaries symlinked from target/debug (so core's boot-time presence
+// the model catalog is built in-memory with no signed fetch), the native
+// helper binary symlinked from target/debug (so core's boot-time presence
 // check passes without a source skip), and settings that point every outbound
 // dependency at the mock services server. External LLM/STT + TTS-off means core
 // spawns no native llama/speech sidecars.
@@ -10,19 +10,18 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import net from "node:net";
 import tls from "node:tls";
 import https from "node:https";
 import { createHash } from "node:crypto";
 import {
-  CORE_ENTRY,
   DEV_CORE_BIN,
+  findRustCore,
   REPO_ROOT,
   REQUIRED_HELPERS,
   SHARED_MODELS_DIR,
   SIDECAR_BINARIES,
-  TARGET_DEBUG,
   WORKERS_DIR,
 } from "./repo.ts";
 import { startMockServices, type LlmScript, type MockServices } from "./mock-services.ts";
@@ -130,8 +129,12 @@ function seedHome(home: string, settings: Record<string, unknown>, opts: Scenari
   mkdirSync(bin, { recursive: true });
   // Required helper binaries (dev channel suffix "-dev"); their boot-time
   // presence check refuses to start without them.
+  const profileDir = dirname(findRustCore());
   for (const base of REQUIRED_HELPERS) {
-    symlinkSync(join(TARGET_DEBUG, base), join(bin, `${base}-dev`));
+    const src = join(profileDir, base);
+    if (!existsSync(src))
+      throw new Error(`missing helper ${src}; run \`cargo build -p loca-core-updater\``);
+    symlinkSync(src, join(bin, `${base}-dev`));
   }
   // Sidecar binaries (deno, llama-server): present by default so the
   // requirements snapshot is satisfied and the chat composer is enabled.
@@ -209,7 +212,7 @@ async function waitHealthy(baseUrl: string, timeoutMs = 30_000): Promise<void> {
 // (and echoing it when LOCA_E2E_CORE_LOGS is set). Shared by startCore and
 // restart so a brought-back core captures logs the same way.
 function spawnCore(home: string, port: number, mockBaseUrl: string, logs: LogRing): ChildProcess {
-  const child = spawn("deno", ["run", "-A", CORE_ENTRY], {
+  const child = spawn(findRustCore(), [], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

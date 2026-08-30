@@ -12,10 +12,8 @@
 //! tracing::info!(target: "loca::chat", "stream {id} started");
 //! ```
 //!
-//! Every formatted line runs through [`scrub_secrets`] so credentials cannot
-//! persist even if a caller accidentally interpolates one (a bad-auth error
-//! carrying the supplied token, say). Scrubbing happens at format time, after
-//! the message is built, which is the only point where every path is covered.
+//! Every formatted line runs through [`scrub_secrets`], at format time, after
+//! the message is built, which is the only point covering every path.
 
 use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
@@ -29,17 +27,13 @@ use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::prelude::*;
 
-/// core.log rotation, matching the sizes the Deno core used so an operator's
-/// expectations about the log directory hold.
+/// core.log rotation.
 const MAX_LOG_BYTES: usize = 10 * 1024 * 1024;
 const LOG_BACKUPS: usize = 5;
 
-/// Install the global subscriber. Non-fatal by design: a logging failure must
-/// never abort boot, so it complains to stderr and continues. Call once, as
-/// early as possible.
-///
-/// `logs_dir` is passed in rather than derived so this module stays independent
-/// of the filesystem layout; the frontends resolve it.
+/// Install the global subscriber, once and as early as possible. Non-fatal: a
+/// logging failure complains to stderr and continues. `logs_dir` is passed in so
+/// this module stays independent of the filesystem layout.
 pub fn init(logs_dir: Option<&Path>) {
     // Dependencies that log through the `log` facade (rustls, hyper, ...) are
     // bridged into tracing so they hit the same filter and the same scrubber.
@@ -113,9 +107,8 @@ fn is_ours(target: &str) -> bool {
     target == "loca" || target.starts_with("loca::") || target.starts_with("loca_core")
 }
 
-/// Scopes that relay third-party output (the Deno tool workers' stdout/stderr).
-/// Their DEBUG chatter is dropped; INFO and above pass. Every scope of our own
-/// logs at DEBUG.
+/// Scopes that relay third-party output. Their DEBUG chatter is dropped; INFO
+/// and above pass. Every scope of our own logs at DEBUG.
 fn max_level(target: &str) -> Level {
     match scope_name(target) {
         _ if !is_ours(target) => Level::WARN,
@@ -195,9 +188,8 @@ impl ConsoleFormat {
         } else {
             format!("{} ", self.paint("2", &scope.to_lowercase()))
         };
-        // Per-line head, so a multi-line message keeps the level and scope on
-        // every line. The dev multiplexer recognizes our lines by their leading
-        // level word, and would badge continuation lines wrong otherwise.
+        // Per-line head, so a multi-line message keeps its level and scope:
+        // the dev multiplexer badges by the leading level word.
         let head = format!(
             "{time}{} {scope}",
             self.paint(level_color(level), level_label(level))
@@ -272,18 +264,14 @@ static SCRUBBERS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
             Regex::new(r"(?i)(\btoken=)[A-Za-z0-9_\-.]+").unwrap(),
             "${1}<REDACTED>",
         ),
-        // Bare base64url tokens. The auth layer emits 32 random bytes
-        // base64url-encoded, so 43 chars; 40+ catches any reasonable token
-        // width without over-matching short identifiers.
+        // Bare base64url tokens: 32 random bytes is 43 chars, and 40+ catches
+        // any reasonable width without over-matching short identifiers.
         (Regex::new(r"[A-Za-z0-9_-]{40,}").unwrap(), "<REDACTED>"),
         // Bare hex: the admin-token file is 32 hex chars, sha256 digests are 64.
         (Regex::new(r"(?i)\b[a-f0-9]{32,}\b").unwrap(), "<REDACTED>"),
-        // Padded standard base64. The bare-token pattern above uses the base64URL
-        // alphabet, so it does not reliably cover the vault's master key, which is
-        // 32 bytes of standard base64: any `+` or `/` in the value breaks the run
-        // and the key survives into the log. Requiring the `=` padding and a 40+
-        // char body keeps this off ordinary text, since a filesystem path never
-        // ends in `=` and a query parameter name that long does not occur.
+        // Padded standard base64, for the vault's master key: the base64url
+        // pattern above breaks on any `+` or `/` in the value. Requiring the
+        // `=` padding and a 40+ char body keeps this off ordinary text.
         (
             Regex::new(r"[A-Za-z0-9+/]{40,}={1,2}").unwrap(),
             "<REDACTED>",
@@ -385,8 +373,7 @@ mod tests {
 
     #[test]
     fn redacts_a_standard_base64_master_key() {
-        // 32 bytes of standard base64 is 43 chars plus one `=`, and it can carry
-        // `+` and `/`, which the base64url pattern does not cover.
+        // 43 chars plus one `=`, and it can carry `+` and `/`.
         let key = format!("{}+{}/{}=", "A".repeat(20), "B".repeat(11), "C".repeat(10));
         let out = scrub_secrets(&format!("sealed master key {key}"));
         assert!(!out.contains(&key), "got {out}");
@@ -395,9 +382,8 @@ mod tests {
 
     #[test]
     fn leaves_long_paths_alone() {
-        // The base64 pattern requires `=` padding precisely so a long path, which
-        // is otherwise all base64 characters, survives into the log where it is
-        // useful.
+        // The `=` padding requirement is what lets a long path, otherwise all
+        // base64 characters, survive into the log.
         let msg = "reading /Users/someone/Projects/loca/packages/locacoders/src/contract";
         assert_eq!(scrub_secrets(msg), msg);
     }

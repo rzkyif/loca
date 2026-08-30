@@ -1,31 +1,19 @@
 //! Splitting an image-bearing transcript into a marker-carrying prompt and the
 //! image bytes, for the local multimodal path.
 //!
-//! Pure: no shim types, no llama.cpp, no settings. Same split as [`super::prompt`]
-//! and for the same reason, so the decisions here compile and are tested in the
-//! DEFAULT gate while only the eval that consumes them is feature-gated.
+//! Pure: no shim types, no llama.cpp, no settings, so the decisions here are
+//! tested in the DEFAULT gate while only the eval that consumes them is gated.
 //!
-//! # Why the messages have to be rewritten at all
+//! An external provider takes images in-band; llama.cpp does not. The chat
+//! template renders TEXT, and libmtmd needs the rendered prompt to contain a
+//! marker at each position an image belongs so it can splice the encoded
+//! embeddings between the surrounding text spans. So the local path replaces
+//! each image part with the marker, applies the template to the now text-only
+//! transcript, and hands the prompt and the image bytes to mtmd together.
 //!
-//! An external provider takes images in-band: a user message carries an
-//! `image_url` part and the provider does the rest. llama.cpp does not work that
-//! way. The chat template renders TEXT, and libmtmd needs the rendered prompt to
-//! contain a marker (`<__media__>` by default) at each position an image
-//! belongs, so it can splice the encoded image embeddings between the
-//! surrounding text spans.
-//!
-//! So the local path is: replace each image part with the marker, apply the
-//! template to the now text-only transcript, and hand the marker-carrying prompt
-//! plus the image bytes to mtmd together. That is the same sequence llama.cpp's
-//! own `mtmd-cli` follows, and it is why this cannot be a flag on the text path.
-//!
-//! # Order is the contract
-//!
-//! mtmd pairs the Nth marker in the prompt with the Nth bitmap it is given. The
-//! extraction below therefore walks messages and parts in transcript order and
-//! never reorders or deduplicates, even for two identical images: two markers
-//! must be matched by two bitmaps, and collapsing them would shift every
-//! subsequent pairing by one.
+//! Order is the contract: mtmd pairs the Nth marker with the Nth bitmap, so the
+//! extraction walks messages and parts in transcript order and never reorders
+//! or deduplicates, even for two identical images.
 
 use base64::Engine as _;
 
@@ -47,10 +35,9 @@ impl SplitPrompt {
     }
 }
 
-/// How many images this request carries, without decoding any of them.
-///
-/// Cheap enough to call on every turn, which is what lets the engine decide
-/// between the text path and the multimodal one before it has loaded anything.
+/// How many images this request carries, without decoding any of them. Cheap
+/// enough to call on every turn, which is what lets the engine choose between
+/// the text path and the multimodal one.
 pub fn image_count(req: &LlmRequest) -> usize {
     req.messages
         .iter()
@@ -67,10 +54,8 @@ pub fn image_count(req: &LlmRequest) -> usize {
 }
 
 /// Replace every image part with `marker` and return the decoded image bytes.
-///
 /// `marker` comes from the loaded projector rather than being hardcoded: it is
-/// model-family specific, and the wrong one does not fail loudly, it leaves the
-/// image attached to no position in the prompt.
+/// model-family specific, and the wrong one silently detaches the image.
 pub fn split(req: &LlmRequest, marker: &str) -> Result<SplitPrompt> {
     let mut images = Vec::new();
     let mut messages = Vec::with_capacity(req.messages.len());
@@ -84,9 +69,9 @@ pub fn split(req: &LlmRequest, marker: &str) -> Result<SplitPrompt> {
             continue;
         };
 
-        // The parts collapse to one string, because that is what the template
-        // renders and what mtmd then scans for markers. Joined with newlines so
-        // a caption and its image do not run together into one word.
+        // The parts collapse to one string, which is what the template renders
+        // and mtmd then scans. Newline-joined so a caption and its image do not
+        // run together into one word.
         let mut text = String::new();
         for part in parts {
             match part {
@@ -113,15 +98,10 @@ pub fn split(req: &LlmRequest, marker: &str) -> Result<SplitPrompt> {
     Ok(SplitPrompt { messages, images })
 }
 
-/// Decode one `data:` URI into its bytes.
-///
-/// **Only `data:` is accepted, and an `https:` URL is REFUSED rather than
-/// fetched.** Fetching it here would be a network request the user never asked
-/// for, made by the core, on behalf of whatever put a URL in a message: the
-/// repo's one absolute rule forbids exactly that. The client inlines attachments
-/// as data URIs already, so this is the shape that actually arrives; a remote URL
-/// reaching here means something upstream changed, and saying so is better than
-/// quietly reaching out.
+/// Decode one `data:` URI into its bytes. Only `data:` is accepted, and an
+/// `https:` URL is REFUSED rather than fetched: that would be a network request
+/// the user never asked for, on behalf of whatever put a URL in a message. The
+/// client inlines attachments as data URIs already.
 fn decode_image(url: &str, index: usize) -> Result<Vec<u8>> {
     let Some(rest) = url.strip_prefix("data:") else {
         return Err(validation(format!(
@@ -130,8 +110,7 @@ fn decode_image(url: &str, index: usize) -> Result<Vec<u8>> {
         )));
     };
     // `data:[<mediatype>][;base64],<data>`. The media type is not inspected:
-    // mtmd sniffs the real format from the bytes, and trusting a declared type
-    // over the content is how a mislabelled file becomes a confusing error.
+    // mtmd sniffs the real format from the bytes.
     let Some((meta, payload)) = rest.split_once(',') else {
         return Err(validation(format!(
             "image {index} is a malformed data URI: no comma separating the metadata from the \
@@ -207,10 +186,9 @@ mod tests {
 
     #[test]
     fn two_images_keep_transcript_order_and_are_never_deduplicated() {
-        // mtmd pairs the Nth marker with the Nth bitmap, so both properties are
-        // the contract rather than tidiness. Deduplicating the two identical
-        // images here would leave two markers and one bitmap, which mtmd rejects
-        // outright; reordering would silently caption the wrong picture.
+        // mtmd pairs the Nth marker with the Nth bitmap. Deduplicating the two
+        // identical images would leave two markers and one bitmap, which mtmd
+        // rejects; reordering would silently caption the wrong picture.
         let same = b"SAME".to_vec();
         let split = split(
             &req(vec![
@@ -233,8 +211,7 @@ mod tests {
     #[test]
     fn the_marker_count_always_matches_the_image_count() {
         // The invariant mtmd enforces on the other side, asserted here so a
-        // rewrite that drops a marker fails in this suite rather than as
-        // "the prompt contains a different number of media markers".
+        // rewrite that drops a marker fails in this suite.
         let request = req(vec![
             parts(vec![
                 ContentPart::Text { text: "one".into() },
@@ -275,9 +252,8 @@ mod tests {
 
     #[test]
     fn a_remote_image_url_is_refused_rather_than_fetched() {
-        // The absolute rule: the running core makes no network request the user
-        // did not ask for. Fetching an `https:` image here would be one, made on
-        // behalf of whatever put the URL in the message.
+        // The running core makes no network request the user did not ask for,
+        // and fetching an `https:` image here would be one.
         let err = split(
             &req(vec![parts(vec![ContentPart::ImageUrl {
                 image_url: ImageUrl {
@@ -296,9 +272,8 @@ mod tests {
 
     #[test]
     fn a_malformed_data_uri_is_named_by_index() {
-        // Which image failed is the whole diagnostic value: a turn can carry
-        // several, and "invalid base64" without an index sends the user looking
-        // at all of them.
+        // A turn can carry several, so "invalid base64" without an index sends
+        // the user looking at all of them.
         let err = split(
             &req(vec![parts(vec![
                 image(b"fine"),

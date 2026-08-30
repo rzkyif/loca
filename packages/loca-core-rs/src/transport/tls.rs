@@ -13,19 +13,15 @@
 //!   KEY, so it survives certificate regeneration and bind-host changes and no
 //!   client has to re-pair when an address changes. This matches the RFC 7469
 //!   and rustls pin conventions, and it is what the Tauri client computes from
-//!   the presented certificate in `commands/net.rs`.
+//!   the presented certificate.
 //!
-//! **The pin derivation is a byte-exact parity surface.** Every already-paired
-//! client pinned this value. A derivation that drifts by one byte breaks every
-//! one of them on upgrade, and the failure presents as "pairing stopped
-//! working" with nothing in the logs pointing here. The vectors in
-//! `testdata/tls_pin_vectors.json` come from the WebCrypto implementation and
-//! are the guard; see the tests at the bottom of this file.
+//! **The pin derivation is byte-exact.** Every already-paired client pinned this
+//! value, so a derivation that drifts by one byte breaks all of them on upgrade
+//! and presents as "pairing stopped working". `testdata/tls_pin_vectors.json`
+//! is the guard.
 //!
-//! This module is deliberately free of vault I/O: [`ensure`] takes the sealed
-//! JWK and hands back the one to seal. That keeps the byte-exact surface a pure
-//! function testable without a keychain, and keeps this package independent of
-//! the secrets package.
+//! No vault I/O here: [`ensure`] takes the sealed JWK and hands back the one to
+//! seal, which keeps the byte-exact surface a pure function.
 
 use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD as B64URL};
 use base64::Engine;
@@ -48,8 +44,8 @@ use crate::error::{internal, validation, Result};
 /// writes it; this module never touches the vault itself.
 pub const KEY_SECRET: &str = "tls-key";
 
-/// Certificate lifetime. Ten years, matching the TypeScript: the certificate is
-/// regenerated every boot anyway, so this only has to outlive one run.
+/// Certificate lifetime. The certificate is regenerated every boot anyway, so
+/// this only has to outlive one run.
 const CERT_VALID_YEARS: i64 = 10;
 /// Backdate tolerance for a client whose clock runs slightly behind ours.
 const CLOCK_SKEW_SECONDS: i64 = 60;
@@ -58,11 +54,9 @@ const CLOCK_SKEW_SECONDS: i64 = 60;
 #[derive(Clone, Debug)]
 pub struct TlsMaterial {
     pub cert_der: CertificateDer<'static>,
-    /// The private key as PKCS#8 DER.
-    ///
-    /// Held as bytes rather than as a `PrivateKeyDer`, which rustls 0.23 makes
-    /// deliberately non-`Clone` so that copying private key material is always
-    /// something you asked for. [`TlsMaterial::key_der`] is that request.
+    /// The private key as PKCS#8 DER. Bytes rather than a `PrivateKeyDer`,
+    /// which rustls makes non-`Clone` on purpose; [`TlsMaterial::key_der`] is
+    /// the explicit copy.
     key_pkcs8: Vec<u8>,
     /// The public certificate in PEM, written beside the core root so a
     /// co-located admin tool can trust the loopback API as a CA of one.
@@ -109,13 +103,10 @@ pub fn ensure(sealed: Option<&str>, bind_host: &str) -> Result<(TlsMaterial, Opt
     }
 }
 
-/// `base64(SHA-256(SPKI DER))` for a P-256 public key.
-///
-/// The three steps are the parity surface, and they are exactly the three
-/// WebCrypto calls the TypeScript makes: export the public key as SPKI, hash it
-/// with SHA-256, then standard base64 (padded, not URL-safe). The SPKI is
-/// 91 bytes: a fixed 26-byte header followed by `0x04` and the two 32-byte
-/// affine coordinates, each zero-padded to its full width.
+/// `base64(SHA-256(SPKI DER))` for a P-256 public key: export as SPKI, hash
+/// with SHA-256, then standard base64 (padded, not URL-safe). The SPKI is 91
+/// bytes: a fixed 26-byte header, `0x04`, then the two 32-byte affine
+/// coordinates each zero-padded to full width.
 fn pin_for(key: &SecretKey) -> Result<String> {
     let spki = key
         .public_key()
@@ -140,9 +131,8 @@ fn build(key: &SecretKey, bind_host: &str) -> Result<TlsMaterial> {
     let now = OffsetDateTime::now_utc();
     params.not_before = now - Duration::seconds(CLOCK_SKEW_SECONDS);
     params.not_after = now + Duration::days(CERT_VALID_YEARS * 365);
-    // `ExplicitNoCa` emits basicConstraints as critical with CA:FALSE, which is
-    // what the TypeScript asks for explicitly. The variant name does not say
-    // "critical", so it is worth naming here.
+    // `ExplicitNoCa` emits basicConstraints as critical with CA:FALSE, which
+    // the variant name does not say.
     params.is_ca = IsCa::ExplicitNoCa;
     params.key_usages = vec![
         KeyUsagePurpose::DigitalSignature,
@@ -173,9 +163,8 @@ fn random_serial() -> Vec<u8> {
 /// concrete address.
 ///
 /// `0.0.0.0` means "every interface" rather than a connectable name, so it is
-/// skipped. Under certificate pinning the verifier ignores SANs entirely, so
-/// this is cosmetic for the shipping client and correct for anything that does
-/// standard validation.
+/// skipped. A pinning verifier ignores SANs entirely, so this is cosmetic for
+/// the shipping client and correct for anything doing standard validation.
 fn sans_for(bind_host: &str) -> Result<Vec<SanType>> {
     let mut sans = vec![
         SanType::DnsName(
@@ -210,32 +199,18 @@ fn is_already_covered(host: &str) -> bool {
 // --- JWK ------------------------------------------------------------------
 
 /// The private JWK shape WebCrypto's `exportKey("jwk")` produces for an ECDSA
-/// P-256 private key.
+/// P-256 private key. The declaration order below IS the wire order, measured
+/// rather than assumed, so the vault plaintext stays byte-identical.
 ///
-/// Written back in exactly that shape, field for field AND in that order, so
-/// the vault plaintext is byte-identical to the one the TypeScript core writes.
-/// The declaration order below IS the wire order, which is why it is not
-/// alphabetical: `exportKey("jwk")` emits `kty, crv, alg, x, y, d, key_ops,
-/// ext`, measured rather than assumed.
-///
-/// Byte-identical is a stronger requirement than readable, and it is the one
-/// that matters here: the vault is inside the on-disk persistence tree, one of
-/// the few surfaces this port has to reproduce exactly. A vault that differs
-/// only cosmetically still shows up as a real difference in every comparison
-/// that reads bytes, and the cost of that is a genuine divergence hiding inside
-/// noise everyone has learned to ignore.
-///
-/// Unknown fields are ignored on the way in rather than rejected: the vault
-/// entry is ours, but a stricter parser here would turn a harmless extra field
-/// into a lost keypair, which costs every paired client.
+/// Unknown fields are ignored on the way in: a stricter parser would turn a
+/// harmless extra field into a lost keypair, which costs every paired client.
 #[derive(Debug, Serialize, Deserialize)]
 struct PrivateJwk {
     kty: String,
     crv: String,
-    /// Defaulted on the way in because a vault this core wrote before the field
-    /// was emitted has no `alg`, and refusing to read it would discard the
-    /// keypair and re-pin every paired client. `ES256` is the only algorithm a
-    /// P-256 signing key here can carry.
+    /// Defaulted, because refusing a vault entry that predates the field would
+    /// discard the keypair and re-pin every paired client. `ES256` is the only
+    /// algorithm a P-256 signing key here can carry.
     #[serde(default = "es256")]
     alg: String,
     x: String,
@@ -272,10 +247,8 @@ fn secret_key_from_jwk(raw: &str) -> Result<SecretKey> {
     let key = SecretKey::from_slice(&d)
         .map_err(|e| validation(format!("sealed TLS key has an invalid scalar: {e}")))?;
 
-    // The public coordinates are redundant (they are derivable from `d`), so
-    // they are not trusted, only checked. A mismatch means the vault entry is
-    // corrupt, and failing here is far better than serving a certificate whose
-    // pin no client recognises.
+    // The public coordinates are derivable from `d`, so they are checked
+    // rather than trusted: a mismatch means the vault entry is corrupt.
     let point = key.public_key().to_encoded_point(false);
     let (x, y) = (coordinate(&jwk.x, "x")?, coordinate(&jwk.y, "y")?);
     if point.x().map(|v| v.as_slice() != x).unwrap_or(true)
@@ -306,18 +279,13 @@ fn jwk_from_secret_key(key: &SecretKey) -> Result<String> {
         key_ops: sign_ops(),
         ext: true,
     };
-    // Serialized straight from the struct: serde writes fields in declaration
-    // order, and that order was chosen to match WebCrypto's export.
+    // serde writes fields in declaration order, chosen to match WebCrypto.
     Ok(serde_json::to_string(&jwk)?)
 }
 
-/// Decode one base64url field to its full 32-byte width.
-///
-/// The width check is the point. A coordinate whose leading byte is zero
-/// encodes to a shorter big integer in any implementation that routes it
-/// through one, and the resulting SPKI is a plausible, stable, WRONG pin that
-/// every ordinary test passes. Refusing anything but 32 bytes makes that
-/// failure loud.
+/// Decode one base64url field to its full 32-byte width. The width check is the
+/// point: a coordinate with a leading zero byte shortens under any big-integer
+/// encoder, giving a plausible, stable, WRONG pin.
 fn coordinate(raw: &str, name: &str) -> Result<[u8; 32]> {
     let bytes = B64URL
         .decode(raw.as_bytes())
@@ -330,11 +298,8 @@ fn coordinate(raw: &str, name: &str) -> Result<[u8; 32]> {
     })
 }
 
-/// Generate a fresh P-256 key.
-///
-/// Routed through rcgen rather than `SecretKey::random` so the crate does not
-/// pull `p256`'s `rand_core` 0.6, which is a different major version from the
-/// `rand` the rest of the workspace uses.
+/// Generate a fresh P-256 key. Routed through rcgen rather than
+/// `SecretKey::random` so the crate does not pull `p256`'s `rand_core` 0.6.
 fn generate_key() -> Result<SecretKey> {
     let pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
         .map_err(|e| internal(format!("could not generate a TLS keypair: {e}")))?;
@@ -364,10 +329,8 @@ mod tests {
         serde_json::from_str::<VectorFile>(raw).unwrap().vectors
     }
 
-    /// THE parity test. Every vector was produced by WebCrypto through the same
-    /// three calls `services/tls.ts:133-136` makes. If this fails, do not
-    /// "update the fixture": the fixture is the oracle, and a change here means
-    /// every already-paired client is about to stop trusting this core.
+    /// The pin test. If it fails, do not update the fixture: a change here
+    /// means every already-paired client is about to stop trusting this core.
     #[test]
     fn pins_match_the_webcrypto_vectors() {
         for v in vectors() {
@@ -378,13 +341,9 @@ mod tests {
         }
     }
 
-    /// The SPKI is what gets hashed, so a second encoder agreeing with `p256`
-    /// narrows a future pin mismatch down to the hash or the base64 rather than
-    /// leaving DER encoding as a suspect.
-    ///
-    /// rcgen only exposes its SPKI as PEM, so the armour comes off here. That is
-    /// still two independent encoders: rcgen writes the structure itself and
-    /// never sees p256's.
+    /// A second encoder agreeing with `p256` narrows a future pin mismatch down
+    /// to the hash or the base64 rather than leaving DER a suspect. rcgen only
+    /// exposes its SPKI as PEM, so the armour comes off here.
     #[test]
     fn rcgen_and_p256_agree_on_the_spki_bytes() {
         for v in vectors() {
@@ -449,12 +408,8 @@ mod tests {
         let (material, sealed) = ensure(None, "127.0.0.1").unwrap();
         let jwk = sealed.expect("a first run must hand back a key to seal");
 
-        // Read off the RAW string, never off a parsed `Value`. `serde_json`'s
-        // map is a `BTreeMap` in this crate, so `Value` re-sorts the keys and
-        // reports alphabetical order whatever was actually written: the one
-        // representation that cannot measure the property under test. This
-        // assertion used to run through `Value` and passed against a comment
-        // claiming WebCrypto's export is alphabetical, which it is not.
+        // Read off the RAW string: `serde_json`'s map is a `BTreeMap` here, so
+        // a parsed `Value` re-sorts the keys and cannot measure field order.
         let keys: Vec<&str> = jwk
             .split(",\"")
             .map(|part| part.trim_start_matches('{').trim_start_matches('"'))
@@ -464,8 +419,7 @@ mod tests {
             keys,
             ["kty", "crv", "alg", "x", "y", "d", "key_ops", "ext"],
             "the vault plaintext must match WebCrypto's exportKey(\"jwk\") field \
-             for field AND in order, or the sealed secrets differ from the ones \
-             the TypeScript core writes"
+             for field AND in order"
         );
         let parsed: serde_json::Value = serde_json::from_str(&jwk).unwrap();
         let obj = parsed.as_object().unwrap();
@@ -484,8 +438,7 @@ mod tests {
             assert_eq!(B64URL.decode(v).unwrap().len(), 32);
         }
 
-        // Reloading the sealed key reproduces the same pin: this is the boot
-        // path a second run takes.
+        // Reloading reproduces the same pin: the boot path of a second run.
         let (again, resealed) = ensure(Some(&jwk), "127.0.0.1").unwrap();
         assert_eq!(again.pin, material.pin);
         assert!(resealed.is_none());
@@ -500,8 +453,8 @@ mod tests {
         )
         .is_err());
 
-        // A scalar one byte short: the failure mode a big-integer encoder
-        // produces. It must be rejected, not silently left-padded.
+        // A scalar one byte short, as a big-integer encoder produces: it must
+        // be rejected, not silently left-padded.
         let mut jwk: serde_json::Value =
             serde_json::from_str(&serde_json::to_string(&vectors()[0].jwk).unwrap()).unwrap();
         let d = jwk["d"].as_str().unwrap().to_string();
@@ -542,14 +495,10 @@ mod tests {
         let (material, _) = ensure(None, "192.168.1.50").unwrap();
         assert!(material.cert_pem.starts_with("-----BEGIN CERTIFICATE-----"));
         assert!(!material.cert_der.is_empty());
-        // rustls only accepts a key it can parse and match to the certificate;
-        // building a ServerConfig is the cheapest end-to-end assertion of that.
-        //
-        // Through `server::provider()`, not `ServerConfig::builder()`, for the
-        // reason that function documents: two providers are linked in the test
-        // build, so the bare builder panics unless some earlier test happened to
-        // install a process-level default first. That made this an order- and
-        // timing-dependent flake rather than a failure, which is worse.
+        // rustls only accepts a key it can parse and match to the certificate.
+        // Through `server::provider()`, not `ServerConfig::builder()`: two
+        // providers are linked in the test build, so the bare builder panics
+        // unless an earlier test installed a process default first.
         assert!(
             rustls::ServerConfig::builder_with_provider(super::super::server::provider())
                 .with_safe_default_protocol_versions()

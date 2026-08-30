@@ -1,10 +1,8 @@
 //! Per-process CPU and RSS, for the Services settings field.
 //!
-//! Replaces the npm `pidusage`. Both compute CPU as a delta between samples,
-//! which is why the sampler is long-lived rather than constructed per request:
-//! a fresh `System` has no previous sample to subtract and reports 0%. The
-//! settings field polls every couple of seconds while it is on screen, so
-//! consecutive calls give a real number.
+//! CPU is a delta between samples, which is why the sampler is long-lived
+//! rather than per request: a fresh `System` has nothing to subtract and reports
+//! 0%. The settings field polls every couple of seconds while on screen.
 //!
 //! Only the core's own processes are ever sampled. The route picks the pids
 //! (the published sidecar pids plus this process) and never takes one from a
@@ -45,9 +43,8 @@ impl Metrics {
     pub fn sample(&self, pids: &[u32]) -> BTreeMap<u32, Sample> {
         let wanted: Vec<Pid> = pids.iter().copied().map(Pid::from_u32).collect();
         let mut sys = self.sys.lock().unwrap_or_else(|e| e.into_inner());
-        // `remove_dead_processes` touches only the pids named here, so a pid
-        // that has exited is dropped from the cache rather than reported from a
-        // stale entry, which would be worse than reporting nothing.
+        // `remove_dead_processes` touches only the pids named here, so an
+        // exited pid is dropped rather than reported from a stale entry.
         sys.refresh_processes_specifics(
             ProcessesToUpdate::Some(&wanted),
             true,

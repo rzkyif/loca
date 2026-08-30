@@ -1,36 +1,22 @@
 //! OS background-service registration and teardown.
 //!
-//! Ports `install/service.ts`. This is the single implementation of service
-//! registration: it writes the launchd LaunchAgent, the systemd user unit or
-//! the Task Scheduler task that starts core at login and restarts it on
-//! failure, all namespaced per channel so stable, latest and dev coexist.
-//! `uninstall-service` reverses it.
+//! The single implementation of service registration: it writes the launchd
+//! LaunchAgent, the systemd user unit or the Task Scheduler task that starts
+//! core at login and restarts it on failure, namespaced per channel so stable,
+//! latest and dev coexist. `uninstall-service` reverses it. The definitions
+//! themselves are [`supervisor`](super::supervisor)'s text; this file owns the
+//! ORDER of the commands, what each branch does with a non-zero exit, and the
+//! teardown.
 //!
-//! The definitions themselves are [`supervisor`](super::supervisor)'s: pure
-//! text, asserted on every channel from any host. This file owns the ORDER of
-//! the commands, what each branch does with a non-zero exit, and the teardown.
-//!
-//! # Everything platform-shaped is a parameter
-//!
-//! The OS, the command runner, the real home, this process's pid and its
-//! executable path all arrive in [`ServiceCtx`]. `cfg!(target_os = ...)` has one
-//! answer on the machine the fleet runs on, so any mapping written over it is
-//! covered by tests that cannot fail on it. Here every branch runs on any host.
-//!
-//! `home` is separate from `Paths` and deliberately so: service definitions must
+//! Every platform decision arrives in [`ServiceCtx`] as data, so all branches
+//! run on any host. `home` is separate from `Paths`: service definitions must
 //! land in the real `~/Library` or `~/.config` even when core state is
-//! redirected to a tempdir (`install/service.ts:80`), and passing it in
-//! preserves that while letting a test point it somewhere safe. A global read
-//! plus `set_var` would be unsound under `cargo test`'s threads (D-010).
+//! redirected, and passing it in avoids a `set_var` that is unsound under
+//! `cargo test`'s threads.
 //!
-//! # The teardown ordering that is easy to lose
-//!
-//! `uninstall-service` runs FROM the binary it is sweeping, so every process
-//! match includes this one. Excluding this pid is what stops the sweep killing
-//! the uninstall mid-flight, before it has cleared the keychain master key and
-//! removed the core directory. Losing that line does not fail: it leaves a
-//! machine with the service gone, the data still there, and the master key
-//! still in the keychain.
+//! `uninstall-service` runs FROM the binary it is sweeping, so the straggler
+//! sweep must exclude this pid. Losing that does not fail loudly: it kills the
+//! uninstall mid-flight, leaving the data and the keychain master key behind.
 
 use std::path::{Path, PathBuf};
 
@@ -45,11 +31,8 @@ use crate::update::install::supervisor::{
     uninstall_command, unit_name, windows_display_name, windows_uninstall_key, Os, Supervisor,
 };
 
-/// The four `LOCA_INSTALL_*` variables, read once at the edge.
-///
-/// A parameter rather than a `std::env::var` at each use, because `set_var`
-/// under `cargo test`'s threads is unsound (D-010) and because the precedence
-/// between a flag and its variable is exactly what needs testing.
+/// The four `LOCA_INSTALL_*` variables, read once at the edge and passed as a
+/// parameter, so a test never needs `set_var`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallEnv {
     /// `LOCA_INSTALL_SERVICE`. `0` means background mode: no service, and the
@@ -60,8 +43,7 @@ pub struct InstallEnv {
     /// `LOCA_INSTALL_BEHIND_PROXY`.
     pub behind_proxy: bool,
     /// `LOCA_INSTALL_REGISTER_ARP`. `0` skips the Add/Remove Programs entry,
-    /// which the unified Windows installer sets because its own `uninstall.exe`
-    /// owns that entry.
+    /// which the Windows installer sets because its `uninstall.exe` owns it.
     pub register_arp: bool,
 }
 
@@ -83,14 +65,10 @@ impl InstallEnv {
         )
     }
 
-    /// The parse, separated from the environment that feeds it.
-    ///
-    /// **The two polarities are not interchangeable and both are load-bearing.**
-    /// `LOCA_INSTALL_SERVICE` and `_REGISTER_ARP` default to ON and are turned
-    /// off by exactly `"0"`; `_BIND_ALL` and `_BEHIND_PROXY` default to OFF and
-    /// are turned on by exactly `"1"`. Reading either the other way round
-    /// changes what an UNSET variable means, and an unset variable is the case
-    /// every installer front-end hits.
+    /// The parse, separated from the environment that feeds it. The two
+    /// polarities are not interchangeable: `_SERVICE` and `_REGISTER_ARP`
+    /// default ON and are turned off by exactly `"0"`, while `_BIND_ALL` and
+    /// `_BEHIND_PROXY` default OFF and are turned on by exactly `"1"`.
     pub fn parse(
         service: Option<&str>,
         bind_all: Option<&str>,
@@ -106,19 +84,15 @@ impl InstallEnv {
     }
 }
 
-/// Removing the keychain master key, behind a seam.
-///
-/// A trait rather than a `Vault` because the production implementation talks to
-/// the real OS keychain, and a test suite that reaches it would delete the
-/// developer's own entry. The seam is what makes "the key is cleared BEFORE the
-/// data is removed" assertable at all.
+/// Removing the keychain master key, behind a seam so a test suite does not
+/// delete the developer's own entry.
 #[async_trait::async_trait]
 pub trait MasterKey: Send + Sync {
     async fn delete(&self) -> Result<()>;
 }
 
-/// The production implementation: F5's vault, whose `delete_master_key` clears
-/// both the keychain entry and the dotfile fallback.
+/// The production implementation, clearing both the keychain entry and the
+/// dotfile fallback.
 pub struct VaultMasterKey<'a> {
     pub paths: &'a Paths,
     pub channel: Channel,
@@ -164,8 +138,8 @@ impl ServiceCtx<'_> {
         self.runner.run(argv).await
     }
 
-    /// `install/proc.ts:59-75`. One place, so the flags cannot drift between
-    /// the callers that read the output and the ones that do not.
+    /// One place, so the flags cannot drift between the callers that read the
+    /// output and the ones that do not.
     async fn pwsh(&self, script: &str) -> RunResult {
         self.run(&[
             "powershell",
@@ -182,7 +156,7 @@ impl ServiceCtx<'_> {
 
 // --- install ---------------------------------------------------------------
 
-/// Register, and start, the OS service. `install/service.ts:86-114`.
+/// Register, and start, the OS service.
 pub async fn install_service(ctx: &ServiceCtx<'_>) -> Result<()> {
     tokio::fs::create_dir_all(ctx.paths.logs_dir()).await?;
 
@@ -198,9 +172,8 @@ pub async fn install_service(ctx: &ServiceCtx<'_>) -> Result<()> {
             }
         }
     }
-    // Every Windows install front-end funnels through here, so this is the one
-    // place the Core is listed in Add/Remove Programs. Whether a task was
-    // registered decides whether the uninstall string self-elevates.
+    // The one place the Core is listed in Add/Remove Programs. Whether a task
+    // was registered decides whether the uninstall string self-elevates.
     if ctx.os == Os::Windows && ctx.env.register_arp {
         register_windows_uninstall_entry(ctx, ctx.env.as_service).await;
     }
@@ -222,8 +195,8 @@ async fn install_launchd(ctx: &ServiceCtx<'_>) -> Result<()> {
     )
     .await?;
     let plist_str = plist.to_string_lossy().into_owned();
-    // Unload first so a re-install replaces a running agent rather than
-    // failing against it. Non-zero here is benign (nothing was loaded).
+    // Unload first so a re-install replaces a running agent. Non-zero here is
+    // benign (nothing was loaded).
     let _ = ctx.run(&["launchctl", "unload", &plist_str]).await;
     let loaded = ctx.run(&["launchctl", "load", &plist_str]).await;
     if !loaded.success() {
@@ -241,8 +214,8 @@ async fn install_launchd(ctx: &ServiceCtx<'_>) -> Result<()> {
 
 async fn install_systemd(ctx: &ServiceCtx<'_>) -> Result<()> {
     if !have_systemd_user(ctx).await {
-        // A machine with a unit directory but no user manager is a background
-        // install, and saying so beats failing: the core still starts.
+        // A unit directory with no user manager is a background install, and
+        // saying so beats failing: the core still starts.
         ctx.io
             .progress("systemd --user unavailable; starting core in the background instead");
         start_background(ctx).await?;
@@ -302,10 +275,8 @@ async fn install_scheduled_task(ctx: &ServiceCtx<'_>) -> Result<()> {
     Ok(())
 }
 
-/// List this install in Add/Remove Programs.
-///
-/// Non-fatal on failure: a missing Apps entry must not fail the install itself
-/// (`install/service.ts:541-545`).
+/// List this install in Add/Remove Programs. Non-fatal on failure: a missing
+/// Apps entry must not fail the install itself.
 async fn register_windows_uninstall_entry(ctx: &ServiceCtx<'_>, as_service: bool) {
     let root = ctx.paths.root();
     let channel_dir = root.parent().unwrap_or(root);
@@ -352,9 +323,7 @@ async fn register_windows_uninstall_entry(ctx: &ServiceCtx<'_>, as_service: bool
 // --- start / stop / restart ------------------------------------------------
 
 /// Start the installed core through whatever supervisor owns it, and print one
-/// JSON line. `install/service.ts:177-206`.
-///
-/// Idempotent in every branch: an already-running core is not an error.
+/// JSON line. Idempotent in every branch: a running core is not an error.
 pub async fn start_service(ctx: &ServiceCtx<'_>) -> Result<()> {
     let sup = resolve_supervisor(ctx.runner, ctx.os, ctx.home, ctx.channel()).await;
     let mut pid = None;
@@ -364,8 +333,7 @@ pub async fn start_service(ctx: &ServiceCtx<'_>) -> Result<()> {
                 .to_string_lossy()
                 .into_owned();
             // `load` is non-zero when the agent is already loaded, which is
-            // benign; `RunAtLoad` starts it and `start` covers the
-            // already-loaded case. Only `start` failing is an error.
+            // benign. Only `start` failing is an error.
             let _ = ctx.run(&["launchctl", "load", &plist]).await;
             if !ctx.run(&["launchctl", "start", label]).await.success() {
                 return Err(internal(format!("launchctl start {label} failed")));
@@ -389,14 +357,13 @@ pub async fn start_service(ctx: &ServiceCtx<'_>) -> Result<()> {
             pid = start_background(ctx).await?;
         }
     }
-    // The pid is non-null ONLY in background mode. A supervised core outlives
-    // the Client, so reporting a pid would have the Client stop the service
-    // every time the user quits.
+    // Non-null ONLY in background mode: a supervised core outlives the
+    // Client, which would otherwise stop the service on every quit.
     ctx.io.emit_json(&start_service_result(sup.kind(), pid));
     Ok(())
 }
 
-/// Stop the running core through its supervisor. `install/service.ts:212-236`.
+/// Stop the running core through its supervisor.
 ///
 /// A plain kill would be undone by launchd's `KeepAlive` or systemd's
 /// `Restart`, so every supervised branch goes through the supervisor and only
@@ -408,8 +375,8 @@ pub async fn stop_service(ctx: &ServiceCtx<'_>) -> Result<()> {
             let plist = plist_path(ctx.home, ctx.channel())
                 .to_string_lossy()
                 .into_owned();
-            // `unload` stops the job AND drops its KeepAlive, so it stays down
-            // until `start_service` loads it again.
+            // `unload` also drops KeepAlive, so it stays down until
+            // `start_service` loads it again.
             let _ = ctx.run(&["launchctl", "unload", &plist]).await;
             ctx.io.progress(&format!("stopped launchd agent {label}"));
         }
@@ -431,7 +398,6 @@ pub async fn stop_service(ctx: &ServiceCtx<'_>) -> Result<()> {
 }
 
 /// Restart so an on-disk settings change takes effect.
-/// `install/service.ts:133-169`.
 pub async fn restart_service(ctx: &ServiceCtx<'_>) -> Result<()> {
     if !ctx.env.as_service {
         kill_stragglers(ctx).await;
@@ -439,8 +405,7 @@ pub async fn restart_service(ctx: &ServiceCtx<'_>) -> Result<()> {
         return Ok(());
     }
     match ctx.os {
-        // unload + load bounces the KeepAlive agent cleanly. A manual kill
-        // would race the KeepAlive restart.
+        // unload + load bounces the agent cleanly; a kill would race KeepAlive.
         Os::Macos => install_launchd(ctx).await,
         Os::Linux => {
             if have_systemd_user(ctx).await {
@@ -464,9 +429,8 @@ pub async fn restart_service(ctx: &ServiceCtx<'_>) -> Result<()> {
             }
         }
         Os::Windows => {
-            // Kill first, THEN re-register. Unregistering drops the old task's
-            // failure-restart policy, so the kill cannot be auto-relaunched
-            // into a second core.
+            // Kill first, THEN re-register: unregistering drops the old task's
+            // failure-restart policy, so the kill is not auto-relaunched.
             kill_stragglers(ctx).await;
             install_scheduled_task(ctx).await
         }
@@ -477,12 +441,10 @@ pub async fn restart_service(ctx: &ServiceCtx<'_>) -> Result<()> {
 // --- uninstall -------------------------------------------------------------
 
 /// Stop and remove the service, sweep stragglers, clear the keychain master key
-/// and remove the channel's core dir. `install/service.ts:243-269`.
+/// and remove the channel's core dir.
 ///
-/// The split is a user-facing promise, and `purge_models` is INDEPENDENT of
-/// `keep_data`: the uninstaller offers "keep my data" and "remove downloaded
-/// models" as separate choices, and the models directory is shared across
-/// channels either way.
+/// `purge_models` is INDEPENDENT of `keep_data`: the uninstaller offers the two
+/// as separate choices, and the models directory is shared across channels.
 pub async fn uninstall_service(
     ctx: &ServiceCtx<'_>,
     keep_data: bool,
@@ -517,8 +479,8 @@ async fn remove_launchd(ctx: &ServiceCtx<'_>) {
         ctx.io.progress("launchd agent not installed");
         return;
     }
-    // `unload` is non-zero for benign reasons (already exited); the load-bearing
-    // step is removing the plist so it is not auto-loaded at the next login.
+    // `unload` is non-zero for benign reasons (already exited); removing the
+    // plist is what stops it being auto-loaded at the next login.
     let _ = ctx
         .run(&["launchctl", "unload", &plist.to_string_lossy()])
         .await;
@@ -551,8 +513,7 @@ async fn remove_scheduled_task(ctx: &ServiceCtx<'_>) {
     let teardown = scheduled_task_teardown_script(ctx.channel());
     let _ = ctx.pwsh(&teardown).await;
     // Unregistering a root-folder task can need admin while every caller runs
-    // unelevated, so when the plain attempt left the task behind, retry once
-    // self-elevated rather than leaving a dead task that fires at every logon.
+    // unelevated, so retry once self-elevated rather than leaving a dead task.
     let task = unit_name(ctx.channel());
     if ctx
         .run(&["schtasks", "/Query", "/TN", &task])
@@ -585,8 +546,8 @@ async fn clear_keychain_master_key(ctx: &ServiceCtx<'_>) {
         return;
     }
     if ctx.os == Os::Macos {
-        // A partially removed install can leave the entry with no helper able
-        // to clear it, so fall back to the native tool.
+        // A partially removed install can leave no helper able to clear the
+        // entry, so fall back to the native tool.
         let service = format!("com.rzkyif.loca.core{}", ctx.channel().suffix());
         let _ = ctx
             .run(&[
@@ -612,8 +573,7 @@ async fn remove_core_dir(ctx: &ServiceCtx<'_>) {
     match tokio::fs::remove_dir_all(&root).await {
         Ok(()) => {
             // Drop the now-empty ~/.loca/<channel> if the client is gone too.
-            // The shared models dir lives under ~/.loca, not the channel dir,
-            // so it survives.
+            // The shared models dir is under ~/.loca, so it survives.
             if let Some(parent) = root.parent() {
                 let _ = tokio::fs::remove_dir(parent).await;
             }
@@ -625,10 +585,8 @@ async fn remove_core_dir(ctx: &ServiceCtx<'_>) {
                     .progress(&format!("could not remove {}: {err}", root.display()));
                 return;
             }
-            // On Windows this subcommand IS the running exe under <root>/bin,
-            // so it cannot delete its own on-disk image. Remove everything else
-            // and leave the locked binary for the caller that outlives this
-            // process.
+            // On Windows this subcommand IS the running exe, so it cannot
+            // delete its own image: leave it for the caller that outlives it.
             remove_except(&root, &ctx.current_exe).await;
             ctx.io
                 .progress("removed core data; the running binary is swept after exit");
@@ -647,10 +605,8 @@ async fn remove_models_dir(ctx: &ServiceCtx<'_>) {
         .progress(&format!("removed {} (--purge-models)", models.display()));
 }
 
-/// Delete everything under `dir` except the single file at `keep`.
-///
-/// Best-effort per entry, so one locked file never aborts the rest of the
-/// teardown.
+/// Delete everything under `dir` except the single file at `keep`. Best-effort
+/// per entry, so one locked file never aborts the rest of the teardown.
 async fn remove_except(dir: &Path, keep: &Path) {
     let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
         return;
@@ -671,11 +627,9 @@ async fn remove_except(dir: &Path, keep: &Path) {
 
 // --- background mode -------------------------------------------------------
 
-/// Launch core detached with nothing supervising it, returning its pid.
-///
-/// The pid travels to the Client, which stops exactly this process when it
-/// quits. `None` means the pid could not be determined; the core is running
-/// either way.
+/// Launch core detached with nothing supervising it, returning its pid, which
+/// the Client uses to stop exactly this process when it quits. `None` means the
+/// pid could not be determined; the core is running either way.
 async fn start_background(ctx: &ServiceCtx<'_>) -> Result<Option<u32>> {
     let bin = ctx.installed_binary().display().to_string();
     let logs = ctx.paths.logs_dir();
@@ -684,11 +638,9 @@ async fn start_background(ctx: &ServiceCtx<'_>) -> Result<Option<u32>> {
     let channel = ctx.channel().as_str();
 
     if ctx.os == Os::Windows {
-        // The pid travels through a temp FILE rather than stdout, and that is
-        // load-bearing: `Start-Process` passes `bInheritHandles`, so a detached
-        // core inherits every inheritable handle of this PowerShell including
-        // piped stdio, and a read-to-EOF would then block for as long as the
-        // core lives. That was the "stuck on installing" hang.
+        // The pid travels through a temp FILE, not stdout: `Start-Process`
+        // passes `bInheritHandles`, so the detached core inherits this
+        // PowerShell's piped stdio and a read-to-EOF blocks for its lifetime.
         let pid_file = std::env::temp_dir().join(format!("loca-core-pid-{}", uuid::Uuid::new_v4()));
         let pid_str = pid_file.display().to_string();
         let script = format!(
@@ -719,9 +671,8 @@ async fn start_background(ctx: &ServiceCtx<'_>) -> Result<Option<u32>> {
     }
 
     // Detach via sh so the backgrounded core outlives this short-lived CLI.
-    // Capturing sh's stdout is safe here, unlike on Windows: the core's own
-    // stdio is redirected into the log files, so the pipe carries only the
-    // `echo $!` line and reaches EOF when sh exits.
+    // Capturing sh's stdout is safe here: the core's own stdio is redirected
+    // into the log files, so the pipe reaches EOF when sh exits.
     let shell = format!(
         "LOCA_CHANNEL={ch} nohup {bin} >> {out} 2>> {err} & echo $!",
         ch = sh_quote(channel),
@@ -741,12 +692,9 @@ async fn start_background(ctx: &ServiceCtx<'_>) -> Result<Option<u32>> {
     Ok(parse_pid(&rc.stdout))
 }
 
-/// The pid `start_background` reports, or `None`.
-///
-/// `None` for anything that is not a POSITIVE integer. A shell that printed
-/// nothing, an unreadable Windows pid file, and a literal `0` all mean "no pid",
-/// and `0` matters specifically: it is a valid `u32` that names no process, and
-/// handing it to the Client as one to kill is worse than handing it nothing.
+/// The pid `start_background` reports, or `None` for anything that is not a
+/// POSITIVE integer. `0` matters specifically: a valid `u32` naming no process,
+/// which is worse to hand the Client than nothing.
 pub fn parse_pid(raw: &str) -> Option<u32> {
     raw.trim()
         .parse::<i64>()
@@ -758,14 +706,9 @@ pub fn parse_pid(raw: &str) -> Option<u32> {
 
 // --- shared teardown -------------------------------------------------------
 
-/// Kill every core process except this one.
-///
-/// **Excluding this pid is the line that must not be lost.** `uninstall-service`
-/// runs FROM the binary it is sweeping, so without the exclusion the sweep
-/// terminates the uninstall mid-flight, before it has cleared the keychain
-/// master key and removed the core directory. It does not fail loudly: it
-/// leaves a machine with the service gone and both the data and the key still
-/// there.
+/// Kill every core process except this one. `uninstall-service` runs FROM the
+/// binary it is sweeping, so without the exclusion the sweep terminates the
+/// uninstall mid-flight, silently leaving the data and the key behind.
 async fn kill_stragglers(ctx: &ServiceCtx<'_>) {
     let bin_name = ctx.channel().core_binary_name("loca-core");
     if ctx.os == Os::Windows {
@@ -796,8 +739,7 @@ async fn kill_stragglers(ctx: &ServiceCtx<'_>) {
         let _ = ctx.run(&["kill", pid]).await;
     }
     if !pids.is_empty() {
-        // A brief grace, then SIGKILL any survivor. Bounded by construction:
-        // one fixed sleep, not a poll.
+        // A brief grace, then SIGKILL any survivor. One fixed sleep, no poll.
         tokio::time::sleep(std::time::Duration::from_millis(GRACE_MS)).await;
         for pid in &pids {
             let _ = ctx.run(&["kill", "-9", pid]).await;
@@ -809,7 +751,7 @@ async fn kill_stragglers(ctx: &ServiceCtx<'_>) {
     }
 }
 
-/// The wait between `kill` and `kill -9` (`install/service.ts:644`).
+/// The wait between `kill` and `kill -9`.
 #[cfg(not(test))]
 const GRACE_MS: u64 = 1000;
 /// A test drives the same code path without paying the grace period; the

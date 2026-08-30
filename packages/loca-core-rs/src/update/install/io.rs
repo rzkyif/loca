@@ -1,56 +1,19 @@
 //! The two streams an install verb writes to, and the two frozen stdout lines.
 //!
-//! `install/io.ts` exists as its own file for one reason: the split. Human
-//! progress goes to **stderr**, and the ONE machine-readable result a caller
-//! parses goes to **stdout**, so nothing a verb prints for a person can
-//! contaminate what the Client reads back.
+//! Human progress goes to **stderr**; the ONE machine-readable result a caller
+//! parses goes to **stdout**. The Client parses `start-service`'s line by
+//! taking the LAST non-empty line of stdout, so a progress line printed on
+//! stdout after the result becomes the line it parses, and the parse fails. It
+//! keys off `supervisor == "background"`, so the kind strings are wire contract.
 //!
-//! # Who is on the other end
-//!
-//! The Client parses `start-service`'s line
-//! (`loca-client/src/tauri/src/commands/pairing.rs:245-253`) by taking the LAST
-//! non-empty line of stdout and running `serde_json::from_str` over it. Two
-//! consequences that are easy to lose in a port and expensive to lose:
-//!
-//! - a progress line printed on stdout AFTER the JSON becomes the line the
-//!   Client parses, and the parse fails; and
-//! - the reader keys off `supervisor == "background"`, so the four kind strings
-//!   are a wire contract, not an internal name.
-//!
-//! The frozen shapes ([`start_service_result`], [`mint_code_result`]) live here
-//! with their tests rather than beside the verbs that emit them, because the
-//! contract is the LINE, and the two verbs that write one are in different
-//! files.
-//!
-//! Those tests assert the parsed KEYS and the object's key count, not the
-//! serialised bytes. Key order is not part of the contract, since both readers
-//! parse, and pinning it would pin `serde_json`'s map implementation instead,
-//! which a feature flag on any crate in the workspace could flip. The key count
-//! is what makes the assertions closed rather than open: it catches an added
-//! key as well as a missing one.
-//!
-//! # Why this is a struct with two writers rather than two free functions
-//!
-//! A test that captures the process's own file descriptors is process-global
-//! state in a test binary that runs ~1800 tests on shared threads, which is the
-//! class of fixture that already cost this crate a fleet outage once. So
-//! [`Streams`] is generic over its two sinks and the tests drive **the same
-//! `Io` implementation production runs**, over two buffers instead of the two
-//! handles. D-100's question ("if I break the production path, does this go
-//! red?") is answered for every line of the split except one.
-//!
-//! **The limit, stated rather than implied:** [`Streams::std`] binds
-//! `stdout()` to `out` and `stderr()` to `err`, and no test here can see that
-//! binding. It is the one line of this module a mutation would survive.
+//! [`Streams`] is generic over its two sinks so the tests drive the production
+//! impl over two buffers rather than capturing process-global file descriptors.
+//! [`Streams::std`]'s stdout/stderr binding is the one line no test can see.
 
 use std::io::Write;
 use std::sync::Mutex;
 
 /// What an install verb is allowed to print.
-///
-/// Injected rather than reached for, so a verb's test asserts on both streams
-/// separately: "this went to stdout" and "this did not" are different claims
-/// and both matter.
 pub trait Io: Send + Sync {
     /// A line for a human watching the install. Never parsed.
     fn progress(&self, msg: &str);
@@ -89,9 +52,7 @@ impl<O: Write + Send, E: Write + Send> Io for Streams<O, E> {
     }
 
     fn emit_json(&self, value: &serde_json::Value) {
-        // `Display` for `Value` is compact, which is `JSON.stringify`. The
-        // trailing newline is part of the contract: the Client splits stdout
-        // into lines before parsing.
+        // The trailing newline is contract: the Client splits stdout into lines.
         let mut w = self.out.lock().unwrap_or_else(|e| e.into_inner());
         let _ = writeln!(w, "{value}");
         let _ = w.flush();
@@ -100,15 +61,13 @@ impl<O: Write + Send, E: Write + Send> Io for Streams<O, E> {
 
 /// `start-service`'s line: `{"supervisor":"<kind>","pid":<n>|null}`.
 ///
-/// `pid` is present and null for a supervised core rather than omitted, and
-/// that is the load-bearing half: it is how the Client knows the core it just
-/// started outlives it and must not be killed on quit. A supervised install
-/// reporting a pid would have the Client stop the service every time it exits.
+/// `pid` is present and null for a supervised core rather than omitted: that is
+/// how the Client knows the core outlives it and must not be killed on quit.
 pub fn start_service_result(supervisor: &str, pid: Option<u32>) -> serde_json::Value {
     serde_json::json!({ "supervisor": supervisor, "pid": pid })
 }
 
-/// `mint-code`'s line: `{"code":"...","url":"...","port":n}` (`install/pair.ts:52-54`).
+/// `mint-code`'s line: `{"code":"...","url":"...","port":n}`.
 pub fn mint_code_result(code: &str, url: &str, port: u16) -> serde_json::Value {
     serde_json::json!({ "code": code, "url": url, "port": port })
 }
@@ -129,8 +88,7 @@ pub mod testing {
             String::from_utf8_lossy(&bytes).into_owned()
         }
 
-        /// What the Client reads: the last non-empty line
-        /// (`pairing.rs:246`).
+        /// What the Client reads: the last non-empty line.
         pub fn last_line(&self) -> String {
             self.text()
                 .lines()
@@ -155,9 +113,7 @@ pub mod testing {
         }
     }
 
-    /// The production `Streams`, over two buffers. Only the two arguments
-    /// differ from [`Streams::std`]; every line of the impl under test is the
-    /// one that ships.
+    /// The production `Streams`, over two buffers.
     pub fn recording() -> (Streams<Captured, Captured>, Captured, Captured) {
         let out = Captured::default();
         let err = Captured::default();
@@ -203,13 +159,8 @@ mod tests {
 
     #[test]
     fn a_supervised_core_reports_a_null_pid_rather_than_no_pid() {
-        // The key being PRESENT and null is how the Client distinguishes
-        // "nothing supervises this, stop it when I quit" from "the OS owns it".
-        //
-        // `get` rather than `v["pid"]` deliberately: indexing a `Value` yields
-        // `Null` for a MISSING key too, so the obvious spelling of this
-        // assertion cannot tell the two apart, which is the exact distinction
-        // the test exists for.
+        // `get` rather than indexing: `v["pid"]` yields `Null` for a MISSING
+        // key too, and present-and-null vs absent is the whole distinction.
         let (io, out, _err) = recording();
 
         io.emit_json(&start_service_result("launchd", None));
@@ -229,9 +180,6 @@ mod tests {
 
         io.emit_json(&start_service_result("background", Some(1234)));
 
-        // The Client's own reader, reproduced from pairing.rs:245-253, so the
-        // assertion is what the consumer does rather than what this file
-        // hopes it does.
         let v: serde_json::Value = serde_json::from_str(&out.last_line()).unwrap();
         assert_eq!(v.get("supervisor").unwrap().as_str().unwrap(), "background");
         assert_eq!(v.get("pid").unwrap().as_u64().unwrap(), 1234);
@@ -239,10 +187,7 @@ mod tests {
 
     #[test]
     fn a_verb_that_prints_progress_around_its_result_still_parses() {
-        // The reason the split exists. The Client takes the LAST non-empty line
-        // of stdout, so a progress line landing on stdout after the result is
-        // the line it parses, and the parse fails. Interleaved deliberately:
-        // progress before AND after, which is what a real verb does.
+        // Progress before AND after the result, which is what a real verb does.
         let (io, out, err) = recording();
 
         io.progress("resolving the supervisor");

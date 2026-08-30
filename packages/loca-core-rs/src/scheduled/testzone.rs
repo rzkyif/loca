@@ -1,15 +1,12 @@
 //! A timezone the tests own, so DST is exercised without touching `TZ`.
 //!
 //! `chrono::Local` reads the process environment, and mutating `TZ` from a test
-//! is a process-global write under a threaded runner: every other test in the
-//! binary sees it, and the ordering is not something a test can control. This
-//! crate has already lost a day to one process-global re-entry (D-085), so
+//! is a process-global write under a threaded runner, so
 //! [`next_occurrence_in`](super::next_occurrence_in) takes the zone as a
 //! parameter and this is what the tests pass.
 //!
-//! It is a COLLABORATOR, not a copy of the subject (D-084): every assertion
-//! runs through the production function, which is the shipped one. Only the
-//! zone it resolves against is substituted.
+//! It is a COLLABORATOR, not a copy of the subject: every assertion runs through
+//! the production function, and only the zone it resolves against is substituted.
 //!
 //! Two instances model the 2026 transitions in each hemisphere, which is what
 //! shows the resolution rule is about the TRANSITION rather than about the

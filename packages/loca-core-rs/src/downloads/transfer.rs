@@ -3,26 +3,19 @@
 //! runaway-size ceiling, verify the sha256, and rename into place.
 //!
 //! Progress and size discoveries go out through callbacks, so this module owns
-//! the network and the filesystem and nothing else: the queue owns persistence
-//! and the broadcast.
-//!
-//! # The three properties worth reading before changing anything here
+//! the network and the filesystem and nothing else.
 //!
 //! **Resume is gated on having a hash.** The final sha256 verifies the WHOLE
-//! file, so a wrongly resumed file is still caught, deleted and retried clean.
-//! Without a hash there is no way to tell a good partial from a bad one, so the
-//! transfer always starts over. That single gate is what makes "the file changed
-//! under us" cost one wasted download rather than a corrupt install: nothing
-//! here validates `Content-Range`, checks an `ETag`, or sends `If-Range`.
+//! file, so a wrongly resumed file is caught, deleted and retried clean.
+//! Without a hash a good partial cannot be told from a bad one, so the transfer
+//! starts over: nothing here validates `Content-Range`, `ETag`, or `If-Range`.
 //!
 //! **A checksum mismatch and a 416 destroy the partial; everything else keeps
-//! it.** The queue's `Error` arm keeps the `.tmp` deliberately so a retry
-//! resumes, and that arm is reached by the two failures which have already
-//! deleted it here. Both halves have to be read together to be correct.
+//! it,** so the queue's `Error` arm can keep the `.tmp` for a resume.
 //!
-//! **Every deadline is a `tokio::time::Instant`** (D-038), including the
-//! progress throttle: one clock rather than two that can disagree, and a
-//! watchdog whose deadline is a std instant cannot fire under a paused runtime.
+//! Every deadline is a `tokio::time::Instant`, the progress throttle included:
+//! one clock, and a watchdog on a std instant cannot fire under a paused
+//! runtime.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,12 +33,8 @@ use crate::downloads::sources::parse_source;
 use crate::downloads::EnqueueSpec;
 use crate::error::{validation, AppError, ErrorCode, Result};
 
-/// Abort a transfer that receives no bytes for this long.
-///
-/// A silently stalled connection (server wedged, network black-holed) otherwise
-/// leaves the read blocked forever, with the UI gated on a download that will
-/// never finish and never error. Generous on purpose: it fires on silence, never
-/// on slowness.
+/// Abort a transfer that receives no bytes for this long. Generous on purpose:
+/// it fires on silence, never on slowness.
 pub const STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How often a streaming transfer reports progress. Each tick is a row write and
@@ -62,17 +51,11 @@ pub const CEILING_SLACK: u64 = 64 * 1024 * 1024;
 
 /// The most a body may deliver before it is cut off.
 ///
-/// **Saturating, and that is the whole point of the function.** `declared` is a
-/// `content-length` off the wire, so a hostile or broken origin picks it: at
-/// `2^63` the plain arithmetic overflows, which in a debug build panics the
-/// transfer worker and in a RELEASE build silently wraps to a 64 MiB ceiling
-/// that aborts the next legitimate download. The oracle cannot reach either,
-/// because JavaScript numbers are doubles (`transfer.ts:142`), so this is a
-/// hazard the port introduced rather than one it inherited.
-///
-/// Saturating gives the answer the oracle gives: an absurd declared size means
-/// an absurd ceiling, so nothing is cut off for exceeding it, and the stall
-/// watchdog is what ends a stream that then goes quiet.
+/// **Saturating**, and that is the whole point: `declared` is a
+/// `content-length` off the wire, so a hostile origin picks it. At `2^63` plain
+/// arithmetic panics the worker in debug and wraps to a 64 MiB ceiling in
+/// release, aborting the next legitimate download. Saturating makes an absurd
+/// declared size an absurd ceiling, leaving the stall watchdog to end it.
 fn ceiling(declared: u64, multiplier: u64, slack: u64) -> u64 {
     declared.saturating_mul(multiplier).saturating_add(slack)
 }
@@ -95,8 +78,7 @@ pub struct Transfer {
     catalog: Arc<dyn CatalogHashes>,
     hf_base_url: String,
     /// The HuggingFace host, derived from the configured base URL so a mirror
-    /// (`LOCA_HF_BASE_URL`) is honoured rather than the literal host being
-    /// hard-coded. The etag lookup only runs against this host.
+    /// is honoured. The etag lookup only runs against this host.
     hf_host: Option<String>,
     stall: Duration,
     progress_interval: Duration,
@@ -118,11 +100,8 @@ impl Transfer {
         }
     }
 
-    /// Shorten the stall window and the progress throttle.
-    ///
-    /// Injectable because the alternative is a test that either runs for a
-    /// production minute or proves nothing. The shipping RATIO is what a test
-    /// has to keep: a stall window well above the inter-chunk interval.
+    /// Shorten the stall window and the progress throttle. A test must keep
+    /// the shipping RATIO: a stall window well above the inter-chunk interval.
     pub fn with_intervals(mut self, stall: Duration, progress: Duration) -> Self {
         self.stall = stall;
         self.progress_interval = progress;
@@ -137,10 +116,8 @@ impl Transfer {
         self
     }
 
-    /// Download `spec` to `abs_path`, returning the final byte count.
-    ///
-    /// A terminal failure (bad HTTP, checksum mismatch, stall) is an error; a
-    /// transient one leaves the `.tmp` partial behind for a later resume.
+    /// Download `spec` to `abs_path`, returning the final byte count. A
+    /// terminal failure is an error; a transient one leaves the `.tmp` behind.
     pub async fn stream_transfer(&self, opts: TransferOpts<'_>) -> Result<u64> {
         let TransferOpts {
             spec,
@@ -151,10 +128,8 @@ impl Transfer {
         } = opts;
 
         let url = match spec.url.as_ref() {
-            // Present, not truthy: a caller that sets `url` to the empty string
-            // has bypassed the source parser and asked for nothing, and falls
-            // through to the refusal below rather than silently downloading the
-            // parsed source instead.
+            // Present, not truthy: an empty `url` asked for nothing and falls
+            // through to the refusal rather than downloading the parsed source.
             Some(url) => url.clone(),
             None => parse_source(&spec.source, &self.hf_base_url)?.url,
         };
@@ -171,19 +146,16 @@ impl Transfer {
         }
         let tmp_path = tmp_path_for(abs_path);
 
-        // An empty pinned hash is PRESENT for the purpose of the anchor chain
-        // (it shadows the catalog and the etag lookup, so neither is consulted)
-        // and ABSENT for everything after it: no hasher, no resume, no
-        // verification, and the unverified-download warning fires. Both halves
-        // are the oracle's, and the second is this one line.
+        // An empty pinned hash is PRESENT for the anchor chain (shadowing the
+        // catalog and the etag lookup) and ABSENT after it: no hasher, no
+        // resume, no verification, and the unverified warning fires.
         let expected_sha = self
             .resolve_expected_sha(spec, &url, cancel)
             .await
             .filter(|sha| !sha.is_empty());
         if expected_sha.is_none() {
-            // No trustworthy content hash: the bytes are accepted on TLS trust
-            // alone. Said out loud rather than silently trusted, because this
-            // line is the only record that a given file was never verified.
+            // The only record that a given file was accepted on TLS trust
+            // alone, with no content hash to verify it against.
             tracing::warn!(
                 target: "loca::downloads",
                 "downloading {url} without integrity verification (no sha256 available)"
@@ -194,9 +166,7 @@ impl Transfer {
         let mut downloaded = resume_from;
         let mut total = spec.size_hint;
 
-        // The watchdog covers the wait for response headers too: a host that
-        // accepts the connection and then never answers is the same silence as
-        // one that stops mid-body.
+        // The watchdog covers the wait for response headers too.
         let requested = self.net.get_range(&url, Some(resume_from), cancel);
         let mut res = match tokio::time::timeout(self.stall, requested).await {
             Err(_elapsed) => return Err(self.stalled(&url)),
@@ -204,9 +174,8 @@ impl Transfer {
         };
 
         if res.status() == 416 {
-            // The partial is longer than the resource (a corrupt or stale
-            // `.tmp`): drop it so the next retry starts clean rather than
-            // 416-looping forever.
+            // The partial is longer than the resource: drop it so the next
+            // retry starts clean rather than 416-looping forever.
             let _ = tokio::fs::remove_file(&tmp_path).await;
             return Err(AppError::new(
                 ErrorCode::ProviderError,
@@ -220,11 +189,9 @@ impl Transfer {
             ));
         }
 
-        // 206 means the server honoured the Range and is sending only the tail,
-        // so append. Anything else is the whole file from byte zero, so the
-        // partial is discarded: hasher reset, file truncated, counters zeroed.
-        // Appending to it instead would produce a file that is the partial plus
-        // the whole resource, which only the final sha256 would catch.
+        // 206 means the server honoured the Range and is sending only the
+        // tail, so append. Anything else is the whole file from byte zero, so
+        // the partial is discarded: appending would yield partial + whole.
         let resuming = resume_from > 0 && res.status() == 206;
         if !resuming {
             downloaded = 0;
@@ -234,20 +201,17 @@ impl Transfer {
         }
         let mut file = open_tmp(&tmp_path, resuming).await?;
 
-        // content-length is the BODY length, which is the remaining tail when
-        // resuming, so the size of the resource is the offset plus it.
+        // content-length is the BODY length, the remaining tail on a resume,
+        // so the resource size is the offset plus it.
         let mut exact_total: Option<u64> = None;
         if let Some(length) = res.content_length() {
-            // Saturating, because both operands come off a response header and
-            // the oracle's are JavaScript doubles that cannot overflow. See
-            // [`ceiling`].
+            // Saturating: both operands come off a response header.
             exact_total = Some(downloaded.saturating_add(length));
             total = exact_total;
         }
         if let Some(total) = total {
-            // A correct hint writes nothing. The extra row write is cheap; the
-            // broadcast it triggers is not, and a progress bar that repaints on
-            // every resume for no reason is the visible symptom.
+            // A correct hint writes nothing: the row write is cheap, but the
+            // broadcast it triggers repaints every client's progress bar.
             if Some(total) != spec.size_hint {
                 on_size_known(total);
             }
@@ -257,12 +221,10 @@ impl Transfer {
         let pump = async {
             loop {
                 let next = tokio::select! {
-                    // Cancel first, so a user's stop is not delayed behind a
-                    // chunk that happens to be ready.
+                    // Cancel first, so a stop is not delayed behind a chunk.
                     biased;
                     () = cancel.cancelled() => return Err(net::cancelled()),
-                    // A per-chunk deadline IS the re-arm: there is no timer to
-                    // reset, because the timeout is rebuilt each iteration.
+                    // A per-chunk deadline IS the re-arm: rebuilt each pass.
                     chunk = tokio::time::timeout(self.stall, res.next_chunk()) => chunk,
                 };
                 let chunk = match next {
@@ -270,9 +232,7 @@ impl Transfer {
                     Ok(None) => break,
                     Ok(Some(chunk)) => chunk?,
                 };
-                // Checked at the top against the running total, so a stream that
-                // far exceeds what it declared is cut off before the write
-                // rather than after the disk fills.
+                // Checked before the write, not after the disk fills.
                 if let Some(declared) = exact_total {
                     if downloaded > ceiling(declared, self.ceiling_multiplier, self.ceiling_slack) {
                         return Err(AppError::new(
@@ -297,19 +257,14 @@ impl Transfer {
             Ok(())
         }
         .await;
-        // Flush on every exit, including the failing ones: a buffered tail that
-        // never reached the file would make the next resume hash bytes the
-        // server never sent.
+        // Flushed on every exit, failures included: a buffered tail that never
+        // reached the file would make the next resume hash bytes the server
+        // never sent.
         //
-        // `sync_all` and not just `flush`, and the difference matters more here
-        // than anywhere else in the core. `flush` pushes the userspace buffer
-        // into the kernel; the rename below then publishes a file whose tail may
-        // still be only in page cache. A crash in that window leaves a
-        // TRUNCATED model or binary at the final path, which the queue row
-        // records as complete and nothing ever re-verifies, so the sha256 this
-        // function just checked is checked against bytes that are no longer what
-        // is on disk. The next launch loads a corrupt artifact and reports
-        // something unrelated.
+        // `sync_all`, not `flush`: `flush` only reaches the kernel, so the
+        // rename below could publish a file whose tail is still page cache. A
+        // crash there leaves a TRUNCATED artifact the queue records as
+        // complete and nothing ever re-verifies.
         let flushed = async {
             file.flush().await.map_err(write_failed)?;
             file.sync_all().await.map_err(write_failed)
@@ -321,9 +276,8 @@ impl Transfer {
 
         if let (Some(hasher), Some(expected)) = (hasher, expected_sha.as_ref()) {
             let actual = hex::encode(hasher.finalize());
-            // The expected side is lowercased because it is not normalised
-            // anywhere upstream: a signed manifest or a GitHub digest can carry
-            // uppercase hex, and only two of the three anchors lowercase.
+            // Lowercased because nothing upstream normalises it: a signed
+            // manifest or a GitHub digest can carry uppercase hex.
             if actual != expected.to_lowercase() {
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(AppError::new(
@@ -345,13 +299,9 @@ impl Transfer {
     }
 
     /// The most trustworthy sha256 available for `spec`, in order: an explicit
-    /// spec hash, then (for a catalog model file) the hash pinned in the SIGNED
-    /// catalog, then HuggingFace's published one.
-    ///
-    /// The order is the point. The signed catalog outranks a header because it
-    /// holds even when a proxy strips the etag or the file moves to a mirror,
-    /// and an explicit spec hash outranks both because a binary's hash comes
-    /// from a manifest this core verified itself.
+    /// spec hash (from a manifest this core verified), then the SIGNED
+    /// catalog's pin (which survives a stripped etag or a mirror), then
+    /// HuggingFace's published one.
     async fn resolve_expected_sha(
         &self,
         spec: &EnqueueSpec,
@@ -369,13 +319,10 @@ impl Transfer {
         self.resolve_hf_sha256(url, cancel).await
     }
 
-    /// HuggingFace's published sha256 for a file, or `None`.
-    ///
-    /// The resolve endpoint 302s to a CDN, and for git-LFS objects (the large
-    /// weights) the redirect carries the content sha256 in `x-linked-etag`.
-    /// A small non-LFS file's etag is a git blob **sha1**, which is not a
-    /// content hash at all, so the shape check is what stops a plausible-looking
-    /// header being treated as one.
+    /// HuggingFace's published sha256 for a file, or `None`. The resolve
+    /// endpoint 302s to a CDN, and for git-LFS objects the redirect carries the
+    /// content sha256 in `x-linked-etag`. A non-LFS file's etag is a git blob
+    /// **sha1**, so the shape check is what stops it being treated as one.
     async fn resolve_hf_sha256(&self, url: &str, cancel: &CancellationToken) -> Option<String> {
         let host = net::host_of(url)?;
         if Some(&host) != self.hf_host.as_ref() {
@@ -420,13 +367,9 @@ pub fn tmp_path_for(abs_path: &Path) -> PathBuf {
 /// Detect a resumable partial and seed the hasher with its bytes, so the
 /// streamed tail hashes continuously.
 ///
-/// Returns `(0, None)` when no hash is available: with nothing to verify
-/// against, a partial cannot be told apart from garbage, so the transfer starts
-/// clean. A read failure falls back to a clean start too.
-///
-/// The whole partial is re-read on every resume, which for a 20 GB weight is a
-/// full pass before the first new byte arrives. That is the price of verifying
-/// the whole file rather than the tail, and it is deliberate.
+/// `(0, None)` when no hash is available: with nothing to verify against, a
+/// partial cannot be told from garbage. The whole partial is re-read on every
+/// resume, which is the deliberate price of verifying the file, not the tail.
 async fn open_resume(tmp_path: &Path, want_hash: bool) -> (u64, Option<Sha256>) {
     if !want_hash {
         return (0, None);
@@ -435,7 +378,7 @@ async fn open_resume(tmp_path: &Path, want_hash: bool) -> (u64, Option<Sha256>) 
     let mut resume_from = 0u64;
     if let Ok(meta) = tokio::fs::metadata(tmp_path).await {
         // A zero-length partial is nothing to resume, and a directory named
-        // `<file>.tmp` is not a partial at all.
+        // `<file>.tmp` is not a partial.
         if meta.is_file() && meta.len() > 0 {
             resume_from = meta.len();
         }
@@ -540,8 +483,8 @@ mod tests {
         fn new(hf_base_url: &str, catalog: Option<String>) -> Self {
             let net = Arc::new(Net::new().unwrap());
             let transfer = Transfer::new(Arc::clone(&net), Arc::new(Catalog(catalog)), hf_base_url)
-                // 250 ms against a stream that emits far more often keeps the
-                // shipping ratio (60 s against a stream that emits per chunk).
+                // Keeps the shipping ratio: a stall window far above the
+                // inter-chunk interval.
                 .with_intervals(Duration::from_millis(250), Duration::from_millis(10));
             Self {
                 net,
@@ -552,9 +495,8 @@ mod tests {
             }
         }
 
-        /// A `Transfer` with nothing tuned, for the one test that is about the
-        /// shipping constants rather than about moving bytes. `Fixture::new`
-        /// deliberately shortens the intervals, so it cannot answer that.
+        /// A `Transfer` with nothing tuned, for the one test about the
+        /// shipping constants rather than about moving bytes.
         fn bare_transfer() -> Transfer {
             let net = Arc::new(Net::new().unwrap());
             Transfer::new(net, Arc::new(Catalog(None)), "https://huggingface.co")
@@ -602,8 +544,8 @@ mod tests {
             .await
         }
 
-        /// What actually landed on disk. The assertion that means something:
-        /// a reported byte count can be right while the file is wrong (D-048).
+        /// What actually landed on disk: a reported byte count can be right
+        /// while the file is wrong.
         fn landed(&self) -> Option<Vec<u8>> {
             std::fs::read(self.dest()).ok()
         }
@@ -979,7 +921,7 @@ mod tests {
     #[tokio::test]
     async fn a_slow_but_progressing_stream_is_not_killed() {
         // 8 chunks 60 ms apart runs 480 ms against a 250 ms stall window, so a
-        // watchdog that bounds TOTAL duration kills it and a per-chunk one does
+        // watchdog bounding TOTAL duration kills it and a per-chunk one does
         // not. Three chunks would finish inside the window and prove nothing.
         let body: Vec<u8> = (0..8).flat_map(|_| b"abcdefgh".to_vec()).collect();
         let server = Upstream::start(Serve::Trickle {
@@ -1051,17 +993,10 @@ mod tests {
         })
         .await;
         let mut fx = Fixture::new(server.base(), None);
-        // A stall window far longer than the cancel, so whichever error comes
-        // back names which mechanism fired.
-        //
-        // What this does NOT cover, stated because the name suggests otherwise:
-        // the pump's `biased`. Only one branch is ever ready here (the stream is
-        // silent and the stall is five seconds away), so the cancel wins by
-        // being the only thing that can, with or without the bias. Removing
-        // `biased` survives this test, and pinning it would need both branches
-        // ready at once and deterministically, which no test at this level can
-        // arrange. Recorded as a survivor in `status.md` rather than papered
-        // over with a flaky round-robin.
+        // A stall window far longer than the cancel, so the error names which
+        // mechanism fired. This does NOT cover the pump's `biased`: only one
+        // branch is ever ready here, so the cancel wins with or without it, and
+        // no test at this level can make both ready deterministically.
         fx.transfer = fx
             .transfer
             .with_intervals(Duration::from_secs(5), Duration::from_millis(10));
@@ -1078,26 +1013,12 @@ mod tests {
 
     // -- the runaway ceiling ------------------------------------------------
 
-    /// Every ceiling and watchdog test below injects its constants, which is
-    /// what lets the boundary case sit ON the boundary. The cost is that those
-    /// tests cannot see the SHIPPING values at all, so this covers the two
-    /// things that go wrong on the other side of the injection seam.
-    ///
-    /// First, wiring: `new` must reach for the production constants and the two
-    /// setters must assign to the fields they name. The arguments here are
-    /// distinct and non-zero on purpose, because a transposed pair is the defect
-    /// this is really watching for and equal values cannot see one.
-    ///
-    /// Second, magnitude, asserted as a range rather than an equality. Pinning
-    /// `STALL_TIMEOUT == 60s` would be a change-detector: it fails on a
-    /// deliberate retune to 45s, which is a decision rather than a defect. The
-    /// property that actually matters is the one the doc comments claim, that
-    /// the window is generous enough to fire on silence and never on slowness,
-    /// and a bound catches the catastrophic edit (60s to 60ms) while leaving the
-    /// tuning free.
-    // Asserting on constants is the point here rather than an oversight: these
-    // are the shipping values, and the bounds are what stops a catastrophic
-    // retune landing unnoticed behind tests that all inject their own.
+    /// The ceiling and watchdog tests below inject their constants so the
+    /// boundary case sits ON the boundary, which leaves the SHIPPING values
+    /// covered by nothing. This covers the two things on the other side of that
+    /// seam: wiring (distinct non-zero arguments, since equal ones cannot see a
+    /// transposition) and magnitude, bounded rather than pinned so a retune
+    /// stays legal while a 60s-to-60ms edit does not.
     #[allow(clippy::assertions_on_constants)]
     #[tokio::test]
     async fn the_shipping_constants_are_wired_through_and_the_injectors_do_not_transpose() {
@@ -1131,8 +1052,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_stream_that_exceeds_its_declared_size_is_cut_off_at_the_ceiling() {
-        // The constants are injected so the boundary case sits ON the boundary:
-        // ceiling = declared * 0 + 8, and 4-byte chunks cross it at 12 bytes.
+        // Injected so the boundary case sits ON it: ceiling = declared * 0 + 8,
+        // and 4-byte chunks cross it at 12 bytes.
         let server = Upstream::start(Serve::Trickle {
             chunk: b"abcd".to_vec(),
             count: 8,
@@ -1167,11 +1088,9 @@ mod tests {
 
     #[test]
     fn an_absurd_declared_size_saturates_rather_than_overflowing() {
-        // The operands come off a response header, so the origin picks them.
-        // Plain `declared * multiplier + slack` at 2^63 panics the transfer
-        // worker in debug and WRAPS in release, where the ceiling collapses to
-        // 64 MiB and the next legitimate multi-gigabyte download is aborted for
-        // "far exceeding" a size it is nowhere near.
+        // The origin picks the operands. Plain arithmetic at 2^63 panics the
+        // worker in debug and WRAPS in release, collapsing the ceiling to
+        // 64 MiB and aborting the next legitimate multi-gigabyte download.
         assert_eq!(
             ceiling(u64::MAX, CEILING_MULTIPLIER, CEILING_SLACK),
             u64::MAX
@@ -1185,14 +1104,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_host_that_declares_an_absurd_length_does_not_kill_its_worker() {
-        // End to end over a real socket, because the panic is what wedged the
-        // queue: the worker unwound before its `in_flight.remove`, so the
-        // waiter's sender leaked inside the map entry, `enqueue` never
-        // resolved, and cancel, retry and remove all no-opped on that id
-        // forever. Here the transfer must simply come back with an error.
-        // 2^63, which is what makes `declared * 2` overflow exactly. `u64::MAX`
-        // is not usable here: hyper refuses to send a `content-length` it
-        // cannot represent as a body length, so the request never leaves.
+        // End to end over a real socket, because the panic wedged the queue:
+        // the worker unwound before its `in_flight.remove`, leaking the
+        // waiter's sender so `enqueue` never resolved and cancel, retry and
+        // remove no-opped on that id forever. 2^63 makes `declared * 2`
+        // overflow exactly; hyper refuses to send a `u64::MAX` content-length.
         let server = Upstream::start(Serve::Silent {
             chunk: b"abcd".to_vec(),
             count: 1,
@@ -1216,8 +1132,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_body_with_no_declared_length_has_no_ceiling() {
-        // Stated rather than fixed: the ceiling arms only when content-length
-        // was present and parsable, so a chunked response has none at all.
+        // The ceiling arms only on a present, parsable content-length, so a
+        // chunked response has none at all.
         let server = Upstream::start(Serve::Trickle {
             chunk: b"abcd".to_vec(),
             count: 8,

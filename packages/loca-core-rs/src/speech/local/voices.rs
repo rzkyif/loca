@@ -1,19 +1,12 @@
 //! Kokoro voice names to sherpa speaker ids, and the espeak language each one
 //! needs.
 //!
-//! # Why this table exists twice, and what keeps the copies honest
-//!
-//! The model catalog carries the same 53 voices, and since D-039 that catalog
-//! is what fills the client's dropdown. This table is NOT that list: it is the
-//! mapping from the id the user picked to the integer sherpa addresses a
-//! speaker by, and it has to work on an engine that has never seen a catalog
-//! (the catalog is loaded asynchronously and can be absent entirely). Merging
-//! them would make speaker resolution depend on a network-fetched document.
-//!
-//! Two positional copies of one list is exactly the drift D-084 describes, so
-//! `the_catalog_and_the_speaker_table_agree` pins them index for index against
-//! the catalog the crate already parses. If they ever diverge the user picks one
-//! voice and hears another, which no other test in this crate would notice.
+//! The model catalog carries the same 53 voices and fills the client's
+//! dropdown, but this table is the mapping to the integer sherpa addresses a
+//! speaker by, and it has to work on an engine that has never seen a catalog.
+//! Merging them would make speaker resolution depend on a network-fetched
+//! document. `the_catalog_and_the_speaker_table_agree` keeps the two honest: if
+//! they diverge the user picks one voice and hears another.
 
 /// Default espeak-ng language for a freshly loaded engine: American English, to
 /// match the default `af_bella` voice. A synthesis for a voice in another
@@ -37,14 +30,9 @@ pub fn resolve_sid(voice: &str) -> i32 {
 }
 
 /// The espeak-ng phonemizer language a voice needs, from its leading language
-/// letter. Every Kokoro id starts with one.
-///
-/// **Every code returned here must have a dictionary in the bundled
-/// espeak-ng-data**, because multilingual Kokoro does not fail on an unknown
-/// language: it terminates the process. That is why this is a closed match with
-/// a fallback rather than a lookup that can miss, and why
-/// `every_shipped_voice_resolves_to_a_language` is a containment test rather
-/// than a tidiness one.
+/// letter. Every code returned here must have a dictionary in the bundled
+/// espeak-ng-data, because multilingual Kokoro terminates the process on an
+/// unknown language, which is why this is a closed match with a fallback.
 pub fn voice_lang(voice: &str) -> &'static str {
     match voice.as_bytes().first() {
         Some(b'a') => "en-us",      // American English
@@ -81,10 +69,7 @@ pub fn request_lang(voice: Option<&str>) -> &'static str {
 }
 
 /// Speaker names in `voices.bin` order, so the index IS the sherpa speaker id.
-///
-/// The order mirrors sherpa-onnx's `scripts/kokoro/v1.0/generate_voices_bin.py`,
-/// which writes the style vectors in exactly this order. Reordering this list
-/// silently remaps every voice.
+/// Reordering this list silently remaps every voice.
 static VOICES: &[&str] = &[
     "af_alloy",
     "af_aoede",
@@ -221,20 +206,12 @@ mod tests {
         assert_eq!(request_lang(Some("9999")), DEFAULT_LANG);
     }
 
-    /// The tripwire, and note what it does NOT assert.
-    ///
-    /// The catalog and this table hold the same 53 ids in DIFFERENT orders: the
-    /// catalog groups by language for the dropdown (English, then Japanese and
-    /// Mandarin, then the rest), while this table is `voices.bin` order. That is
-    /// fine, and the reason is the one thing worth carrying away: resolution is
-    /// **by name**, so the catalog's position is a display detail. Nothing may
-    /// ever "simplify" `resolve_sid` into a catalog index lookup, because the
-    /// two orders diverge at position 28 and every non-English voice would then
-    /// address the wrong speaker.
-    ///
-    /// What must hold is the SET and the languages. A voice the catalog offers
-    /// and this table lacks resolves to speaker 0, so the user picks a Japanese
-    /// voice and hears an American one, with no error anywhere.
+    /// The SET and the languages must agree; the ORDER deliberately need not.
+    /// The catalog groups by language for the dropdown and this table is
+    /// `voices.bin` order, and resolution is BY NAME, so nothing may ever
+    /// "simplify" `resolve_sid` into a catalog index lookup: the two orders
+    /// diverge at position 28. A voice the catalog offers and this table lacks
+    /// resolves to speaker 0, with no error anywhere.
     #[test]
     fn the_catalog_and_the_speaker_table_offer_the_same_voices_and_languages() {
         // The file wraps the payload in a provenance envelope, so the payload is

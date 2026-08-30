@@ -1,8 +1,5 @@
 //! Stream parser for Deno's interactive permission prompt as it appears on a
-//! tool worker's PTY. Pure state machine over text chunks; no I/O, so it is
-//! unit-testable against recorded transcripts.
-//!
-//! Ports `packages/loca-core/src/extensions/prompt-parser.ts`.
+//! tool worker's PTY. Pure state machine over text chunks, no I/O.
 //!
 //! A prompt block looks like this, with the ANSI styling stripped:
 //!
@@ -15,46 +12,27 @@
 //! ┗ Allow? [y/n/A] (y = yes, allow; ...) >
 //! ```
 //!
-//! The final line has NO trailing newline, because Deno is blocked reading the
-//! answer, so prompt completion is detected on the PARTIAL line buffer. A port
-//! that only inspects completed lines deadlocks on every prompt, and the symptom
-//! is a ten-second hang per tool call. After the answer is accepted Deno erases
-//! the block with cursor moves and prints one confirmation line, `✅ Granted ...`
-//! or `❌ Denied ...`.
+//! The final line has NO trailing newline (Deno is blocked reading the answer),
+//! so completion is detected on the PARTIAL line buffer; inspecting only
+//! completed lines deadlocks every prompt. After the answer Deno erases the
+//! block and prints one `✅ Granted ...` or `❌ Denied ...` line. Anything that is
+//! not prompt grammar is forwarded as a stderr line (the same PTY carries the
+//! tool's stderr).
 //!
-//! Anything that is not prompt grammar is forwarded as a stderr line, exactly
-//! like the piped-stderr path: the same PTY carries the tool's own stderr.
-//!
-//! The wording is not a stable Deno API. The patterns anchor on the substrings
-//! that have survived every Deno 2.x release ("Deno requests", "Allow?",
-//! "Granted"/"Denied"), the deno version is pinned on every channel, and the
-//! live probe re-validates the format against the real binary.
-//!
-//! # Difference from the TypeScript, and why
-//!
-//! `feed` RETURNS its events rather than invoking a callback. The callback
-//! exists in TypeScript because a closure is the only seam available there; a
-//! returned vector is easier to test and removes the re-entrancy question
-//! entirely.
+//! The wording is not a stable Deno API: the patterns anchor on substrings that
+//! have survived every Deno 2.x release, the deno version is pinned, and the
+//! live probe re-validates against the real binary.
 
 use std::sync::OnceLock;
 
 use regex::Regex;
 
-/// Deno caps prompt content at 10 KB, so anything larger is not a real prompt.
-/// Hitting this bails the block back to idle, which is what stops ordinary
-/// output being swallowed as prompt chrome forever.
+/// Deno caps prompt content at 10 KB; a larger block is not a real prompt and
+/// bails back to idle so ordinary output stops being swallowed as chrome.
 const MAX_BLOCK_BYTES: usize = 16_384;
 
-/// Bound on the partial (pre-newline) line buffer. A tool sharing the PTY can
-/// write an endless stream with no newline; without this cap the buffer grows
-/// without limit and exhausts Core's memory. A different failure from
-/// [`MAX_BLOCK_BYTES`] with a different fix, so the two are pinned separately.
-///
-/// The TypeScript counts UTF-16 code units here and this counts bytes. The
-/// prompt text carries multi-byte box-drawing characters and emoji, so the two
-/// differ; the cap is a memory bound rather than a wire value, and a test
-/// pinning the exact boundary would be pinning a JavaScript encoding detail.
+/// Bound on the partial (pre-newline) line buffer, so a tool streaming with no
+/// newline cannot exhaust Core's memory.
 const MAX_PARTIAL_BYTES: usize = 1_000_000;
 
 const TRUNCATION_MARKER: &str = " …[truncated]";
@@ -64,10 +42,8 @@ pub enum PromptParserEvent {
     StderrLine {
         line: String,
     },
-    /// `permission` is the RAW kind string from the prompt. It is usually one of
-    /// the seven `loca.json` kinds, but Deno also prompts for `import`; the
-    /// matcher is what maps it. `resource` is empty for a blanket request with
-    /// no quoted resource.
+    /// `permission` is the RAW kind string (Deno also prompts for `import`; the
+    /// matcher maps it). `resource` is empty for a blanket request.
     Prompt {
         permission: String,
         resource: String,
@@ -115,9 +91,6 @@ impl PromptParser {
     pub fn feed(&mut self, text: &str) -> Vec<PromptParserEvent> {
         let mut out = Vec::new();
         self.buf.push_str(text);
-        // Detach the buffer so the completed lines can be handled while the
-        // remainder is written back. Everything before the last `\n` is a
-        // complete line; what follows it is the new partial.
         let buf = std::mem::take(&mut self.buf);
         let mut parts: Vec<&str> = buf.split('\n').collect();
         let rest = parts.pop().unwrap_or_default();
@@ -126,15 +99,11 @@ impl PromptParser {
         }
         rest.clone_into(&mut self.buf);
 
-        // The Allow? line never gets a newline while Deno waits for the answer,
-        // so the partial buffer is where completion is detected. An ANSI
-        // sequence split across chunks strips incompletely at worst, and the
-        // next chunk completes it.
+        // The Allow? line has no newline while Deno waits, so completion is
+        // detected on the partial buffer.
         if self.state == State::InPrompt {
             self.block_bytes += text.len();
             if self.block_bytes > MAX_BLOCK_BYTES {
-                // Not a real prompt. Bail so ordinary output stops being
-                // swallowed as block chrome.
                 self.state = State::Idle;
                 return out;
             }
@@ -145,10 +114,7 @@ impl PromptParser {
             }
         }
 
-        // Runaway no-newline output, in the idle or awaiting state: flush one
-        // truncated stderr line and drop the buffer so memory stays bounded. The
-        // in_prompt state cannot reach here with a large buffer, because
-        // MAX_BLOCK_BYTES bails it to idle first.
+        // Runaway no-newline output: flush one truncated line and drop the buffer.
         if self.buf.len() > MAX_PARTIAL_BYTES {
             let flushed = strip_ansi(&self.buf);
             self.buf.clear();
@@ -212,22 +178,16 @@ impl PromptParser {
                     self.api_name = Some(api[1].to_string());
                     return;
                 }
-                // The Allow? line normally surfaces through the partial-buffer
-                // check in `feed` (it carries no newline while Deno waits), but
-                // buffering can also deliver it as a completed line, possibly
-                // with the confirmation glued on after the "> ". Emit the prompt
-                // here too, then let the same line settle if it already carries
-                // the verdict.
+                // Buffering can deliver the Allow? line complete, possibly with
+                // the confirmation glued on after the "> ".
                 if line.contains("Allow?") {
                     self.state = State::Awaiting;
                     out.push(self.prompt_event());
                     self.check_settle(line, out);
                     return;
                 }
-                // Box-drawing lines are prompt chrome (stack frames, doc links).
-                // The tool's JS thread is blocked during a prompt, so genuine
-                // tool stderr cannot interleave here; anything unprefixed is
-                // Deno's own (a clear_stdin error, say) and still surfaces.
+                // The tool's JS thread is blocked during a prompt, so anything
+                // unprefixed is Deno's own (a clear_stdin error, say) and surfaces.
                 if is_block_chrome(line) {
                     return;
                 }
@@ -239,17 +199,14 @@ impl PromptParser {
                 if self.check_settle(line, out) {
                     return;
                 }
-                // The Allow? line completes (gains its newline) once the answer
-                // is read, and may be reprinted after a flushed or garbled
-                // answer. Swallow it and the rest of the block chrome.
+                // The Allow? line completes once the answer is read, and may be
+                // reprinted after a garbled answer.
                 if line.contains("Allow?") || is_block_chrome(line) {
                     return;
                 }
-                // A console (Windows ConPTY) echoes the typed answer back while
-                // Deno reads it. The tool's thread is still blocked at this
-                // point, so a bare y/n here can only be our own answer bouncing
-                // back, never tool output. That argument is the whole reason
-                // this is not an injection hole, so it stays written down.
+                // A console (Windows ConPTY) echoes the typed answer. The tool's
+                // thread is still blocked, so a bare y/n can only be our own
+                // answer bouncing back, never tool output.
                 let trimmed = line.trim();
                 if trimmed.len() == 1 && trimmed.starts_with(['y', 'Y', 'n', 'N']) {
                     return;
@@ -262,9 +219,7 @@ impl PromptParser {
     }
 }
 
-/// Cut at a character boundary at or below `max`, so a multi-byte character is
-/// never split. The TypeScript slices UTF-16 code units, where the same problem
-/// cannot arise.
+/// Cut at a character boundary at or below `max`.
 fn truncate(text: &str, max: usize) -> &str {
     if text.len() <= max {
         return text;
@@ -286,8 +241,6 @@ fn is_block_chrome(line: &str) -> bool {
 
 macro_rules! lazy_re {
     ($name:ident, $pattern:expr) => {
-        // Literal patterns, so a compile failure here is a build-time bug rather
-        // than anything a running core can hit.
         #[allow(clippy::unwrap_used)]
         fn $name() -> &'static Regex {
             static RE: OnceLock<Regex> = OnceLock::new();
@@ -316,9 +269,7 @@ mod tests {
     const B: &str = "\x1b[1m"; // bold
     const R: &str = "\x1b[0m"; // reset
 
-    /// Faithful to the real block recorded from deno 2.8.2 on a PTY: styled
-    /// segments, box-drawing prefixes, and the final Allow? line WITHOUT a
-    /// trailing newline.
+    /// As recorded from deno 2.8.2 on a PTY; the Allow? line has no newline.
     fn prompt_block(kind: &str, resource: &str, api: Option<&str>) -> String {
         let mut s =
             format!("┏ ⚠️  {B}Deno requests {R}{B}{kind} access to \"{resource}\"{R}{B}.{R}\n");
@@ -337,7 +288,6 @@ mod tests {
     }
 
     fn granted_line(kind: &str, resource: &str) -> String {
-        // Deno erases the block with cursor-up + erase-line sequences first.
         format!("\x1b[1A\x1b[2K\x1b[1A\x1b[2K✅ {B}Granted {kind} access to \"{resource}\".{R}\n")
     }
 
@@ -361,9 +311,6 @@ mod tests {
 
     #[test]
     fn a_prompt_completes_on_the_partial_line_and_then_settles() {
-        // The Allow? line carries no newline while Deno waits for the answer.
-        // A parser that only inspects completed lines never emits this event,
-        // and every tool call hangs for the full give-up budget.
         let mut p = PromptParser::new();
         let events = p.feed(&prompt_block(
             "read",
@@ -395,7 +342,6 @@ mod tests {
 
     #[test]
     fn a_blanket_prompt_without_a_quoted_resource_still_prompts() {
-        // Deno.env.toObject(), for instance: no `to "..."` segment at all.
         let mut p = PromptParser::new();
         let events = p.feed(&format!(
             "┏ ⚠️  {B}Deno requests env access{R}{B}.{R}\n┗ {B}Allow?{R} [y/n/A] (y = yes, allow; n = no, deny; A = allow all env permissions) > "
@@ -441,8 +387,6 @@ mod tests {
     fn a_reprinted_allow_line_after_a_garbled_answer_is_swallowed() {
         let mut p = PromptParser::new();
         let mut events = p.feed(&prompt_block("run", "ls", None));
-        // Unrecognized option: Deno erases and reprints the Allow line, so the
-        // previous one now completes with a newline.
         events.extend(p.feed(&format!(
             "\n┗ {B}Unrecognized option. Allow?{R} [y/n/A] (y = yes, allow; n = no, deny; A = allow all run permissions) > "
         )));
@@ -456,11 +400,8 @@ mod tests {
         );
     }
 
-    /// A pseudoconsole (Windows ConPTY) reflects a screen buffer: it wraps
-    /// output in cursor-hide/show, per-line absolute cursor moves plus
-    /// erase-line, and CRLF endings. Synthetic, because real ConPTY output can
-    /// only be captured on Windows, and there is no Windows CI; it locks in that
-    /// the VT chrome ConPTY adds is inert to the parser.
+    /// Synthetic ConPTY framing: cursor-hide/show, per-line absolute cursor
+    /// moves plus erase-line, and CRLF endings.
     fn conpty_wrap(block: &str) -> String {
         const HIDE: &str = "\x1b[?25l";
         const SHOW: &str = "\x1b[?25h";
@@ -491,10 +432,7 @@ mod tests {
             ))),
             vec![prompt("net", "example.com:443", Some("fetch()"))]
         );
-        // The console echoes the typed answer while Deno reads it. Here it is
-        // still glued to the unterminated Allow? line, so the Allow? rule is
-        // what swallows it; the bare-line case is
-        // `an_echoed_bare_answer_is_swallowed_rather_than_leaked`.
+        // The echo is glued to the unterminated Allow? line here.
         assert_eq!(p.feed("y\r\n"), vec![]);
         assert_eq!(
             p.feed(&conpty_wrap(&granted_line("net", "example.com:443"))),
@@ -504,31 +442,17 @@ mod tests {
 
     #[test]
     fn an_echoed_bare_answer_is_swallowed_rather_than_leaked() {
-        // Observed live on Windows: a bare "y"/"n" line of its own between the
-        // prompt and the confirmation, because the console echoes what was
-        // typed. It is our own answer bouncing back, never tool output (the
-        // tool's JS thread is blocked for the whole prompt), so it must not
-        // surface as a stderr line the user sees.
-        //
-        // The ConPTY test above cannot cover this: there the echo is glued to
-        // the still-unterminated Allow? line, so the Allow? rule swallows it and
-        // this rule is never reached.
         let mut p = PromptParser::new();
         p.feed(&prompt_block("net", "example.com:443", Some("fetch()")));
-        // The newline completes the Allow? line, then the echo arrives alone.
         assert_eq!(p.feed("\r\n"), vec![]);
         for answer in ["y\r\n", "n\r\n", "Y\r\n", " n \r\n"] {
             assert_eq!(p.feed(answer), vec![], "the echo of {answer:?} leaked");
         }
-        // Anything longer than a single character is real output and does
-        // surface, which is what stops this rule swallowing a tool's log line.
         assert_eq!(p.feed("yes really\r\n"), vec![stderr("yes really")]);
     }
 
     #[test]
     fn chunking_does_not_change_the_events() {
-        // Frame boundaries land mid-line and mid-escape-sequence in production,
-        // which is exactly when an ANSI strip is incomplete on one pass.
         let transcript = format!(
             "boot noise\n{}{}mid noise\n{}{}tail noise\n",
             prompt_block("read", "/etc/hosts", Some("Deno.readFileSync()")),
@@ -540,9 +464,6 @@ mod tests {
         assert_eq!(reference.len(), 7, "unexpected reference: {reference:?}");
 
         let bytes = transcript.as_bytes();
-        // Deterministic rather than random: a size-varying sweep over every
-        // chunk width covers the same boundaries and cannot pass one run and
-        // fail the next.
         for width in 1..=37usize {
             let mut p = PromptParser::new();
             let mut events = Vec::new();
@@ -561,8 +482,6 @@ mod tests {
 
     #[test]
     fn runaway_no_newline_output_is_truncated_rather_than_buffered_forever() {
-        // A tool streams more than a megabyte with no newline. The partial
-        // buffer must not grow without bound.
         let mut p = PromptParser::new();
         let mut events = Vec::new();
         for _ in 0..120 {
@@ -580,8 +499,6 @@ mod tests {
             "the flushed line is not bounded: {} bytes",
             line.len()
         );
-        // Output resumes cleanly once a newline arrives: the residue still in
-        // the buffer is emitted as one ordinary line, terminated by the newline.
         let resumed = p.feed(" tail\n");
         assert!(
             matches!(resumed.as_slice(), [PromptParserEvent::StderrLine { line }] if line.ends_with(" tail")),
@@ -592,8 +509,6 @@ mod tests {
 
     #[test]
     fn the_partial_buffer_stays_under_the_cap() {
-        // The bound itself, asserted on the state rather than on an event: this
-        // is what makes the constant load-bearing rather than decorative.
         let mut p = PromptParser::new();
         for _ in 0..300 {
             p.feed(&"x".repeat(10_000));
@@ -607,13 +522,7 @@ mod tests {
 
     #[test]
     fn the_partial_buffer_fills_to_the_cap_before_it_flushes() {
-        // The other half of the bound, and the half that pins the NUMBER: a
-        // smaller cap flushes early and truncates output the user should have
-        // seen whole. Asserting only "never grows past the cap" would pass with
-        // the cap set to anything smaller, including zero.
-        // The byte counts are LITERAL rather than derived from the constant. A
-        // test written in terms of `MAX_PARTIAL_BYTES` scales with whatever the
-        // constant is changed to and therefore cannot see the change at all.
+        // Literal byte counts, so a changed constant is visible here.
         let mut p = PromptParser::new();
         let mut events = Vec::new();
         for _ in 0..90 {
@@ -632,15 +541,6 @@ mod tests {
 
     #[test]
     fn an_oversized_fake_block_bails_back_to_idle() {
-        // A real prompt is capped at 10 KB by Deno itself. A tool faking the
-        // start line and then streaming chrome-looking junk must not swallow
-        // output forever.
-        //
-        // The assertion has to be that the CHROME starts surfacing, which is the
-        // stated reason for the cap: "so ordinary output stops being swallowed
-        // as block chrome". A trailing unprefixed line surfaces either way (in
-        // the in_prompt state an unprefixed line is stderr too), so a test that
-        // only checks the last event passes with the cap removed entirely.
         let mut p = PromptParser::new();
         assert_eq!(
             p.feed(&format!("{B}Deno requests read access to \"/x\"{R}.\n")),
@@ -665,10 +565,7 @@ mod tests {
             surfaced > 0,
             "the parser never bailed: every chrome line was still being swallowed"
         );
-        // And the bail happened where the cap says, rather than immediately: the
-        // lines fed before the block passed 16,384 bytes were swallowed. The
-        // count is literal rather than derived from the constant, so shrinking
-        // the constant is visible here.
+        // Literal count, so the bail happened where the cap says, not immediately.
         assert!(
             surfaced < 1200 - 500,
             "the block bailed far too early: {surfaced} of 1200 chrome lines surfaced"
@@ -677,16 +574,12 @@ mod tests {
 
     #[test]
     fn a_block_just_under_the_cap_still_prompts() {
-        // The positive control for the bail: without it, a cap of zero would
-        // pass the test above. The byte count is LITERAL, because a filler
-        // derived from MAX_BLOCK_BYTES scales with the constant and so cannot
-        // see it change.
         let mut p = PromptParser::new();
         p.feed("┏ ⚠️  Deno requests read access to \"/x\".\n");
         let filler = "┠─ x\n"; // 9 bytes
         let mut events = Vec::new();
         for _ in 0..1_700 {
-            // ~15,300 bytes, comfortably inside 16,384 and well outside 8,192.
+            // ~15,300 bytes, inside 16,384.
             events.extend(p.feed(filler));
         }
         events.extend(p.feed("┗ Allow? [y/n/A] (y = yes, allow) > "));

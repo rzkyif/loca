@@ -5,9 +5,8 @@
 //! genuinely cross-cutting state: a package that needs its own service handle
 //! builds it inside its `routes(ctx)` and captures it in the handlers.
 //!
-//! There is deliberately no process-global accessor for any of this. Two cores
-//! in one process is exactly what the conformance harness wants, and a global
-//! forecloses it (D-010).
+//! There is deliberately no process-global accessor for any of this: two cores
+//! in one process must stay possible.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -37,10 +36,8 @@ pub struct ClientIdentity {
 /// a pairing code is; it knows there is something that turns a bearer into a
 /// [`ClientIdentity`] and something that spends a WS ticket.
 ///
-/// Sync on purpose. Every operation behind it is a SQLite point query or an
-/// in-memory map lookup, and a sync trait stays object-safe without pulling in
-/// `async-trait`. An implementation that needs to block for longer than a point
-/// query should be reconsidered rather than made async.
+/// Sync on purpose: every operation behind it is a SQLite point query or an
+/// in-memory map lookup.
 pub trait ClientAuth: Send + Sync {
     /// `None` means no `Authorization` header at all, which is `missing_token`
     /// rather than `invalid_token`: the client shows a different path for each.
@@ -66,8 +63,7 @@ pub trait ClientAuth: Send + Sync {
 
 /// The aggregate core status, read by `/health` and broadcast as `core.status`.
 ///
-/// A seam rather than a direct call so the conformance harness can inject a
-/// fixed snapshot. The production implementation is
+/// A seam so a test can inject a fixed snapshot. Production uses
 /// [`super::status::CoreStatusService`].
 pub trait StatusProvider: Send + Sync {
     fn snapshot(&self) -> CoreStatusSnapshot;
@@ -98,9 +94,8 @@ pub struct AppContext {
     /// is no TLS and no pairing.
     pub tls_pin: Option<String>,
     /// What this core can actually do, answered on `GET /api/v1/health` so the
-    /// client gates on CORE capability rather than on which device is rendering
-    /// (M3). A mobile client paired to a desktop core must still show
-    /// extensions, sidecars and storage, which platform sniffing gets backwards.
+    /// client gates on CORE capability rather than on which device renders: a
+    /// mobile client paired to a desktop core must still show extensions.
     pub capabilities: super::health::Capabilities,
     /// Process start, for `uptimeMs`.
     pub started_at: Instant,
@@ -112,10 +107,8 @@ impl AppContext {
     }
 }
 
-/// A [`StatusProvider`] that reports a fixed snapshot.
-///
-/// Used by tests and by any frontend that has no status aggregator wired yet.
-/// Production uses [`super::status::CoreStatusService`].
+/// A [`StatusProvider`] that reports a fixed snapshot, for tests and for a
+/// frontend with no status aggregator wired yet.
 pub struct FixedStatus(pub CoreStatusSnapshot);
 
 impl Default for FixedStatus {
@@ -136,11 +129,8 @@ impl StatusProvider for FixedStatus {
     }
 }
 
-/// A [`ClientAuth`] that rejects everything.
-///
-/// The frontend installs the real one; this exists so a transport-only test
-/// (or a core brought up before pairing is wired) has a well-defined answer
-/// instead of an `Option` every call site has to unwrap.
+/// A [`ClientAuth`] that rejects everything, so a transport-only test has a
+/// well-defined answer rather than an `Option` every call site unwraps.
 pub struct DenyAllAuth;
 
 impl ClientAuth for DenyAllAuth {

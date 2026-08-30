@@ -8,12 +8,36 @@
 
 import type { ApiErrorBody, ClientToServerFrame, ServerToClientFrame } from "@loca/shared";
 import { serverToClientFrameSchema } from "@loca/shared";
-import type { NetResponse, NetSocket } from "../platform/index.ts";
+import { type NetRequest, type NetResponse, type NetSocket, platform } from "../platform/index.ts";
 import { getLogger } from "../util/log.ts";
 import { Subscribers } from "../util/subscribers.ts";
-import { type CoreTransport, netTransport } from "./transport.ts";
 
 const log = getLogger("ws");
+
+/** How a CoreClient reaches its Core. There are two, and they differ in one
+ *  fact: a remote Core is on the other end of a pinned TLS socket, an embedded
+ *  one is inside this app with no socket at all. CoreClient stays
+ *  transport-only; the registry picks the transport (see cores.ts `select`). */
+export interface CoreTransport {
+  fetch(req: NetRequest): Promise<NetResponse>;
+  connectWebSocket(url: string, opts: { mode: "pin" | "webpki"; pin?: string }): Promise<NetSocket>;
+  /** True when there is no socket. Two things follow: no WS ticket is minted
+   *  (the in-process identity replaces it), and reconnects use the brisk
+   *  profile (a re-open costs nothing). `close` handling is unchanged: a local
+   *  close is always real, so MAX_ATTEMPTS still parks a Core that won't boot. */
+  readonly inProcess: boolean;
+}
+
+/** The default: pinned HTTP + WebSocket to a remote Core, terminated below the
+ *  webview. Resolves `platform()` per call, so a client may be built before the
+ *  platform is installed. */
+export function netTransport(): CoreTransport {
+  return {
+    fetch: (req) => platform().net.fetch(req),
+    connectWebSocket: (url, opts) => platform().net.connectWebSocket(url, opts),
+    inProcess: false,
+  };
+}
 
 /** How the Client establishes trust in a paired core's TLS. `pin` (the default)
  *  enforces the SPKI pin captured at pairing (a self-signed core); `webpki` does
@@ -30,20 +54,14 @@ export interface CoreEndpoint {
 
 export type WsListener = (frame: ServerToClientFrame) => void;
 
-// Coarse connection state for UI banners. "connecting" is the initial state
-// before the first open, plus during reconnect attempts after a close;
-// "disconnected" is the transient gap between those attempts.
+// Coarse connection state for UI banners. "connecting" covers the initial open
+// and every reconnect attempt; "disconnected" is the gap between attempts.
 //
-// The last three PARK the client: no reconnect is scheduled and only an
-// explicit retryNow() (or a fresh CoreClient) resumes it.
-//  - "unauthorized": the core rejected our bearer at the ticket mint (its DB was
-//    reset, this client was revoked), so the same token will never connect.
-//    Recovery is a re-pair.
-//  - "gaveUp": MAX_ATTEMPTS consecutive attempts failed. The core is unreachable
-//    and hammering it further buys nothing; the user retries when they're ready.
-//  - "stopped": this device's core process isn't running, so there is nothing to
-//    reach. The user starts it, rather than waiting on a reconnect that cannot
-//    succeed.
+// The last three PARK the client (only retryNow(), or a fresh CoreClient,
+// resumes it): "unauthorized" means the core rejected our bearer at the ticket
+// mint, so recovery is a re-pair; "gaveUp" means MAX_ATTEMPTS failed and
+// hammering further buys nothing; "stopped" means this device's core process is
+// down, so the user starts it.
 export type ConnectionState =
   | "connecting"
   | "connected"
@@ -121,15 +139,12 @@ export class CoreClient {
   // will be until retryNow(). Guards connectWs the same way "unauthorized" does.
   private parked = false;
 
-  /** @param localStoppedProbe resolves true when this endpoint is this device's
-   *  own core AND that core's process is not running, so a reconnect cannot
-   *  succeed until someone starts it. Injected (rather than reached for here)
-   *  to keep this class transport-only: which core is ours, and whether its
-   *  process is up, are the registry's concerns. Absent for a remote core.
-   *  @param transport how requests cross to the core. Defaults to the pinned
-   *  network transport; the registry passes the in-process one for the Core
-   *  inside this app. Resolved lazily (see `transport` below) so a client may
-   *  still be constructed before the platform is installed. */
+  /** @param localStoppedProbe true when this endpoint is this device's own core
+   *  and its process is down, so a reconnect cannot succeed until someone starts
+   *  it. Injected to keep this class transport-only. Absent for a remote core.
+   *  @param transport how requests cross to the core; defaults to the pinned
+   *  network one, resolved lazily so a client may be built before the platform
+   *  is installed. */
   constructor(
     public readonly endpoint: CoreEndpoint,
     private readonly localStoppedProbe?: () => Promise<boolean>,
@@ -144,18 +159,13 @@ export class CoreClient {
       /\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?:[:/]|$)/.test(endpoint.baseUrl);
     this.wsBackoffInitialMs = this.isLocalCore ? 250 : 500;
     this.wsBackoffCapMs = this.isLocalCore ? 2_000 : 30_000;
-    // The connect deadline does NOT follow the backoff profile, because it is
-    // measuring something different on each transport. Over a socket it bounds a
-    // connect that resolved but never opened, and legitimate connect latency is
-    // a round trip, so seconds are generous. In process the connect does not
-    // resolve until the Core has BOOTED: on a first-ever start that is root
-    // dirs, SQLite migrations, and the offline install of the built-in extension
-    // behind an Ed25519 + sha256 verify, none of which a phone does in four
-    // seconds. Retrying buys nothing there (the boot is start-once, so every
-    // attempt awaits the same one), so a tight deadline only converts a slow
-    // start into a parked client. What the deadline still catches is a boot that
-    // HANGS; a boot that FAILS rejects instead and takes the backoff path
-    // immediately, without waiting for this at all.
+    // The connect deadline does NOT follow the backoff profile: it measures
+    // something different per transport. Over a socket it bounds a connect that
+    // resolved but never opened, so seconds are generous. In process it waits on
+    // the Core's BOOT (root dirs, migrations, the verified offline built-in
+    // install), which a phone does not do in four seconds, and retrying buys
+    // nothing because the boot is start-once. So it is long enough to catch only
+    // a boot that HANGS; one that FAILS rejects and backs off immediately.
     this.wsConnectTimeoutMs =
       injectedTransport?.inProcess === true ? 60_000 : this.isLocalCore ? 4_000 : 12_000;
     this.wsBackoffMs = this.wsBackoffInitialMs;
@@ -225,12 +235,6 @@ export class CoreClient {
     return await this.fetchJson<T>("DELETE", path, body);
   }
 
-  /** Alias for `del`. Matches `fetch`'s method naming so call sites
-   *  reading like `client.delete("/foo")` are natural. */
-  async delete<T>(path: string, body?: unknown): Promise<T | void> {
-    return await this.del<T>(path, body);
-  }
-
   // multipart for attachments + STT audio uploads. FormData is encoded to raw
   // multipart bytes here (with its boundary content-type) so the pinned Rust
   // net layer can send it as an opaque body.
@@ -267,15 +271,11 @@ export class CoreClient {
     return new Blob([res.body as BlobPart]);
   }
 
-  /** One request through this client's transport, with headers of the caller's
-   *  choosing and no response parsing. For the few call sites that need a
-   *  header this class does not send (the admin token) or already hold an
-   *  absolute URL (a stored attachment path).
-   *
-   *  It exists so those sites do not reach for `platform().net` themselves: a
-   *  raw network fetch is the wrong answer for a Core that is in process, and
-   *  the base URL it would target is a sentinel with nothing behind it. The
-   *  trust mode is this client's and is not the caller's to choose. */
+  /** One request through this client's transport, with caller-chosen headers and
+   *  no response parsing, for the sites needing a header this class does not send
+   *  (the admin token) or already holding an absolute URL. It exists so those
+   *  sites do not reach for `platform().net`, which is the wrong answer for a
+   *  Core that is in process. The trust mode stays this client's. */
   async fetchRaw(req: {
     url: string;
     method?: string;
@@ -712,15 +712,12 @@ export class CoreClient {
     }, delay);
   }
 
-  // A backgrounded WebView has its timers throttled or frozen, so a reconnect
-  // scheduled before the app was suspended fires whenever the user comes back.
-  // The attempts counted before that gap describe a network the user has since
-  // left, and nothing else resets the counter (only a successful open, or an
-  // explicit retryNow), so a background gap that began with two or three
-  // failures would spend the rest of the budget in the first seconds of the
-  // foreground and park as "gaveUp" on a link that is probably fine. Measured
-  // rather than subscribed to: a visibility subscription would make this class
-  // reach for the platform, which is exactly what keeps it transport-only.
+  // A backgrounded WebView freezes its timers, so a reconnect scheduled before
+  // suspension fires when the user returns, with an attempt count describing a
+  // network they have since left. Without this, a gap that began with two or
+  // three failures would burn the rest of the budget in the first seconds of the
+  // foreground and park as "gaveUp" on a link that is fine. Measured rather than
+  // subscribed to, so this class never reaches for the platform.
   private resumeIfSuspended(scheduledAtMs: number, delay: number): void {
     if (Date.now() - scheduledAtMs < delay + SUSPEND_GAP_MS) return;
     log.info("reconnect resumed after a long gap; restarting the attempt budget");

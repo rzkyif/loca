@@ -1,16 +1,7 @@
-//! The seams a chat turn needs from packages that do not exist yet, or whose
-//! shape is theirs rather than ours.
-//!
-//! Declared here, in the consumer, following `sessions::ChatEngine`,
-//! `memories::MemoryIndexer` and `storage::deps::ModelLocks`: the consumer
-//! declares the seam so its own code compiles and is testable before the
-//! producer exists, and a test injects a scripted implementation instead of a
-//! subprocess or a language model.
-//!
-//! Every trait here has an `Unwired` implementation. That is not a stub for
-//! convenience: each one is the correct degraded behaviour for a core that
-//! genuinely lacks the subsystem, which on mobile is the shipping
-//! configuration rather than a temporary state.
+//! The seams a chat turn needs from other subsystems, declared in the consumer
+//! so a test can inject a scripted implementation instead of a subprocess or a
+//! language model. Each `No*` implementation is not a stub: it is the correct
+//! degraded behaviour of a core that genuinely lacks that subsystem.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,10 +18,8 @@ use crate::contract::api::{
 use crate::error::{AppError, ErrorCode, Result};
 use crate::settings::SettingsRecord;
 
-/// One event from a running extension tool call.
-///
-/// Ports `core-engine/src/services/tool-host.ts:25-41`. The orchestrator maps
-/// each to a `ServerToClientFrame`; nothing else consumes them.
+/// One event from a running extension tool call. The orchestrator maps each to
+/// a `ServerToClientFrame`; nothing else consumes them.
 #[derive(Clone, Debug)]
 pub enum ToolCallEvent {
     Progress {
@@ -64,8 +53,7 @@ pub enum ToolCallEvent {
     Cancelled,
 }
 
-/// `tool-host.ts:38`'s four levels. Not the tracing `Level`: this one is a wire
-/// value carried on `tool.log`, and it is spelled by the contract.
+/// Not the tracing `Level`: a wire value carried on `tool.log`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolLogLevel {
     Debug,
@@ -74,11 +62,8 @@ pub enum ToolLogLevel {
     Error,
 }
 
-/// What the orchestrator hands the host to start one call.
-///
-/// Ports `tool-host.ts:57-62`. `session_id` is `Option` because the module
-/// broker can run a tool outside a chat session, which is the case the
-/// TypeScript spells `sessionId: string | null`.
+/// What the orchestrator hands the host to start one call. `session_id` is
+/// `Option` because the module broker can run a tool outside a chat session.
 pub struct ToolCallSpec {
     pub extension_id: String,
     pub tool: Tool,
@@ -91,10 +76,6 @@ pub struct ToolCallSpec {
 }
 
 /// A handle on one in-flight extension tool call.
-///
-/// Ports `tool-host.ts:46-54`. The `done` half of the TypeScript's promise is a
-/// method rather than a field, because a `Box<dyn Trait>` cannot hand out an
-/// owned future from a shared reference without one.
 #[async_trait]
 pub trait ToolCallController: Send + Sync {
     /// The tool's result, or the error it failed with. Resolves once per call;
@@ -111,27 +92,22 @@ pub trait ToolCallController: Send + Sync {
         draft: Option<ScheduledPromptDraft>,
     );
     /// Whether `request_id` names the schedule confirm that is currently open.
-    ///
     /// The guard that makes `schedule.confirm_response` idempotent: without it a
-    /// replayed response persists a second scheduled prompt. See
-    /// `chat.ts:191-194`.
+    /// replayed response persists a second scheduled prompt.
     fn has_pending_schedule(&self, request_id: &str) -> bool;
 }
 
-/// One tool's persisted relevance vector, for phase-1 cosine.
-///
-/// `source_hash` is what makes a vector embedded by a different model read as
-/// "not embedded" rather than being silently mis-ranked (`tool-filter.ts:79-83`).
+/// One tool's persisted relevance vector, for phase-1 cosine. `source_hash` is
+/// what makes a vector embedded by a different model read as "not embedded"
+/// rather than being silently mis-ranked.
 #[derive(Clone, Debug)]
 pub struct ToolEmbedding {
     pub vector: Vec<f32>,
     pub source_hash: String,
 }
 
-/// What `@resource` and `/prompt` expansion produced for one turn.
-///
-/// Mirrors `mcp::tokens::TokenResult`; restated here so `chat` does not name
-/// `mcp::` at all.
+/// What `@resource` and `/prompt` expansion produced for one turn. Mirrors
+/// `mcp::tokens::TokenResult`, restated so `chat` never names `mcp::`.
 #[derive(Debug, Default)]
 pub struct McpTokens {
     pub block: Option<String>,
@@ -140,33 +116,17 @@ pub struct McpTokens {
     pub claimed: std::collections::HashSet<String>,
 }
 
-/// The unified tool catalog and execution surface.
-///
-/// Ports `core-engine/src/services/tool-host.ts:64-100`, and it is deliberately
-/// ONE trait over both providers rather than two. The chat graph branches on
-/// provider in exactly one place, [`Self::is_mcp_server`]
-/// (`chat-tool-dispatch.ts:101`); everywhere else an MCP tool and an extension
-/// tool are the same thing. Splitting the trait would move that branch into
-/// every caller.
-///
-/// The production implementation is an adapter over `Option<Extensions>` plus
-/// `Mcp`, built in `boot`, mirroring the oracle's own
-/// `core/src/host/deno-tool-host.ts`. `chat` never names either module, which is
-/// what lets the mobile core supply a reduced implementation (remote MCP only)
-/// rather than scattering `if let Some(extensions)` through the hop loop.
+/// The unified tool catalog and execution surface, deliberately ONE trait over
+/// both providers: the chat graph branches on provider in exactly one place,
+/// [`Self::is_mcp_server`]. Splitting it would move that branch into every
+/// caller. Boot supplies an adapter over `Option<Extensions>` plus `Mcp`, so
+/// `chat` names neither module and mobile can pass a reduced implementation.
 #[async_trait]
 pub trait ToolHost: Send + Sync {
-    /// Whether this host can actually offer tools.
-    ///
-    /// Exists for the boot-seam suite (D-165) and answers a question no catalog
-    /// read can: every method of [`NoTools`] returns empty, which is
-    /// INDISTINGUISHABLE from a live host on a core with nothing installed. So
-    /// "did chat get a real tool host" cannot be observed by calling the trait,
-    /// and the regression it guards (the model offered no tools at all while
-    /// `/api/v1/tools` lists a full catalog) is silent by construction.
-    ///
-    /// Defaulted to `true` so a real implementation cannot forget it; the two
-    /// non-hosts override.
+    /// Whether this host can actually offer tools. Answers what no catalog read
+    /// can: [`NoTools`] is indistinguishable from a live host on a core with
+    /// nothing installed, so "did chat get a real tool host" is otherwise
+    /// unobservable. Defaulted so a real implementation cannot forget it.
     fn is_live(&self) -> bool {
         true
     }
@@ -184,13 +144,8 @@ pub trait ToolHost: Send + Sync {
     async fn list_mcp_tools(&self) -> Vec<Tool>;
 
     /// Whether `id` names a known MCP server, so a call routes to the MCP
-    /// client rather than the worker sandbox.
-    ///
-    /// **Async where the oracle is sync** (`deno-tool-host.ts:32` answers from
-    /// an in-memory `mcpRegistry()` map). The Rust MCP registry is DB-backed, so
-    /// a synchronous answer would need a parallel in-memory cache of server ids
-    /// whose invalidation is a new bug surface, bought for nothing: every call
-    /// site is already in async context.
+    /// client rather than the worker sandbox. Async because the registry is
+    /// DB-backed and every call site is already in async context.
     async fn is_mcp_server(&self, id: &str) -> bool;
 
     /// The persisted relevance vectors, keyed by tool id. One batched read
@@ -199,24 +154,18 @@ pub trait ToolHost: Send + Sync {
 
     // --- relevance ---
     /// Phase 1: cosine over the persisted vectors, top-K, plus the
-    /// always-available and directly-named sets.
-    ///
-    /// Lives on the host rather than in `chat` because it ranks rows only the
-    /// tool owner can read. See D-057.
+    /// always-available and directly-named sets. On the host rather than in
+    /// `chat` because it ranks rows only the tool owner can read.
     async fn filter_phase1(&self, query_vector: &[f32], options: Phase1Options) -> Phase1Result;
 
     /// Phase 2: ask the model which phase-1 candidates are plausibly useful.
     /// Fails OPEN, returning its input, so a flaky model cannot leave a turn
     /// with no tools.
     ///
-    /// The turn's OWN endpoint, already resolved, rather than the route it came
-    /// from. The oracle resolves the route a second time here
-    /// (`chat-tool-selection.ts:164`) and gets the same answer; in Rust it would
-    /// not, because the settings record a turn carries has the schema defaults
-    /// resolved underneath it and `Llm::resolve_endpoint` must not be handed
-    /// one. Passing what the turn already holds removes both the second load
-    /// and the chance of filtering tools against a different provider than the
-    /// turn then streams from.
+    /// Takes the turn's OWN resolved endpoint rather than re-resolving: the
+    /// settings a turn carries already have schema defaults underneath them,
+    /// which `Llm::resolve_endpoint` must not be handed, and re-resolving could
+    /// filter against a different provider than the turn streams from.
     async fn filter_phase2(
         &self,
         query: &str,
@@ -236,21 +185,10 @@ pub trait ToolHost: Send + Sync {
 
     /// Start a call in the sandbox. Events arrive on `events`.
     ///
-    /// The TypeScript passes an `onEvent` callback invoked synchronously from
-    /// the worker's message pump. A channel instead, because the orchestrator's
-    /// handler must await (a `display` event writes to the session store), and a
-    /// callback that can await would force a boxed future through the host's
-    /// whole event path.
-    ///
-    /// **Async, where the oracle is synchronous**, and for the same reason
-    /// [`Self::is_mcp_server`] is: the Rust side genuinely is. Starting a call
-    /// may read the registry out of SQLite, bind a loopback control socket and
-    /// spawn a process, where `Deno.Command.spawn()` returns at once against an
-    /// in-memory registry. Keeping the signature synchronous would mean either
-    /// blocking inside the runtime or detaching the spawn onto a task, and the
-    /// second one loses what the caller needs most: a spawn that fails must
-    /// fail THIS call, visibly, rather than arriving later as a worker that
-    /// never booted.
+    /// Async because starting a call reads SQLite, binds a control socket and
+    /// spawns a process. Detaching that onto a task would lose what the caller
+    /// needs most: a spawn that fails must fail THIS call, visibly, rather than
+    /// arriving later as a worker that never booted.
     async fn start_tool_call(
         &self,
         spec: ToolCallSpec,
@@ -271,7 +209,7 @@ pub trait ToolHost: Send + Sync {
     async fn resolve_mcp_tokens(&self, text: &str) -> McpTokens;
 }
 
-/// Phase-1 inputs. Ports `tool-filter.ts:28-38`.
+/// Phase-1 inputs.
 #[derive(Clone, Debug)]
 pub struct Phase1Options {
     /// Maximum candidates after the cosine sort. Always-available tools are
@@ -283,7 +221,7 @@ pub struct Phase1Options {
     pub query_text: Option<String>,
 }
 
-/// Phase-1 outputs. Ports `tool-filter.ts:40-48`.
+/// Phase-1 outputs.
 #[derive(Clone, Debug, Default)]
 pub struct Phase1Result {
     pub candidates: Vec<ToolDescriptor>,
@@ -294,12 +232,8 @@ pub struct Phase1Result {
     pub name_matched: Vec<ToolDescriptor>,
 }
 
-/// A core with no tool subsystem at all.
-///
-/// The mobile shipping configuration for extensions, and what a turn-level test
-/// installs when tools are not what it is testing. Every catalog read is empty,
-/// which makes a turn run with no tools rather than fail: the same thing a
-/// desktop core with no extensions installed already does.
+/// A core with no tool subsystem at all. Every catalog read is empty, so a turn
+/// runs with no tools rather than failing.
 pub struct NoTools;
 
 #[async_trait]
@@ -339,9 +273,7 @@ impl ToolHost for NoTools {
         _endpoint: &crate::llm::LlmEndpointConfig,
         _reasoning_budget: u32,
     ) -> Vec<ToolDescriptor> {
-        // Fails open, exactly as a real phase 2 does when the model is
-        // unreachable. Returning an empty set here would make "no filter" and
-        // "filter rejected everything" indistinguishable.
+        // Fails open, as a real phase 2 does when the model is unreachable.
         candidates
     }
 
@@ -358,9 +290,8 @@ impl ToolHost for NoTools {
         _spec: ToolCallSpec,
         _events: mpsc::UnboundedSender<ToolCallEvent>,
     ) -> Result<Box<dyn ToolCallController>> {
-        // Unreachable through the catalog above, since no tool is ever offered.
-        // An error rather than a silent no-op, because a call arriving here
-        // means the catalog and the dispatcher disagree.
+        // Unreachable via the empty catalog: an arrival here means the catalog
+        // and the dispatcher disagree, so it must be visible.
         Err(AppError::new(
             ErrorCode::ServerUnavailable,
             "this core has no extension subsystem",
@@ -384,24 +315,15 @@ impl ToolHost for NoTools {
     }
 }
 
-/// Persist a user-confirmed scheduled prompt.
-///
-/// D10's, and one method because that is the whole of what a chat turn asks:
-/// `chat.ts:199`'s single `host().status.createScheduledPrompt` call.
-///
-/// Synchronous and fallible, and both matter. The caller runs it INSIDE the
-/// response handler, before unblocking the tool, so the tool's "scheduled"
-/// report is only ever sent for a draft that was actually stored
-/// (`chat.ts:196-206`).
+/// Persist a user-confirmed scheduled prompt. Synchronous and fallible: the
+/// caller runs it inside the response handler, before unblocking the tool, so
+/// the tool's "scheduled" report is only sent for a draft that was stored.
 pub trait SchedulePersist: Send + Sync {
     fn create(&self, client_id: &str, draft: &ScheduledPromptDraft) -> Result<()>;
 }
 
-/// A core with no scheduler.
-///
-/// Refuses rather than silently accepting: a confirm that reports success and
-/// stores nothing is the one outcome the persist-before-unblock ordering exists
-/// to prevent.
+/// A core with no scheduler. Refuses rather than silently accepting: a confirm
+/// that reports success and stores nothing is what the ordering above prevents.
 pub struct NoSchedule;
 
 impl SchedulePersist for NoSchedule {
@@ -413,15 +335,10 @@ impl SchedulePersist for NoSchedule {
     }
 }
 
-/// The local model's idle lifecycle.
-///
-/// N2's, over what is today `core/src/services/llm-idle.ts`. A turn touches it
-/// three times: cancel a pending unload as it starts (`chat.ts:126`), reload a
-/// model that idle-unloading stopped (`:294`), and arm the timer when the last
-/// turn ends (`:141`).
-///
-/// Not on this trait: the LLM queue depth. D3 already publishes it through
-/// `Llm::attach_status`, and a second publisher would race it.
+/// The local model's idle lifecycle. A turn cancels a pending unload as it
+/// starts, reloads a model idle-unloading stopped, and arms the timer when the
+/// last turn ends. Queue depth is deliberately not here: `Llm::attach_status`
+/// already publishes it and a second publisher would race it.
 pub trait ModelIdle: Send + Sync {
     /// Cancel any pending idle-unload: a turn is about to use the model.
     fn note_activity(&self);
@@ -435,8 +352,7 @@ pub trait ModelIdle: Send + Sync {
     fn ensure_loaded<'a>(&'a self, settings: &'a SettingsRecord) -> BoxFuture<'a, Result<()>>;
 }
 
-/// A core with no local inference, which is every core until N2 lands and every
-/// mobile core that uses an external provider.
+/// A core with no local inference.
 pub struct NoIdle;
 
 impl ModelIdle for NoIdle {
@@ -449,8 +365,8 @@ impl ModelIdle for NoIdle {
     }
 }
 
-/// The three seams together, so a caller passes one value rather than three and
-/// a new seam does not change every construction site.
+/// The three seams together, so a new seam does not change every construction
+/// site.
 #[derive(Clone)]
 pub struct ChatDeps {
     pub tools: Arc<dyn ToolHost>,
@@ -459,8 +375,7 @@ pub struct ChatDeps {
 }
 
 impl ChatDeps {
-    /// Every seam absent. What a store-level test uses, and what a core with
-    /// neither extensions nor a scheduler genuinely has.
+    /// Every seam absent.
     pub fn unwired() -> Self {
         Self {
             tools: Arc::new(NoTools),

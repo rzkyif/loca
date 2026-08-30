@@ -1,23 +1,11 @@
 //! The regression net for what dropping upstream's `llama-server` would cost.
+//! Three capabilities live in `common/chat.cpp` and nothing else we link: Jinja
+//! chat-template application, per-format tool-call extraction, and the
+//! reasoning/`<think>` split. Losing any of them is silent.
 //!
-//! Three capabilities live in `common/chat.cpp` and in nothing else we link:
-//! Jinja chat-template application, per-format tool-call extraction, and the
-//! reasoning/`<think>` split. Losing any of them is silent, so these tests exist
-//! to make the loss loud.
-//!
-//! # Two rules these tests follow, and why
-//!
-//! **Everything goes through the production path.** No test builds its own
-//! parser params or reaches around the ABI. A test that constructs its own
+//! Everything goes through the production path: a test that builds its own
 //! `common_chat_parser_params` passes against a shim that never calls
-//! `parser.load`, which is exactly the failure being guarded against (D-100).
-//! Every parse below comes from a real `ChatTemplates::apply`.
-//!
-//! **They are proven by mutation, not by passing.** Each was checked to fail
-//! when the thing it guards is removed; the table is in N1's status. The
-//! mutations were hand-applied one at a time in the foreground and reverted
-//! before the next, so there is no driver that could leave residue in the tree
-//! (D-101).
+//! `parser.load`, which is the failure being guarded against.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,11 +27,9 @@ fn template(name: &str) -> String {
 }
 
 /// Loads the backend modules the desktop build needs before anything can run.
-///
-/// In the shared (desktop) build every backend including the CPU baseline is a
-/// module loaded at runtime, so with none loaded there are zero devices and no
-/// model will load. In the static (mobile) build they are linked in and this is
-/// a no-op.
+/// In the shared build every backend including the CPU baseline is a runtime
+/// module, so with none loaded no model will load; the static build links them
+/// in and this is a no-op.
 fn ensure_backends() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
@@ -58,12 +44,9 @@ fn ensure_backends() {
     });
 }
 
-/// Where to load backend modules from.
-///
-/// The directory holding this executable first, because that is the production
-/// layout (D-106 ships the modules beside the binary) and because it is what a
-/// moved or anchored install has. The build directory is the fallback for a
-/// build whose staging did not run.
+/// Where to load backend modules from: the directory holding this executable
+/// first, which is the production layout, then the build directory as a
+/// fallback for a build whose staging did not run.
 fn backend_dir() -> String {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -77,20 +60,31 @@ fn backend_dir() -> String {
     env!("LOCA_LLAMA_BACKEND_DIR").to_owned()
 }
 
-/// The optional test model. Kept out of git and out of the test suite's
-/// network access: see the acquisition command in N1's status.
+/// The optional test model, kept out of git.
 fn test_gguf() -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/test.gguf");
     p.is_file().then_some(p)
 }
 
 const NO_GGUF: &str = "SKIP: packages/loca-core-rs/models/test.gguf is absent, so the \
-    linkage test did not run. See docs/rust-port/packages/N1/status.md for the one command \
-    that fetches it. The two capability tests above do not need it and DID run.";
+    linkage test did not run. The two capability tests above do not need it and DID run.";
 
-// ---------------------------------------------------------------------------
-// T2: tool-call extraction
-// ---------------------------------------------------------------------------
+/// The test model loaded through the production path, or `None` (already
+/// reported) when the optional GGUF is absent.
+fn loaded_model() -> Option<(PathBuf, Arc<Model>)> {
+    ensure_backends();
+    let Some(path) = test_gguf() else {
+        eprintln!("{NO_GGUF}");
+        return None;
+    };
+    let model = Arc::new(
+        Model::load(&path.to_string_lossy(), &ModelOptions::default())
+            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
+    );
+    Some((path, model))
+}
+
+// --- tool-call extraction --------------------------------------------------
 
 fn weather_tools() -> serde_json::Value {
     serde_json::json!([{
@@ -174,10 +168,9 @@ fn extracts_hermes_json_tool_calls() {
 
 #[test]
 fn extracts_qwen_xml_tool_calls_through_the_same_path() {
-    // Qwen3.5 does not use Hermes JSON; its template specifies a nested XML
-    // form. Two families, two wire syntaxes, one code path: this is the
-    // concrete reason `common/` is linked instead of a libllama-only crate,
-    // which would have to re-derive the syntax per family.
+    // Qwen3.5 specifies a nested XML form rather than Hermes JSON. Two
+    // families, two wire syntaxes, one code path: the concrete reason `common/`
+    // is linked instead of a libllama-only crate.
     let turn = apply_with_tools("Qwen3.5-4B.jinja");
     let output = concat!(
         "The user is asking about weather. I should call the tool.\n</think>\n\n",
@@ -201,9 +194,7 @@ fn extracts_qwen_xml_tool_calls_through_the_same_path() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// T3: reasoning split
-// ---------------------------------------------------------------------------
+// --- reasoning split -------------------------------------------------------
 
 #[test]
 fn splits_reasoning_out_of_the_content() {
@@ -237,12 +228,10 @@ fn splits_reasoning_out_of_the_content() {
 
 #[test]
 fn reasoning_stays_inline_when_the_split_is_off_at_apply_time() {
-    // The negative half. Without it, a shim that hardcoded the split would pass
-    // the test above while ignoring the caller entirely.
-    //
-    // Note WHERE the control is: this varies the APPLY-time format, because the
-    // parse-time one is inert at this pin. That is not a detail of the test, it
-    // is why `parse_final` takes no format argument.
+    // The negative half: a shim that hardcoded the split would pass the test
+    // above while ignoring the caller. Varies the APPLY-time format, because
+    // the parse-time one is inert at this pin, which is why `parse_final` takes
+    // no format argument.
     let output = "The user wants weather. I should answer directly.\n</think>\n\nIt is 31 degrees.";
 
     let msg = apply_with("Qwen3.5-4B.jinja", ReasoningFormat::None)
@@ -259,31 +248,20 @@ fn reasoning_stays_inline_when_the_split_is_off_at_apply_time() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// T4: the trap
-// ---------------------------------------------------------------------------
+// --- the parser-revival trap -----------------------------------------------
 
 #[test]
 fn a_tool_capable_turn_carries_a_peg_parser_into_the_parse() {
-    // The diagnosis rather than the symptom, and it took a review to get it
-    // pointed at the right side.
-    //
     // `common_chat_parser_params`' converting constructor copies only `format`
     // and `generation_prompt`; the PEG parser must be revived with
     // `parser.load(params.parser)` on the PARSE side. Without that, parsing
     // degrades to content-only, logs at DEBUG, and RETURNS SUCCESS: no
     // tool_calls, no reasoning_content, nothing red.
     //
-    // This test used to assert `has_parser()`, which is the APPLY side. That is
-    // a different property: it stayed green under BOTH trap mutations (deleting
-    // the load, and deleting the load together with its loud guard), so the one
-    // test named for the trap was insensitive to it. `apply` producing a parser
-    // is necessary but says nothing about whether `parse` receives it.
-    //
-    // `parser_survives_revival` runs the same `revive_parser` helper that
-    // `loca_chat_parse` runs, so there is one line to delete and it breaks both.
-    // A probe carrying its own copy of the revival would stay green after the
-    // real one was removed, which is the D-100 shape.
+    // Asserting `has_parser()` instead would be the APPLY side, which stays
+    // green under the same mutation. `parser_survives_revival` runs the same
+    // `revive_parser` helper `loca_chat_parse` does, so one deletion breaks
+    // both; a probe with its own copy of the revival would not.
     for file in [
         "NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja",
         "Qwen3.5-4B.jinja",
@@ -302,9 +280,7 @@ fn a_tool_capable_turn_carries_a_peg_parser_into_the_parse() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// D-108: no call path from our code to llama.cpp's HTTP client
-// ---------------------------------------------------------------------------
+// --- no call path from our code to llama.cpp's HTTP client -----------------
 
 /// Finds the compiled shim object, wherever `cc` put it.
 fn shim_object() -> Option<PathBuf> {
@@ -318,9 +294,8 @@ fn shim_object() -> Option<PathBuf> {
                 walk(&path, out);
             } else if path.file_name().is_some_and(|n| {
                 // `cc` prefixes the object with a build hash
-                // (`70ca879c342373fc-shim.o`), so this matches the suffix.
-                // Matching the bare name found nothing and turned this whole
-                // test into a silent skip; it took a mutation to notice.
+                // (`70ca879c342373fc-shim.o`), so match the suffix: the bare
+                // name finds nothing and turns this into a silent skip.
                 let n = n.to_string_lossy();
                 n.ends_with("shim.o") || n.ends_with("shim.obj")
             }) {
@@ -336,23 +311,15 @@ fn shim_object() -> Option<PathBuf> {
 #[test]
 fn the_shim_never_calls_llama_cpps_http_client_or_subprocess_spawner() {
     // `llama-common` carries an HTTP downloader (cpp-httplib) and a subprocess
-    // spawner in the SAME cmake target as chat.cpp. `LLAMA_OPENSSL=OFF` and
-    // `LLAMA_SUBPROCESS=OFF` reduce them but do not remove them: in the desktop
-    // build the shared library legitimately exports 766 httplib symbols,
-    // because a shared library ships its whole target and nothing is
-    // dead-stripped across that boundary.
+    // spawner in the SAME cmake target as chat.cpp, and `LLAMA_OPENSSL=OFF` /
+    // `LLAMA_SUBPROCESS=OFF` reduce but do not remove them. So the checkable
+    // property is not "no such symbols exist" but "our code never reaches
+    // them": the shim is the only thing compiled against llama.cpp's headers,
+    // so the undefined references in its object file are the complete set of
+    // what we call. This protects the no-non-consented-network rule.
     //
-    // So the property that actually matters is not "no such symbols exist" but
-    // "our code never reaches them", and that is checkable: the shim is the
-    // only thing we compile against llama.cpp's headers, so an undefined
-    // reference in its object file is the complete set of what we call.
-    //
-    // This protects an absolute rule (no non-consented network after install),
-    // which is why it is a test rather than a paragraph.
-    // NOT a skip. The object is always present when this module compiles, since
-    // the same feature builds it, so "not found" means the audit is silently not
-    // running rather than that it is inapplicable. That is precisely the state
-    // this test spent its first life in.
+    // Not a skip: the object is always present when this module compiles, so
+    // "not found" means the audit is silently not running.
     let obj = shim_object().unwrap_or_else(|| {
         panic!(
             "shim object not found under {}; the no-call-path audit cannot run, \
@@ -385,8 +352,7 @@ fn the_shim_never_calls_llama_cpps_http_client_or_subprocess_spawner() {
         "`nm -u` listed no undefined symbols at all, so this audit proves nothing",
     );
 
-    // C++ names are mangled, so a family name appears as a substring of the
-    // mangled symbol; substring is the right test for these.
+    // C++ names are mangled, so a family name appears as a substring.
     for family in [
         "httplib",
         "common_download",
@@ -404,25 +370,15 @@ fn the_shim_never_calls_llama_cpps_http_client_or_subprocess_spawner() {
         );
     }
 
-    // D-107, all four doors.
-    //
-    // Two of these are ggml's loaders. The other two are llama.cpp convenience
-    // functions that call `ggml_backend_load_all()` THEMSELVES whenever the
-    // registry is empty (src/llama.cpp:101-113, 131-133), which is exactly the
-    // state at startup. Referencing any of the four hands the working-directory
-    // scan back to libllama, which is what the first version of this shim did by
-    // calling `llama_backend_init()`: the poison covered this file, the call
-    // reached the same code one level down, and nothing said so.
-    //
-    // `llama_supports_gpu_offload` and `llama_supports_rpc` are the two most
-    // likely to be added later by someone answering a reasonable question
-    // ("does this machine have a GPU?"). They are cheap-looking and they are not.
+    // All four doors to the working-directory backend scan. Two are ggml's
+    // loaders; the other two are llama.cpp convenience functions that call
+    // `ggml_backend_load_all()` themselves whenever the registry is empty,
+    // which is the state at startup. `llama_supports_gpu_offload` and
+    // `llama_supports_rpc` look cheap and are not.
     //
     // Matched EXACTLY rather than as a substring: `ggml_backend_load_all` is a
     // prefix of `ggml_backend_load_all_from_path`, and `ggml_backend_load` is a
-    // prefix of both while being the safe per-path call the shim DOES use. A
-    // substring test here fails on correct code, which is how this assertion was
-    // first written.
+    // prefix of both while being the safe per-path call the shim DOES use.
     for banned in [
         "ggml_backend_load_all",
         "ggml_backend_load_all_from_path",
@@ -440,9 +396,8 @@ fn the_shim_never_calls_llama_cpps_http_client_or_subprocess_spawner() {
         );
     }
 
-    // The positive half: the safe per-path loader IS referenced. Without this the
-    // assertions above are satisfied by a shim that loads no backends at all,
-    // which would pass while nothing worked.
+    // The positive half: without it the assertions above are satisfied by a
+    // shim that loads no backends at all.
     assert!(
         symbols.iter().any(|s| s == "ggml_backend_load"),
         "the shim references no backend loader at all, so this audit is passing \
@@ -450,27 +405,16 @@ fn the_shim_never_calls_llama_cpps_http_client_or_subprocess_spawner() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// T1: the linkage test
-// ---------------------------------------------------------------------------
+// --- the linkage test ------------------------------------------------------
 
 #[test]
 fn greedy_decoding_is_deterministic() {
-    // Guards the half of the linkage the chat tests never touch: that libllama
-    // and ggml actually execute, that decode produces logits, and that the
-    // sampler chain runs. Greedy so the assertion is exact rather than
-    // probabilistic.
-    ensure_backends();
-
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // The half of the linkage the chat tests never touch: libllama and ggml
+    // execute, decode produces logits, the sampler chain runs. Greedy so the
+    // assertion is exact rather than probabilistic.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
     let n_vocab = model.n_vocab() as usize;
     assert!(n_vocab > 0, "model reports an empty vocabulary");
 
@@ -517,9 +461,8 @@ fn greedy_decoding_is_deterministic() {
             if model.is_eog(token) {
                 break;
             }
-            // Exactly one accept per sampled token. `common_sampler_sample` does
-            // not accept, so this is the single advance of the grammar stack,
-            // the reasoning budget and the penalty ring.
+            // `common_sampler_sample` does not accept, so this is the single
+            // advance of the grammar stack, budget and penalty ring.
             sampler.accept(token, true);
             produced.push(token);
             ctx.decode(&[token]).expect("decode token");
@@ -533,9 +476,8 @@ fn greedy_decoding_is_deterministic() {
         "greedy decoding produced no tokens at all"
     );
 
-    // Determinism is asserted against a second run rather than a hardcoded
-    // token list, so the test is meaningful for whatever GGUF is present rather
-    // than only for the one it was written against.
+    // Against a second run rather than a hardcoded token list, so this is
+    // meaningful for whatever GGUF is present.
     let second = run(&mut ctx, &mut sampler);
     assert_eq!(
         first, second,
@@ -551,27 +493,15 @@ fn greedy_decoding_is_deterministic() {
 
 #[test]
 fn a_malformed_grammar_is_rejected_rather_than_accepted_and_then_fatal() {
-    // The one class of bug that must never come back silently: a crash reachable
-    // from a safe Rust API with safe inputs.
-    //
-    // The hand-rolled chain this replaced added `llama_sampler_init_grammar`'s
-    // return value to the chain without checking it. That function returns null
-    // for a grammar it cannot parse, `llama_sampler_chain_add` stores the null,
-    // and `llama_sampler_chain_apply` dereferences it, so `new` returned `Ok`
-    // and the FIRST sampled token killed the process (SIGSEGV, confirmed).
-    //
-    // The assertion is deliberately about the OBSERVABLE property rather than
-    // about how the chain is built, so it keeps holding across implementations:
-    // a grammar llama.cpp cannot parse must come back as an error from `new`.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // A crash reachable from a safe Rust API with safe inputs.
+    // `llama_sampler_init_grammar` returns null for a grammar it cannot parse,
+    // `llama_sampler_chain_add` stores the null, and `chain_apply`
+    // dereferences it, so an unchecked chain returns `Ok` and the first sampled
+    // token kills the process. Asserted as an observable property, so it holds
+    // across implementations: an unparseable grammar is an error from `new`.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     let spec = SamplerSpec {
         grammar: Some("root ::= ( unterminated".to_owned()),
@@ -580,10 +510,8 @@ fn a_malformed_grammar_is_rejected_rather_than_accepted_and_then_fatal() {
     let err = match SamplerChain::new(Arc::clone(&model), &spec) {
         Err(e) => e,
         Ok(mut sampler) => {
-            // Do not sample here. If the chain really does contain a null the
-            // process dies and takes the whole test binary with it, which
-            // reports as a signal rather than as this assertion. Failing loudly
-            // on the accepted handle is the diagnosis; the crash is the symptom.
+            // Do not sample: a chain containing a null kills the test binary,
+            // which reports as a signal rather than as this assertion.
             let _ = &mut sampler;
             panic!(
                 "a malformed grammar was ACCEPTED. If the sampler chain holds a null \
@@ -600,35 +528,15 @@ fn a_malformed_grammar_is_rejected_rather_than_accepted_and_then_fatal() {
 
 #[test]
 fn every_sampler_name_is_one_llama_cpp_accepts() {
-    // The defending test for D-157, and the shape of it is the finding.
-    //
-    // `SamplerKind`'s names used to come from `#[serde(rename_all =
-    // "snake_case")]`, a DERIVATION RULE standing in for llama.cpp's LOOKUP
-    // TABLE. It agreed on ten of eleven names and diverged on the one llama.cpp
-    // abbreviated: typical-p is `typ_p`, and `typical_p` is not canonical, not
-    // one of the kebab/no-dash aliases derived from a canonical name, and not
-    // one of the three misc aliases. The shim rejects unknown names by design,
-    // so that variant made every chain containing it a FAILED TURN, and nine
-    // catalog models ship it as their default sampler order.
-    //
-    // The test that was supposed to guard this asserted that the string
-    // `"typical_p"` appeared in the serialized spec. It did. A string assertion
-    // about a string cannot see what the string means to its consumer, so it
-    // passed for as long as it existed. This one hands each name to the real
-    // mapper and lets llama.cpp answer; asserting a different literal instead
-    // would be the same defect with a better constant.
-    //
-    // One chain per name rather than one chain of all eleven, so a failure
-    // names the offender instead of reporting that a chain did not build.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // A derivation rule (`#[serde(rename_all = "snake_case")]`) cannot stand in
+    // for llama.cpp's lookup table: typical-p is `typ_p` there, and `typical_p`
+    // is not canonical nor any alias, so the shim rejects it and every chain
+    // containing it is a failed turn. Each name goes to the real mapper and
+    // llama.cpp answers; asserting a literal would be the same defect with a
+    // better constant. One chain per name, so a failure names the offender.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     for kind in SamplerKind::ALL {
         let spec = SamplerSpec {
@@ -648,26 +556,13 @@ fn every_sampler_name_is_one_llama_cpp_accepts() {
 
 #[test]
 fn every_sampler_chain_the_shipped_catalog_declares_is_one_llama_cpp_accepts() {
-    // The other half of D-157, and the half that decides its severity. The
-    // enum's wrong name was not merely reachable by a user typing: the shipped
-    // catalog declares `typ_p` in the default sampler order of nine models, so
-    // the failure was the DEFAULT configuration on those models rather than an
-    // edge case, and every turn on one of them would have been rejected.
-    //
-    // The fixture is the real artifact rather than a list written from the code,
-    // which is the one check that catches an assumption the code was built on:
-    // a hand-written list would contain the names this crate already expects.
-    // Reading the catalog also means a chain added to it later is defended
-    // without anyone remembering to extend a test.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // The shipped catalog declares these names in models' default sampler
+    // order, so a name this crate rejects is the DEFAULT configuration failing
+    // rather than an edge case. Read from the real artifact rather than a list
+    // written from the code, which would only contain names it already expects.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     const CATALOG: &str = include_str!("../../models/catalog.dev.json");
     let catalog: serde_json::Value =
@@ -695,11 +590,8 @@ fn every_sampler_chain_the_shipped_catalog_declares_is_one_llama_cpp_accepts() {
     }
 }
 
-/// Every `samplers` array anywhere in the catalog, wherever the key sits.
-///
-/// Walked structurally rather than by path, so a catalog reshuffle moves the
-/// chains without silently emptying the fixture. The empty-result assertion at
-/// the call site is what stops that being a green vacuum.
+/// Every `samplers` array anywhere in the catalog. Walked structurally rather
+/// than by path, so a reshuffle cannot silently empty the fixture.
 fn collect_sampler_chains(value: &serde_json::Value, out: &mut Vec<Vec<String>>) {
     match value {
         serde_json::Value::Object(map) => {
@@ -729,22 +621,13 @@ fn collect_sampler_chains(value: &serde_json::Value, out: &mut Vec<Vec<String>>)
 
 #[test]
 fn an_unknown_sampler_name_is_an_error_rather_than_a_shorter_chain() {
-    // llama.cpp's own name mapper LOG_WRN's an unrecognised name and drops it.
-    // `llm.samplers` is a user setting, so upstream's behaviour would turn a
-    // typo into a chain that is quietly missing a sampler and a generation that
-    // is quietly different. The shim compares the counts and names the offender.
-    //
-    // Serialized by hand because `SamplerKind` cannot express a bad name, which
-    // is the point: the typo can only arrive from a config string.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // llama.cpp's own mapper LOG_WRN's an unrecognised name and drops it, which
+    // for the user setting `llm.samplers` would turn a typo into a quietly
+    // different generation. The shim compares counts and names the offender.
+    // Serialized by hand because `SamplerKind` cannot express a bad name.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     let err = SamplerChain::new_from_json(
         Arc::clone(&model),
@@ -761,18 +644,12 @@ fn an_unknown_sampler_name_is_an_error_rather_than_a_shorter_chain() {
 
 #[test]
 fn the_configured_sampler_order_reaches_llama_cpp() {
-    // The ORDER is a user setting and the whole reason the spec carries a list.
-    // Nothing else about a built chain is observable without a statistical test,
-    // so this asserts against llama.cpp's own rendering of the chain it built.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // The ORDER is a user setting. Nothing else about a built chain is
+    // observable without a statistical test, so this asserts against
+    // llama.cpp's own rendering of the chain it built.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     let forward = SamplerChain::new(
         Arc::clone(&model),
@@ -818,23 +695,12 @@ fn the_configured_sampler_order_reaches_llama_cpp() {
 
 #[test]
 fn a_lazy_tool_call_grammar_does_not_constrain_from_the_first_token() {
-    // The capability a hand-rolled chain could not express, and the reason it
-    // mattered: the old shim called the EAGER `llama_sampler_init_grammar`, so a
-    // tool-capable template constrained generation from token one and the model
-    // was forced to emit a tool call on EVERY turn, whether the user asked for
-    // one or not.
-    //
-    // Asserted structurally rather than by generating: a lazy grammar builds a
-    // chain that carries its triggers, and the eager one cannot.
-    ensure_backends();
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // The eager `llama_sampler_init_grammar` constrains from token one, so a
+    // tool-capable template forces a tool call on every turn. Asserted
+    // structurally: a lazy grammar builds a chain carrying its triggers.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
     let turn = apply_with_tools("Qwen3.5-4B.jinja");
     let applied = turn.applied();
     assert!(
@@ -862,9 +728,8 @@ fn a_lazy_tool_call_grammar_does_not_constrain_from_the_first_token() {
         ..SamplerSpec::default()
     };
 
-    // The load-bearing assertion is simply that this SUCCEEDS with the real
-    // template's grammar, triggers, preserved tokens and generation prompt all
-    // carried through. The hand-rolled chain ignored every one of those four.
+    // The assertion is that this SUCCEEDS with the real template's grammar,
+    // triggers, preserved tokens and generation prompt all carried through.
     let sampler = SamplerChain::new(Arc::clone(&model), &spec)
         .unwrap_or_else(|e| panic!("lazy tool-call sampler: {}", e.message));
     let chain = sampler
@@ -878,10 +743,9 @@ fn a_lazy_tool_call_grammar_does_not_constrain_from_the_first_token() {
 
 #[test]
 fn a_backend_is_registered_before_anything_tries_to_infer() {
-    // In the desktop build zero devices is the difference between "slow" and
-    // "cannot run at all", and it happens whenever the backend modules are not
-    // beside the binary. Worth its own assertion so that failure is named
-    // rather than surfacing as a confusing model-load error.
+    // Zero devices in the desktop build means "cannot run at all", and happens
+    // whenever the backend modules are not beside the binary. Named here rather
+    // than surfacing as a confusing model-load error.
     ensure_backends();
     let devices = model::devices().unwrap_or_else(|e| panic!("devices: {}", e.message));
     assert!(
@@ -890,9 +754,7 @@ fn a_backend_is_registered_before_anything_tries_to_infer() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// D-116: the install must still run after it has been moved
-// ---------------------------------------------------------------------------
+// --- the install must still run after it has been moved --------------------
 
 /// The name of the test the relocation check re-runs in the moved copy. It has
 /// to be one that genuinely loads llama.cpp, or the child would prove only that
@@ -904,16 +766,11 @@ const RELOCATED_CHILD_TEST: &str =
 #[cfg(loca_llama_link = "shared")]
 fn the_linked_tree_still_runs_after_being_moved() {
     // Self-update anchors the previous install by MOVING the directory aside,
-    // so the thing rollback falls back to is a relocated copy of exactly this
-    // layout. An absolute rpath would make that copy fail to load, and the
-    // failure would appear for the first time during a real rollback on a real
-    // machine (D-116).
-    //
-    // A build that runs in place never exercises the move, so this test does
-    // the move: it copies the executable and every runtime library to a fresh
-    // directory and runs the copy from there. Nothing absolute is emitted into
-    // the rpath, so the child can only resolve its libraries through
-    // `@loader_path`/`$ORIGIN`, which is the mechanism being checked.
+    // so rollback falls back to a relocated copy of this layout and an absolute
+    // rpath would make it fail to load. A build that runs in place never
+    // exercises the move, so this test copies the executable and every runtime
+    // library elsewhere and runs the copy: the child can then only resolve
+    // through `@loader_path`/`$ORIGIN`.
     if std::env::var_os("LOCA_RELOCATION_CHILD").is_some() {
         return; // Guard against a child recursing into this test.
     }
@@ -925,22 +782,18 @@ fn the_linked_tree_still_runs_after_being_moved() {
         panic!("test executable has no parent directory");
     };
 
-    // The load-bearing assertion, and it has to come first.
-    //
-    // Moving the tree and running it is necessary but NOT sufficient on its
-    // own: the original build directory still exists on this machine, so a
-    // binary with an absolute rpath resolves through it and the relocated run
-    // passes anyway. That was confirmed by mutation, not assumed. Only reading
-    // the load commands distinguishes the two.
+    // First, because moving and running is not sufficient on its own: the
+    // original build directory still exists, so a binary with an absolute rpath
+    // resolves through it and the relocated run passes anyway. Only reading the
+    // load commands distinguishes the two.
     assert_rpaths_are_relative(&exe);
 
     let moved = std::env::temp_dir().join(format!("loca-relocated-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&moved);
     std::fs::create_dir_all(&moved).expect("create the relocated directory");
 
-    // Every runtime library, plus the executable itself. Deliberately NOT a
-    // symlink: a symlink would leave the loader resolving through the original
-    // absolute path and prove nothing.
+    // Copied, deliberately not symlinked: a symlink leaves the loader resolving
+    // through the original absolute path.
     let mut copied = 0usize;
     for entry in std::fs::read_dir(src_dir)
         .expect("read the artifact directory")
@@ -995,12 +848,9 @@ fn the_linked_tree_still_runs_after_being_moved() {
 }
 
 /// Reads `binary`'s runtime search paths and asserts every one is relative to
-/// the loading image.
-///
-/// An absolute rpath survives in place and dies on relocation, which is the
-/// D-116 failure. This is the only check that separates the two while the
-/// original build directory still exists, so it is the primary guard and the
-/// move-and-run above is the corroboration.
+/// the loading image. An absolute rpath survives in place and dies on
+/// relocation, and this is the only check that separates the two while the
+/// original build directory still exists.
 #[cfg(loca_llama_link = "shared")]
 fn assert_rpaths_are_relative(binary: &Path) {
     let relative = |p: &str| {
@@ -1033,15 +883,11 @@ fn assert_rpaths_are_relative(binary: &Path) {
             })
             .collect()
     } else {
-        // ELF. Two readers, because the exact spelling differs between tools and
-        // between binutils versions, and a parser that silently produces an
-        // empty list would turn this assertion into a confusing failure about
-        // "no rpath at all" rather than about the tool.
+        // ELF. Two readers, because the spelling differs between tools and
+        // binutils versions; both forms reduce to the colon-separated value.
         //
         //   readelf -d:  0x...1d (RUNPATH)  Library runpath: [$ORIGIN:$ORIGIN/../lib]
         //   objdump -p:  RUNPATH              $ORIGIN:$ORIGIN/../lib
-        //
-        // Both forms are reduced to the colon-separated value.
         let read = |cmd: &str, arg: &str| -> Option<Vec<String>> {
             let out = std::process::Command::new(cmd)
                 .arg(arg)
@@ -1077,11 +923,9 @@ fn assert_rpaths_are_relative(binary: &Path) {
             (!found.is_empty()).then_some(found)
         };
 
-        // Neither tool producing a dynamic-section entry falls through to the
-        // empty vec, which the `!paths.is_empty()` assertion below rejects. That
-        // is deliberate rather than a skip: a binary with genuinely no RUNPATH is
-        // exactly the failure this test exists for, and silently passing when the
-        // reader found nothing is how a guard stops guarding.
+        // Neither tool producing an entry falls through to the empty vec, which
+        // the `!paths.is_empty()` assertion rejects rather than skipping: a
+        // binary with genuinely no RUNPATH is the failure this test exists for.
         read("readelf", "-d")
             .or_else(|| read("objdump", "-p"))
             .unwrap_or_default()
@@ -1103,36 +947,21 @@ fn assert_rpaths_are_relative(binary: &Path) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// T5: the embedding path
-// ---------------------------------------------------------------------------
+// --- the embedding path ----------------------------------------------------
 
 #[test]
 fn embedding_produces_a_stable_vector_of_the_models_width() {
-    // Guards the embedding half of the linkage, which nothing else touches: an
-    // embedding context is a DIFFERENT llama.cpp configuration from a
-    // generation one (`embeddings = true`, a pooling type, no KV cache in play)
-    // and it reaches `llama_get_embeddings_seq`, which the decode path never
-    // calls.
+    // An embedding context is a DIFFERENT llama.cpp configuration from a
+    // generation one (`embeddings = true`, a pooling type, no KV cache) and
+    // reaches `llama_get_embeddings_seq`, which the decode path never calls.
     //
-    // Run against the tiny generative test model rather than MiniLM, and that
-    // is fine for what this asserts: llama.cpp pools hidden states the same way
-    // whatever produced them, so this exercises the whole shim path (context
-    // creation with pooling, the all-token output mask, the pooled read, the
-    // copy out) without a 35 MB fixture in the tree. What it deliberately does
-    // NOT claim is that the vectors are semantically good; that is the model's
-    // business, not the shim's.
-    ensure_backends();
-
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // Run against the tiny generative model rather than MiniLM: llama.cpp pools
+    // hidden states the same way whatever produced them, so the whole shim path
+    // is exercised without a 35 MB fixture. It does not claim the vectors are
+    // semantically good.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
     let n_embd = model.n_embd();
     assert!(n_embd > 0, "model reports no embedding width");
 
@@ -1163,8 +992,7 @@ fn embedding_produces_a_stable_vector_of_the_models_width() {
         n_embd as usize,
         "the shim wrote a vector of the wrong width",
     );
-    // Not all zeros. This is what catches a context that ran but pooled nothing,
-    // which is the shape the `llama_encode` version of this shim produced: an
+    // Not all zeros: catches a context that ran but pooled nothing, an
     // apparently successful call returning a buffer the graph never wrote.
     assert!(
         first.iter().any(|v| *v != 0.0 && v.is_finite()),
@@ -1173,9 +1001,8 @@ fn embedding_produces_a_stable_vector_of_the_models_width() {
         &first[..first.len().min(8)],
     );
 
-    // Same input, same vector. The shim clears the context per call, so this is
-    // also what would catch that clear going missing: without it the second call
-    // pools the concatenation of both inputs and drifts.
+    // Same input, same vector. Also catches the shim's per-call context clear
+    // going missing: the second call would pool both inputs concatenated.
     let second = ctx
         .embed(&tokens)
         .unwrap_or_else(|e| panic!("second embed: {}", e.message));
@@ -1202,22 +1029,12 @@ fn embedding_produces_a_stable_vector_of_the_models_width() {
 
 #[test]
 fn a_generation_context_refuses_to_embed_rather_than_answering_wrongly() {
-    // The converse, and it is the one that matters for correctness rather than
-    // for liveness. A context built WITHOUT `embeddings` has no pooled output,
-    // and the failure mode to avoid is returning whatever happens to be in the
-    // buffer: a plausible vector, silently wrong, feeding a cosine similarity
-    // that still looks like a similarity.
-    ensure_backends();
-
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // A context built WITHOUT `embeddings` has no pooled output, and the
+    // failure to avoid is returning whatever is in the buffer: a plausible
+    // vector, silently wrong, feeding a cosine that still looks like one.
+    let Some((_path, model)) = loaded_model() else {
         return;
     };
-
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
     let mut ctx = Context::new(Arc::clone(&model), &ContextOptions::default())
         .unwrap_or_else(|e| panic!("context: {}", e.message));
 
@@ -1232,34 +1049,18 @@ fn a_generation_context_refuses_to_embed_rather_than_answering_wrongly() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// T6: the vision (libmtmd) linkage
-// ---------------------------------------------------------------------------
+// --- the vision (libmtmd) linkage ------------------------------------------
 
 #[test]
 fn loading_a_language_model_as_a_projector_fails_instead_of_crashing() {
-    // Guards that `libmtmd` is LINKED and reachable across the ABI at all, which
-    // nothing else here touches: the shim linked `libllama` + `ggml` + `common`
-    // and no mtmd for the whole port, which is why a local model could not see
-    // an image while the catalog advertised `vision`.
-    //
-    // The observable is a clean failure rather than a success, because the only
-    // GGUF in the tree is a tiny LANGUAGE model and a projector it is not. That
-    // still exercises everything that matters here: the symbol resolves, the
-    // call crosses the boundary, mtmd inspects the file, and the refusal comes
-    // back as an error message rather than an abort. A missing `libmtmd` would
-    // not reach this point at all, it would fail to link.
-    ensure_backends();
-
-    let Some(path) = test_gguf() else {
-        eprintln!("{NO_GGUF}");
+    // That `libmtmd` is LINKED and reachable across the ABI at all. The
+    // observable is a clean failure rather than a success, because the only
+    // GGUF in the tree is a tiny language model and not a projector: the symbol
+    // resolves, the call crosses the boundary, mtmd inspects the file, and the
+    // refusal comes back as an error rather than an abort.
+    let Some((path, model)) = loaded_model() else {
         return;
     };
-
-    let model = Arc::new(
-        Model::load(&path.to_string_lossy(), &ModelOptions::default())
-            .unwrap_or_else(|e| panic!("model load: {}", e.message)),
-    );
 
     let loaded = Mtmd::load(
         Arc::clone(&model),
@@ -1277,8 +1078,7 @@ fn loading_a_language_model_as_a_projector_fails_instead_of_crashing() {
         ),
         Err(err) => err,
     };
-    // The path, because a two-file model gives a user two things to check and
-    // "failed to load" names neither of them.
+    // The path, because a two-file model gives a user two things to check.
     assert!(
         err.message.contains("projector") && err.message.contains("test.gguf"),
         "the failure must name what failed and which file: {}",

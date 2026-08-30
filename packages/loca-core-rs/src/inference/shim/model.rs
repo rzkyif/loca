@@ -1,8 +1,6 @@
-//! Backend registry, model loading, context, vocabulary and decode.
-//!
-//! These are thin: they establish the invariants that make the C calls sound
-//! and translate errors, and they decide nothing. Which sampler, how long to
-//! generate, when to stop and what to stream are N2's.
+//! Backend registry, model loading, context, vocabulary and decode. Thin: these
+//! establish the invariants that make the C calls sound and translate errors,
+//! and decide nothing.
 
 use std::ffi::c_char;
 use std::ptr::NonNull;
@@ -56,23 +54,11 @@ pub fn backend_load(path: &str) -> Result<()> {
 }
 
 /// Loads every backend module in ONE explicit directory, returning how many
-/// modules this call loaded.
-///
-/// The directory is always ours (an install dir, or the consent-download
-/// destination under `~/.loca`), and it is the only place this looks. There is
-/// deliberately no "search the usual places" variant, and the shim does the
-/// enumeration itself rather than delegating to ggml (D-107):
-///
-/// - `ggml_backend_load_all` includes the process working directory in its
-///   search and `dlopen`s anything matching `libggml-*.so` it finds, which for a
-///   service startable from any directory is arbitrary code execution.
-/// - `ggml_backend_load_all_from_path` confines the directory search but then
-///   `dlopen`s whatever `GGML_BACKEND_PATH` names, which is the same vector
-///   through the environment, and this core runs as a system service whose
-///   environment is not always the operator's.
-///
-/// Neither is exposed across the ABI, and the shim poisons both identifiers so
-/// its own C++ cannot reach them either.
+/// this call loaded. The directory is always ours, and there is deliberately no
+/// "search the usual places" variant: `ggml_backend_load_all` `dlopen`s from
+/// the process working directory and `ggml_backend_load_all_from_path` from
+/// `GGML_BACKEND_PATH`, both arbitrary code execution for a system service.
+/// Neither is exposed across the ABI, and the shim poisons both identifiers.
 pub fn backend_load_dir(dir: &str) -> Result<usize> {
     let c_dir = c_string(dir, "backend directory")?;
     // SAFETY: `c_dir` outlives the call and the shim only reads it.
@@ -332,20 +318,15 @@ impl Context {
         unsafe { ffi::loca_context_n_ctx(self.ptr.as_ptr()) }
     }
 
-    /// The model this context was built from.
-    ///
-    /// Returns a fresh `Arc` rather than a reference, so a caller can tokenize
-    /// with the model and then call [`Context::embed`] or [`Context::decode`],
-    /// which need `&mut self`. A borrow would make those two steps mutually
-    /// exclusive for no reason: the model is immutable and shared by design.
+    /// The model this context was built from. A fresh `Arc` rather than a
+    /// reference, so a caller can tokenize and then call [`Context::embed`] or
+    /// [`Context::decode`], which need `&mut self`.
     pub fn model(&self) -> std::sync::Arc<Model> {
         std::sync::Arc::clone(&self.model)
     }
 
-    /// How many tokens this context currently holds.
-    ///
-    /// Read back from llama.cpp's own memory rather than tracked alongside it,
-    /// so it cannot drift from the truth. 0 for a fresh or reset context.
+    /// How many tokens this context currently holds, read back from llama.cpp's
+    /// own memory so it cannot drift. 0 for a fresh or reset context.
     pub fn n_past(&self) -> i32 {
         // SAFETY: `self.ptr` is valid for the life of `self`.
         unsafe { ffi::loca_context_n_past(self.ptr.as_ptr()) }
@@ -358,13 +339,9 @@ impl Context {
     }
 
     /// Evaluates `tokens`, APPENDING them after whatever the context holds.
-    ///
-    /// There is deliberately no `n_past` argument. There used to be one, and the
-    /// shim `(void)`-cast it away while this doc comment and the header both
-    /// said it positioned the batch: llama.cpp derives each position from the
-    /// memory state itself (`llama-batch.cpp:90-117`), so the argument never did
-    /// anything. Use [`Context::n_past`] to read the real value and
-    /// [`Context::reset`] to start a new sequence.
+    /// There is deliberately no `n_past` argument: llama.cpp derives each
+    /// position from the memory state itself. Use [`Context::n_past`] to read
+    /// the real value and [`Context::reset`] to start a new sequence.
     pub fn decode(&mut self, tokens: &[i32]) -> Result<()> {
         if tokens.is_empty() {
             return Err(internal("decode called with no tokens"));
@@ -382,14 +359,11 @@ impl Context {
     /// Logits for the `i`-th position of the last decode; `-1` is the last.
     ///
     /// Borrowed from the context's own buffer and invalidated by the next
-    /// [`Context::decode`], which is why the returned slice borrows `&mut self`:
-    /// reading logits after the next decode does not compile. Copying instead
-    /// would mean cloning a vocab-sized `f32` buffer on every token.
-    ///
-    /// The length is taken from the model this context was built from. It used
-    /// to be a caller-supplied `n_vocab`, which made this a safe function that
-    /// produced an out-of-bounds read from an ordinary wrong number, with no
-    /// `unsafe` anywhere near the call site.
+    /// [`Context::decode`], which is why the slice borrows `&mut self`: reading
+    /// logits after the next decode does not compile, and copying would clone a
+    /// vocab-sized buffer per token. The length comes from this context's own
+    /// model rather than from the caller, where a wrong number would be an
+    /// out-of-bounds read with no `unsafe` near the call site.
     pub fn logits(&mut self, i: i32) -> Result<&[f32]> {
         let n_vocab = self.model.n_vocab();
         if n_vocab <= 0 {
@@ -408,18 +382,14 @@ impl Context {
         Ok(unsafe { std::slice::from_raw_parts(ptr, n_vocab as usize) })
     }
 
-    /// One pooled embedding vector for `tokens`.
+    /// One pooled embedding vector for `tokens`. Requires a context built with
+    /// [`ContextOptions::embeddings`]; on a generation context this fails
+    /// rather than returning something plausible. The shim clears the context
+    /// before each batch, so successive calls are independent.
     ///
-    /// Requires a context built with [`ContextOptions::embeddings`]; on a
-    /// generation context this fails rather than returning something plausible.
-    /// The context is cleared inside the shim before each batch, so successive
-    /// calls on one context are independent and a caller may embed many texts
-    /// through it in sequence.
-    ///
-    /// Copied out rather than borrowed, unlike [`Context::logits`]. The aliasing
-    /// dance there buys avoiding a vocab-sized clone once per generated token;
-    /// here it would buy avoiding a 384-float clone a few times per memory,
-    /// which is not worth a borrow that the next call invalidates.
+    /// Copied out rather than borrowed, unlike [`Context::logits`]: a few
+    /// hundred floats a few times per memory is not worth a borrow that the
+    /// next call invalidates.
     pub fn embed(&mut self, tokens: &[i32]) -> Result<Vec<f32>> {
         if tokens.is_empty() {
             return Err(internal("embed called with no tokens"));
@@ -453,19 +423,10 @@ impl Context {
     }
 }
 
-/// A loaded multimodal projector: the second model file that lets a LOCAL model
-/// see an image.
-///
-/// # Why this is a separate handle rather than a flag on [`Model`]
-///
-/// Vision in llama.cpp is two files. The language model is one GGUF; the
-/// projector ("mmproj") is another, and it is what turns pixels into embeddings
-/// the language model attends to. They are loaded independently, the projector
-/// is often as large as the model, and a user can have one without the other.
-/// So "does this model support vision" is a question about the PAIR, which is
-/// exactly the distinction the catalog's `vision` capability and the
-/// `llm.supportImages` setting describe and the port previously could not
-/// honour: the shim linked no `libmtmd` at all.
+/// A loaded multimodal projector: the second model file that lets a local model
+/// see an image. A separate handle rather than a flag on [`Model`] because
+/// vision is two files loaded independently, so "does this model support
+/// vision" is a question about the PAIR.
 pub struct Mtmd {
     ptr: NonNull<ffi::LocaMtmd>,
     /// Keeps the model alive for the projector's whole life. mtmd holds a
@@ -529,19 +490,15 @@ impl Mtmd {
         })
     }
 
-    /// The token a prompt must contain once per image, e.g. `<__media__>`.
-    ///
-    /// Read from the projector rather than hardcoded: it is model-family
-    /// specific, and a wrong marker does not fail loudly, it just leaves the
-    /// image unattached to any position in the prompt.
+    /// The token a prompt must contain once per image, e.g. `<__media__>`. Read
+    /// from the projector rather than hardcoded: it is model-family specific,
+    /// and a wrong marker silently leaves the image unattached.
     pub fn marker(&self) -> &str {
         &self.marker
     }
 
-    /// Whether this projector handles IMAGES.
-    ///
-    /// A projector can be audio-only. One that loaded successfully still cannot
-    /// answer an image prompt in that case, and asking is the only way to know.
+    /// Whether this projector handles IMAGES: one can be audio-only, and asking
+    /// is the only way to know.
     pub fn supports_vision(&self) -> bool {
         // SAFETY: `self.ptr` is valid for the life of `self`.
         unsafe { ffi::loca_mtmd_supports_vision(self.ptr.as_ptr()) }
@@ -551,13 +508,10 @@ impl Mtmd {
     /// the new `n_past`.
     ///
     /// `prompt` must contain exactly `images.len()` copies of
-    /// [`marker`](Self::marker). This REPLACES [`Context::decode`] for the turn:
-    /// the image embeddings have to land between the text spans at the marker
-    /// positions, so a caller that decoded the text itself would have nowhere to
-    /// put them.
-    ///
-    /// `images` are ENCODED files (png, jpeg, ...), not raw pixels. Decoding
-    /// stays on the C++ side, where stb_image already lives.
+    /// [`marker`](Self::marker). This REPLACES [`Context::decode`] for the
+    /// turn: the image embeddings land between the text spans at the marker
+    /// positions. `images` are ENCODED files, not raw pixels; decoding stays on
+    /// the C++ side where stb_image already lives.
     pub fn eval(
         &mut self,
         context: &mut Context,

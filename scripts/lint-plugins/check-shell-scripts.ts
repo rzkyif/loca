@@ -3,18 +3,13 @@
 // uninstaller runs as root on user machines), so a shell bug there is a
 // security-relevant bug; oxlint never sees .sh, so nothing else guards them.
 //
-// Wired into `deno task lint` via scripts/lint-walkers.ts. Scans warning-level
-// and above (`--severity=warning`) to focus on real problems over style nits on
-// these large existing scripts; tighten to `style` later if desired.
+// Wired into `deno task lint`. Scans `--severity=warning` and above to focus on
+// real problems over style nits.
 //
-// shellcheck is an external binary (`brew install shellcheck` /
-// `apt install shellcheck`). When it is not installed this walker SKIPS with a
-// visible warning and exits 0, so a contributor without it can still run
-// `deno task lint`; CI installs shellcheck so the check is enforced there. Only
-// findings (never a missing binary) fail the walker.
-//
-// PowerShell (.ps1) is not covered here (shellcheck can't parse it); a
-// PSScriptAnalyzer pass is a possible future follow-up.
+// shellcheck is an external binary; when it is not installed this walker SKIPS
+// with a visible warning and exits 0, so a contributor without it can still run
+// `deno task lint` (CI installs it, so the check is enforced there). PowerShell
+// (.ps1) is not covered: shellcheck cannot parse it.
 
 import { fromFileUrl } from "@std/path";
 

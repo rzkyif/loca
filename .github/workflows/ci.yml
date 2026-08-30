@@ -16,9 +16,8 @@ jobs:
   # compile-checking (clippy, a superset of cargo check) and the cargo test suite
   # live in the `rs` matrix below and run in parallel with this job; this job
   # stays TS-light. Its cargo touches are `cargo fmt --check` (which does not
-  # compile), the tiny ptyhost binary the permission-prompt live probe needs, and
-  # the contract codegen tool that `deno task check` runs to verify the generated
-  # wire types are not stale. None of them need the Tauri/webkit system libs.
+  # compile) and the contract codegen tool that `deno task check` runs to verify
+  # the generated wire types are not stale. Neither needs the Tauri/webkit libs.
   deno:
     name: "TypeScript checks (linux)"
     runs-on: ubuntu-latest
@@ -35,8 +34,8 @@ jobs:
       - name: Verify frozen deno lockfile
         run: deno install --frozen
 
-      # Toolchain for `cargo fmt --check` (no compile), the small ptyhost build
-      # below, and the contract codegen tool; the heavy Rust compile lives in the
+      # Toolchain for `cargo fmt --check` (no compile) and the contract codegen
+      # tool; the heavy Rust compile lives in the
       # `rs` matrix. rustfmt is not optional here: the contract generator pipes
       # typify's output through it so the committed files survive `cargo fmt`.
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -71,12 +70,6 @@ jobs:
       - run: deno task fmt:check
       - run: deno task lint:js
 
-      # The permission-prompt live probe (extensions/prompt-live-probe.test.ts)
-      # needs the real ptyhost binary; build it first and force the test to FAIL
-      # rather than skip if the binary is somehow absent, since it is the drift
-      # tripwire for deno version bumps.
-      - run: cargo build -p loca-core-ptyhost
-
       # In-source TS tests, split one step per package so a hang localizes to a
       # single step in the log: the aggregate `deno task test:js` fans out through
       # scripts/pkg.ts, which buffers each package's output until it completes and
@@ -87,17 +80,9 @@ jobs:
       - name: "test:js (shared)"
         run: deno task --cwd packages/loca-shared test:js
         timeout-minutes: 3
-      - name: "test:js (core-engine)"
-        run: deno task --cwd packages/loca-core-engine test:js
+      - name: "test:js (core-rs workers)"
+        run: deno task --cwd packages/loca-core-rs test:js
         timeout-minutes: 3
-      # LOCA_REQUIRE_PTYHOST makes the prompt-live-probe (the deno-bump drift
-      # tripwire) fail rather than skip; it lives in core and uses the binary built
-      # above.
-      - name: "test:js (core)"
-        run: deno task --cwd packages/loca-core test:js
-        timeout-minutes: 3
-        env:
-          LOCA_REQUIRE_PTYHOST: "1"
       - name: "test:js (client)"
         run: deno task --cwd packages/loca-client test:js
         timeout-minutes: 3
@@ -110,10 +95,9 @@ jobs:
 
   # Rust pipeline: clippy (the single Rust compile-check - `--all-targets` is a
   # superset of cargo check, so check is never run separately) plus the cargo test
-  # suite. The shipping crates (the Tauri shell, core-rs, core-keychain,
-  # core-updater, core-ptyhost) run on every supported host so their
-  # platform-specific cfgs stay buildable; the core-hwinfo and core-speech helpers
-  # are Linux-only checks. Runs in parallel with the TS job above, Linux included.
+  # suite. The shipping crates (the Tauri shell, core-rs, core-updater) run on
+  # every supported host so their platform-specific cfgs stay buildable. Runs in
+  # parallel with the TS job above, Linux included.
   rs:
     name: "Rust checks (${{ matrix.os }})"
     strategy:
@@ -149,7 +133,7 @@ jobs:
             libasound2-dev \
             libgbm-dev \
             patchelf
-      # Single workspace rooted at the repo root: all six crates build into the
+      # Single workspace rooted at the repo root: every crate builds into the
       # shared ./target, so cache that one dir. Pointing at member subdirs caches
       # only the registry (their target/ dirs do not exist), leaving the whole
       # dependency graph to recompile every run.
@@ -165,23 +149,8 @@ jobs:
       # everywhere the product ships, and the one every other package builds on.
       - run: cargo clippy --locked --manifest-path packages/loca-core-rs/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml
-      - run: cargo clippy --locked --manifest-path packages/loca-core-keychain/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/loca-core-keychain/Cargo.toml
       - run: cargo clippy --locked --manifest-path packages/loca-core-updater/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path packages/loca-core-updater/Cargo.toml
-      - run: cargo clippy --locked --manifest-path packages/loca-core-ptyhost/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path packages/loca-core-ptyhost/Cargo.toml
-      # core-hwinfo and core-speech are Linux-only checks (they were previously
-      # covered on Linux only, inside the old monolithic job).
-      - run: cargo clippy --locked --manifest-path packages/loca-core-hwinfo/Cargo.toml --all-targets -- -D warnings
-        if: runner.os == 'Linux'
-      - run: cargo test --locked --manifest-path packages/loca-core-hwinfo/Cargo.toml
-        if: runner.os == 'Linux'
-      - run: cargo clippy --locked --manifest-path packages/loca-core-speech/Cargo.toml --all-targets -- -D warnings
-        if: runner.os == 'Linux'
-      - run: cargo test --locked --manifest-path packages/loca-core-speech/Cargo.toml
-        if: runner.os == 'Linux'
-
   # Vendored native builds: the core-rs features that compile a third-party C/C++
   # tree and are therefore OFF by default.
   #
@@ -274,6 +243,18 @@ jobs:
       # the unquoted form breaks the whole file. N1's step above ends in
       # `inference::shim` and never hits it.
       - run: "cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml --lib --features local-speech speech::"
+      # The Deno permission-prompt tripwire: drives a real deno through a real
+      # terminal, so it is #[ignore]d locally. Stage the toolchain's deno where
+      # the core resolves the pinned one and make "no binary" a failure.
+      - name: Deno prompt-wording tripwire
+        env:
+          LOCA_CHANNEL: dev
+          LOCA_CORE_HOME: ${{ runner.temp }}/loca-core
+          LOCA_REQUIRE_DENO_PROMPTS: "1"
+        run: |
+          mkdir -p "$LOCA_CORE_HOME/bin"
+          cp "$(command -v deno)" "$LOCA_CORE_HOME/bin/deno"
+          cargo test --locked --manifest-path packages/loca-core-rs/Cargo.toml --lib extensions::prompt::live_probe -- --include-ignored
 
   # Android build check. The Tauri shell's mobile cfg (#[cfg(mobile)] /
   # target_os = "android") is never exercised by the host-target checks above, and

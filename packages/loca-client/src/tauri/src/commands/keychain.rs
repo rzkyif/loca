@@ -1,31 +1,17 @@
-// OS-keychain wrapper for paired-core bearer tokens.
-//
-// Service: channel-namespaced ("loca-client" on stable, "loca-client-dev" /
-// "loca-client-latest" otherwise, see `crate::channel`), so a dev/latest build's
-// tokens never collide with a stable install's. Account format: "core:<coreId>",
-// where <coreId> is the ULID assigned by the core during pairing-claim.
+// OS-keychain wrapper for paired-core bearer tokens. Service is
+// channel-namespaced (see `crate::channel`); accounts are "core:<coreId>".
 //
 // Backing store, chosen per platform + channel by `store()`:
-//   - desktop stable / latest (signed bundles): the real OS keychain via
-//     keyring-core and the platform credential store (`RealKeychain`),
-//     encrypted at rest.
-//   - desktop dev (`deno task dev`, an unsigned `tauri dev` binary): a file
-//     under the channel-isolated client dir (`FileKeychain`). The macOS keychain
-//     silently no-ops for the unsigned dev build: `set_password` returns Ok
-//     but the entry never persists, so a freshly paired token is gone by the
-//     time `select()` reads it back ("no token for core … re-pair"). Mirrors
-//     loca-core's `.master-key` file fallback for the same class of reason.
-//   - android (all channels): `SealedFileKeychain`, the same file at the same
-//     path with its contents sealed under an AES-256-GCM key held in the
-//     AndroidKeyStore (`SecretBox.kt`, called over JNI below). Before this the
-//     token map was plaintext JSON leaning on the app sandbox plus
-//     `allowBackup="false"`; a plaintext file read is now a plaintext file that
-//     decodes to nothing useful.
+//   - desktop stable / latest: the real OS keychain (`RealKeychain`).
+//   - desktop dev: a file under the channel-isolated client dir
+//     (`FileKeychain`). The macOS keychain silently no-ops for the unsigned dev
+//     build: `set_password` returns Ok but the entry never persists, so a
+//     freshly paired token is gone by the time `select()` reads it back.
+//   - android: `SealedFileKeychain`, that same file sealed under an
+//     AES-256-GCM key held in the AndroidKeyStore (`SecretBox.kt`, over JNI).
 //
-// The `KeychainStore` trait is the test seam: unit tests swap in
-// `InMemoryKeychain` and drive `FileKeychain` via tempdir paths, so they
-// exercise the shared `set_token`/`get_token`/`delete_token` + `account()`
-// plumbing without touching the real OS keychain.
+// `KeychainStore` is the test seam: tests swap in `InMemoryKeychain` and drive
+// the file stores against tempdirs.
 
 #[cfg(not(target_os = "android"))]
 use crate::channel::channel;
@@ -75,9 +61,8 @@ impl KeychainStore for RealKeychain {
 }
 
 /// Register the platform credential store as keyring-core's process-global
-/// default so `RealKeychain` entries resolve. Called once at client startup
-/// (see `run()`); the dev channel uses the file-backed store instead, so a
-/// failure here is non-fatal and only logged.
+/// default so `RealKeychain` entries resolve. Called once at startup; the dev
+/// channel uses the file store instead, so a failure here is only logged.
 pub fn init_default_store() -> AppResult<()> {
     #[cfg(target_os = "macos")]
     {
@@ -101,19 +86,15 @@ pub fn init_default_store() -> AppResult<()> {
         let store = dbus_secret_service_keyring_store::Store::new()?;
         keyring_core::set_default_store(store);
     }
-    // Android has no keyring-core OS backend wired here: tokens go to the
-    // app-private file store selected in `store()`, so there is nothing to
-    // register as the process-global default.
+    // Android has no keyring-core backend: `store()` picks the sealed file.
     Ok(())
 }
 
 // --- file-backed store (desktop dev + android) ----------------------------
 
-/// File-backed keychain: the desktop `dev` build's fallback AND android's only
-/// store (see the module header). Persists the `{ "core:<id>": "<token>" }` map
-/// as pretty JSON under the channel-isolated client dir. Plaintext at rest, so
-/// it leans on the OS sandbox; holds its own path so tests can drive it against
-/// a tempdir instead of the real data directory.
+/// Persists the `{ "core:<id>": "<token>" }` map as pretty JSON. Plaintext at
+/// rest, so it leans on the OS sandbox. Holds its own path so tests can point
+/// it at a tempdir.
 struct FileKeychain {
     path: PathBuf,
 }
@@ -156,28 +137,17 @@ impl KeychainStore for FileKeychain {
     }
 }
 
-/// `<client-data-root>/keychain.json` is the file-backed token store, alongside
-/// the client's `settings.json`. The root is per-platform (home-based on
-/// desktop, the app-private data dir on android); see commands::paths.
+/// `<client-data-root>/keychain.json`, alongside the client's `settings.json`.
 fn keychain_file_path(handle: &AppHandle) -> AppResult<PathBuf> {
     Ok(super::paths::client_root(handle)?.join("keychain.json"))
 }
 
 // --- android: sealed under an AndroidKeyStore key --------------------------
 
-/// The Kotlin half, pulled in so that **deleting it fails the build**.
-///
-/// `tauri android init` regenerates the tree around `SecretBox.kt`, and a
-/// silently-missing SecretBox would drop this store and the embedded Core's
-/// vault master key back to plaintext, on a phone, with nothing red anywhere.
-/// The file is a JNI callee, so nothing in Rust would otherwise reference it and
-/// nothing in the gate would notice it going.
-///
-/// `include_str!` is a compile-time existence check on every android build, and
-/// `the_kotlin_secret_box_still_declares_what_the_jni_layer_calls` below is a
-/// content check that runs on the HOST, so it is in `deno task test` on every
-/// platform rather than only where the APK is built. Neither is decoration:
-/// both were watched failing against a removed file and a gutted one.
+/// The Kotlin half, pulled in so that deleting it fails the build. It is a JNI
+/// callee, so nothing in Rust would otherwise reference it; `tauri android init`
+/// regenerates the tree around it and a silent loss would drop this store back
+/// to plaintext. The tripwire test below checks its contents on the host.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 const SECRET_BOX_KT: &str =
     include_str!("../../gen/android/app/src/main/java/com/rzkyif/loca/SecretBox.kt");
@@ -213,17 +183,11 @@ mod keystore {
         /// Call one static `(String, byte[]) -> byte[]` method on the Kotlin
         /// object.
         ///
-        /// **The class is resolved through the Activity's classloader, not with
-        /// `FindClass`.** A JNI `FindClass` issued from a thread Rust created
-        /// searches the SYSTEM classloader, which cannot see application
-        /// classes, so it would fail with `ClassNotFoundException` for every
-        /// call made off the UI thread, which is all of them. This is the
-        /// single most common Android JNI mistake and it is invisible until a
-        /// device runs it.
-        ///
-        /// Nothing is cached between calls. Sealing happens a handful of times
-        /// per boot, and a cached class reference would be process-global state
-        /// of exactly the kind D-010 keeps out of this codebase.
+        /// The class is resolved through the Activity's classloader, NOT with
+        /// `FindClass`: a `FindClass` from a Rust-created thread searches the
+        /// system classloader, which cannot see application classes, so every
+        /// off-UI-thread call (all of them) would fail. Nothing is cached;
+        /// sealing happens a handful of times per boot.
         fn call(&self, method: &str, payload: &[u8]) -> CoreResult<Vec<u8>> {
             let ctx = ndk_context::android_context();
             // SAFETY: both raw pointers come from the runtime that started this
@@ -269,12 +233,10 @@ mod keystore {
                 )
                 .and_then(|v| v.l());
 
-            // A Java exception is still pending on the env after a failed call
-            // and would poison the NEXT JNI call on this thread with a
-            // misleading error. Clear it here, and keep the description out of
-            // the message: an exception raised inside the cipher is exactly
-            // where a buffer would leak into a log (D-017's rule, applied to
-            // the JVM's error channel rather than keyring-core's).
+            // A Java exception stays pending on the env after a failed call and
+            // would poison the next JNI call on this thread. Clear it, and keep
+            // its description out of the message: an exception raised inside the
+            // cipher is where a buffer would leak into a log.
             let out = match out {
                 Ok(obj) => obj,
                 Err(err) => {
@@ -318,21 +280,17 @@ pub fn core_keystore_alias() -> String {
     format!("{}-core", keychain_service())
 }
 
-/// The token map, sealed. Same path and same JSON shape as [`FileKeychain`], so
-/// the seam is the bytes on disk and nothing above this changes.
-///
-/// The seal/open primitive is injected rather than constructed here so the
-/// migration and the failure handling are driven by a host test; the real one is
-/// JNI and is unreachable from a host test binary (D-117).
+/// The token map, sealed. Same path and JSON shape as [`FileKeychain`], so the
+/// seam is the bytes on disk. The seal primitive is injected because the real
+/// one is JNI and unreachable from a host test binary.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 struct SealedFileKeychain<B> {
     path: PathBuf,
     boxed: B,
 }
 
-/// What a sealed keychain file looks like. The framing is the Core's, reused
-/// deliberately: one on-disk format for both of this device's secret stores
-/// rather than two that can disagree about a version marker.
+/// The Core's framing, reused so both of this device's secret stores share one
+/// on-disk format rather than two that can disagree about a version marker.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 const SEALED_MAGIC: &str = "LOCAK1";
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -340,16 +298,11 @@ const SEALED_PREFIX: &str = "LOCAK1:";
 
 /// The version marker of a framed value, or `None` when it carries none.
 ///
-/// **A mirror of `loca_core::secrets::android::marker_of`**, byte for byte. It
-/// cannot be shared: `loca-core-ffi` is a dependency only under
-/// `cfg(any(android, ios))`, so a host test binary cannot reach it, and this
-/// file's tests all run on the host.
-///
-/// The duplication is kept honest by
-/// `the_two_stores_classify_the_same_bytes_the_same_way`, which exists in BOTH
-/// suites over the SAME input table. Changing one copy without the other turns
-/// one of them red. That is the concrete answer to F-F: the two stores share a
-/// format, so they must share a classification.
+/// A byte-for-byte mirror of `loca_core::secrets::android::marker_of`, which
+/// cannot be shared: `loca-core-ffi` is only a dependency under
+/// `cfg(any(android, ios))` and these tests run on the host. The copies are kept
+/// in step by `the_two_stores_classify_the_same_bytes_the_same_way`, which
+/// exists in BOTH suites over the same input table.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 fn marker_of(text: &str) -> Option<&str> {
     let idx = text.find(':')?;
@@ -370,19 +323,13 @@ impl<B: SealBytes> SealedFileKeychain<B> {
             Err(err) => return Err(AppError::Io(err)),
         };
         let body = match marker_of(text.trim()) {
-            // A plaintext map written by a build that predates sealing. Hand it
-            // back and seal it in place; failing to re-seal must not fail the
-            // read, or one bad boot costs the user every pairing they have.
+            // A plaintext map from a build that predates sealing. Hand it back
+            // and seal it in place; failing to re-seal must not fail the read,
+            // or one bad boot costs the user every pairing they have.
             None => {
                 let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&text) else {
-                    // **The fourth corner, and it used to BRICK.** An unframed
-                    // file that is not the legacy JSON map propagated a raw
-                    // serde error out of BOTH `get_token` and `set_token`, so
-                    // the user could not even re-pair their way out: every
-                    // keychain operation on that device failed forever and the
-                    // file was never moved aside. Its three sibling corners
-                    // (bad base64, unseal failure, opened-but-not-JSON) all
-                    // quarantine. This one now does too.
+                    // Unframed and not the legacy map: quarantine, like every
+                    // other unreadable shape, so the user can re-pair.
                     return Ok(self.quarantine("the stored token map is not readable JSON"));
                 };
                 if let Err(err) = self.write_map(&map) {
@@ -391,10 +338,8 @@ impl<B: SealBytes> SealedFileKeychain<B> {
                 return Ok(map);
             }
             Some(SEALED_MAGIC) => &text.trim()[SEALED_PREFIX.len()..],
-            // Framed by a build newer than this one. Quarantine rather than
-            // guess: the Core-side store makes the same call for the same bytes
-            // (`secrets/android.rs`), and the two disagreeing about one shared
-            // format is exactly what F-F found.
+            // Framed by a newer build. Quarantine rather than guess: the
+            // Core-side store makes the same call for the same bytes.
             Some(other) => {
                 return Ok(self.quarantine(&format!(
                     "it is framed as \"{other}\", which this build cannot read"
@@ -418,11 +363,9 @@ impl<B: SealBytes> SealedFileKeychain<B> {
         }
     }
 
-    /// Treat an unopenable store as empty and move it aside. The user re-pairs,
-    /// which is a prompt rather than a broken app; the bytes stay on disk so a
-    /// support case has something to look at. Never an error: a phone that
-    /// cannot start because a key rotated is strictly worse than one that asks
-    /// to be paired again.
+    /// Treat an unopenable store as empty and move it aside. Never an error: a
+    /// phone that cannot start because a key rotated is worse than one asking to
+    /// be paired again, and the bytes stay on disk as evidence.
     fn quarantine(&self, reason: &str) -> HashMap<String, String> {
         let mut aside = self.path.clone().into_os_string();
         aside.push(".unreadable");
@@ -495,27 +438,15 @@ impl<B: SealBytes> KeychainStore for SealedFileKeychain<B> {
     }
 }
 
-/// Pick the keychain backing for this platform + channel. Android has no
-/// keyring-core OS backend wired, so it seals the same app-private file under an
-/// AndroidKeyStore key. On desktop, the unsigned `dev` build can't use the macOS
-/// keychain (writes report success but never persist), so it stores tokens in a
-/// file; the signed stable/latest bundles use the real OS keychain.
+/// Pick the keychain backing for this platform + channel. See the module
+/// header for why the dev channel cannot use the real OS keychain.
 fn store(handle: &AppHandle) -> AppResult<Box<dyn KeychainStore>> {
     #[cfg(target_os = "android")]
     {
-        // UNDEFENDED BY TEST, and labelled rather than guarded.
-        //
-        // A host test binary cannot construct a `KeystoreBox` (it is JNI) and
-        // cannot compile this arm at all, so no behavioural test in this crate
-        // can observe it. The previous attempt was a source-reading guard, and
-        // F-E got past it with a TODO comment containing the word it searched
-        // for. A guard that reports success on a broken tree is worse than a
-        // stated gap, so this is a stated gap.
-        //
-        // What IS defended: the policy below (`sealed_keychain`, given a seal
-        // primitive, produces a store whose FILE carries no plaintext) is
-        // driven behaviourally on the host. What is not: that this one line
-        // hands it a real `KeystoreBox`. The device checklist covers it.
+        // UNDEFENDED BY TEST: a host test binary cannot compile this arm, let
+        // alone construct a `KeystoreBox`. The sealing POLICY is covered on the
+        // host (`sealed_keychain`); that this line passes it a real
+        // `KeystoreBox` is covered by the device checklist.
         return Ok(sealed_keychain(
             keychain_file_path(handle)?,
             KeystoreBox::new(keychain_service()),
@@ -534,22 +465,16 @@ fn store(handle: &AppHandle) -> AppResult<Box<dyn KeychainStore>> {
     }
 }
 
-/// The sealing policy, separated from the platform choice so it can be driven on
-/// a host with a double.
-///
-/// This is the half worth testing: given a seal primitive, the resulting store
-/// must actually seal. `a_sealed_keychain_built_by_the_policy_writes_no_plaintext`
-/// asserts it against the FILE rather than a round trip.
+/// The sealing policy, separated from the platform choice so a host test can
+/// drive it with a double and assert against the FILE rather than a round trip.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 fn sealed_keychain<B: SealBytes + 'static>(path: PathBuf, boxed: B) -> Box<dyn KeychainStore> {
     Box::new(SealedFileKeychain { path, boxed })
 }
 
-/// Map a raw `keyring_core::Error` into one of three generic codes so the UI
-/// (and any log line that captures the error) never sees platform-specific
-/// detail like exact file paths, COM HRESULTs, or DBus method names. Those
-/// can be useful for debugging but leak host topology to anyone who can
-/// read the client logs.
+/// Map a raw `keyring_core::Error` into one of three generic codes: the raw
+/// detail (file paths, COM HRESULTs, DBus method names) leaks host topology to
+/// anyone who can read the client logs.
 fn classify_keyring_error(err: keyring_core::Error) -> AppError {
     use keyring_core::Error as E;
     let code = match err {
@@ -773,16 +698,13 @@ mod tests {
 
     // --- android sealing -------------------------------------------------
     //
-    // These run on the HOST. The real seal is JNI and is unreachable from a
-    // host test binary at all, so what is under test here is the framing, the
+    // These run on the HOST, so what is under test is the framing, the
     // migration off a plaintext file, and what happens when an envelope cannot
-    // be opened. Those are where the ordering and the failure modes live; the
-    // JNI half is covered by `deno task check:android` compiling it and by the
-    // device checklist in the M4 status.
+    // be opened. The JNI half is covered by the android build and the device
+    // checklist.
 
-    /// Not encryption and not pretending to be. Reversible so the tests can
-    /// assert the plaintext is gone from the FILE while the round trip still
-    /// works, which is the pair that catches a store that only pretends to seal.
+    /// Not encryption and not pretending to be. Reversible so a test can assert
+    /// the plaintext is gone from the FILE while the round trip still works.
     #[derive(Default)]
     struct FakeSeal {
         fail_unseal: std::sync::atomic::AtomicBool,
@@ -811,6 +733,12 @@ mod tests {
         }
     }
 
+    fn aside_of(path: &std::path::Path) -> PathBuf {
+        let mut p = path.to_path_buf().into_os_string();
+        p.push(".unreadable");
+        PathBuf::from(p)
+    }
+
     #[test]
     fn sealed_keychain_round_trips_and_deletes() {
         let store = sealed_store();
@@ -823,9 +751,8 @@ mod tests {
         assert_eq!(get_token(&store, "01H8XGJWBWBAQ4WG").unwrap(), None);
     }
 
-    /// The property the whole workstream exists for. A round-trip assertion
-    /// alone passes against a store that writes plaintext, so the FILE is read
-    /// back and checked for the token.
+    /// A round-trip assertion alone passes against a store that writes
+    /// plaintext, so the FILE is read back and checked for the token.
     #[test]
     fn what_lands_on_disk_is_sealed_rather_than_the_token() {
         let store = sealed_store();
@@ -877,26 +804,16 @@ mod tests {
         // Empty rather than an error: the user re-pairs, the app still starts.
         assert_eq!(get_token(&store, "core-1").unwrap(), None);
         assert!(!store.path.exists());
-        let aside = {
-            let mut p = store.path.clone().into_os_string();
-            p.push(".unreadable");
-            PathBuf::from(p)
-        };
         assert!(
-            aside.exists(),
+            aside_of(&store.path).exists(),
             "the evidence was destroyed rather than kept"
         );
     }
 
-    /// The behavioural replacement for the source-reading guard that F-E got
-    /// past with a TODO comment. It drives the POLICY rather than reading the
-    /// platform arm: given a seal primitive, the store the policy builds must
-    /// leave no plaintext on disk.
-    ///
-    /// What it does not cover, stated rather than implied: that the android arm
-    /// of `store()` calls this with a real `KeystoreBox`. That arm cannot be
-    /// compiled or run by a host test binary, so it is labelled UNDEFENDED at
-    /// the call site and covered by the device checklist instead.
+    /// Drives the POLICY rather than the platform arm: given a seal primitive,
+    /// the store it builds must leave no plaintext on disk. That the android arm
+    /// of `store()` passes a real `KeystoreBox` is not covered here (see the
+    /// UNDEFENDED note at that call site).
     #[test]
     fn a_sealed_keychain_built_by_the_policy_writes_no_plaintext() {
         let path = unique_keychain_path();
@@ -908,10 +825,8 @@ mod tests {
         assert!(!raw.contains("bearer-xyz"), "the token survived: {raw}");
     }
 
-    /// F-F: this input used to fail `get_token` AND `set_token` forever with a
-    /// raw serde message, so the user could not re-pair their way out and the
-    /// only recovery was clearing app data. Its three sibling corners all
-    /// quarantined; this one now does too.
+    /// An unframed non-JSON file must not wedge both `get_token` and
+    /// `set_token`: the user has to be able to re-pair their way out.
     #[test]
     fn an_unframed_non_json_file_is_quarantined_rather_than_bricking_the_keychain() {
         let store = sealed_store();
@@ -924,9 +839,8 @@ mod tests {
         assert_eq!(get_token(&store, "c1").unwrap(), Some("fresh".into()));
     }
 
-    /// F-F's other half: the two stores share one on-disk format and used to
-    /// disagree about the same bytes. The Core-side store accepted `LOCAK2:` as
-    /// a secret and destroyed it; this one hard-errored forever.
+    /// The two stores share one on-disk format, so a marker neither can read
+    /// must be quarantined by both rather than destroyed or hard-errored on.
     #[test]
     fn a_store_framed_by_a_newer_build_is_quarantined_rather_than_read() {
         let store = sealed_store();
@@ -934,23 +848,16 @@ mod tests {
         std::fs::write(&store.path, "LOCAK2:YWJjZA==").unwrap();
 
         assert_eq!(get_token(&store, "c1").unwrap(), None);
-        let aside = {
-            let mut p = store.path.clone().into_os_string();
-            p.push(".unreadable");
-            PathBuf::from(p)
-        };
         assert_eq!(
-            std::fs::read_to_string(aside).unwrap(),
+            std::fs::read_to_string(aside_of(&store.path)).unwrap(),
             "LOCAK2:YWJjZA==",
             "the envelope must survive as evidence",
         );
     }
 
-    /// The mirror-keeping table. `marker_of` here is a byte-for-byte copy of
-    /// `loca_core::secrets::android::marker_of`, which this crate cannot import
-    /// off mobile. **The identical table exists in that module's suite**, so
-    /// changing one copy without the other turns one of the two red. That is the
-    /// answer to "one on-disk format, two implementations that disagreed".
+    /// The mirror-keeping table: the identical cases exist in
+    /// `loca_core::secrets::android`'s suite, so changing one copy of
+    /// `marker_of` without the other turns one of the two red.
     #[test]
     fn the_two_stores_classify_the_same_bytes_the_same_way() {
         let cases: [(&str, Option<&str>); 6] = [
@@ -966,30 +873,15 @@ mod tests {
         }
     }
 
-    /// **This is a `grep`, and it is documented as one.**
+    /// This is a `grep`, and it is documented as one: exact strings must (or
+    /// must not) appear in `SecretBox.kt` once comments are stripped. It does
+    /// NOT verify the cryptography.
     ///
-    /// It asserts that a list of exact strings appears in `SecretBox.kt` after
-    /// comments are stripped. It does NOT verify the cryptography, and an
-    /// earlier version of this comment claimed it pinned "the pair that decides
-    /// whether the key is in hardware or in the process". F-G showed that claim
-    /// false by replacing the key with a hardcoded `SecretKeySpec(ByteArray(32))`
-    /// and leaving `KeyStore.getInstance(PROVIDER)` in an unreferenced function:
-    /// every string below was still present and the gate was green while the
-    /// sealing key was a constant compiled into the APK.
-    ///
-    /// So, stating the query rather than the property it wants:
-    ///
-    /// - **Covered:** the file is gone (an `include_str!` compile error), or a
-    ///   named declaration or one of these assignments is missing or changed.
-    ///   `setKeySize(128)` and `setRandomizedEncryptionRequired(false)` both
-    ///   survived before and are pinned now.
-    /// - **NOT covered:** any rearrangement that keeps the strings and changes
-    ///   what runs. A Kotlin identifier appearing in a file says nothing about
-    ///   which function the cipher is initialised from, and no source search can
-    ///   close that. Only compiling and running the Kotlin can, which needs a
-    ///   JVM test under `gen/android/app/src/test/` and a gradle step in CI.
-    ///   Filed on the interfaces queue; until it lands this hole is open and
-    ///   named rather than papered over.
+    /// - Covered: the file is gone (an `include_str!` compile error), or a named
+    ///   declaration or one of these assignments is missing or changed.
+    /// - NOT covered: any rearrangement that keeps the strings and changes what
+    ///   runs. Only compiling and running the Kotlin can close that, which needs
+    ///   a JVM test and a gradle step in CI.
     #[test]
     fn the_kotlin_secret_box_still_declares_the_strings_this_test_searches_for() {
         let code = kotlin_code_only(SECRET_BOX_KT);
@@ -1003,8 +895,7 @@ mod tests {
             "= \"AndroidKeyStore\"".to_string(),
             "= \"AES/GCM/NoPadding\"".to_string(),
             "KeyStore.getInstance(PROVIDER)".to_string(),
-            // Added after F-G: each of these survived a mutation before, and
-            // each is a security property the class's own doc asserts.
+            // Each of these is a security property the class's own doc asserts.
             ".setKeySize(256)".to_string(),
             ".setRandomizedEncryptionRequired(true)".to_string(),
             "KeyProperties.BLOCK_MODE_GCM".to_string(),
@@ -1034,13 +925,10 @@ mod tests {
         }
     }
 
-    /// Kotlin with `//` and `/* */` removed, so a tripwire cannot be satisfied
-    /// by a doc comment that still describes code which is gone.
-    ///
-    /// Deliberately naive: it does not understand string literals, which is
-    /// safe here only because no string in `SecretBox.kt` contains a comment
-    /// opener. `a_comment_cannot_satisfy_the_secret_box_tripwire` is what keeps
-    /// that honest, by proving the stripper removes what it claims to.
+    /// Kotlin with `//` and `/* */` removed, so the tripwire cannot be satisfied
+    /// by a doc comment describing code that is gone. Deliberately naive: it does
+    /// not understand string literals, which is safe only because no string in
+    /// `SecretBox.kt` contains a comment opener.
     fn kotlin_code_only(src: &str) -> String {
         let mut out = String::with_capacity(src.len());
         let mut rest = src;
@@ -1064,10 +952,8 @@ mod tests {
             .join("\n")
     }
 
-    /// The stripper is itself an instrument, so it gets its own check on a
-    /// known-bad and a known-good input (D-146). Without this, a stripper that
-    /// returned its input unchanged would restore the exact hole above and the
-    /// tripwire would go back to passing on prose.
+    /// The stripper is itself an instrument, so it gets its own check: one that
+    /// returned its input unchanged would let the tripwire pass on prose.
     #[test]
     fn a_comment_cannot_satisfy_the_secret_box_tripwire() {
         let gutted = "/** uses AndroidKeyStore and fun unseal( */\nobject X { }\n";

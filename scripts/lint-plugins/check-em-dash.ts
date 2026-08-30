@@ -1,13 +1,8 @@
-// Companion to the `loca/no-em-dash` rule in
-// scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
-// same rule for the file types oxlint parses (.ts/.tsx/.mts/.mjs/.svelte).
-// oxlint never sees Markdown, Rust, toml, json, yml, css, or shell scripts, so
-// an em dash in those files slips through. This pass closes that gap by walking
-// every other tracked file and rejecting the em dash (U+2014) wherever it
-// appears: code, comments, strings, or prose.
+// Companion to the `loca/no-em-dash` oxlint rule, covering the tracked files
+// oxlint never parses (Markdown, Rust, toml, json, yml, css, shell). Rejects the
+// em dash (U+2014) wherever it appears: code, comments, strings, or prose.
 //
-// Wired into `deno task lint` alongside the oxlint pass and the .svelte
-// tauri-boundary pass. Keep this file em-dash-free, or it flags its own source.
+// Wired into `deno task lint`. Keep this file em-dash-free, or it flags itself.
 
 import { fromFileUrl } from "@std/path";
 

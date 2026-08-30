@@ -238,7 +238,7 @@ export async function materializeCorePayload(
     const path = await download(w.url, w.sha256);
     workers.push({ name: w.name, path, sha256: w.sha256, size: (await Deno.stat(path)).size });
   }
-  return { version: manifest.version, built: { artifacts, helpers, speech: [], workers } };
+  return { version: manifest.version, built: { artifacts, helpers, workers } };
 }
 
 // ---------------------------------------------------------------------------

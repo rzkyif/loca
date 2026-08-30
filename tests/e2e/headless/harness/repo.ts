@@ -1,27 +1,34 @@
 // Shared path constants for the headless harness (Node side).
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // harness/ -> headless/ -> e2e/ -> tests/ -> repo root
 export const REPO_ROOT = resolve(here, "..", "..", "..", "..");
-export const CORE_ENTRY = resolve(REPO_ROOT, "packages/loca-core/src/main.ts");
-export const TARGET_DEBUG = resolve(REPO_ROOT, "target/debug");
+/** The freshest Rust core binary under target/{release,debug}. Helpers are
+ *  taken from the same profile dir so a core never boots against a stale or
+ *  missing helper from the other profile. */
+export function findRustCore(): string {
+  const exe = process.platform === "win32" ? "loca-core.exe" : "loca-core";
+  const built = ["release", "debug"]
+    .map((profile) => resolve(REPO_ROOT, "target", profile, exe))
+    .filter((path) => existsSync(path))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  if (!built.length) {
+    throw new Error("no loca-core binary under target/; run `deno task build:core-rs` first");
+  }
+  return built[0];
+}
 // The tool-worker entry deno runs for every extension tool. A real install
 // stages it into <home>/workers via self-update; running core from source has
 // no such step, so point at the source dir (the same override `deno task dev`
 // uses). Without it the worker entry is missing and every tool call fails fast.
-export const WORKERS_DIR = resolve(REPO_ROOT, "packages/loca-core/src/workers");
+export const WORKERS_DIR = resolve(REPO_ROOT, "packages/loca-core-rs/workers");
 
-// The four native helper binaries core's boot-time check requires. We symlink
-// them from target/debug into each test core's bin dir (dev channel suffix
-// "-dev") so the real boot path runs without a source-level skip.
-export const REQUIRED_HELPERS = [
-  "loca-core-keychain",
-  "loca-core-updater",
-  "loca-core-hwinfo",
-  "loca-core-ptyhost",
-];
+// The native helper binaries core's boot-time check requires, symlinked from
+// the core's profile dir into each test core's bin dir (dev channel suffix "-dev").
+export const REQUIRED_HELPERS = ["loca-core-updater"];
 
 const HOME = process.env.HOME ?? process.env.USERPROFILE ?? "";
 

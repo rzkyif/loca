@@ -1,13 +1,9 @@
 // Zod schemas for the extension routes' request bodies.
 //
-// These live here rather than beside the routes that read them so the contract
-// bridge can see them: `scripts/contract/emit-zod.ts` walks this directory and
-// nothing else, and a schema declared inside a route file is generated into no
-// Rust type at all. The core then falls back to the constraint-free shape from
-// the TypeScript half, and the port silently accepts what the oracle refuses.
-// That is not hypothetical: it is exactly how the Rust core came to answer
-// `tool_not_found` for an empty tool id the oracle rejects as a validation
-// error. See D-093.
+// These live here rather than beside the routes that read them because
+// `scripts/contract/emit-zod.ts` walks this directory and nothing else: a schema
+// declared inside a route file generates no Rust type, and the core silently
+// falls back to the constraint-free shape.
 
 import { z } from "zod";
 

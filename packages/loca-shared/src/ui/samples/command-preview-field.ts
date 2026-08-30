@@ -8,7 +8,7 @@ import type CommandPreviewFieldView from "../components/settings/CommandPreviewF
 export const commandPreviewFieldSamples = {
   short: { preview: "loca-core serve --port 8787" },
   long: {
-    preview: "deno run -A --unstable-kv jsr:@loca/core --channel stable --models ~/.loca/models",
+    preview: "deno run -A --unstable-kv loca-core --channel stable --models ~/.loca/models",
   },
   loading: { preview: "Loading..." },
 } satisfies Record<string, OmitSnippetProps<ComponentProps<typeof CommandPreviewFieldView>>>;

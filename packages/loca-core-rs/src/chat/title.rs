@@ -1,29 +1,18 @@
-//! Session title generation.
+//! Session title generation. After a session's first turn stops naturally the
+//! model is asked for a short title, which is PATCHed onto the session. The
+//! automatic path is fire and forget; the regenerate button is the same
+//! function with `force`.
 //!
-//! Ports `core-engine/src/services/title-gen.ts` in full.
+//! The spinner is always paired: once a run commits, `session.updated
+//! { title_generating: true }` goes out and the matching `false` is sent on
+//! EVERY exit, including the two returns after it. The three guards that run
+//! BEFORE it emit neither, so a no-op run does not flash a spinner.
 //!
-//! After a session's first turn stops naturally, the model is asked for a short
-//! title and it is PATCHed onto the session. The automatic path is fire and
-//! forget: a failure is logged and never surfaces. The manual path (the session
-//! bar's regenerate button) is the same function with `force`.
-//!
-//! # The spinner is always paired
-//!
-//! Once a run commits, a `session.updated { title_generating: true }` goes out
-//! and the matching `false` is sent on EVERY exit, including the two returns
-//! that happen after it (no conversational turns, an unusable title). The three
-//! guards that run BEFORE it emit neither, so a no-op run does not flash a
-//! spinner. Getting that wrong in either direction is invisible in a test that
-//! only checks the happy path: one leaves a spinner stuck forever, the other
-//! flashes one on every stop of an already-titled session.
-//!
-//! # Why this does not use `single_shot`
-//!
-//! The TypeScript calls the provider directly rather than the scheduler, so
-//! title generation never queues behind a chat turn. It also carries two bounds
-//! that the collected-string helper does not have: a 30-second deadline, and a
-//! cap on the RAW accumulated text that exists so [`sanitize`]'s regexes cannot
-//! be handed an unbounded string by a provider ignoring `max_tokens`.
+//! Not `single_shot`: this calls the provider directly so title generation
+//! never queues behind a chat turn, and it carries two bounds the collected
+//! -string helper does not, a 30-second deadline and a cap on the RAW
+//! accumulated text so [`sanitize`]'s regexes cannot be handed an unbounded
+//! string by a provider ignoring `max_tokens`.
 
 use std::sync::Arc;
 
@@ -65,8 +54,8 @@ const TITLE_OUTPUT_TOKENS: u32 = 32;
 /// cannot tip the request into an overflow error.
 const TITLE_SAFETY_MARGIN_TOKENS: i64 = 64;
 
-/// Cheap to clone: every field is a handle. A fire-and-forget title task takes
-/// its own clone rather than borrowing the orchestrator.
+/// Cheap to clone: a fire-and-forget title task takes its own clone rather than
+/// borrowing the orchestrator.
 #[derive(Clone)]
 pub struct TitleGen {
     sessions: SessionsStore,
@@ -173,11 +162,9 @@ impl TitleGen {
             return Ok(None);
         }
 
-        // The owner's per-client title prompt and thinking budget, resolved so
-        // the schema's 128 reaches the budget rather than a hardcoded 0
-        // (D-072). The endpoint and the context size come from the SPARSE
-        // record, because the resolver's fallbacks are its own and `llm.port`'s
-        // schema default is not channel-adjusted; see `turn.rs`.
+        // The owner's title prompt and thinking budget, resolved so the
+        // schema's default reaches the budget. The endpoint and context size
+        // come from the SPARSE record; see `turn.rs`.
         let settings = self
             .settings
             .load_effective_resolved(owner_client_id)
@@ -269,13 +256,8 @@ impl TitleGen {
 }
 
 /// The template, falling back to the schema default when the stored value is
-/// blank.
-///
-/// The blank case matters and the shared reader does not cover it: a user who
-/// clears the field gets the default prompt back rather than an empty system
-/// message, which is what the TypeScript's local reader does with its
-/// `length > 0` test. The default comes from the schema rather than a second
-/// copy of the constant.
+/// blank: a user who clears the field gets the default prompt back rather than
+/// an empty system message, which the shared reader does not cover.
 fn template(settings: &SettingsRecord) -> String {
     let stored = str_setting(settings, "prompts.titleGenerationPrompt", "");
     if !stored.is_empty() {
@@ -295,11 +277,9 @@ pub struct TitleContext {
     pub recent_messages: String,
 }
 
-/// Budget the transcript against the context window.
-///
-/// The opening turn is always included AND excluded from the newest-first walk,
-/// because it is shown separately in the template. Counting it twice would
-/// waste the budget on text the model already has.
+/// Budget the transcript against the context window. The opening turn is always
+/// included AND excluded from the newest-first walk, because the template shows
+/// it separately and counting it twice wastes the budget.
 pub fn select_title_context(
     messages: &[StoredMessage],
     template: &str,
@@ -368,13 +348,9 @@ fn fill_template(template: &str, context: &TitleContext) -> String {
         .replace("{recentMessages}", recent)
 }
 
-/// Roughly four characters per token. There is no tokenizer in the codebase and
-/// this only has to be in the right ballpark: it feeds a budget that already
-/// carries a safety margin.
-///
-/// Counted in `char`s rather than bytes, which is what the JavaScript length it
-/// ports measures closely enough, and what `sessions/summary.rs` already settled
-/// on for the same question.
+/// Roughly four characters per token, counted in `char`s. There is no tokenizer
+/// here and this only has to be in the right ballpark: it feeds a budget that
+/// already carries a safety margin.
 fn estimate_tokens(s: &str) -> i64 {
     s.chars().count().div_ceil(4) as i64
 }
@@ -387,11 +363,10 @@ fn role_label(role: &str) -> &'static str {
     }
 }
 
-/// Six lexical steps, in a fixed order.
-///
-/// The order is the whole content of this function. Taking the first line
-/// before stripping `<think>` would leave a dangling opening tag; stripping
-/// trailing punctuation before the quotes would leave `"Some title".` intact.
+/// Six lexical steps, and the ORDER is the whole content of this function:
+/// taking the first line before stripping `<think>` leaves a dangling opening
+/// tag, and stripping trailing punctuation before the quotes leaves
+/// `"Some title".` intact.
 pub fn sanitize(raw: &str) -> String {
     let mut s = think_block().replace_all(raw, "").into_owned();
     // Title-only output: everything after the first line is commentary.
@@ -415,9 +390,7 @@ pub fn sanitize(raw: &str) -> String {
 /// compile on a path that runs after every first turn.
 macro_rules! lazy_regex {
     ($name:ident, $pattern:expr) => {
-        // Literal patterns, so a compile failure here is a build-time bug rather
-        // than anything a running core can hit. Same shape as
-        // `extensions/prompt/parser.rs`'s `lazy_re!`.
+        // Literal patterns, so a compile failure here is a build-time bug.
         #[allow(clippy::unwrap_used)]
         fn $name() -> &'static Regex {
             static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();

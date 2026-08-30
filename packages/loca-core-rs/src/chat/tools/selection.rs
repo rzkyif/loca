@@ -1,12 +1,8 @@
-//! Which tools a hop is offered.
+//! Which tools a hop is offered: the LLM-exposure gate, the relevance pipeline
+//! (cosine phase 1, optional LLM phase 2), the `tools.maxTools` cap and its two
+//! exemptions, and the MCP offering that runs after all of it.
 //!
-//! Ports `core-engine/src/services/chat-tool-selection.ts` in full: the
-//! LLM-exposure gate, the relevance pipeline (cosine phase 1, optional LLM
-//! phase 2), the `tools.maxTools` cap and its two exemptions, and the MCP
-//! offering that runs after all of it.
-//!
-//! Four things here are load-bearing rather than incidental, and each one is
-//! easy to lose in a port because each reads like an inconsistency:
+//! Four things are load-bearing, and each reads like an inconsistency:
 //!
 //! 1. **The final exposure gate runs again after the map back through the
 //!    catalog.** The relevance index is not grant-aware, so a tool whose
@@ -39,12 +35,11 @@ use crate::settings::SettingsRecord;
 use crate::chat::deps::{Phase1Options, ToolHost};
 use crate::chat::writer::LiveRef;
 
-/// Cosine cutoff for folding a non-always-available MCP tool into a turn.
-///
-/// An MCP tool carries no trigger phrases, so with always-available off it is
-/// offered when the query names it OR its name-plus-description embedding is at
-/// least this similar. Conservative on purpose: the failure this guards against
-/// is an irrelevant server tool force-included on every single turn.
+/// Cosine cutoff for folding a non-always-available MCP tool into a turn. An
+/// MCP tool carries no trigger phrases, so it is offered when the query names
+/// it or its name-plus-description embedding is at least this similar.
+/// Conservative: the failure guarded against is an irrelevant server tool
+/// force-included on every turn.
 const MCP_RELEVANCE_FLOOR: f64 = 0.25;
 
 /// What one turn's selection produced.
@@ -73,11 +68,9 @@ pub struct SelectionInputs<'a> {
 }
 
 /// A tool reaches the model only when its extension is installed, the tool is
-/// enabled, AND no non-optional required permission is explicitly denied.
-///
-/// A permission with no grant row behaves as "ask": the tool runs and the
-/// sandbox prompts at the moment of access. Only an explicit denial withholds
-/// the tool here, so an unanswered prompt does not silently shrink the catalog.
+/// enabled, AND no non-optional required permission is explicitly denied. A
+/// permission with no grant row behaves as "ask", so an unanswered prompt does
+/// not silently shrink the catalog.
 pub fn tool_exposable(tool: &Tool) -> bool {
     let denied: HashSet<&str> = tool
         .grants

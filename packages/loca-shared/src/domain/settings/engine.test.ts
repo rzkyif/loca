@@ -3,7 +3,6 @@
 
 import { assertEquals } from "@std/assert";
 import {
-  isSecretSettingKey,
   SECRET_KEYS,
   settingKeyDestination,
   SETTINGS_SCHEMA,
@@ -35,7 +34,7 @@ Deno.test("setting ids: a repeated id must map to the SAME field, never conflict
   // destination all key off the id. A duplicate id is allowed ONLY for the
   // deliberate shared-field pattern (one persisted value rendered in two sections,
   // e.g. `speech.binaryBackend` under both STT and TTS, since they share one
-  // loca-core-speech process). Those occurrences must be identical apart from the
+  // speech engine). Those occurrences must be identical apart from the
   // UI-only `visibleWhen`, or the value would resolve inconsistently depending on
   // which occurrence wins. A genuinely accidental collision (two different-typed or
   // different-default fields sharing an id) fails here.
@@ -176,9 +175,4 @@ Deno.test("validateSettingsPatch: per-client overlay keys gated by allow-list", 
       .length > 0,
     true,
   );
-});
-
-Deno.test("isSecretSettingKey: true for password fields, false otherwise", () => {
-  assertEquals(isSecretSettingKey(SECRET_KEYS[0]), true);
-  assertEquals(isSecretSettingKey("definitely.not.a.secret"), false);
 });

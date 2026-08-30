@@ -1,20 +1,11 @@
 //! Running a command, behind a seam.
 //!
-//! Every OS integration in this package is a subprocess: `launchctl`,
-//! `systemctl`, `schtasks`, PowerShell. None of them can be driven honestly on
-//! a host that is not that OS, and a test that asserts on real output is a test
-//! that only runs on one third of the fleet.
-//!
-//! So the argv is the thing under test. A [`Runner`] records what was issued
-//! and answers with a scripted result, which makes the DECISIONS assertable
-//! everywhere: which command, in what order, with which flags, and what each
-//! branch does with a non-zero exit.
-//!
-//! **What that does not cover, stated rather than implied.** Whether the OS
-//! tools actually behave as the argv assumes. Nothing on one host can check
-//! that `launchctl load` is idempotent or that `schtasks /Query` exits non-zero
-//! for an absent task; those are exercised per OS at release time, and they are
-//! the same class of gap D11 records for its Windows variants.
+//! Every OS integration here is a subprocess (`launchctl`, `systemctl`,
+//! `schtasks`, PowerShell), and none can be driven on a host that is not that
+//! OS. So the argv is the thing under test: a [`Runner`] records what was
+//! issued and answers from a script, making the decisions assertable
+//! everywhere. Whether the OS tools behave as the argv assumes is a platform
+//! fact, exercised per OS at release time.
 
 use crate::error::Result;
 
@@ -54,12 +45,9 @@ pub trait Runner: Send + Sync {
     async fn run(&self, argv: &[&str]) -> RunResult;
 }
 
-/// The production implementation.
-///
-/// A spawn failure is a `RunResult` rather than an error, matching
-/// `install/proc.ts:38-42`: every caller here is probing or tearing down, and
-/// "the tool is not installed" and "the tool said no" are the same answer to
-/// all of them.
+/// The production implementation. A spawn failure is a `RunResult` rather than
+/// an error: every caller is probing or tearing down, where "not installed" and
+/// "said no" are the same answer.
 pub struct SystemRunner;
 
 #[async_trait::async_trait]
@@ -88,13 +76,10 @@ impl Runner for SystemRunner {
     }
 }
 
-/// The user's real home, independent of the `LOCA_CORE_HOME` override.
-///
-/// Service definitions must land in the actual `~/Library` or `~/.config` even
-/// when core state is redirected to a tempdir, which is why this is separate
-/// from `Paths` (`install/proc.ts:77-84`). Passed as an argument everywhere it
-/// is used, so a test can point it at a tempdir without `set_var`, which is
-/// unsound under `cargo test`'s threads (D-010).
+/// The user's real home, independent of the `LOCA_CORE_HOME` override: service
+/// definitions must land in the actual `~/Library` or `~/.config` even when
+/// core state is redirected. Passed as an argument, never read from the
+/// environment, so a test can point it at a tempdir without `set_var`.
 pub fn real_home() -> Result<std::path::PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -112,11 +97,8 @@ pub mod testing {
     use super::*;
     use std::sync::Mutex;
 
-    /// Records every argv and answers from a script.
-    ///
-    /// The script is matched on a substring of the joined argv, so a test says
-    /// what it is scripting rather than restating the whole command line, which
-    /// would make the assertion a copy of the code.
+    /// Records every argv and answers from a script, matched on a substring of
+    /// the joined argv so a test need not restate the whole command line.
     #[derive(Default)]
     pub struct RecordingRunner {
         calls: Mutex<Vec<String>>,
@@ -155,10 +137,8 @@ pub mod testing {
                     return result.clone();
                 }
             }
-            // Unscripted commands FAIL rather than succeed. A runner that
-            // helpfully answers 0 to anything makes every probe report
-            // "installed" and every teardown report success, which is D-050
-            // case 1 with the mock filling in what the test left out.
+            // Unscripted commands FAIL: a runner answering 0 to anything makes
+            // every probe report "installed" and every teardown succeed.
             RunResult::failed(1)
         }
     }

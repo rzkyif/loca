@@ -6,19 +6,13 @@
 //! paired client reads on select to seed the core bar without waiting for the
 //! first `core.status` frame.
 //!
-//! Nothing here is a secret. `adminPasswordSet` is a boolean about
-//! configuration, and `behindProxy` is a hint the pairing handshake verifies
-//! independently: a forged value cannot complete pairing, because the
-//! certificate binding is folded into the key confirmation.
+//! Nothing here is a secret. `behindProxy` is a hint the pairing handshake
+//! verifies independently, since the certificate binding is folded into the key
+//! confirmation.
 //!
-//! # Capabilities
-//!
-//! The response also carries [`Capabilities`], so a client asks what the core
-//! it is talking to can do instead of inferring it from the device it is
-//! rendering on. Those are different questions and confusing them gets the
-//! interesting case backwards: a phone paired to a desktop core must still
-//! offer extensions, scheduled prompts and stdio MCP servers, because all three
-//! are properties of the core, not of the screen.
+//! The response also carries [`Capabilities`], so a client asks what the CORE
+//! can do rather than inferring it from the device rendering: a phone paired to
+//! a desktop core must still offer extensions, schedules and stdio MCP.
 
 use axum::routing::get;
 use axum::Router;
@@ -29,95 +23,62 @@ use crate::contract::api::{CoreCapabilities, HealthResponse, HealthResponseStatu
 use super::http::Json;
 use super::state::AppContext;
 
-/// Whether this build can spawn a `deno` tool worker.
-///
-/// The one predicate behind both the `extensions` capability and the `deno`
-/// binary requirement (`crate::requirements::compute::required_binary_kinds`),
-/// deliberately shared rather than re-derived: those two must agree, and two
-/// copies of a `cfg` cannot be tested into agreement on either host.
-///
-/// It mirrors the gate on `crate::extensions::worker::spawner`, which is
-/// `#[cfg(not(any(target_os = "android", target_os = "ios")))]` because it
-/// starts a DOWNLOADED interpreter, which is what Android's W^X policy and App
-/// Store rule 2.5.2 forbid. `boot` reads the same `cfg` to decide whether there
-/// is a `WorkerPool` at all.
-///
-/// A `cfg` rather than a value, where [`Frontend`] is deliberately a value: on
-/// mobile the spawner module does not exist to be called, so this genuinely is
-/// a compile-time fact. A desktop core booted as [`Frontend::Embedded`] can
-/// still run tool workers, and reports so.
+/// Whether this build can spawn a `deno` tool worker. The one predicate behind
+/// both the `extensions` capability and the `deno` binary requirement, shared
+/// rather than re-derived because two copies of a `cfg` cannot be tested into
+/// agreement on either host. It mirrors the gate on
+/// `crate::extensions::worker::spawner`, absent on mobile because it starts a
+/// downloaded interpreter, which W^X forbids.
 pub const TOOL_WORKERS_SUPPORTED: bool = cfg!(not(any(target_os = "android", target_os = "ios")));
 
-/// Whether this build linked llama.cpp, so a model can be run in process.
-///
-/// `local-inference`, default OFF (`Cargo.toml`).
+/// Whether this build linked llama.cpp. `local-inference`, default OFF.
 pub const LOCAL_INFERENCE_COMPILED: bool = cfg!(feature = "local-inference");
 
-/// Whether this build linked sherpa-onnx, so speech can be run in process.
-///
-/// `local-speech`, default OFF (`Cargo.toml`).
+/// Whether this build linked sherpa-onnx. `local-speech`, default OFF.
 pub const LOCAL_SPEECH_COMPILED: bool = cfg!(feature = "local-speech");
 
-/// What this core can do, as opposed to what the device rendering its UI can do.
-///
-/// Every field is a property of the core that answered `/health`. A client
-/// caches the block on connect and hides the affordances whose capability is
-/// false; a control it leaves visible either works or fails with a worded
-/// reason, which is the better half of that trade (see `stdio_mcp`).
+/// What this core can do, as opposed to what the device rendering its UI can
+/// do. A client caches the block on connect and hides the affordances whose
+/// capability is false.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Capabilities {
     /// Extension tools can actually RUN. Installing is not the question: an
-    /// extension installs fine with no spawner and then every one of its tools
-    /// fails at call time, which is the state worth hiding.
+    /// extension installs fine with no spawner, then fails at every call.
     pub extensions: bool,
     /// A language model can be run in process, so a local model selection is
     /// servable rather than a download with nothing to load it.
     pub local_inference: bool,
     /// STT and TTS can be run in process.
     pub local_speech: bool,
-    /// A saved schedule will actually fire. The routes serve either way, so a
-    /// prompt already in the table stays readable and deletable rather than
-    /// invisible; what is false here is the arm loop.
+    /// A saved schedule will actually fire. The routes serve either way, so an
+    /// existing prompt stays readable; what is false here is the arm loop.
     pub scheduled_prompts: bool,
     /// A local (spawned) MCP server can be started. Remote MCP is unaffected
     /// and is the half that works on a phone.
     pub stdio_mcp: bool,
-    /// **Inbound only: this core can accept NEW paired clients.**
-    ///
-    /// It is not "this device can pair". A phone pairing OUT to a remote core
-    /// is the client's business and is untouched by this flag; what is false on
-    /// an embedded core is that anything can pair TO it, because there is no
-    /// listener by design. So this gates minting a pairing code and revoking a
-    /// device on THIS core, never the wizard that adds a remote one.
+    /// Inbound only: this core can accept NEW paired clients. A phone pairing
+    /// OUT to a remote core is untouched by this flag; an embedded core has no
+    /// listener, so nothing can pair TO it.
     pub pairing: bool,
-    /// This core can replace its own binary.
-    ///
-    /// Named `core_update` rather than `update` because on mobile the CLIENT
-    /// self-updates (the signed APK/IPA path) while the core cannot, being
-    /// inside the app bundle. A bare `update` reads as a general capability and
-    /// invites hiding the wrong affordance.
+    /// This core can replace its own binary. Named for the core specifically:
+    /// on mobile the CLIENT self-updates while the core, inside the app bundle,
+    /// cannot.
     pub core_update: bool,
 }
 
 impl Capabilities {
-    /// The derivation, with every input explicit.
-    ///
-    /// Separate from [`detect`](Self::detect) so the mapping is exercised over
-    /// both values of every input on a host where three of the four are pinned
-    /// by the build. `detect` is then the only place a compile-time fact is
-    /// read.
+    /// The derivation, with every input explicit, so the mapping is testable
+    /// over both values of inputs the build pins. [`detect`](Self::detect) is
+    /// then the only place a compile-time fact is read.
     pub fn from_parts(
         frontend: Frontend,
         tool_workers: bool,
         local_inference: bool,
         local_speech: bool,
     ) -> Self {
-        // A listener, and therefore a second device that could reach it, is what
-        // these four have in common. `boot` skips TLS material entirely for an
-        // embedded frontend, so there is nothing to pair against; it does not
-        // start the scheduler's arm loop; it declares stdio MCP unsupported; and
-        // the updater helper is checked by the DESKTOP frontend rather than by
-        // `boot`, so a service core is exactly the core that has one.
+        // A listener is what these four have in common: an embedded boot mints
+        // no TLS material to pair against, never starts the arm loop, declares
+        // stdio MCP unsupported, and never checks for the updater helper.
         let service = frontend == Frontend::Service;
         Self {
             extensions: tool_workers,
@@ -140,12 +101,8 @@ impl Capabilities {
         )
     }
 
-    /// The wire shape, generated from `@loca/shared`.
-    ///
-    /// Seven bools copied across is where a transposition hides silently, and
-    /// the compiler cannot help: every field has the same type, so any
-    /// permutation compiles. `each_field_reaches_its_own_wire_field` sets one
-    /// at a time and asserts exactly one arrives.
+    /// The wire shape. Seven same-typed bools means any permutation compiles,
+    /// so `each_field_reaches_its_own_wire_field` sets one at a time.
     fn to_wire(self) -> CoreCapabilities {
         CoreCapabilities {
             extensions: self.extensions,
@@ -206,12 +163,9 @@ mod tests {
         core_from(ctx)
     }
 
-    /// The served `capabilities`, over a context with `caps` and `pin`.
-    ///
-    /// `pin` is a parameter rather than a fixture default on purpose: the two
-    /// callers below cross it against the capabilities deliberately, and a test
-    /// that took whatever the fixture happened to hold would be asserting the
-    /// fixture rather than the route. See the pair of tests that use it.
+    /// The served `capabilities`, over a context with `caps` and `pin`. `pin`
+    /// is a parameter so the two callers below can cross it against the
+    /// capabilities in opposite directions.
     async fn served_with_pin(caps: Capabilities, pin: Option<&str>) -> serde_json::Value {
         let mut ctx = context_with(Arc::new(StubAuth::new()));
         ctx.capabilities = caps;
@@ -238,14 +192,9 @@ mod tests {
         body["capabilities"].clone()
     }
 
-    /// The route must serve the CONTEXT's capabilities, not a fresh derivation.
-    ///
-    /// Deriving in the handler is the tempting shortcut, because it compiles
-    /// without touching `AppContext` at all. It is also green and silently
-    /// wrong on every embedded core, and no other test here sees it: everything
-    /// else in this module tests `Capabilities` as a value, never the route.
-    /// This drives the shipped in-process path end to end, so a handler that
-    /// ignores `ctx.capabilities` fails.
+    /// The route must serve the CONTEXT's capabilities, not a fresh derivation,
+    /// which would be silently wrong on every embedded core. Drives the shipped
+    /// in-process path, so a handler ignoring `ctx.capabilities` fails.
     #[tokio::test]
     async fn the_route_serves_the_contexts_capabilities() {
         let embedded = Capabilities::from_parts(Frontend::Embedded, false, false, false);
@@ -273,20 +222,11 @@ mod tests {
         assert_eq!(served["coreUpdate"], true);
     }
 
-    /// `tls_pin` must have NO say in what this core reports it can do.
-    ///
-    /// Two tests rather than one, and they cross `tls_pin` against the
-    /// capabilities in opposite directions on purpose. The refused shortcut is
-    /// deriving the block from `ctx.tls_pin.is_none()`, which needs no field on
-    /// `AppContext` at all; per D-147 a refusal argued in prose is undefended
-    /// until a test defends it.
-    ///
-    /// This half is the REAL configuration and the real bug. `boot` writes
-    /// `behind_proxy || frontend.is_embedded()`, so a proxied DESKTOP core has
-    /// no pin of its own: the terminating proxy presents a real certificate and
-    /// pairing folds none. Under the shortcut it would report itself unable to
-    /// pair, schedule prompts, spawn a stdio server or update. It has a
-    /// listener and does all four.
+    /// `tls_pin` must have no say in what this core reports it can do. The
+    /// refused shortcut is deriving the block from `ctx.tls_pin.is_none()`. This
+    /// half is the real configuration: `boot` writes `behind_proxy ||
+    /// frontend.is_embedded()`, so a proxied DESKTOP core has no pin of its own
+    /// and would report itself unable to pair, schedule or update.
     #[tokio::test]
     async fn a_core_behind_a_proxy_is_fully_capable_despite_having_no_pin() {
         let served = served_with_pin(
@@ -303,18 +243,10 @@ mod tests {
         assert_eq!(served["coreUpdate"], true);
     }
 
-    /// The converse crossing, and the reason the pair exists rather than one.
-    ///
-    /// A pin present on an embedded core is a combination `boot` never
-    /// produces, so this is synthetic and says so. It is here because the test
-    /// above catches the shortcut only while `context_with` happens to default
-    /// `tls_pin` to `None`: flip that default and the derivation would agree
-    /// with the frontend there and slip through. This one fails in exactly that
-    /// case, so between them no fixture default can make both pass.
-    ///
-    /// **An assertion that passes because of an unrelated fixture default is
-    /// not testing what its name says.** That is D-147 one layer down, and it
-    /// is why the pin is a parameter here rather than inherited.
+    /// The converse crossing. A pin on an embedded core is synthetic, and the
+    /// point: the test above catches the shortcut only while `context_with`
+    /// defaults `tls_pin` to `None`. Between them no fixture default passes
+    /// both.
     #[tokio::test]
     async fn an_embedded_core_stays_incapable_even_when_a_pin_is_present() {
         let served = served_with_pin(
@@ -332,10 +264,6 @@ mod tests {
     }
 
     /// The wire names are camelCase, and they are what the client reads.
-    ///
-    /// Generated from `@loca/shared`, so this guards the regeneration rather
-    /// than the hand-written half: a rename on the TypeScript side that nobody
-    /// carried into the client would land here first.
     #[tokio::test]
     async fn the_wire_names_are_the_camel_case_ones() {
         let served = served_capabilities(Capabilities::detect(Frontend::Service)).await;
@@ -380,20 +308,15 @@ mod tests {
         assert!(!caps.stdio_mcp);
         assert!(!caps.pairing);
         assert!(!caps.core_update);
-        // And keeps the three the frontend has no say over. This half is what
-        // stops the derivation collapsing into "embedded means nothing works":
-        // a desktop process booted embedded still spawns tool workers.
+        // And keeps the three the frontend has no say over: a desktop process
+        // booted embedded still spawns tool workers.
         assert!(caps.extensions);
         assert!(caps.local_inference);
         assert!(caps.local_speech);
     }
 
-    /// The three build-decided flags, one at a time.
-    ///
-    /// Three bools in a row is where a transposition hides, and a transposition
-    /// is invisible on any host that has all three the same. Each case turns
-    /// exactly one off and asserts the other two survive, so swapping any pair
-    /// of arguments in `from_parts` fails.
+    /// The three build-decided flags, one at a time: each case turns exactly
+    /// one off, so swapping any pair of `from_parts` arguments fails.
     #[test]
     fn no_tool_workers_costs_extensions_and_nothing_else() {
         let caps = Capabilities::from_parts(Frontend::Service, false, true, true);
@@ -439,12 +362,9 @@ mod tests {
         );
     }
 
-    /// The frontend must not reach the three build-decided flags.
-    ///
-    /// Its own four are covered above; this is the other direction, and it is
-    /// the one that would let `Frontend::Embedded` silently mean "no
-    /// extensions" on a desktop build, which is false and would hide a working
-    /// feature.
+    /// The frontend must not reach the three build-decided flags, which would
+    /// let `Frontend::Embedded` silently mean "no extensions" on a desktop
+    /// build and hide a working feature.
     #[test]
     fn the_frontend_moves_four_flags_and_only_those_four() {
         let service = Capabilities::from_parts(Frontend::Service, true, false, true);
@@ -461,13 +381,9 @@ mod tests {
     /// One field's domain value, the wire field it must land in, and its name.
     type Case = (Capabilities, fn(&CoreCapabilities) -> bool, &'static str);
 
-    /// Every domain field reaches its OWN wire field.
-    ///
-    /// Seven bools of the same type means any permutation of `to_wire`
-    /// compiles, and a permutation is a core telling a client it can do
-    /// something it cannot. Each case turns exactly one on and reads exactly one
-    /// off, so a swap of any pair fails. The `false` half matters as much as the
-    /// `true` half: without it, `to_wire` returning all-true would pass.
+    /// Every domain field reaches its OWN wire field. Each case turns exactly
+    /// one on and counts how many arrive, so a swap of any pair fails and
+    /// `to_wire` returning all-true does not pass.
     #[test]
     fn each_field_reaches_its_own_wire_field() {
         let off = Capabilities::from_parts(Frontend::Embedded, false, false, false);
@@ -558,13 +474,8 @@ mod tests {
         }
     }
 
-    /// `detect` must PASS ON the frontend it is given.
-    ///
-    /// Without this, `detect` hardcoding `Frontend::Service` survives every
-    /// other test here, because every other one either calls `from_parts`
-    /// directly or calls `detect(Frontend::Service)`. That mutation is the
-    /// exact bug this whole design exists to prevent: a core that cannot pair,
-    /// schedule or update reporting that it can.
+    /// `detect` must pass on the frontend it is given: hardcoding
+    /// `Frontend::Service` survives every other test here.
     #[test]
     fn detect_passes_its_frontend_through() {
         let service = Capabilities::detect(Frontend::Service);
@@ -576,14 +487,9 @@ mod tests {
         assert!(!embedded.stdio_mcp && !embedded.core_update);
     }
 
-    /// `detect` reads the build, and the build this test runs under is known.
-    ///
-    /// Tier 2, stated rather than implied: this pins that `detect` feeds the
-    /// constants to `from_parts` in the right ORDER, using the values the
-    /// default desktop gate actually has. What no test on one host can prove is
-    /// that each `cfg` expression itself names the right thing, because they are
-    /// compile-time. `deno task mobile-check` compiling both mobile triples and
-    /// the constants living beside the gates they mirror are what cover that.
+    /// Pins that `detect` feeds the constants to `from_parts` in the right
+    /// order. No test on one host can prove each `cfg` names the right thing;
+    /// `deno task mobile-check` compiling both mobile triples covers that.
     #[test]
     fn detect_feeds_the_build_constants_through_in_order() {
         assert_eq!(
@@ -595,10 +501,7 @@ mod tests {
                 LOCAL_SPEECH_COMPILED,
             )
         );
-        // The default desktop gate: a spawner, and neither engine linked. If
-        // this ever fails, the gate is running with a feature on and the two
-        // engine flags below stop being meaningful rather than the code being
-        // wrong.
+        // The default desktop gate: a spawner, neither engine linked.
         #[cfg(all(
             not(any(target_os = "android", target_os = "ios")),
             not(feature = "local-inference"),

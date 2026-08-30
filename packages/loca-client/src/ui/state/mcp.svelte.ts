@@ -13,7 +13,7 @@ import {
   type ServerToClientFrame,
 } from "@loca/shared";
 import { cores } from "$lib/core/cores";
-import type { McpServerInput } from "$lib/core/mcp";
+import type { McpServerInput } from "$lib/core";
 import { platform } from "$lib/platform";
 import { getLogger } from "$lib/util/log";
 import { Subscriptions } from "$lib/util/subscriptions";

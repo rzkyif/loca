@@ -1,15 +1,10 @@
 //! The OAuth bag: one vault entry holding everything the flow has to remember.
 //!
 //! The dynamic client registration, the issued tokens and the in-flight PKCE
-//! verifier all live under `mcp.<id>.oauth`, exactly as they did in the
-//! TypeScript's `McpOAuthProvider`. The SDK splits that into two traits over one
-//! stored value, so both are implemented here over the same key:
-//!
-//! | the bag holds         | rmcp trait                             |
-//! | --------------------- | -------------------------------------- |
-//! | client registration   | `CredentialStore` (`client_id`)        |
-//! | tokens                | `CredentialStore` (`token_response`)   |
-//! | PKCE verifier + CSRF  | `StateStore`                           |
+//! verifier all live under `mcp.<id>.oauth`. The SDK splits that across two
+//! traits over one stored value (`CredentialStore` for the registration and the
+//! tokens, `StateStore` for the verifier keyed by its CSRF token), so both are
+//! implemented here over the same key.
 //!
 //! Nothing here reaches `/api/v1/settings/secrets`: see
 //! [`secret_key`](super::super::secret_key) for why that boundary matters.
@@ -60,10 +55,9 @@ impl VaultCredentials {
         let Some(raw) = raw else {
             return Ok(Bag::default());
         };
-        // A bag written by an older shape is treated as absent rather than as a
-        // hard failure: the cost is one re-authorization, where the alternative
-        // is a server that can never connect again and no way to fix it from
-        // the UI.
+        // A bag written by an older shape reads as absent rather than as a hard
+        // failure: the cost is one re-authorization, where the alternative is a
+        // server that can never connect again.
         Ok(serde_json::from_str(&raw).unwrap_or_default())
     }
 

@@ -21,25 +21,20 @@ import { locaUnoBase } from "../loca-shared/src/ui/uno-preset.ts";
 //   - The `--accent-*` shades and the bubble seed pairs resolve from a :root-only
 //     seed, so the :root block captures each slot's live value under a neutral
 //     `--flip-*` name and the frame block assigns every slot its sibling's
-//     capture. No lightness constants for these, so base.css changes flow through.
-//   - The `--default-*` ladder is per element: base.css derives it from
-//     `--default-base` on `*`, so a subtree that locally retints (an accent bubble
-//     sets `--default-base` to `var(--accent-*-base)`) must keep deriving from
-//     THAT base while flipped. A frozen :root capture would pin every demo
-//     descendant to the global neutral hue and drop the accent (accent bubbles
-//     would render gray). So this ladder is re-derived straight from the in-scope
-//     `--default-base`, swapping the light and dark lightness. With the global
-//     neutral base that is identical to the old capture; an accent subtree now
-//     flips while keeping its hue. These lightnesses are the one place constants
-//     are mirrored from base.css's `*` block -- keep them in sync.
+//     capture. No lightness constants, so base.css changes flow through.
+//   - The `--default-*` ladder is per element (base.css derives it from
+//     `--default-base` on `*`), so a subtree that locally retints must keep
+//     deriving from THAT base while flipped: a frozen :root capture would pin
+//     every demo descendant to the global neutral hue and render accent bubbles
+//     gray. So this ladder is re-derived from the in-scope `--default-base`,
+//     swapping the light and dark lightness. Those lightnesses are the one place
+//     constants are mirrored from base.css's `*` block; keep them in sync.
 //
 // A `.demo-unflip` block reverses the swap for a subtree, restoring each slot to
-// its website-theme value (the capture for the :root-seeded pairs, the in-scope
-// re-derivation for the default ladder). The manual demo frames use it on the
-// inner content wrapper so the FRAME chrome and dot grid render flipped while the
-// client component inside follows the website theme (a "double flip"). It rides a
-// selector of equal specificity to the flip but is emitted after it, so it wins
-// for the nested wrapper and its descendants.
+// its website-theme value. The manual demo frames use it on the inner content
+// wrapper so the FRAME chrome renders flipped while the client component inside
+// follows the website theme. It rides a selector of equal specificity but is
+// emitted after the flip, so it wins for the nested wrapper.
 function themeFlipCss(): string {
   const shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
   const accents = ["red", "blue", "purple", "green", "yellow"];

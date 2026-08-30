@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import gsap from "gsap";
-  import { getDefaultSettings, SETTINGS_SCHEMA } from "@loca/shared/domain/settings/engine";
+  import { getDefaultSettings } from "@loca/shared/domain/settings/engine";
   import type { DownloadStatus } from "@loca/shared/domain/model";
   import SettingsShellView from "@loca/shared/ui/components/settings/SettingsShellView.svelte";
   import SettingsContentView from "@loca/shared/ui/components/settings/SettingsContentView.svelte";
@@ -9,17 +9,11 @@
   import ConfirmModalView from "@loca/shared/ui/components/settings/ConfirmModalView.svelte";
   import SettingsDemoFooter from "../demos/SettingsDemoFooter.svelte";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, settingsShowcaseGroups as groups, type StageProps } from "../../lib/showcase";
 
-  let { register }: { register: (h: { timeline: Timeline; reset: () => void }) => void } = $props();
+  let { register }: StageProps = $props();
 
   const D = getDefaultSettings();
-  const groups = SETTINGS_SCHEMA.filter((g) => !g.hidden).map((g) => ({
-    id: g.id,
-    name: g.name,
-    icon: g.icon,
-    iconInactive: g.iconInactive ?? g.icon,
-  }));
 
   type Shell = { reset: () => void };
   let shell = $state<Shell>();

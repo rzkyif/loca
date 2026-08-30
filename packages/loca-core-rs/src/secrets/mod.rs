@@ -1,10 +1,5 @@
 //! The secrets vault: OS keychain sealing of the master key, with the chmod-600 dotfile fallback.
 //!
-//! Work package **F5** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path, with one recorded exception: M4 added `android.rs` and
-//! its `pub mod` line under a bounded grant, to close the plaintext master key
-//! on Android.
-//!
 //! # Two layers
 //!
 //! [`Vault`] is the bag of named secrets: a single JSON object, AES-GCM-256
@@ -17,19 +12,6 @@
 //! [`store`] for the selection rules and [`store::LayeredStore`] for why a
 //! keychain write is read back before it is believed.
 //!
-//! # Who calls what
-//!
-//! - D1's settings routes: [`Vault::list_names`], [`Vault::set`],
-//!   [`Vault::delete`]. `delete` returning `false` is the route's `not_found`;
-//!   values are never read back over the API, so there is no route for `get`.
-//! - F6: [`Vault::get`] / [`Vault::set`] for the sealed TLS private key, and
-//!   [`Vault::subscribe`] for the WS hub's name broadcast.
-//! - D9's factory reset: [`Vault::clear_all`].
-//! - D11: [`Vault::get`] / [`Vault::set`] / [`Vault::delete`] for MCP bearer
-//!   tokens and OAuth bags.
-//! - D13's uninstall: [`Vault::delete_master_key`].
-//! - Boot: [`Vault::warn_if_unreadable`].
-//!
 //! # Secret hygiene
 //!
 //! `scrub_secrets` is a backstop for accidents elsewhere and nothing here leans
@@ -40,9 +22,9 @@
 //! outside `#[cfg(test)]`.
 
 /// The Android sealing layer. Always compiled, on every platform, because the
-/// half worth testing has no JNI in it and `cargo test` is host-target: gating
-/// it on `target_os = "android"` would leave the migration and the
-/// unopenable-envelope path with no coverage anywhere, which is D-117.
+/// half worth testing has no JNI in it and `cargo test` is host-target: a
+/// `target_os` gate would leave the migration and the unopenable-envelope path
+/// with no coverage anywhere.
 pub mod android;
 pub mod crypto;
 pub mod keychain;
@@ -65,14 +47,13 @@ use crate::paths::Paths;
 
 pub use store::SecureStore;
 
-/// The secure-store entry name for the vault master key. Part of the parity
-/// surface named in D-012, together with the service name in
-/// [`keychain::service_name`] and the base64 encoding in [`crypto`].
+/// The secure-store entry name for the vault master key. A byte-exact parity
+/// surface, with the service name in [`keychain::service_name`] and the base64
+/// encoding in [`crypto`].
 pub const MASTER_KEY_ID: &str = "master-key";
 
 /// The dotfile the master key falls back to, `<root>/.master-key`. Exported so
-/// the sandbox deny list names exactly this path rather than re-deriving it
-/// (D-013).
+/// the sandbox deny list names exactly this path rather than re-deriving it.
 pub fn master_key_file(root: &Path) -> PathBuf {
     store::key_file(root, MASTER_KEY_ID)
 }

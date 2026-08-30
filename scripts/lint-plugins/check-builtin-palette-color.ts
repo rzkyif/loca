@@ -1,16 +1,11 @@
-// Companion to the `loca/no-builtin-palette-color` rule in
-// scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
-// same rule for the file types oxlint parses (.ts/.tsx/.mts/.mjs/.svelte).
-// oxlint never sees .astro, plain .css, Markdown, or other tracked text, so a
-// built-in palette color utility in those files slips through. This pass closes
-// that gap by walking every other tracked file and rejecting the built-in
-// UnoCSS/Tailwind palette color utilities (a property prefix + a palette hue + a
-// numeric shade), which paint a fixed sRGB color that ignores the appearance
-// settings and does not theme-invert in dark mode. Use the themable tokens
+// Companion to the `loca/no-builtin-palette-color` oxlint rule, covering the
+// tracked files oxlint never parses (.astro, .css, Markdown, ...). A built-in
+// UnoCSS/Tailwind palette color paints a fixed sRGB value that ignores the
+// appearance settings and does not theme-invert; use the themable tokens
 // (*-accent-{blue|purple|red|green|yellow}-N, *-default-N) instead.
 //
-// Wired into `deno task lint` alongside the oxlint pass and the other walkers.
-// This source keeps no literal palette-color token, or it flags its own pattern.
+// Wired into `deno task lint`. This source keeps no literal palette-color token,
+// or it flags its own pattern.
 
 import { fromFileUrl } from "@std/path";
 

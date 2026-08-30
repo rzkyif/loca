@@ -9,7 +9,6 @@ import {
   assetVariants,
   binaryUnavailableOnTriple,
   platformVariants,
-  requiredBinaryKinds,
   sttUsesLocal,
   ttsUsesLocal,
 } from "./model.ts";
@@ -42,22 +41,6 @@ Deno.test("ttsUsesLocal: enabling TTS without naming a provider resolves to loca
 
 Deno.test("ttsUsesLocal: an explicit external provider stays external", () => {
   assertEquals(ttsUsesLocal({ "tts.enabled": true, "tts.provider": "external" }), false);
-});
-
-Deno.test("requiredBinaryKinds: the speech binary is required when either engine is local", () => {
-  // Default settings: STT off, TTS off -> no speech binary (voice is opt-in).
-  assertEquals(requiredBinaryKinds({}).includes("loca-core-speech"), false);
-  // Enabling STT locally pulls in the speech binary.
-  assertEquals(requiredBinaryKinds({ "stt.enabled": true }).includes("loca-core-speech"), true);
-  // Enabled but external -> still no speech binary.
-  assertEquals(
-    requiredBinaryKinds({
-      "stt.enabled": true,
-      "stt.provider": "external",
-      "tts.enabled": false,
-    }).includes("loca-core-speech"),
-    false,
-  );
 });
 
 Deno.test("assetVariants: a bare string normalizes to the cpu variant", () => {

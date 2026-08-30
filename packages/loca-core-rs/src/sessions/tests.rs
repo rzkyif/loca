@@ -1,15 +1,10 @@
 //! The sessions suite.
 //!
-//! Two halves. The first ports `core/src/services/sessions-store.test.ts` case
-//! for case, so behaviour the Deno store guaranteed is still guaranteed. The
-//! second asserts the on-disk parity surface against a tree the Deno store
-//! actually wrote, which is the half no amount of reading the TypeScript could
-//! substitute for.
+//! Two halves: the store's behaviour, and the on-disk parity surface asserted
+//! against a committed fixture tree.
 //!
 //! Every test builds its own store over its own tempdir, so they run
-//! concurrently. That is the payoff from `Paths` and the store being threaded
-//! values rather than process globals (D-010): the TypeScript tests could not do
-//! this, and repointed a module global with an environment variable instead.
+//! concurrently: `Paths` and the store are threaded values, not process globals.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -505,8 +500,7 @@ async fn a_patch_cannot_re_key_re_role_or_reorder_a_message() {
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::ValidationError);
 
-    // `id` and `ord` are accepted in the body and then ignored, which is what
-    // the per-role patch schemas do.
+    // `id` and `ord` are accepted in the body and then ignored.
     store
         .patch_message(
             &id,
@@ -527,9 +521,8 @@ async fn a_patch_carrying_a_field_of_another_role_is_refused() {
     let id = new_session(&store, ALICE).await;
     let target = store.append_message(&id, user("hello")).await.unwrap();
 
-    // This is the guard the TypeScript's per-role patch schemas exist for, and
-    // here it comes from the generated contract type's `deny_unknown_fields`
-    // rather than from anything restated in this package.
+    // The guard comes from the generated contract type's `deny_unknown_fields`
+    // rather than from anything restated in this module.
     for body in [
         json!({ "toolCalls": [] }),
         json!({ "interrupted": true }),
@@ -759,12 +752,10 @@ async fn a_missing_or_truncated_meta_makes_list_fall_back_and_backfill() {
         .unwrap();
     let meta = tmp.path().join("sessions").join(&id).join("meta.json");
 
-    // A truncated write is the interesting case, and it is not the same as
-    // unparseable JSON: a meta with a valid id but no `updatedAtMs` would sort
-    // as garbage, and one with no `messageCount` would send an absent count over
-    // the wire. So every list-relevant field is required, and each of these
-    // drops exactly one of them from an otherwise complete sidecar. The stale
-    // title is what a trusted partial meta would serve instead.
+    // A truncated write is not the same as unparseable JSON: a meta with a valid
+    // id but no `updatedAtMs` would sort as garbage. Every list-relevant field is
+    // required, and each case drops exactly one from an otherwise complete
+    // sidecar; the stale title is what a trusted partial meta would serve.
     let complete = json!({
         "id": &id,
         "ownerClientId": ALICE,
@@ -912,7 +903,7 @@ async fn a_session_id_that_is_not_a_path_segment_reads_as_absent() {
     assert!(outside.join("session.json").exists());
 }
 
-// --- on-disk parity, against a tree the Deno core wrote ----------------------
+// --- on-disk parity, against a committed fixture tree ------------------------
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -1024,30 +1015,23 @@ async fn a_document_written_by_the_other_core_round_trips_without_losing_a_field
     want["title"] = json!("renamed");
     want["updatedAtMs"] = after["updatedAtMs"].clone();
 
-    // Every other field, at every depth, must come back exactly: the key set,
-    // the strings, the nesting, and the messages whose shape this build does not
-    // model. That is what the guard is for.
+    // Every other field, at every depth, must come back exactly, including the
+    // messages whose shape this build does not model.
     assert_eq!(numbers_as_written(&after), numbers_as_written(&want));
 }
 
 /// Renders an integral float as an integer, on both sides of the comparison
 /// above.
 ///
-/// Two differences are tolerated there, and only two. Both are how the value was
-/// spelled rather than what it is, and neither has a consumer.
+/// Two differences are tolerated, and only two, both about how a value is
+/// spelled rather than what it is: key order and whitespace, which fall out of
+/// comparing parsed values rather than bytes, and `45` against `45.0`, which is
+/// this function (token counts are `number` on the wire, so `f64` here, and
+/// `serde_json` writes an integral `f64` with its trailing zero).
 ///
-/// - **Key order and whitespace**, which fall out of comparing parsed values
-///   rather than bytes. Nothing diffs these files and both cores parse either
-///   ordering; matching the other core's key insertion order would mean turning
-///   on `serde_json/preserve_order` crate-wide.
-/// - **`45` against `45.0`**, which is this function. Token counts are declared
-///   `number` on the wire, so they are `f64` here, and `serde_json` writes an
-///   integral `f64` with its trailing zero. Both parse to the same JavaScript
-///   number.
-///
-/// Do not widen this to tolerate anything else, and do not "upgrade" the
-/// comparison to raw bytes: the first would stop it catching a dropped field,
-/// the second would fail on a difference nobody can observe.
+/// Do not widen this, and do not "upgrade" the comparison to raw bytes: the
+/// first would stop it catching a dropped field, the second would fail on a
+/// difference nobody can observe.
 fn numbers_as_written(value: &Value) -> Value {
     match value {
         Value::Number(n) => match n.as_f64() {
@@ -1075,13 +1059,10 @@ async fn a_message_whose_role_this_build_cannot_represent_survives_a_read_and_a_
         .join("session.json");
 
     // A role from a build that is not this one. The generated `Message` enum is
-    // closed over nine roles and carries `deny_unknown_fields`, so typing the
-    // stored messages with it would fail the whole document parse here, and the
-    // read path treats a failed parse as an absent session: this one message
-    // would erase the entire transcript from every listing.
-    //
-    // MUTATION TEST: change `SessionDoc::messages` to `Vec<contract::api::Message>`
-    // and this test fails. That is the property it guards.
+    // closed over nine roles with `deny_unknown_fields`, so typing the stored
+    // messages with it would fail the whole document parse, and the read path
+    // treats a failed parse as an absent session: this one message would erase
+    // the entire transcript from every listing.
     let mut doc: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     doc["messages"].as_array_mut().unwrap().push(json!({
         "role": "from_a_future_build",
@@ -1155,11 +1136,7 @@ async fn a_message_this_build_cannot_represent_still_cannot_be_patched() {
 // --- routes ------------------------------------------------------------------
 //
 // Driven through the assembled router with `tower::oneshot`, so the auth layer,
-// the extractors and the generated inbound types are all in the path. Two
-// route-level cases (the multipart upload and the binary download) live here
-// rather than in the conformance suite because that suite's request format is
-// JSON-only today; the rest are covered in both places on purpose, since these
-// prove the handler and those prove the wire.
+// the extractors and the generated inbound types are all in the path.
 
 mod routes {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1279,6 +1256,26 @@ mod routes {
             self.call_as(TOKEN, method, path, body).await
         }
 
+        async fn get(&self, path: &str) -> (StatusCode, Value) {
+            self.call("GET", path, None).await
+        }
+
+        async fn del(&self, path: &str) -> (StatusCode, Value) {
+            self.call("DELETE", path, None).await
+        }
+
+        async fn post(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("POST", path, Some(body)).await
+        }
+
+        async fn post_none(&self, path: &str) -> (StatusCode, Value) {
+            self.call("POST", path, None).await
+        }
+
+        async fn patch(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("PATCH", path, Some(body)).await
+        }
+
         async fn call_as(
             &self,
             token: &str,
@@ -1312,7 +1309,7 @@ mod routes {
         }
 
         async fn new_session(&self) -> String {
-            let (status, body) = self.call("POST", "/api/v1/sessions", Some(json!({}))).await;
+            let (status, body) = self.post("/api/v1/sessions", json!({})).await;
             assert_eq!(status, StatusCode::OK);
             body["id"].as_str().unwrap().to_string()
         }
@@ -1325,11 +1322,7 @@ mod routes {
         let h = harness();
 
         let (status, created) = h
-            .call(
-                "POST",
-                "/api/v1/sessions",
-                Some(json!({ "title": "first" })),
-            )
+            .post("/api/v1/sessions", json!({ "title": "first" }))
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(created["title"], "first");
@@ -1337,27 +1330,24 @@ mod routes {
         let id = created["id"].as_str().unwrap().to_string();
 
         let (status, patched) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/sessions/{id}"),
-                Some(json!({ "title": "second" })),
+                json!({ "title": "second" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
         // A narrow response: the id and the new title, nothing else.
         assert_eq!(patched, json!({ "id": id, "title": "second" }));
 
-        let (status, fetched) = h.call("GET", &format!("/api/v1/sessions/{id}"), None).await;
+        let (status, fetched) = h.get(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(fetched["title"], "second");
         assert_eq!(fetched["messages"], json!([]));
 
-        let (status, _) = h
-            .call("DELETE", &format!("/api/v1/sessions/{id}"), None)
-            .await;
+        let (status, _) = h.del(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
 
-        let (status, body) = h.call("GET", &format!("/api/v1/sessions/{id}"), None).await;
+        let (status, body) = h.get(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"]["code"], "session_not_found");
     }
@@ -1366,7 +1356,7 @@ mod routes {
     async fn the_listing_is_a_bare_array() {
         let h = harness();
         h.new_session().await;
-        let (status, body) = h.call("GET", "/api/v1/sessions", None).await;
+        let (status, body) = h.get("/api/v1/sessions").await;
         assert_eq!(status, StatusCode::OK);
         // No envelope. A `{ items: [...] }` assumption would be wrong here.
         assert!(body.is_array(), "expected a bare array, got {body}");
@@ -1473,18 +1463,14 @@ mod routes {
     async fn a_temporary_session_is_reachable_by_id_and_absent_from_the_listing() {
         let h = harness();
         let (_, created) = h
-            .call(
-                "POST",
-                "/api/v1/sessions",
-                Some(json!({ "temporary": true })),
-            )
+            .post("/api/v1/sessions", json!({ "temporary": true }))
             .await;
         assert_eq!(created["temporary"], true);
         let id = created["id"].as_str().unwrap();
 
-        let (status, _) = h.call("GET", &format!("/api/v1/sessions/{id}"), None).await;
+        let (status, _) = h.get(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(status, StatusCode::OK);
-        let (_, listed) = h.call("GET", "/api/v1/sessions", None).await;
+        let (_, listed) = h.get("/api/v1/sessions").await;
         assert_eq!(listed, json!([]));
     }
 
@@ -1496,10 +1482,9 @@ mod routes {
         let id = h.new_session().await;
 
         let (status, appended) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{id}/messages"),
-                Some(json!({ "role": "user", "content": "hello" })),
+                json!({ "role": "user", "content": "hello" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -1511,10 +1496,9 @@ mod routes {
         let msg_id = appended["id"].as_str().unwrap().to_string();
 
         let (status, patched) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/sessions/{id}/messages/{msg_id}"),
-                Some(json!({ "content": "edited" })),
+                json!({ "content": "edited" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -1526,19 +1510,15 @@ mod routes {
             json!({ "id": msg_id, "ord": 0 }),
         );
 
-        let (_, fetched) = h.call("GET", &format!("/api/v1/sessions/{id}"), None).await;
+        let (_, fetched) = h.get(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(fetched["messages"][0]["content"], "edited");
         assert_eq!(fetched["messages"][0]["role"], "user");
 
         let (status, _) = h
-            .call(
-                "DELETE",
-                &format!("/api/v1/sessions/{id}/messages/{msg_id}"),
-                None,
-            )
+            .del(&format!("/api/v1/sessions/{id}/messages/{msg_id}"))
             .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
-        let (_, fetched) = h.call("GET", &format!("/api/v1/sessions/{id}"), None).await;
+        let (_, fetched) = h.get(&format!("/api/v1/sessions/{id}")).await;
         assert_eq!(fetched["messages"], json!([]));
     }
 
@@ -1559,7 +1539,7 @@ mod routes {
             // A malformed multipart content part.
             json!({ "role": "user", "content": [{ "type": "text" }] }),
         ] {
-            let (status, response) = h.call("POST", &path, Some(body.clone())).await;
+            let (status, response) = h.post(&path, body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "accepted {body}");
             assert_eq!(response["error"]["code"], "validation_error");
         }
@@ -1570,10 +1550,9 @@ mod routes {
         let h = harness();
         let id = h.new_session().await;
         let (_, appended) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{id}/messages"),
-                Some(json!({ "role": "user", "content": "hello" })),
+                json!({ "role": "user", "content": "hello" }),
             )
             .await;
         let msg_id = appended["id"].as_str().unwrap();
@@ -1582,16 +1561,15 @@ mod routes {
         // The guard the per-role patch schemas exist for, reached here through
         // the generated contract type rather than through a restatement of it.
         for body in [json!({ "toolCalls": [] }), json!({ "role": "assistant" })] {
-            let (status, response) = h.call("PATCH", &path, Some(body.clone())).await;
+            let (status, response) = h.patch(&path, body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "accepted {body}");
             assert_eq!(response["error"]["code"], "validation_error");
         }
 
         let (status, body) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/sessions/{id}/messages/no-such-message"),
-                Some(json!({ "content": "x" })),
+                json!({ "content": "x" }),
             )
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1803,11 +1781,7 @@ mod routes {
         let h = harness();
         let id = h.new_session().await;
         let (status, body) = h
-            .call(
-                "GET",
-                &format!("/api/v1/sessions/{id}/attachments/nope"),
-                None,
-            )
+            .get(&format!("/api/v1/sessions/{id}/attachments/nope"))
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"]["code"], "not_found");
@@ -1821,19 +1795,13 @@ mod routes {
         let id = h.new_session().await;
 
         let (status, _) = h
-            .call(
-                "POST",
-                &format!("/api/v1/sessions/{id}/regenerate-title"),
-                None,
-            )
+            .post_none(&format!("/api/v1/sessions/{id}/regenerate-title"))
             .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         assert_eq!(h.chat.titles_regenerated.load(Ordering::SeqCst), 1);
 
         // An unknown session never reaches the engine.
-        let (status, _) = h
-            .call("POST", "/api/v1/sessions/nope/regenerate-title", None)
-            .await;
+        let (status, _) = h.post_none("/api/v1/sessions/nope/regenerate-title").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(h.chat.titles_regenerated.load(Ordering::SeqCst), 1);
     }
@@ -1949,7 +1917,7 @@ mod routes {
         let path = format!("/api/v1/sessions/{id}/chat");
 
         for body in [json!({ "content": "" }), json!({}), json!({ "content": 4 })] {
-            let (status, response) = h.call("POST", &path, Some(body.clone())).await;
+            let (status, response) = h.post(&path, body.clone()).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "accepted {body}");
             assert_eq!(response["error"]["code"], "validation_error");
         }
@@ -1971,10 +1939,9 @@ mod routes {
         assert_eq!(first.status(), StatusCode::OK);
 
         let (status, body) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{id}/chat"),
-                Some(json!({ "content": "two" })),
+                json!({ "content": "two" }),
             )
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -1986,10 +1953,9 @@ mod routes {
         // A different session is unaffected: the guard is per session.
         let other = h.new_session().await;
         let (status, _) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{other}/chat"),
-                Some(json!({ "content": "x" })),
+                json!({ "content": "x" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -2001,10 +1967,9 @@ mod routes {
         // The slot is released once the stream ends, so the session is usable
         // again.
         let (status, _) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{id}/chat"),
-                Some(json!({ "content": "three" })),
+                json!({ "content": "three" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -2029,10 +1994,9 @@ mod routes {
         let _ = release.send(());
 
         let (status, _) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/sessions/{id}/chat"),
-                Some(json!({ "content": "two" })),
+                json!({ "content": "two" }),
             )
             .await;
         assert_eq!(status, StatusCode::OK, "the slot was never released");
@@ -2044,11 +2008,7 @@ mod routes {
         let id = h.new_session().await;
 
         let (status, _) = h
-            .call(
-                "POST",
-                "/api/v1/sessions/nope/chat",
-                Some(json!({ "content": "hi" })),
-            )
+            .post("/api/v1/sessions/nope/chat", json!({ "content": "hi" }))
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
 

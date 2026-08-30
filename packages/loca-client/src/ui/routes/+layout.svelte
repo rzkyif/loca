@@ -13,8 +13,7 @@
     isWindowsPlatform,
   } from "$lib/platform/select";
   import { connectionState } from "$stores/connection.svelte";
-  import { coreStatusState } from "$stores/core-status.svelte";
-  import { capabilitiesState } from "$stores/capabilities.svelte";
+  import { capabilitiesState, coreStatusState } from "$stores/core-status.svelte";
   import { localCoreState } from "$stores/local-core.svelte";
   import { makeUiContext, setUiContext } from "@loca/shared/ui/context";
   import { getDefaultSettings } from "@loca/shared";

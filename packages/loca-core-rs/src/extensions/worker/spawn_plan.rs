@@ -1,21 +1,9 @@
-//! What a tool worker is actually started with: the argument vector and the
-//! environment.
+//! What a tool worker is started with: the argument vector and the environment.
 //!
-//! Ports the spawn half of `packages/loca-core/src/extensions/worker-handle.ts`
-//! (lines 173-281). Split out from the handle deliberately: this is a behaviour
-//! surface in its own right, and every property worth asserting about it can be
-//! asserted without starting a process.
-//!
-//! # The three modes
-//!
-//! - **PTY** (unix, a prompt context was supplied): no `--no-prompt`, so Deno
-//!   pauses on anything outside the baked `--allow-*` set and the prompt is
-//!   parsed off the terminal.
-//! - **Socket** (Windows, same): identical, plus the loopback control channel,
-//!   because a ConPTY reflows stdout and the protocol cannot ride it.
-//! - **Pipe** (no prompt context): `--no-prompt`, so an ask-state permission is
-//!   a `NotCapable` rather than a prompt that would block forever on a
-//!   non-terminal.
+//! Three modes: PTY (unix, prompt context supplied) and Socket (Windows, same,
+//! plus a loopback control channel because a ConPTY reflows stdout) keep Deno's
+//! prompts; Pipe (no prompt context) adds `--no-prompt` so an ask-state
+//! permission fails as `NotCapable` instead of blocking on a non-terminal.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -24,15 +12,9 @@ use std::path::{Path, PathBuf};
 use crate::extensions::sandbox::{self, EnvLookup};
 use crate::paths::Paths;
 
-/// The non-secret operational environment a tool worker may legitimately need:
-/// a search path so a `run`-granted tool can resolve binaries, a home, a temp
-/// directory, a locale.
-///
-/// Everything else the core process holds (an operator's `OPENAI_API_KEY`, every
-/// `LOCA_*` variable) is dropped, and the keys the tool was actually granted are
-/// added back from its `--allow-env` list. Narrower than D14's
-/// `OPERATIONAL_ENV_KEYS` on purpose: `USER`, `LOGNAME` and the processor count
-/// are not things a sandboxed extension needs to know.
+/// The non-secret operational environment a worker may need. Everything else
+/// the core process holds (API keys, `LOCA_*`) is dropped; the keys the tool
+/// was granted come back from its `--allow-env` list.
 pub const WORKER_ENV_ALLOWLIST: &[&str] = &[
     "PATH",
     "HOME",
@@ -65,10 +47,6 @@ pub enum Mode {
 
 impl Mode {
     /// Which mode a prompt context implies on this platform.
-    ///
-    /// Absorbing the PTY host made this unconditional: there is no availability
-    /// probe any more, because the terminal code is linked in and cannot be
-    /// missing. See the ADR for what that changes for a user.
     pub fn for_platform(has_prompt_context: bool) -> Self {
         match (has_prompt_context, cfg!(windows)) {
             (false, _) => Self::Pipe,
@@ -99,8 +77,8 @@ pub struct SpawnSpec {
     /// The extension's install directory. Passed to `--allow-read` and, when it
     /// has one, to `--config`.
     pub extension_folder: PathBuf,
-    /// The derived `--allow-*` set for the INVOKED TOOL only. Never the union of
-    /// every enabled tool: see the pool's keying.
+    /// The derived `--allow-*` set for the INVOKED TOOL only, never the union
+    /// of every enabled tool.
     pub flags: Vec<String>,
 }
 
@@ -118,18 +96,13 @@ pub fn plan(
     control: Option<&ControlEndpoint>,
     env: &dyn EnvLookup,
 ) -> SpawnPlan {
-    // Runtime-resolved rather than compiled in: the worker's .ts ships
-    // separately from the binary and `deno task dev` points at the in-repo copy.
+    // Runtime-resolved: the worker's .ts ships separately from the binary.
     let worker_entry = paths.workers_dir().join("tool-worker.ts");
+    // The extension's own runtime config; npm-only extensions have none.
     let config_path = spec.extension_folder.join("deno.json");
-    // The shipped deno.json is the extension's runtime config (imports, npm
-    // deps). npm-only extensions have none and rely on Deno's package.json
-    // discovery instead. Core never writes it.
     let has_config = is_file(&config_path);
-    // A deno.lock exists only once `deno install` has run. When it does, run
-    // --frozen so the worker never tries to rewrite a lockfile it holds no write
-    // grant for, which would fail the call with a permission error rather than
-    // the tool's own result.
+    // A deno.lock exists only once `deno install` ran; `--frozen` then stops the
+    // worker rewriting a lockfile it holds no write grant for.
     let has_lock = is_file(&spec.extension_folder.join("deno.lock"));
     let denied = sandbox::core_secret_deny_paths(paths)
         .iter()
@@ -148,25 +121,20 @@ pub fn plan(
     }
     args.push("--no-check".to_string());
     args.push("--quiet".to_string());
-    // node_modules was created in the folder by `deno install
-    // --node-modules-dir=auto`; resolve npm deps from it.
     args.push("--node-modules-dir=auto".to_string());
     if has_lock {
         args.push("--frozen".to_string());
     }
     args.extend(flags);
-    // AFTER the derived flags, never before: Deno MERGES a repeated
-    // `--allow-read` and REJECTS a repeated `--allow-net` at parse time. That
-    // asymmetry is why the read grant can be appended here while the control
-    // socket's net grant has to be merged into the existing flag above.
+    // After the derived flags: Deno merges a repeated `--allow-read` (so this
+    // can be appended) but rejects a repeated `--allow-net` (merged above).
     args.push(format!(
         "--allow-read={},{}",
         spec.extension_folder.display(),
         paths.deno_cache_dir().display()
     ));
-    // Last of the permission flags, and they take precedence over everything
-    // before them including a wildcard grant. This is what keeps a tool granted
-    // `$home` (which contains `~/.loca`) out of the vault.
+    // Deny flags win over every allow, including a `$home` grant that contains
+    // `~/.loca`; that is what keeps the vault out of reach.
     args.push(format!("--deny-read={denied}"));
     args.push(format!("--deny-write={denied}"));
     if has_config {
@@ -187,13 +155,9 @@ pub fn plan(
     }
 }
 
-/// Build the worker's environment explicitly.
-///
-/// The spawn clears the inherited superset first, which is what makes the
-/// `--allow-env` list authoritative rather than decorative: only `DENO_DIR`, the
-/// operational base, and the keys the tool was actually granted are present. A
-/// tool granted `--allow-env=FOO` on a core process that does not have `FOO`
-/// simply does not get it.
+/// The spawn clears the inherited environment first, so this map is the whole
+/// of it: `DENO_DIR`, the allowlist, and the keys the tool was granted AND the
+/// core holds.
 fn plan_env(spec: &SpawnSpec, paths: &Paths, env: &dyn EnvLookup) -> BTreeMap<OsString, OsString> {
     let mut out = BTreeMap::new();
     out.insert(
@@ -205,9 +169,8 @@ fn plan_env(spec: &SpawnSpec, paths: &Paths, env: &dyn EnvLookup) -> BTreeMap<Os
             out.insert(OsString::from(key), OsString::from(value));
         }
     }
-    // The tool's OWN flags, not the merged ones: the control socket's grant is a
-    // net grant and never adds an env key, and reading the merged list would
-    // make that a coincidence rather than a fact.
+    // The tool's own flags, not the merged ones: the control socket grant is a
+    // net grant and never adds an env key.
     for key in granted_env_keys(&spec.flags) {
         if let Some(value) = env.get(&key) {
             out.insert(OsString::from(&key), OsString::from(value));
@@ -216,7 +179,6 @@ fn plan_env(spec: &SpawnSpec, paths: &Paths, env: &dyn EnvLookup) -> BTreeMap<Os
     out
 }
 
-/// The keys named by an `--allow-env=` flag, if there is one.
 fn granted_env_keys(flags: &[String]) -> Vec<String> {
     flags
         .iter()
@@ -227,14 +189,8 @@ fn granted_env_keys(flags: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Grant the worker exactly the one loopback port Core is listening on.
-///
-/// Deno REJECTS a repeated `--allow-net` at parse time, unlike `--allow-read`
-/// which it merges. So this grant has to fold into the tool's existing net flag
-/// rather than being appended, and a bare `--allow-net` (from a wildcard host
-/// grant) already covers the port and must be left alone. Appending would
-/// produce a flag Deno refuses, and the worker would die at spawn with no useful
-/// diagnostic.
+/// Deno rejects a repeated `--allow-net`, so the loopback port folds into the
+/// tool's existing net flag; a bare `--allow-net` already covers it.
 fn merge_control_socket_grant(flags: &mut Vec<String>, port: u16) {
     let grant = format!("127.0.0.1:{port}");
     match flags
@@ -298,31 +254,37 @@ mod tests {
         plan(&spec(f, flags), &f.paths, mode, None, &env(&[]))
     }
 
-    // ---- the control-socket net grant --------------------------------------
-
-    #[test]
-    fn the_control_socket_grant_merges_into_an_existing_allow_net() {
-        // Deno rejects TWO `--allow-net` flags at parse time. The worker then
-        // dies at spawn, before it can report anything, and the user sees a tool
-        // that never runs with nothing in the log naming the flag.
-        let f = fixture();
+    fn socket_plan(f: &Fixture, flags: &[&str], port: u16) -> SpawnPlan {
         let control = ControlEndpoint {
-            addr: "127.0.0.1:5001".to_string(),
+            addr: format!("127.0.0.1:{port}"),
             token: "t".to_string(),
-            port: 5001,
+            port,
         };
-        let plan = plan(
-            &spec(&f, &["--allow-net=example.com:443", "--allow-read=/tmp"]),
+        plan(
+            &spec(f, flags),
             &f.paths,
             Mode::Socket,
             Some(&control),
             &env(&[]),
-        );
-        let net: Vec<&String> = plan
-            .args
+        )
+    }
+
+    fn net_flags(plan: &SpawnPlan) -> Vec<&String> {
+        plan.args
             .iter()
             .filter(|a| a.starts_with("--allow-net"))
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn the_control_socket_grant_merges_into_an_existing_allow_net() {
+        let f = fixture();
+        let plan = socket_plan(
+            &f,
+            &["--allow-net=example.com:443", "--allow-read=/tmp"],
+            5001,
+        );
+        let net = net_flags(&plan);
         assert_eq!(net.len(), 1, "exactly one --allow-net flag: {net:?}");
         assert_eq!(net[0], "--allow-net=example.com:443,127.0.0.1:5001");
     }
@@ -330,18 +292,7 @@ mod tests {
     #[test]
     fn the_control_socket_grant_is_added_when_the_tool_has_no_net_flag() {
         let f = fixture();
-        let control = ControlEndpoint {
-            addr: "127.0.0.1:5002".to_string(),
-            token: "t".to_string(),
-            port: 5002,
-        };
-        let plan = plan(
-            &spec(&f, &[]),
-            &f.paths,
-            Mode::Socket,
-            Some(&control),
-            &env(&[]),
-        );
+        let plan = socket_plan(&f, &[], 5002);
         assert!(plan
             .args
             .contains(&"--allow-net=127.0.0.1:5002".to_string()));
@@ -353,40 +304,14 @@ mod tests {
 
     #[test]
     fn a_bare_allow_net_already_covers_the_control_socket_and_is_left_alone() {
-        // A wildcard host grant is the bare flag, which Deno reads as "any
-        // host". Turning it into `--allow-net=,127.0.0.1:5003` would NARROW it
-        // to just the socket and silently break every fetch the tool was
-        // granted.
+        // `--allow-net=,127.0.0.1:5003` would NARROW a wildcard grant to the socket.
         let f = fixture();
-        let control = ControlEndpoint {
-            addr: "127.0.0.1:5003".to_string(),
-            token: "t".to_string(),
-            port: 5003,
-        };
-        let plan = plan(
-            &spec(&f, &["--allow-net"]),
-            &f.paths,
-            Mode::Socket,
-            Some(&control),
-            &env(&[]),
-        );
-        let net: Vec<&String> = plan
-            .args
-            .iter()
-            .filter(|a| a.starts_with("--allow-net"))
-            .collect();
-        assert_eq!(net, vec!["--allow-net"]);
+        let plan = socket_plan(&f, &["--allow-net"], 5003);
+        assert_eq!(net_flags(&plan), vec!["--allow-net"]);
     }
-
-    // ---- the deny list and the read grant ----------------------------------
 
     #[test]
     fn both_deny_flags_are_present_and_follow_the_granted_read() {
-        // Order is the property: Deno's deny takes precedence over any allow,
-        // and the appended folder read is what makes the extension's own code
-        // readable. A deny emitted before the allow would still win (deny always
-        // does), but the appended `--allow-read` MUST come after the derived
-        // flags, because Deno merges repeated reads and rejects repeated nets.
         let f = fixture();
         let plan = plan_of(&f, &["--allow-read=/tmp"], Mode::Pty);
         let read_positions: Vec<usize> = plan
@@ -414,8 +339,6 @@ mod tests {
         assert!(read_positions[1] < deny_read, "the deny flags come last");
         assert!(deny_read < deny_write);
 
-        // By content, not by presence: a test that greps for the flag name
-        // passes with the list emptied.
         for path in sandbox::core_secret_deny_paths(&f.paths) {
             let path = path.to_string_lossy().into_owned();
             assert!(plan.args[deny_read].contains(&path), "missing {path}");
@@ -434,13 +357,8 @@ mod tests {
         )));
     }
 
-    // ---- the mode flags ----------------------------------------------------
-
     #[test]
     fn only_pipe_mode_disables_prompts() {
-        // In pipe mode a prompt would block forever on a non-terminal, so it
-        // stays off and the access fails as NotCapable. In the other two the
-        // prompt is the entire point.
         let f = fixture();
         assert!(plan_of(&f, &[], Mode::Pipe)
             .args
@@ -469,8 +387,6 @@ mod tests {
         );
     }
 
-    // ---- config and lockfile ----------------------------------------------
-
     #[test]
     fn frozen_and_config_appear_only_when_their_files_do() {
         let f = fixture();
@@ -481,8 +397,6 @@ mod tests {
         std::fs::write(f.folder.join("deno.lock"), "{}").unwrap();
         std::fs::write(f.folder.join("deno.json"), "{}").unwrap();
         let full = plan_of(&f, &[], Mode::Pty);
-        // --frozen so the worker never tries to rewrite a lockfile it holds no
-        // write grant for.
         assert!(full.args.contains(&"--frozen".to_string()));
         let config = full
             .args
@@ -524,12 +438,8 @@ mod tests {
         );
     }
 
-    // ---- the environment ---------------------------------------------------
-
     #[test]
     fn the_worker_environment_is_the_allowlist_plus_exactly_the_granted_keys() {
-        // The core process can hold an operator's API key. `env_clear` plus this
-        // map is what keeps it out of a sandboxed third-party tool.
         let f = fixture();
         let ambient = env(&[
             ("PATH", "/usr/bin"),
@@ -569,8 +479,6 @@ mod tests {
 
     #[test]
     fn an_ungranted_key_is_absent_even_when_the_core_holds_it() {
-        // The negative that the test above depends on, stated on its own so a
-        // change to the allowlist cannot quietly satisfy both.
         let f = fixture();
         let ambient = env(&[("OPENAI_API_KEY", "sk-secret"), ("PATH", "/usr/bin")]);
         let plan = plan(&spec(&f, &[]), &f.paths, Mode::Pty, None, &ambient);
@@ -582,7 +490,6 @@ mod tests {
                 .any(|v| v.to_string_lossy().contains("sk-secret")),
             "a secret value reached the worker environment"
         );
-        // And the positive control: the allowlist really is being applied.
         assert!(plan.env.contains_key(&OsString::from("PATH")));
     }
 
@@ -604,9 +511,8 @@ mod tests {
 
     #[test]
     fn an_empty_entry_in_the_allow_env_list_is_skipped() {
-        // `--allow-env=A,,B` is what a trailing comma produces. An empty key
-        // would look up the empty environment variable, which on Windows is an
-        // error rather than a miss.
+        // `--allow-env=A,,B` is what a trailing comma produces; an empty key is
+        // an error on Windows rather than a miss.
         assert_eq!(
             granted_env_keys(&["--allow-env=A,,B".to_string()]),
             vec!["A".to_string(), "B".to_string()]

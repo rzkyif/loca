@@ -1,10 +1,6 @@
-//! One turn, start to finish.
-//!
-//! Ports `core-engine/src/services/chat.ts:286-581`: route resolution, the
-//! endpoint gate, the anchor, tool selection, memory injection, MCP token
-//! expansion, and the hop loop with its five exits.
-//!
-//! # The five exits
+//! One turn, start to finish: route resolution, the endpoint gate, the anchor,
+//! tool selection, memory injection, MCP token expansion, and the hop loop with
+//! its five exits.
 //!
 //! ```text
 //! for hop in 0..max_hops {
@@ -19,10 +15,10 @@
 //! ```
 //!
 //! Reaching the hop cap is a stop condition, not an error: the conversation up
-//! to that point is valid and fully persisted, and no synthetic assistant
-//! message is added.
+//! to that point is valid and fully persisted, with no synthetic assistant
+//! message added.
 //!
-//! # Three orderings inside the loop that are invariants
+//! Three orderings inside the loop are invariants:
 //!
 //! 1. The reasoning message joins the history WITHOUT a second `finalize`. The
 //!    muxer already finalized it, at the first content delta; finalizing again
@@ -65,15 +61,12 @@ pub(super) async fn run(
     stream: Arc<ActiveStream>,
     frame: ChatStartWs,
 ) -> Result<()> {
-    // Two reads of the same settings, and the split is load-bearing.
-    //
-    // `resolved` is what the turn ACTS on: every `*_setting` read below sees the
-    // schema's default rather than whatever fallback the call site happens to
-    // hardcode (D-072). `sparse` is what the ENDPOINT is resolved from, and it
-    // must stay sparse: `llm/resolver.rs` documents two of its fallbacks as
-    // deliberately different from the schema's, and `llm.port`'s schema default
-    // is not channel-adjusted, so a resolved record would point a `dev` core at
-    // the stable channel's llama-server. See this package's status notes.
+    // Two reads of the same settings, and the split is load-bearing. `resolved`
+    // is what the turn ACTS on, so every `*_setting` read below sees the
+    // schema's default. `sparse` is what the ENDPOINT is resolved from and must
+    // stay sparse: two of the resolver's fallbacks deliberately differ from the
+    // schema's, and `llm.port`'s schema default is not channel-adjusted, so a
+    // resolved record would point a `dev` core at the stable llama-server.
     let resolved = chat
         .settings
         .load_effective_resolved(&stream.client_id)
@@ -87,10 +80,8 @@ pub(super) async fn run(
 
     let endpoint = chat.llm.resolve_endpoint(&sparse, route).await?;
     // An external provider cannot stream until it is configured: an empty base
-    // URL, API key or model otherwise reaches the HTTP client and fails with an
-    // opaque network or auth error. Local always resolves a loopback URL plus a
-    // placeholder key and model, so this only ever trips for an unconfigured
-    // external (or dual-model) provider.
+    // URL, key or model would otherwise reach the HTTP client and fail with an
+    // opaque error. Local always resolves a loopback URL plus placeholders.
     if endpoint.base_url.is_empty() || endpoint.api_key.is_empty() || endpoint.model.is_empty() {
         send(
             chat,
@@ -107,10 +98,9 @@ pub(super) async fn run(
     }
 
     let max_hops = num_setting(&resolved, "tools.maxHops", DEFAULT_MAX_TOOL_HOPS).max(0.0) as u64;
-    // The client composes the effective prompt per turn, because its context
-    // block holds client-local facts (date, time, OS), and sends it on the
-    // frame. An empty string deliberately means "no system prompt"; the core
-    // setting is the fallback for a frame that carries none.
+    // The client composes the effective prompt per turn, since its context
+    // block holds client-local facts. An empty string deliberately means "no
+    // system prompt"; the core setting is the fallback for a frame with none.
     let mut system_prompt = match &frame.system_prompt {
         Some(prompt) => prompt.clone(),
         None => str_setting(&resolved, "prompts.defaultSystemPrompt", ""),
@@ -243,9 +233,8 @@ pub(super) async fn run(
         system_prompt = join_block(&system_prompt, block);
     }
 
-    // Tool name to owner, collapsed to one lookup for the muxer. Read once for
-    // the whole turn: the catalog does not change mid-turn, and re-reading it
-    // per hop would be a round trip per hop for an answer that cannot move.
+    // Tool name to owner, one lookup for the muxer, read once for the whole
+    // turn: the catalog does not change mid-turn.
     let by_name = enabled_tools_by_name(chat.deps.tools.as_ref()).await;
     let resolve = move |name: &str| -> Option<ResolvedTool> {
         by_name
@@ -282,8 +271,7 @@ pub(super) async fn run(
         .await?;
         let request = LlmRequest::new(endpoint.clone(), messages).with_tools(tools.clone());
         // The queue refusal (`server_busy`) comes back from HERE rather than
-        // from the stream, so it keeps its own code instead of being run through
-        // the provider-error classifier.
+        // from the stream, so it keeps its own code.
         let deltas = match chat
             .llm
             .stream(
@@ -306,11 +294,9 @@ pub(super) async fn run(
             .run(deltas, &mut writer, &stream.cancel, &resolve)
             .await;
 
-        // Persisted, not only broadcast. The oracle does both on the same two
-        // lines (`chat-stream-muxer.ts:371-378`) and the port kept only the
-        // frame, so the context gauge was live-only: correct while the turn
-        // streamed and empty again the next time the session was opened.
-        // Owner-agnostic and a missing session is a no-op, because a stream can
+        // Persisted, not only broadcast: without this the context gauge is
+        // live-only, correct while the turn streams and empty on reopen.
+        // Owner-agnostic, and a missing session is a no-op, because a stream can
         // outlive the session it was reporting for.
         if let Some(usage) = result.usage.clone() {
             if let Err(err) = chat
@@ -395,12 +381,9 @@ pub(super) async fn run(
     Ok(())
 }
 
-/// The client may pin a route; otherwise the complexity classifier decides, but
-/// only when dual-model routing is on.
-///
-/// An absent `route` is the ONLY path that reaches the classifier, and until
-/// D-066 no frame could take it: the schema's `.default("default")` filled the
-/// field in during parse, so the gate below was false for every frame ever sent.
+/// The client may pin a route; otherwise the complexity classifier decides, and
+/// only when dual-model routing is on. An absent `route` is the ONLY path that
+/// reaches the classifier, so the field must not carry a schema default.
 async fn resolve_route(
     chat: &ChatInner,
     stream: &ActiveStream,
@@ -527,9 +510,9 @@ fn join_block(prompt: &str, block: &str) -> String {
 }
 
 /// The core's error codes and the wire contract's are two enums with the same
-/// 47 names, generated from the same source. An exhaustive match rather than a
-/// serde round trip, so a variant added to either side is a compile error here
-/// rather than a frame that silently degrades to `internal_error`.
+/// names from one source. An exhaustive match rather than a serde round trip,
+/// so a variant added to either side is a compile error here rather than a
+/// frame that silently degrades to `internal_error`.
 macro_rules! map_codes {
     ($($variant:ident),* $(,)?) => {
         fn wire_code(code: ErrorCode) -> crate::contract::api::ErrorCode {

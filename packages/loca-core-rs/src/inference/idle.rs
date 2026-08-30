@@ -1,25 +1,11 @@
-//! The idle-unload timer, and the watchdog's recovery.
+//! The idle-unload timer, and the watchdog's recovery, so a model nobody is
+//! using stops holding a few gigabytes. llama.cpp has no native idle unload.
 //!
-//! Ported from `core/src/services/llm-idle.ts`, whose whole job is that a model
-//! nobody is using stops holding a few gigabytes. `llama-server` has no native
-//! idle unload; neither does llama.cpp, so this is ours either way.
-//!
-//! A turn touches it three times, and D4 already calls all three
-//! (`chat/deps.rs:397-431`):
-//!
-//! - `note_activity` as the turn starts, cancelling any pending unload;
-//! - `ensure_loaded` before a local turn is sent, reloading what idling stopped;
-//! - `on_turn_end` when the last turn finishes, arming the timer.
-//!
-//! # What was dropped in the port, and why it is not a gap
-//!
-//! The TypeScript also has `configure(settings)`, called on boot and on every
-//! settings change, purely to keep a copy of `llm.idleUnloadSeconds` inside a
-//! process-global manager that has no settings handle. This one holds the
-//! settings store, so it reads the value when it arms the timer and the copy has
-//! nowhere to go stale. A change to the setting therefore takes effect on the
-//! next turn end rather than immediately, which is the same moment the
-//! TypeScript's copy would have mattered.
+//! A turn touches it three times: `note_activity` as it starts, cancelling any
+//! pending unload; `ensure_loaded` before a local turn is sent, reloading what
+//! idling stopped; and `on_turn_end` when the last turn finishes, arming the
+//! timer. `llm.idleUnloadSeconds` is read at arm time rather than cached, so a
+//! change takes effect on the next turn end.
 
 use std::sync::{Arc, Mutex};
 
@@ -51,13 +37,9 @@ impl IdleUnload {
         }
     }
 
-    /// The handler D3's scheduler calls when a local turn wedges.
-    ///
-    /// The scheduler's own doc says the job is "restart the model", which
-    /// without a process to restart is an unload plus the reload every turn
-    /// already does through [`ModelIdle::ensure_loaded`]. Nothing installs a
-    /// handler today; wiring this one in is a `boot.rs` line and is on the
-    /// interface queue.
+    /// The handler the scheduler calls when a local turn wedges: with no
+    /// process to restart, that is an unload plus the reload every turn already
+    /// does through [`ModelIdle::ensure_loaded`].
     pub fn watchdog_handler(engine: Arc<LocalEngine>) -> WatchdogHandler {
         Arc::new(move |info: WatchdogInfo| {
             let engine = Arc::clone(&engine);
@@ -83,9 +65,7 @@ impl IdleUnload {
 
 impl Drop for IdleUnload {
     fn drop(&mut self) {
-        // A detached timer would keep the runtime from draining at shutdown,
-        // which is the Rust shape of the TypeScript's note that a live
-        // `setTimeout` stalls a `--watch` restart.
+        // A detached timer would keep the runtime from draining at shutdown.
         self.cancel();
     }
 }
@@ -104,11 +84,9 @@ impl ModelIdle for IdleUnload {
         self.cancel();
 
         let handle = tokio::spawn(async move {
-            // Read at arm time, from the resolved record: the setting is a
-            // number of seconds and zero means the feature is off. A record that
-            // cannot be read leaves the model loaded, which is the safe
-            // direction: the cost is memory, and the alternative is unloading a
-            // model the user asked to keep.
+            // Read at arm time, from the resolved record; zero means off. A
+            // record that cannot be read leaves the model loaded, which costs
+            // memory rather than unloading a model the user asked to keep.
             let seconds = match settings.load_resolved().await {
                 Ok(record) => idle_seconds(&record),
                 Err(err) => {
@@ -258,10 +236,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_feature_being_off_never_unloads_anything() {
-        // The DEFAULT configuration, and therefore the one most users run. A
-        // timer that armed anyway would unload a multi-GB model between two
-        // messages for someone who never asked for it, and the only symptom is
-        // that the next answer takes a long time to start.
+        // The default configuration: a timer that armed anyway would unload a
+        // multi-GB model between two messages for someone who never asked.
         let Some((engine, ctx)) = loaded().await else {
             eprintln!("{NO_GGUF}");
             return;
@@ -303,8 +279,7 @@ mod tests {
             300,
         );
         // The client writes a number-typed field as a string often enough that
-        // the reader has to take both, and 300 seconds is what the Full preset
-        // turns on.
+        // the reader has to take both.
         assert_eq!(
             idle_seconds(&record(json!({ "llm.idleUnloadSeconds": "300" }))),
             300,

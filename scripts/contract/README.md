@@ -86,3 +86,19 @@ with `.meta({ id })` or rename the export.
 If you add a case to `emit-fixtures.ts`, add the matching arm to
 `packages/loca-core-rs/tests/contract_roundtrip.rs`; the test panics on an
 unknown fixture type rather than skipping it.
+
+## Post-passes over typify's output
+
+`generate.ts` rewrites the generated Rust before `rustfmt`, and each pass fails
+the run if it rewrites nothing (a typify rendering change would otherwise
+silently undo it):
+
+- `stripSchemaDocs` / `stripCloneAndStringShims`: drop the embedded JSON schema
+  doc blocks, the `From<&T> for T` clone shims, and the `TryFrom<String>` enum
+  shims. `emit-ts.ts` additionally prunes the `DROP` list of api types nothing
+  in the core reads.
+- `redactSecrets`: credential-shaped types and fields get a redacting `Debug`.
+- `relaxRequestBodies`: inbound request bodies ignore unknown fields.
+- `distinguishAbsentFromEmpty`: optional collections stay `Option<Vec<_>>`.
+- `rejectExplicitNull`: optional inbound fields refuse an explicit `null`, as
+  Zod's `.optional()` does.

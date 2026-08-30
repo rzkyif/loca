@@ -1,26 +1,14 @@
 //! The deferrable-work queue, and the summariser it drives.
 //!
-//! Ports `core/src/services/background-queue.ts` in full, plus the twenty lines
-//! of `SummaryGenerator` that D5 declared and nobody implemented (D-057, move
-//! 3).
+//! It lives in `chat` because its idle predicate is chat's: "no session has a
+//! turn in flight". Background summaries and embedding refreshes compete with a
+//! user-visible stream for the same model, so they run only while nothing is
+//! streaming, plus a short quiet period after the last turn ended.
 //!
-//! # Why this lives in `chat`
+//! Nothing is persisted: every job is re-derivable from source hashes at boot.
 //!
-//! Its idle predicate is chat's: "no session has a turn in flight". Background
-//! summaries and embedding refreshes compete with a user-visible stream for the
-//! same model, so they run only while nothing is streaming, plus a short quiet
-//! period after the last turn ended.
-//!
-//! Nothing is persisted. Every job is re-derivable from source hashes at boot,
-//! so a job dropped by a restart is simply re-found.
-//!
-//! # The setTimeout chain does not port literally
-//!
-//! The TypeScript re-arms a `setTimeout` after each decision, which is a
-//! scheduling detail of the event loop rather than behaviour. Here one task
-//! loops, waking on a [`Notify`] or a [`tokio::time::sleep`]. What IS behaviour
-//! and is ported exactly: dedupe by key, FIFO order, one job at a time, the idle
-//! gate, the quiet period, the key freeing when a job STARTS rather than when it
+//! The behaviour: dedupe by key, FIFO order, one job at a time, the idle gate,
+//! the quiet period, the key freeing when a job STARTS rather than when it
 //! finishes, and a failing job not stopping the drain.
 
 use std::collections::{HashSet, VecDeque};
@@ -88,14 +76,10 @@ struct State {
     queue: VecDeque<BackgroundJob>,
     keys: HashSet<String>,
     disposed: bool,
-    /// Seeded to "now" at construction, so boot counts as busy and the first job
-    /// waits out one full quiet period rather than firing into a core that is
-    /// still starting.
-    ///
-    /// `tokio::time::Instant`, not `std::time::Instant`: a paused test runtime
-    /// advances only tokio's clock, so a quiet period measured against the OS
-    /// clock would never elapse under one and the gate could not be tested at
-    /// all (D-038).
+    /// Seeded to "now" at construction, so boot counts as busy and the first
+    /// job waits out one full quiet period rather than firing into a core that
+    /// is still starting. `tokio::time::Instant`, not `std::time`: a paused
+    /// test runtime advances only tokio's clock.
     last_busy_at: Instant,
     deferred: Vec<JoinHandle<()>>,
 }
@@ -265,12 +249,9 @@ fn next_step(inner: &Inner) -> Step {
 }
 
 /// The production [`SummaryGenerator`]: one non-streaming completion, outside
-/// the scheduler.
-///
-/// D5 declared the trait and shipped only `NoSummaries`, so on a booted core
-/// every memory summary was silently skipped. This is the missing half: it
-/// resolves the default endpoint, reads the budget the request names, and adds
-/// it to the answer's own allowance so reasoning cannot crowd the summary out.
+/// the scheduler. Resolves the default endpoint, reads the budget the request
+/// names, and adds it to the answer's own allowance so reasoning cannot crowd
+/// the summary out.
 pub struct LlmSummaries {
     llm: Llm,
     settings: Settings,

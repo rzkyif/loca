@@ -5,7 +5,9 @@
 // pairing free functions and drive the class directly.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type Platform, setPlatform } from "$lib/platform";
+import { setPlatform } from "$lib/platform";
+import { fakeLocalCore } from "../test/local-core-fake";
+import { platformStub } from "../test/platform-stub";
 
 // Hoisted spies so the vi.mock factories (which are hoisted above imports) can
 // close over them. The wizard imports the pairing free functions + cores() from
@@ -58,12 +60,15 @@ const PAIR_RESULT = {
   tlsPin: "PIN",
 };
 
-// A fresh mock platform each test. Only the namespaces the wizard touches are
-// populated; tests overwrite individual spies to drive specific branches. The
-// inferred shape keeps the per-spy `.mockResolvedValue` overrides typed.
+// A fresh stub each test, with the namespaces the wizard touches spied on so
+// tests can drive specific branches. The inferred shape keeps the per-spy
+// `.mockResolvedValue` overrides typed.
 function makePlatform() {
+  const base = platformStub();
   return {
+    ...base,
     pairing: {
+      ...base.pairing,
       readAdminToken: vi.fn<() => Promise<string | null>>(async () => "admin-token"),
       readLocalCoreBootError: vi.fn<() => Promise<string | null>>(async () => null),
       isLocalCoreInstalled: vi.fn(async () => false),
@@ -74,17 +79,16 @@ function makePlatform() {
         async () => null,
       ),
     },
-    net: { discoverCores: vi.fn(async () => []) },
+    net: { ...base.net, discoverCores: vi.fn(async () => []) },
     // Null by default = a build with no Core inside it (every desktop build).
-    // Tests that want the fork set this to a marker; the wizard only ever asks
-    // whether it is there, never calls it.
-    localCore: null as unknown,
+    // The wizard only ever asks whether it is there, never calls it.
+    localCore: base.localCore,
   };
 }
 
 /** A build that carries a Core of its own. */
 function withEmbeddedCore(): void {
-  plat.localCore = {};
+  plat.localCore = fakeLocalCore();
 }
 
 let plat: ReturnType<typeof makePlatform>;
@@ -92,7 +96,7 @@ let plat: ReturnType<typeof makePlatform>;
 beforeEach(() => {
   vi.clearAllMocks();
   plat = makePlatform();
-  setPlatform(plat as unknown as Platform);
+  setPlatform(plat);
   h.cores.list.mockResolvedValue([]);
   h.cores.addPaired.mockResolvedValue(undefined);
   h.cores.adoptLocalCore.mockResolvedValue(undefined);

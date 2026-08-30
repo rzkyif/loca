@@ -1,22 +1,14 @@
 //! Bounds on the display payloads a tool pushes into chat.
 //!
-//! Ports `packages/loca-core/src/extensions/worker-display-bounds.ts`.
+//! Accepted content is persisted into the session file, rewritten on every
+//! later message, and broadcast to every paired client, so an unbounded payload
+//! is re-serialized every turn and pushed down every open socket again.
 //!
-//! Accepted content is persisted into the session file, which is rewritten on
-//! every later message, and broadcast to every paired client. So the bound is
-//! not decoration: an unbounded payload is re-serialized on every subsequent
-//! turn of the conversation and pushed down every open socket again.
-//!
-//! # Truncate versus reject is per-kind, and deliberately not uniform
-//!
-//! Markdown is TRUNCATED with a marker, because half a document still reads as
-//! the document and the tool's intent survives. The other three are REJECTED,
-//! because truncating them changes what they mean rather than how much of them
-//! there is: half a base64 image is a broken image, a table missing its last
-//! rows silently misreports its own data, and a diff with one side clipped
-//! shows a change that was never made. A rewrite that tidies this into one
-//! uniform rule loses that distinction in the direction of showing the user
-//! something false.
+//! Truncate versus reject is per-kind and deliberately not uniform. Markdown is
+//! TRUNCATED, because half a document still reads as the document. The other
+//! three are REJECTED, because truncating them changes what they MEAN: half a
+//! base64 image is broken, a clipped table misreports its own data, and a diff
+//! missing one side shows a change that was never made.
 
 use crate::contract::api::DisplayContent;
 
@@ -30,22 +22,12 @@ const DISPLAY_TABLE_MAX_CELL_CHARS: usize = 4_096;
 
 const TRUNCATION_MARKER: &str = "\n\n[truncated]";
 
-/// Bound one display payload.
+/// Bound one display payload. `Ok` carries the content to persist, truncated if
+/// it was markdown over the cap; `Err` carries the message the caller logs and
+/// shows the tool, and nothing is persisted.
 ///
-/// `Ok` carries the content to persist, truncated if it was markdown over the
-/// cap. `Err` carries the message the caller logs and shows the tool, and
-/// nothing is persisted.
-///
-/// # Counting
-///
-/// JavaScript's `.length` is UTF-16 code units; this counts Unicode scalar
-/// values, so an astral-plane character (an emoji, most CJK extensions) counts
-/// once here and twice there. Nothing observable turns on the difference:
-/// these are size bounds on content that never round-trips through a length,
-/// and the divergence needs a payload within one character of a 256,000-char
-/// cap to be reachable at all. Counting scalars is what lets the truncation
-/// below split on a character boundary, which is the property that actually
-/// matters, since slicing UTF-8 anywhere else does not produce a string.
+/// Counting is in Unicode scalar values, which is what lets the truncation
+/// split on a character boundary: slicing UTF-8 anywhere else is not a string.
 pub fn bound_display_content(content: DisplayContent) -> Result<DisplayContent, String> {
     match content {
         DisplayContent::Markdown { markdown } => {
@@ -126,10 +108,8 @@ mod tests {
 
     #[test]
     fn markdown_at_the_cap_is_passed_through_untouched() {
-        // Literal 256,000, not `DISPLAY_TEXT_MAX_CHARS`. A fixture computed
-        // from the constant scales with any mutation of it and cannot see the
-        // cap move, which is exactly how two of this package's phase-1
-        // mutations survived their tests.
+        // Literal 256,000, not the constant, which would move with it and
+        // never see the cap change.
         let content = bound_display_content(markdown(256_000)).unwrap();
         assert_eq!(body(&content).len(), 256_000);
         assert!(!body(&content).contains("[truncated]"));
@@ -148,9 +128,7 @@ mod tests {
 
     #[test]
     fn the_markdown_cap_is_two_hundred_and_fifty_six_thousand() {
-        // Both directions, so neither halving nor doubling the constant
-        // survives. Halving alone is caught by the pass-through test; doubling
-        // alone is caught by this one.
+        // Both directions, so neither halving nor doubling survives.
         assert!(
             bound_display_content(markdown(128_001))
                 .map(|c| body(&c).to_string())
@@ -166,8 +144,8 @@ mod tests {
 
     #[test]
     fn truncation_splits_on_a_character_boundary() {
-        // The 256,000th character is multi-byte, so a byte slice at that offset
-        // would not be a string at all. This is why the count is scalars.
+        // The 256,000th character is multi-byte, so a byte slice there is not a
+        // string at all.
         let markdown: String = std::iter::repeat_n('e', 255_999)
             .chain(['\u{1F600}'])
             .collect();
@@ -180,8 +158,6 @@ mod tests {
 
     #[test]
     fn an_oversize_image_is_rejected_rather_than_clipped() {
-        // A clipped base64 payload decodes to a corrupt image, so the caller
-        // must see an error rather than a picture that will not render.
         let over = DisplayContent::Image {
             alt: None,
             data_b64: "A".repeat(8_000_001),
@@ -200,9 +176,8 @@ mod tests {
 
     #[test]
     fn a_table_is_bounded_on_all_three_axes_separately() {
-        // Three separate caps with three separate messages: a table that is
-        // wide, one that is long, and one with a single enormous cell fail for
-        // different reasons and a user needs to know which.
+        // Three caps with three messages, because wide, long and fat-celled
+        // fail for different reasons and a user needs to know which.
         let wide = DisplayContent::Table {
             columns: (0..65).map(|i| i.to_string()).collect(),
             rows: vec![],
@@ -223,8 +198,8 @@ mod tests {
             .unwrap_err()
             .contains("cell"));
 
-        // A HEADER cell counts too. The TypeScript checks both and it is the
-        // easy half to drop, because a table's bulk is always in its rows.
+        // A HEADER cell counts too, and is the easy half to drop because a
+        // table's bulk is always in its rows.
         let fat_header = DisplayContent::Table {
             columns: vec!["h".repeat(4_097)],
             rows: vec![],
@@ -242,9 +217,7 @@ mod tests {
 
     #[test]
     fn a_diff_is_rejected_rather_than_truncated_on_either_side() {
-        // Truncating a diff shows the user a change that was never made, which
-        // is worse than showing nothing. Both sides are checked, and the
-        // `after` side is the one a port that only reads `before` would drop.
+        // Both sides, since `after` is the easy one to forget.
         for (before, after) in [(256_001, 1), (1, 256_001)] {
             let content = DisplayContent::Diff {
                 before: "b".repeat(before),
@@ -265,8 +238,8 @@ mod tests {
 
     #[test]
     fn an_ordinary_payload_of_every_kind_survives_unchanged() {
-        // The positive control. Without it a function that rejected everything
-        // would pass every rejection test above.
+        // The positive control: a function that rejected everything would pass
+        // every rejection test above.
         let kinds = [
             DisplayContent::Markdown {
                 markdown: "# hi".to_string(),

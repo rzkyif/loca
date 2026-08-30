@@ -18,8 +18,7 @@ import { cores } from "$lib/core";
 import { getLogger } from "$lib/util/log";
 import { Subscriptions } from "$lib/util/subscriptions";
 import { messagesState } from "./messages.svelte";
-import { permissionState } from "./permissions.svelte";
-import { scheduleConfirmState } from "./schedule-confirm.svelte";
+import { permissionState, scheduleConfirmState } from "./overlays.svelte";
 import { settingsState } from "./settings.svelte";
 import { ttsState } from "./tts.svelte";
 import { viewState } from "./view.svelte";
@@ -128,7 +127,7 @@ class StreamingState {
 
   // `modelUsed` unset means "let core decide", which is what lets
   // `dualModel.enabled` route the turn. Defaulting it here would pin the
-  // default route and the setting would never take effect. See D-058 / D-066.
+  // default route and the setting would never take effect.
   start(modelUsed?: "default" | "secondary"): void {
     const sessionId = this.session?.id ?? null;
     if (!sessionId) {

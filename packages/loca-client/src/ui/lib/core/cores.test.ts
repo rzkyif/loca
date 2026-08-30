@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { platform, type Platform, setPlatform } from "$lib/platform";
 import { fakeLocalCore, type FakeLocalCore } from "../../test/local-core-fake";
-import { installPlatformStub } from "../../test/platform-stub";
+import { installPlatformStub, platformStub } from "../../test/platform-stub";
 import {
   cores,
   dropTokenlessCores,
@@ -36,7 +36,9 @@ function makeMockPlatform(
   const files: Record<string, Record<string, unknown>> = {};
   const tokens: Record<string, string> = {};
   const keychainGets: string[] = [];
-  const platform = {
+  const base = platformStub();
+  const platform: Platform = {
+    ...base,
     localCore,
     clientFiles: {
       async read(file: string) {
@@ -59,6 +61,7 @@ function makeMockPlatform(
       },
     },
     pairing: {
+      ...base.pairing,
       async isLocalCoreInstalled() {
         if (localCoreInstalled === "throw") throw new Error("check failed");
         return localCoreInstalled;
@@ -67,7 +70,7 @@ function makeMockPlatform(
       localCoreBaseUrl: vi.fn(async () => (localCore ? "" : "https://127.0.0.1:7800")),
       isLocalCoreRunning: vi.fn(async () => false),
     },
-  } as unknown as Platform;
+  };
   return { platform, files, tokens, keychainGets };
 }
 
@@ -142,12 +145,15 @@ describe("isThisDevicesCoreStopped", () => {
   const LOCAL = "https://127.0.0.1:7800";
 
   function platformWith(running: boolean): Platform {
+    const base = platformStub();
     return {
+      ...base,
       pairing: {
+        ...base.pairing,
         localCoreBaseUrl: async () => LOCAL,
         isLocalCoreRunning: async () => running,
       },
-    } as unknown as Platform;
+    };
   }
 
   it("is true only for this device's core when its process is down", async () => {

@@ -25,10 +25,10 @@ CI.
 | Task                          | What it runs                                                                                                                                                                |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deno task test`              | All tests across every package (Deno test + vitest + cargo test).                                                                                                           |
-| `deno task test:core`         | Just `loca-core`.                                                                                                                                                           |
+| `deno task test:core-rs`      | Just `loca-core-rs` (the worker `.ts` tests + `cargo test`).                                                                                                                |
 | `deno task test:shared`       | Just `loca-shared`.                                                                                                                                                         |
 | `deno task test:client`       | Vitest against the Svelte 5 UI + the Tauri crate's `cargo test` (`packages/loca-client`).                                                                                   |
-| `deno task test:<crate>`      | `cargo test` for one Rust crate, e.g. `test:core-keychain`, `test:core-updater`.                                                                                            |
+| `deno task test:core-updater` | `cargo test` for the updater crate.                                                                                                                                         |
 | `deno task test:e2e:headless` | Headless integration E2E (real app in Chromium <-> real core over TLS, deps mocked). Manual only, primary lane. See [tests/e2e/headless/README.md](e2e/headless/README.md). |
 | `deno task test:e2e`          | tauri-driver smoke (real Tauri shell via WebdriverIO). Manual only, thin native lane. See [tests/e2e/tauri-driver/README.md](e2e/tauri-driver/README.md).                   |
 
@@ -45,12 +45,8 @@ detail is still printed in full. See "Gate output" in
 ```
 packages/<pkg>/src/foo.test.ts           # co-located test
 packages/<pkg>/src/foo.tmp.test.ts       # scratch test (gitignored)
-packages/loca-core/tests/
-  fixtures/sidecars/http-stub.ts         # reusable fake sidecar
-  fixtures/openai/*.sse                  # recorded SSE for llmProvider tests
-  helpers/db.ts                          # setupTestEnv(): tempdir DB harness
-  helpers/time.ts                        # mockClock()
-  helpers/free-port.ts                   # ephemeral-port helper
+packages/loca-core-rs/src/<module>/tests.rs   # Rust module suites
+packages/loca-core-rs/src/*/testdata/         # committed parity fixtures
 tests/e2e/
   README.md                              # lane index: when to use which
   tauri-driver/                          # tauri-driver smoke lane (opt-in npm project)
@@ -87,103 +83,18 @@ cannot be faithfully unit-tested (a wrong-code PAKE rejection, a provider error
 mid-stream, a dropped-and-recovered connection). Any sad path with a faithful
 seam belongs in a co-located unit/component test, not here.
 
-## Writing tests against `loca-core`
+## Writing tests against the core
 
-Any test that touches the DB or service singletons should look like this:
+The core is Rust (`packages/loca-core-rs`). Each module keeps its suite in a
+sibling `tests.rs` or an inline `#[cfg(test)] mod tests`, and the shared
+`testing.rs` modules (`downloads`, `update`, `llm`, `transport`, `secrets`) hold
+the fixtures and fakes that more than one suite needs. External HTTP (LLM
+providers, HuggingFace, npm, signed manifests) is mocked at the client seam the
+module already declares; nothing in the suite reaches the network. Time-sensitive
+logic takes a clock or a deadline argument rather than reading the wall clock.
 
-```ts
-import { assertEquals } from "@std/assert";
-import { setupTestEnv } from "../../tests/helpers/db.ts";
-import { authService } from "./auth.ts";
-
-Deno.test("AuthService.mintPairingCode: returns 6-digit code", async () => {
-  const env = await setupTestEnv();
-  try {
-    const auth = authService();
-    const { code } = await auth.mintPairingCode();
-    assertEquals(code.length, 6);
-  } finally {
-    await env.teardown();
-  }
-});
-```
-
-What `setupTestEnv()` does:
-
-1. Creates a tempdir, points `LOCA_CORE_HOME` at it.
-2. Opens a fresh SQLite DB and runs migrations.
-3. Inserts a synthetic logger setup (console-only, no rotating file handler).
-4. The returned `teardown()` closes the DB, resets every module-level singleton
-   (`auth`, `chat`, `sessions repo`, `sidecar manager`, `secrets`, `ws hub`),
-   restores the env, and removes the tempdir.
-
-If you need a paired client without going through the pairing-code flow, call
-`createTestClient(name?)` from the same helper. It inserts a row in `clients`
-and returns the id (use this for the `ownerClientId` FK).
-
-## Time-sensitive tests
-
-Use `mockClock()` from `tests/helpers/time.ts`:
-
-```ts
-import { mockClock } from "../../tests/helpers/time.ts";
-
-const clock = mockClock(1_700_000_000_000);
-try {
-  // ...
-  clock.advance(61_000);
-  // ...
-} finally {
-  clock.restore();
-}
-```
-
-`mockClock` patches `Date.now()`. It does NOT mock the `Date` constructor or
-`setTimeout`; redesign around the seam if you need finer control.
-
-## Mocking external APIs
-
-OpenAI: pass a fake `fetch` via `LlmEndpointConfig.fetch` (added as a test
-seam):
-
-```ts
-const endpoint = {
-  baseUrl: "https://example/api/v1",
-  apiKey: "sk-test",
-  model: "test-model",
-  fetch: (input, init) => Promise.resolve(new Response(...)),
-};
-```
-
-HuggingFace, npm registry, signed manifests: same pattern, inject a fake at the
-HTTP boundary. Recorded SSE responses go under
-`packages/loca-core/tests/fixtures/openai/*.sse`.
-
-## Sidecar fixtures
-
-The fake server at `packages/loca-core/tests/fixtures/sidecars/http-stub.ts` is
-a 10-line Deno script that binds `127.0.0.1:<port>` and serves a 200 on every
-path, matching the readiness contract every sidecar promises. To stand a
-sidecar-shaped subprocess up in a test:
-
-```ts
-import { fromFileUrl } from "@std/path";
-import { freePort } from "../../tests/helpers/free-port.ts";
-import { sidecarManager } from "./manager.ts";
-
-const port = freePort();
-const STUB = fromFileUrl(new URL("../../tests/fixtures/sidecars/http-stub.ts", import.meta.url));
-await sidecarManager().start("llama", {
-  binary: Deno.execPath(),
-  args: ["run", `--allow-net=127.0.0.1:${port}`, STUB, String(port)],
-  readiness: { kind: "http", url: `http://127.0.0.1:${port}/health` },
-  restartPolicy: "none",
-});
-```
-
-Per-sidecar fakes (for tests that need real protocol surface, e.g. streaming LLM
-responses on the llama-server endpoint) live under the same
-`tests/fixtures/sidecars/` folder.
+The tool worker is TypeScript (`packages/loca-core-rs/workers/`) and keeps a
+Deno test beside it that spawns the real worker and drives the NDJSON protocol.
 
 ## Writing Svelte component tests
 
@@ -220,13 +131,11 @@ Gotchas:
 ## Writing Rust tests
 
 Inline `#[cfg(test)] mod tests` for unit tests. The `KeychainStore` trait in
-both `loca-core-keychain/src/main.rs` and
 `packages/loca-client/src/tauri/src/commands/keychain.rs` is the pattern for
 any test that would otherwise touch a platform API: define a small trait, ship a
 `Real*` impl that wraps the real crate, and ship an `InMemory*` test impl. The
 same pattern works for filesystem (write to a tempdir under `env::temp_dir()`),
-system clock (newtype around `SystemTime::now`), and any OS resource that
-doesn't have a Rust-side mock.
+system clock, and any OS resource that doesn't have a Rust-side mock.
 
 Annotate the test module with `#[allow(clippy::unwrap_used)]` because the
 crate's clippy config rejects `unwrap` in non-test code.
@@ -238,7 +147,6 @@ crate's clippy config rejects `unwrap` in non-test code.
 - The `deno` job runs the TypeScript pipeline on Linux: type-check, format
   check, JS/Svelte lint, and the Deno + vitest tests (`deno task test:js`).
 - The `rs` matrix runs the Rust pipeline (clippy + `cargo test`) for the crates
-  (tauri shell, core-keychain, core-updater, core-ptyhost) on Linux, macOS, and
-  Windows; core-hwinfo and core-speech are Linux-only checks.
+  (tauri shell, core-rs, core-updater) on Linux, macOS, and Windows.
 - Neither E2E lane (headless integration, tauri-driver smoke) runs in CI; both
   are opt-in and local-only.

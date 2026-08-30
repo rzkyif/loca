@@ -6,10 +6,9 @@
 //     be galleried (in GALLERY_VIEWS).
 //   - Tier C must not carry its own un-extracted raw styled markup: the
 //     raw-leaf cap is the hard gate, so every visible leaf is a galleried View /
-//     primitive or a thin layout wrapper. That is the drift hole this rework
-//     closes. A Tier C may optionally declare `composes: [ViewNames]` (each a
-//     galleried View it actually imports) and/or `orchestratorOf: [children]` to
-//     document how it is covered; declarations are validated when present.
+//     primitive or a thin layout wrapper. A Tier C may optionally declare
+//     `composes: [ViewNames]` and/or `orchestratorOf: [children]` to document how
+//     it is covered; declarations are validated when present.
 // See packages/loca-shared/src/ui/README.md.
 //
 // Wired into `deno task lint`. The base classification checks are always strict.
@@ -24,11 +23,9 @@ import {
 } from "../../packages/loca-website/src/components/gallery/registry.ts";
 
 const STRICT_GALLERY = true;
-// A Tier-C orchestrator may keep a few raw layout wrappers, but once it carries
-// more than this many styled (color/border/rounded/...) native leaves it is
-// hiding un-extracted markup and must move it into a shared View. Heuristic: its
-// job is catching regressions, not proving completeness (the `composes`
-// declarations, cross-checked against imports, do that).
+// A Tier-C orchestrator may keep a few raw layout wrappers, but past this many
+// styled native leaves it is hiding un-extracted markup that belongs in a shared
+// View. A regression heuristic, not a completeness proof.
 const RAW_LEAF_CAP = 4;
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
 const ROOT = fromFileUrl(new URL("../../", import.meta.url));

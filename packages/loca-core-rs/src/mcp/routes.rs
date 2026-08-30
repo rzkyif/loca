@@ -1,15 +1,12 @@
 //! The MCP route slice: `/api/v1/mcp` and its twelve sub-paths.
 //!
-//! Thirteen routes, all behind the same bearer layer, matching the
-//! TypeScript's `r.use("*", authed)`. There is no admin tier: a paired device
-//! is already trusted to configure tool providers.
+//! Thirteen routes, all behind the same bearer layer. There is no admin tier: a
+//! paired device is already trusted to configure tool providers.
 //!
-//! Two path pairs overlap, and the two routers resolve them by different rules
-//! that happen to agree. Hono matched in registration order, so `/prompts` beat
-//! `/{id}` and `/prompts/{p}/resolve` beat `/prompts/{p}/{action}` because they
-//! were declared first; axum prefers a static segment over a parameter, which
-//! lands on the same answer. `routes::tests` pins both, because "the same
-//! answer for a different reason" is exactly what quietly stops being true.
+//! Two path pairs overlap (`/prompts` against `/{id}`, and
+//! `/prompts/{p}/resolve` against `/prompts/{p}/{action}`); axum resolves both
+//! by preferring a static segment over a parameter, and `routes::tests` pins the
+//! answers.
 //!
 //! Any change that affects which servers are enabled resyncs the connections
 //! and then broadcasts `mcp.snapshot`, so every client repaints. A per-tool or
@@ -39,27 +36,17 @@ use crate::transport::state::AppContext;
 use super::registry::{NewServer, ServerPatch};
 use super::Mcp;
 
-// --- bodies and envelopes ----------------------------------------------------
-//
-// The create, patch and prompt-resolve bodies are generated: their Zod schemas
-// live in `@loca/shared/validation/mcp.ts`, so `emit-zod.ts` sees them and
-// `contract::inbound` carries a `Deserialize` that enforces `.strict()` and
-// `name`'s `.min(1)`. That second one is load-bearing on the patch: the
-// registry's update treats a blank name as "keep the stored one", so without
-// the constraint an empty rename is a silent 200 where the TypeScript answers
-// `validation_error`.
+// The create, patch and prompt-resolve bodies are generated, and their
+// `Deserialize` enforces `.strict()` plus `name`'s `.min(1)`. That second one is
+// load-bearing on the patch: the registry treats a blank name as "keep the
+// stored one", so without it an empty rename would be a silent 200.
 //
 // `contract::api::McpServerInput` is NOT these: it is the registry-level input,
-// carrying `hasAuth` / `oauthAuthorized` and no `authToken`, which is the
-// opposite split from the HTTP body. The response wrappers below are object
-// literals in the TypeScript and are declared here.
+// carrying `hasAuth` / `oauthAuthorized` and no `authToken`.
 //
-// `authToken` is a live bearer token. Both generated bodies get a redacting
-// `Debug` from `SECRET_FIELDS` in `scripts/contract/generate.ts` rather than
-// typify's derived one, which would print it in full: F2's other tripwire keys
-// off type NAMES and this field has a plain `String` type, and `scrub_secrets`
-// would not catch it either, since its JSON pattern is `"password"` and a short
-// token clears the length rules.
+// `authToken` is a live bearer token, so both generated bodies get a redacting
+// `Debug` from the contract generator's `SECRET_FIELDS`: the name-keyed tripwire
+// misses a plain `String` field, and `scrub_secrets` would not catch it either.
 
 /// `GET /api/v1/mcp`.
 #[derive(Debug, Serialize)]
@@ -283,11 +270,9 @@ async fn resync(mcp: &Mcp) -> Result<()> {
     mcp.resync().await
 }
 
-// The bodies' three enums are generated from the Zod schemas and the registry's
-// three from the TypeScript domain types, so each wire value has two Rust
-// spellings and these six functions are the seam. Exhaustive matches on
-// purpose: adding a variant on either side has to fail the build rather than
-// fall through to a default.
+// Each wire value has two generated Rust spellings, and these six functions are
+// the seam. Exhaustive on purpose: adding a variant on either side has to fail
+// the build rather than fall through to a default.
 
 fn create_kind(kind: McpServerBodyKind) -> McpTransportKind {
     match kind {

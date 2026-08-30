@@ -5,27 +5,23 @@
 //! the three request round-trips. Whoever holds both this and the registry
 //! merges them into the wire shape.
 //!
-//! Four behaviours here exist for a stated reason and each is load-bearing:
+//! Four behaviours are load-bearing:
 //!
-//! 1. **[`Manager::sync`] serialises its reconciliation, but not its
-//!    connects.** Two overlapping CRUD requests must not both pass the "is it
-//!    connected?" check and start the same server twice, leaving the second to
-//!    replace the first while its child process keeps running; the claim in
-//!    `connecting` is what prevents that. The lock is released before the
-//!    connects because a connect can take up to `CONNECT_TIMEOUT`, and holding
-//!    it that long would queue every CRUD route behind the very server the user
-//!    is trying to remove.
-//! 2. **A disconnect removes the connection before closing it**, so the close
-//!    that follows is seen as intentional rather than as a drop that should
-//!    trigger a reconnect. The generation counter is what makes "is this still
-//!    the active connection?" answerable.
-//! 3. **An unexpected drop reconnects on a bounded backoff**, reconciling
-//!    against the CURRENT desired set rather than the one that was live when
-//!    the timer was armed, and it is cancelled the moment the server is
-//!    disabled. Reconnecting re-establishes a connection the user already
-//!    enabled; it never reaches a new endpoint (D-032).
-//! 4. **A `list_changed` notification from a connection that is no longer
-//!    active is ignored**, same generation check as (2).
+//! 1. **[`Manager::sync`] serialises its reconciliation, but not its connects.**
+//!    Two overlapping CRUD requests must not both pass the "is it connected?"
+//!    check and start the same server twice; the claim in `connecting` prevents
+//!    that. The lock is released before the connects, because holding it for a
+//!    whole `CONNECT_TIMEOUT` would queue every CRUD route behind the very
+//!    server the user is trying to remove.
+//! 2. **A disconnect removes the connection before closing it**, so the close is
+//!    seen as intentional rather than as a drop that should reconnect. The
+//!    generation counter is what makes "is this still active?" answerable.
+//! 3. **An unexpected drop reconnects on a bounded backoff**, against the
+//!    CURRENT desired set rather than the one live when the timer was armed, and
+//!    cancelled the moment the server is disabled. Reconnecting re-establishes a
+//!    connection the user already enabled; it never reaches a new endpoint.
+//! 4. **A `list_changed` from a connection that is no longer active is
+//!    ignored**, by the same generation check as (2).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -49,13 +45,11 @@ use crate::contract::api::McpConnectionStatus;
 /// does before there is a session: DNS, TCP, TLS, OAuth metadata discovery, and
 /// the `initialize` handshake.
 ///
-/// The handshake has its own, tighter bound
-/// ([`session::HANDSHAKE_TIMEOUT`](super::session::HANDSHAKE_TIMEOUT), 60s,
-/// which is the specification's), so in the ordinary black-hole case the user
-/// gets that message rather than this one. This exists for the steps that sit
-/// OUTSIDE the handshake future, above all the OAuth discovery and dynamic
-/// registration that `AuthorizationManager::new` performs against an
-/// authorization server before any MCP frame is sent.
+/// The handshake has its own tighter bound
+/// ([`session::HANDSHAKE_TIMEOUT`](super::session::HANDSHAKE_TIMEOUT)), so in the
+/// ordinary black-hole case the user gets that message. This one covers the
+/// steps OUTSIDE the handshake future, above all the OAuth discovery and dynamic
+/// registration performed before any MCP frame is sent.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Backoff steps for auto-reconnecting an enabled server after an unexpected
@@ -104,11 +98,10 @@ struct Inner {
     /// The armed backoff timer per server, if any.
     reconnects: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     /// How far into [`RECONNECT_BACKOFF`] each server has got. Deliberately NOT
-    /// stored with the timer: cancelling a timer must not forget how many
-    /// attempts have been made, or every step would be the first one and the
-    /// give-up branch would be unreachable. Cleared by a successful connect and
-    /// by an intentional disconnect, which are the two things that end an
-    /// incident.
+    /// stored with the timer: cancelling a timer must not forget the attempt
+    /// count, or every step would be the first one and the give-up branch would
+    /// be unreachable. Cleared by a successful connect and by an intentional
+    /// disconnect, the two things that end an incident.
     reconnect_attempts: Mutex<HashMap<String, usize>>,
     generation: AtomicU64,
     /// Serialises reconciliation. Held across `reconcile` and released before
@@ -185,14 +178,11 @@ impl Manager {
     /// the others; the failure is remembered as an `error` status with its
     /// message.
     pub async fn sync(&self, servers: Vec<ServerConfig>) {
-        // The lock covers the RECONCILIATION only, and is released before the
-        // connects. Held across them, one server at an endpoint that accepts
-        // TCP and never answers would hold it for the whole of
-        // `CONNECT_TIMEOUT`, and every route that resyncs (create, patch,
-        // delete, reconnect) would queue behind it: the user could not remove
-        // the server that was wedging them. Two overlapping syncs still cannot
-        // start the same server twice, because `reconcile` claims each id in
-        // `connecting` while it holds the lock.
+        // The lock covers the RECONCILIATION only: held across the connects, one
+        // black-holed endpoint would hold it for a whole `CONNECT_TIMEOUT` and
+        // every resyncing route would queue behind it. Two overlapping syncs
+        // still cannot start one server twice, because `reconcile` claims each
+        // id in `connecting` while it holds the lock.
         let to_start = {
             let _guard = self.inner.sync_lock.lock().await;
             self.reconcile(servers).await
@@ -234,10 +224,8 @@ impl Manager {
         let mut connecting = lock(&self.inner.connecting);
         wanted
             .into_values()
-            // `insert` returning false means a connect for that id is already
-            // in flight from an earlier sync that has since released the lock.
-            // Claiming here, under the lock, is what replaces holding the lock
-            // across the connect itself.
+            // `insert` returning false means a connect for that id is already in
+            // flight from an earlier sync that has since released the lock.
             .filter(|s| !conns.contains_key(&s.id) && connecting.insert(s.id.clone()))
             .collect()
     }
@@ -253,14 +241,11 @@ impl Manager {
         let result = self.open(&server).await;
 
         lock(&self.inner.connecting).remove(&server.id);
-        // The server may have been disabled or deleted while this connect was
-        // in flight, which is possible only because the sync lock is not held
-        // here. A sync that ran in that window could not have disconnected it,
-        // because it was not yet in `conns` to be found, so this is the only
-        // place that connection is dropped. `desired` is written under the sync
-        // lock and read here AFTER `open` has published the connection, so
-        // either that sync saw the connection or this read sees the new desired
-        // set; there is no interleaving where both miss it.
+        // The server may have been disabled or deleted while this connect was in
+        // flight, and a sync in that window could not have disconnected it
+        // because it was not yet in `conns`. `desired` is written under the sync
+        // lock and read AFTER `open` publishes the connection, so either that
+        // sync saw the connection or this read sees the new desired set.
         if !self.still_wanted(&server.id) {
             self.disconnect(&server.id).await;
             return;
@@ -297,9 +282,8 @@ impl Manager {
 
     async fn open(&self, server: &ServerConfig) -> Result<(usize, usize, usize)> {
         // Bounded, because everything before the session exists is outside
-        // `PeerSession::bounded`. Without it a connector that never resolves
-        // leaves this server `connecting` forever and its claim in `connecting`
-        // never released, so no later sync would retry it either.
+        // `PeerSession::bounded`: a connector that never resolves would leave
+        // this server claimed in `connecting` forever, so no sync would retry.
         let connected =
             match tokio::time::timeout(CONNECT_TIMEOUT, self.inner.connector.connect(server)).await
             {
@@ -338,11 +322,10 @@ impl Manager {
 
     /// Drop a server's live session.
     ///
-    /// Deliberately removes the connection BEFORE closing it: the watcher then
-    /// sees a generation that is no longer active and treats the close as
-    /// intentional rather than as a drop to reconnect from. An intentional
-    /// disconnect also cancels any pending backoff and resets the attempt
-    /// count, so a later re-enable starts fresh.
+    /// Removes the connection BEFORE closing it, so the watcher sees a
+    /// generation that is no longer active and treats the close as intentional
+    /// rather than a drop to reconnect from. Also cancels any pending backoff
+    /// and resets the attempt count, so a later re-enable starts fresh.
     pub async fn disconnect(&self, id: &str) {
         self.cancel_reconnect(id);
         lock(&self.inner.reconnect_attempts).remove(id);
@@ -449,8 +432,8 @@ impl Manager {
             let still_wanted = lock(&manager.inner.desired)
                 .iter()
                 .any(|s| s.id == for_task && s.wants_connection());
-            // Bound the guard rather than reading it inside the condition: a
-            // temporary from an `if` condition lives until the end of the whole
+            // Bound the guard rather than reading it in the condition: a
+            // temporary from an `if` condition lives to the end of the
             // statement, so the body would run holding the connection map.
             let connected = lock(&manager.inner.conns).contains_key(&for_task);
             if still_wanted && !connected {
@@ -474,17 +457,9 @@ impl Manager {
         (conn.generation == generation).then(|| Arc::clone(&conn.session))
     }
 
-    /// The session for a request, or the error the TypeScript produces for the
-    /// same request.
-    ///
-    /// `internal_error` reads oddly for "that server is not connected", and it
-    /// is deliberate: the Deno core raises a bare `Error` here, which its
-    /// handler renders as a 500, so a code of our own choosing would make this
-    /// route permanently unassertable by the conformance suite while both cores
-    /// run. The client catches any failure from a resolve and shows one notice
-    /// either way (`UserInput.svelte:405`), so nothing observable turns on it.
-    /// Worth tightening to `server_unavailable` at cutover, when the oracle
-    /// retires.
+    /// The session for a request, or a 500. `internal_error` reads oddly for
+    /// "that server is not connected" and is the documented status; the client
+    /// shows one notice for any resolve failure, so nothing turns on it.
     fn session_or_err(&self, id: &str) -> Result<Arc<dyn Session>> {
         lock(&self.inner.conns)
             .get(id)

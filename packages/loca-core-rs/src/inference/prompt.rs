@@ -1,35 +1,22 @@
 //! One completion request, turned into the inputs a chat template is applied
 //! with.
 //!
-//! Pure: no shim types, no llama.cpp, no settings reads. The gated half converts
-//! [`TurnPrompt`] into `shim::ChatInputs` field for field, so this module's
-//! decisions compile and are tested in the DEFAULT gate.
+//! Pure: no shim types, no llama.cpp, no settings reads, so these decisions are
+//! tested in the DEFAULT gate; the gated half converts [`TurnPrompt`] into
+//! `shim::ChatInputs` field for field.
 //!
-//! # What is decided here, and what is not
+//! Two things are decided: which JSON the messages and tools become, and
+//! whether the model is asked to think. Everything else `ChatInputs` carries is
+//! one of its own constructor's defaults, so the conversion adds no third
+//! opinion. The reasoning format in particular is PINNED rather than
+//! configured, so the stream reader always finds thoughts in
+//! `reasoning_content`; `llm.showReasoning` is a client-side display setting
+//! and never reaches here.
 //!
-//! Two things are decided: which JSON the messages and tools become, and whether
-//! the model is asked to think. Everything else `ChatInputs` carries is a
-//! constant that matches what the shipping core sends (`tool_choice` "auto",
-//! `add_generation_prompt` true, `parallel_tool_calls` false, and the reasoning
-//! format pinned to deepseek), and those constants are `ChatInputs::new`'s own
-//! defaults, so the conversion adds no third opinion about them.
-//!
-//! **The reasoning format is pinned, not configured.** `--reasoning-format
-//! deepseek` is passed unconditionally to `llama-server` today
-//! (`sidecars/llama.ts:114-119`) so the stream reader always finds thoughts in
-//! `reasoning_content` whatever llama.cpp's default is. It is an apply-time
-//! setting only: the parse-time field is inert at the pinned commit, verified by
-//! experiment (`shim/chat.rs:28-36`). `llm.showReasoning` is a client-side
-//! display setting and never reaches here.
-//!
-//! # Why the thinking decision lives in one function
-//!
-//! `enable_thinking` (a template input) and the reasoning-budget sampler (a
-//! sampler input) are two consumers of ONE decision with a three-level
-//! precedence. Deriving it twice is the D-071 family: a defaulted value has as
-//! many defaults as it has hops, and no single file shows the stack. So
-//! [`thinking`] resolves it once and [`super::sampling`] takes the answer as an
-//! argument rather than re-reading the request.
+//! `enable_thinking` (a template input) and the reasoning-budget sampler are
+//! two consumers of ONE decision with a three-level precedence, so [`thinking`]
+//! resolves it once and [`super::sampling`] takes the answer as an argument
+//! rather than re-reading the request.
 
 use serde_json::Value;
 

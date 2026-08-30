@@ -1,21 +1,17 @@
 //! The extension route slice: `/api/v1/extensions` and the flat
 //! `/api/v1/tools`.
 //!
-//! Twenty-one routes plus the merged catalog, all behind the same bearer layer
-//! (`http/routes/extensions.ts:72`, `tools.ts:15`). None is admin-gated: a
-//! paired device is already trusted to manage tool providers.
+//! Twenty-one routes plus the merged catalog, all behind the same bearer
+//! layer. None is admin-gated: a paired device is already trusted to manage
+//! tool providers.
 //!
 //! **No route here streams.** Install progress is a background job that returns
-//! `{ jobId, extensionId }` immediately and reports over WS, which is what lets
-//! the client show one modal for a download that takes minutes without holding
-//! a request open across it.
+//! `{ jobId, extensionId }` immediately and reports over WS, so the client can
+//! show one modal for a download that takes minutes.
 //!
-//! # `requiredPermissions` is derived at the route, not read from the row
-//!
-//! [`attach_required_permissions`] re-parses `loca.json` from disk rather than
-//! reading the persisted column, because `missingRequired` depends on the
-//! CURRENT grant state and the column does not. The registry leaves both empty
-//! by design; filling them is this layer's job.
+//! [`Extensions::enrich`] re-parses `loca.json` from disk rather than reading
+//! the persisted column, because `missingRequired` depends on the CURRENT grant
+//! state and the column does not.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -54,8 +50,7 @@ use super::wire::{
 };
 use super::Extensions;
 
-/// `?ids=` is not used; `POST /check-updates` carries its body instead. The two
-/// query surfaces in the slice are search's paging and nothing else.
+/// Search's paging, the only query surface in the slice.
 #[derive(Debug, Default, Deserialize)]
 struct SearchQuery {
     q: Option<String>,
@@ -108,12 +103,8 @@ pub fn routes(ctx: &AppContext, extensions: Extensions) -> Router {
         .with_state(extensions)
 }
 
-/// The flat, provider-agnostic catalog.
-///
-/// A separate router because it mounts at a different prefix, not because it is
-/// a different concern: this is the one route where D12 and D11 meet, and the
-/// MCP half arrives through a trait D12 declares over D11's existing
-/// `Mcp::list_all_tools`.
+/// The flat, provider-agnostic catalog. A separate router only because it
+/// mounts at a different prefix.
 pub fn tools_routes(ctx: &AppContext, extensions: Extensions) -> Router {
     Router::new()
         .route("/api/v1/tools", get(list_all_tools))
@@ -131,8 +122,7 @@ async fn search(
     State(ext): State<Extensions>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<SearchExtensionsResponse>> {
-    // The oracle parses with `Number(v)` and falls back on anything
-    // non-finite, so a junk `?limit=abc` is the default rather than a 400.
+    // A junk `?limit=abc` is the default rather than a 400.
     let limit = num_query(query.limit.as_deref(), 50);
     let offset = num_query(query.offset.as_deref(), 0);
     Ok(Json(SearchExtensionsResponse {
@@ -160,8 +150,7 @@ async fn list_all_tools(State(ext): State<Extensions>) -> Result<Json<ListExtens
     let extension_tools = ext.registry().list_all_tools().await?;
     let mut tools = ext.enrich_all(extension_tools).await;
     // MCP tools run on their own server and hold no local sandbox permissions,
-    // so they union in unenriched. The Tools UI shows every tool from every
-    // provider, and `providerKind` is what tells them apart.
+    // so they union in unenriched; `providerKind` tells them apart.
     if let Some(mcp) = ext.mcp_tools() {
         tools.extend(mcp.list_all_tools().await?);
     }
@@ -177,8 +166,7 @@ async fn download(
     let spec = match body {
         DownloadExtensionRequest::Npm { name, version } => InstallSource::Npm {
             name,
-            // D-043: `""` is a JavaScript falsy discriminator on the oracle, so
-            // it means "latest" rather than "the empty version".
+            // `""` means "latest", not "the empty version".
             version: present(version.as_deref()).map(str::to_string),
         },
         DownloadExtensionRequest::Local { path, slug } => {
@@ -245,9 +233,8 @@ async fn update(
             planted: None,
         },
         ExtensionSource::Npm => {
-            // The id is the FLATTENED npm name, so it is un-flattened before it
-            // goes back to the registry. Only the first `__` is a separator: a
-            // package whose own name contains one keeps it.
+            // The id is the FLATTENED npm name. Only the first `__` is a
+            // separator, so a package whose own name contains one keeps it.
             let npm_name = id.replacen("__", "/", 1);
             let resolved =
                 npm::resolve_version(ext.installer().http(), &npm_name, requested.as_deref())
@@ -269,9 +256,8 @@ async fn update(
 
 async fn check_updates(
     State(ext): State<Extensions>,
-    // Required rather than optional: the oracle reads it with plain
-    // `readJson`, so an absent body is a 400 there too. `{}` parses, because
-    // `ids` is optional and means "every installed extension".
+    // Required rather than optional. `{}` parses, because `ids` is optional
+    // and means "every installed extension".
     Json(body): Json<CheckUpdatesRequest>,
 ) -> Result<Json<CheckUpdatesResponse>> {
     let wanted: Option<HashSet<String>> = body.ids.map(|ids| ids.into_iter().collect());
@@ -281,9 +267,7 @@ async fn check_updates(
         .filter(|row| wanted.as_ref().is_none_or(|ids| ids.contains(&row.id)));
 
     let mut results = Vec::new();
-    // Sequential ON PURPOSE, to stay polite to the npm registry
-    // (`routes/extensions.ts:401-402`). A `join_all` here is a behaviour change
-    // the user meets as a rate limit.
+    // Sequential ON PURPOSE: a `join_all` here is a rate limit the user meets.
     for row in targets {
         results.push(ext.check_one(&row).await);
     }
@@ -304,8 +288,6 @@ async fn delete_one(
 ) -> Result<Response> {
     ext.delete_extension(&id).await?;
     ext.broadcast_snapshot();
-    // 204 with no body, matching the oracle. A `{ id }` envelope here would be
-    // a diff on a route the client ignores the body of anyway.
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -329,9 +311,9 @@ async fn enable_tool(
         return Err(drifted(&id));
     }
     require_tool(&ext, &id, &tool).await?;
-    // Enabling is allowed even with ungranted required permissions: the tool is
-    // then "enabled but not exposed", a warning state in the UI. The chat
-    // exposure gate is the authority on what the model actually sees.
+    // Allowed even with ungranted permissions: the tool is then "enabled but
+    // not exposed", a warning state in the UI. The chat exposure gate decides
+    // what the model actually sees.
     ext.registry().set_tool_enabled(&id, &tool, true).await?;
     ext.refresh_permissions(&id).await;
     ext.broadcast_snapshot();
@@ -354,8 +336,7 @@ async fn always_available(
     Json(body): Json<AlwaysAvailableRequest>,
 ) -> Result<Json<OkResponse>> {
     require_tool(&ext, &id, &tool).await?;
-    // No worker refresh: this changes tool SELECTION, not sandbox grants, so
-    // tearing down a warm worker would cost a spawn for nothing.
+    // No worker refresh: this changes tool SELECTION, not sandbox grants.
     ext.registry()
         .set_tool_always_available(&id, &tool, body.value)
         .await?;
@@ -373,10 +354,8 @@ async fn set_grants(
     let enriched = ext.enrich(row).await;
     let mut decoded = Vec::with_capacity(body.grants.len());
     for grant in body.grants {
-        // Validated against the tool's CURRENT declarations, so a grant key
-        // from a previous `loca.json` cannot be written back: the user would be
-        // approving something the author no longer declares, and the sandbox
-        // derivation would then ignore it silently.
+        // Against the tool's CURRENT declarations: a key from a previous
+        // `loca.json` would be an approval the sandbox silently ignores.
         let declared = enriched
             .required_permissions
             .iter()
@@ -420,9 +399,8 @@ async fn confirm_reenable(
     UrlPath(id): UrlPath<String>,
 ) -> Result<Json<ExtensionActionResponse>> {
     let extension = ext.registry().get_or_err(&id).await?;
-    // The user reviewed an out-of-band content change and trusts what is on
-    // disk NOW, so the hash is re-read here rather than taken from the row.
-    // This is the only path out of `drift`, and it is never automatic.
+    // Re-read rather than taken from the row: the user trusts what is on disk
+    // NOW. The only path out of `drift`, and never automatic.
     let hash = hash_extension(Path::new(&extension.installed_path))?;
     ext.registry().repin_and_clear(&id, &hash).await?;
     Ok(Json(ExtensionActionResponse { id }))
@@ -449,19 +427,9 @@ async fn tool_schemas(
     State(ext): State<Extensions>,
     Json(body): Json<ToolSchemasBody>,
 ) -> Result<Json<ToolSchemasResponse>> {
-    // The one zod-validated body in the slice
-    // (`ids: z.array(z.string().min(1)).max(512)`), and it takes the INBOUND
-    // type rather than the `api` one. That distinction is the whole point:
-    // `api::ToolSchemasRequest` is generated from the TypeScript and carries no
-    // constraints, so `minLength` was silently absent and an empty id reached
-    // the registry and came back `tool_not_found` where the oracle answers
-    // `validation_error`. `inbound::ToolSchemasBody` is generated from the Zod
-    // schema and enforces it in the deserializer. See D-093.
-    //
-    // The array `.max(512)` does NOT survive the bridge either way (D-095: a
-    // constraint survives only if some Rust type expresses it, and nothing is
-    // shaped like "at most 512 items"), so the cardinality is restated here
-    // rather than assumed.
+    // The INBOUND type, not the `api` one: it is generated from the Zod schema
+    // and enforces `min(1)` per id in the deserializer. Array cardinality
+    // survives neither, so the cap is restated below.
     if body.ids.len() > TOOL_SCHEMAS_MAX_IDS {
         return Err(AppError::new(
             ErrorCode::ValidationError,
@@ -487,8 +455,7 @@ async fn tool_schemas(
     Ok(Json(ToolSchemasResponse { tools }))
 }
 
-/// `validation/extension.ts`'s `.max(512)`, restated because typify drops array
-/// cardinality (D-083).
+/// Restated because the generated type drops array cardinality.
 const TOOL_SCHEMAS_MAX_IDS: usize = 512;
 
 async fn embed(
@@ -533,21 +500,11 @@ fn drifted(id: &str) -> AppError {
 
 /// A JSON body parsed where the handler chooses, rather than before it runs.
 ///
-/// Three routes in this slice look the subject up BEFORE they look at the body:
-/// `:id/update` and `:id/undeclared-policy` check the extension exists
-/// (`routes/extensions.ts:167`, `:287`), and `:id/tools/:tool/grants` checks the
-/// tool does (`:256`). A `Json<T>` extractor runs before the handler body and
-/// inverts that, so an unknown id with a malformed body answers
-/// `validation_error` where the specification answers `extension_not_found`.
-///
-/// The ordering is contract rather than detail: validating first tells a caller
-/// whether an id exists only once it supplies a well-formed body, so the two
-/// orderings leak different information.
-///
-/// `:id/tools/:tool/always-available` is deliberately NOT one of the three. The
-/// specification validates `value` there BEFORE it looks the tool up
-/// (`:228-235`), so its `Json<T>` extractor already matches and moving it would
-/// introduce the divergence this function exists to remove.
+/// Three routes look their subject up FIRST (`:id/update`,
+/// `:id/undeclared-policy`, `:id/tools/:tool/grants`), so an unknown id answers
+/// `extension_not_found` whatever the body says. The ordering is contract: the
+/// two orderings leak different information about which ids exist.
+/// `:id/tools/:tool/always-available` is deliberately NOT one of the three.
 fn parse_after_lookup<T: serde::de::DeserializeOwned>(raw: &Bytes) -> Result<T> {
     serde_json::from_slice(raw)
         .map_err(|err| AppError::new(ErrorCode::ValidationError, err.to_string()))
@@ -562,7 +519,7 @@ async fn require_tool(ext: &Extensions, id: &str, name: &str) -> Result<Tool> {
         .ok_or_else(|| AppError::new(ErrorCode::ToolNotFound, format!("{id}::{name}")))
 }
 
-/// `Number(v)`, with a non-finite result falling back to the default.
+/// A non-finite or negative result falls back to the default.
 fn num_query(raw: Option<&str>, default: u32) -> u32 {
     match raw {
         None | Some("") => default,
@@ -576,16 +533,10 @@ fn num_query(raw: Option<&str>, default: u32) -> u32 {
 
 impl Extensions {
     /// Fill `requiredPermissions` and `missingRequired` from the manifest on
-    /// disk.
-    ///
-    /// Re-parsed rather than read from the persisted column because
-    /// `missingRequired` is a function of the CURRENT grant rows: it is the
-    /// indices of non-optional declarations with no decision yet, and an absent
-    /// row behaves as `ask` at runtime.
-    ///
-    /// An unreadable or changed manifest yields EMPTY lists rather than an
-    /// error, matching the oracle: the tool still exists and the UI still needs
-    /// to render it, and drift is reported by the status column instead.
+    /// disk. `missingRequired` is the indices of non-optional declarations with
+    /// no grant row yet, so it cannot come from the persisted column. An
+    /// unreadable manifest yields EMPTY lists rather than an error: the UI
+    /// still has to render the tool, and drift is the status column's job.
     pub async fn enrich(&self, tool: Tool) -> Tool {
         match self.required_for(&tool).await {
             Some((required, missing)) => Tool {
@@ -639,10 +590,8 @@ impl Extensions {
         Some((required, missing))
     }
 
-    /// One extension's upstream check, with its own error isolated.
-    ///
-    /// A failure is a FIELD on the row rather than a failed batch, so one
-    /// unreachable registry does not hide every other extension's answer.
+    /// One extension's upstream check. A failure is a FIELD on the row rather
+    /// than a failed batch.
     pub async fn check_one(&self, row: &Extension) -> ExtensionUpdateStatus {
         let base = ExtensionUpdateStatus {
             id: row.id.clone(),
@@ -655,9 +604,8 @@ impl Extensions {
             ExtensionSource::Seeded => seed::seeded_by_id(&row.id),
             _ => None,
         };
-        // No upstream to check: a local extension, and a seeded row whose id is
-        // no longer a known seeded extension. The second must NOT fall through
-        // to an npm lookup, which would query a package that does not exist.
+        // No upstream: a local extension, or a seeded row whose id is no longer
+        // known. Neither may fall through to an npm lookup.
         if row.source == ExtensionSource::Local
             || (row.source == ExtensionSource::Seeded && seeded.is_none())
         {
@@ -687,11 +635,9 @@ impl Extensions {
         }
     }
 
-    /// Reconcile the extensions directory against the registry.
-    ///
-    /// Never installs dependencies and never pins a hash: a re-registered
-    /// folder drops back to `downloaded` so the user must press Install before
-    /// its tools can run again.
+    /// Reconcile the extensions directory against the registry. Never installs
+    /// dependencies and never pins a hash: a re-registered folder drops back to
+    /// `downloaded` so the user must press Install again.
     pub async fn rescan(&self) -> Result<RescanResponse> {
         let mut out = RescanResponse::default();
         let on_disk = extension_dir_ids(&self.installer().paths().extensions_dir()).await;
@@ -702,15 +648,12 @@ impl Extensions {
             )
             .await
             .ok() else {
-                // A stray folder with no manifest is ignored rather than being
-                // an error: the extensions directory is a place users put
-                // things.
+                // The extensions directory is a place users put things.
                 continue;
             };
             let existing = self.registry().get(id).await?;
-            // Cheap heuristic, and deliberately so: a code-only edit with an
-            // unchanged `loca.json` is left alone, because the content hash is
-            // what notices that and drift is what reports it.
+            // A code-only edit with an unchanged `loca.json` is left alone: the
+            // content hash notices that, and drift reports it.
             if let Some(existing) = &existing {
                 if existing.manifest_hash == sha256_hex(raw.as_bytes()) {
                     continue;
@@ -719,8 +662,7 @@ impl Extensions {
             match self.installer().register_local_downloaded(id).await {
                 Ok(()) if existing.is_some() => out.updated += 1,
                 Ok(()) => out.added += 1,
-                // One folder with an invalid manifest must not fail the whole
-                // rescan, or a single bad extension makes the button useless.
+                // One bad folder must not fail the whole rescan.
                 Err(err) => tracing::warn!(
                     target: "loca::extensions",
                     "rescan: skipping {id}: {}", err.message,
@@ -740,10 +682,8 @@ impl Extensions {
 
     /// Re-embed every enabled tool of every installed extension.
     pub async fn reindex(&self) -> Result<Json<ReindexResponse>> {
-        // Tool-relevance needs the embed model. With it absent this skips
-        // CLEANLY rather than raising an opaque error: the requirements flow
-        // prompts for that download separately, and a 500 here would look like
-        // a broken core.
+        // Absent embed model skips CLEANLY: the requirements flow prompts for
+        // that download separately, and a 500 here would read as a broken core.
         let Some(embedder) = self.embedder() else {
             return Ok(Json(ReindexResponse {
                 embedded: 0,
@@ -799,10 +739,9 @@ fn is_optional(decl: &crate::contract::api::PermissionDecl) -> bool {
     }
 }
 
-/// Extension directory ids on disk, skipping the installer's staging dirs.
-///
-/// A `.new` or `.old` directory is a swap in progress or its leftover, never an
-/// extension, and registering one would create a row for an id that vanishes.
+/// Extension directory ids on disk. A `.new` or `.old` directory is a swap in
+/// progress or its leftover, and registering one creates a row for an id that
+/// is about to vanish.
 async fn extension_dir_ids(root: &Path) -> HashSet<String> {
     let mut ids = HashSet::new();
     let Ok(mut entries) = tokio::fs::read_dir(root).await else {
@@ -875,19 +814,16 @@ mod tests {
             })
             .unwrap();
 
-        // The registry shares the context's database rather than opening a
-        // second one: `context_with` already migrated it, and two databases
-        // would make the auth middleware and the registry disagree about what
-        // exists.
+        // Shares the context's database: two would make the auth middleware
+        // and the registry disagree about what exists.
         let registry = super::super::registry::Registry::new(ctx.db.clone(), (*ctx.paths).clone());
         let installer = Installer::new(InstallerConfig {
             paths: (*ctx.paths).clone(),
             config: (*ctx.config).clone(),
             settings: ctx.settings.clone(),
             registry,
-            // Every route these tests reach is offline. The two that are not
-            // (search, and an npm update) would PANIC here rather than
-            // silently reaching the real npm registry from a unit test.
+            // Every route these tests reach is offline; search and npm update
+            // PANIC here rather than reaching the real registry.
             http: Arc::new(NoNetwork),
             sidecars: Arc::new(Manager::new()),
             memories: Arc::new(NoMemories),
@@ -970,13 +906,28 @@ mod tests {
             .unwrap();
     }
 
+    async fn filter_tools(env: &Env, body: Value) -> (u16, Value) {
+        call(env, "POST", "/api/v1/extensions/filter", Some(body)).await
+    }
+
+    async fn enable(env: &Env, id: &str) {
+        env.ext
+            .registry()
+            .set_tool_enabled(id, "fetch_thing", true)
+            .await
+            .unwrap();
+    }
+
+    async fn first_tool_id(env: &Env, id: &str) -> String {
+        env.ext.registry().list_tools(id).await.unwrap()[0]
+            .id
+            .clone()
+    }
+
     // --- auth --------------------------------------------------------------
 
     #[tokio::test]
     async fn every_route_in_the_slice_needs_a_paired_client() {
-        // None of these is admin-gated, and none is open. An unauthenticated
-        // caller reading the extension list learns which tools the machine can
-        // run and what paths they were granted.
         let env = env();
         for (method, path) in [
             ("GET", "/api/v1/extensions"),
@@ -1006,9 +957,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_tools_listing_carries_the_declarations_the_registry_leaves_empty() {
-        // `requiredPermissions` and `missingRequired` are derived HERE from the
-        // manifest on disk, because `missingRequired` is a function of the
-        // current grant rows and the persisted column is not.
         let env = env();
         seed_extension(&env, "demo").await;
         let (status, body) = call(&env, "GET", "/api/v1/extensions/demo/tools", None).await;
@@ -1020,9 +968,8 @@ mod tests {
             2,
             "both declarations must survive the flattening: {tool}"
         );
-        // Index 0 is the required net declaration, index 1 the OPTIONAL read.
-        // An optional declaration is never "missing": the user is not asked
-        // about it, so counting it would show a permanent warning badge.
+        // Index 1 is the OPTIONAL read, and an optional declaration is never
+        // "missing": counting it would show a permanent warning badge.
         assert_eq!(tool["missingRequired"], json!([0]));
     }
 
@@ -1051,9 +998,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_grant_key_the_tool_does_not_declare_is_refused() {
-        // Writing it would record an approval for something the author never
-        // declared, and the sandbox derivation would then ignore it silently:
-        // the user would believe they granted something they did not.
+        // The sandbox derivation would ignore it silently, so the user would
+        // believe they granted something they did not.
         let env = env();
         seed_extension(&env, "demo").await;
         let (status, body) = call(
@@ -1086,8 +1032,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_drifted_extension_can_be_neither_installed_nor_enabled() {
-        // Two routes, one gate. Dropping the check on either leaves a path
-        // where content the user has not reviewed reaches the model.
         let env = env();
         seed_extension(&env, "demo").await;
         env.ext.registry().mark_drift("demo").await.unwrap();
@@ -1109,7 +1053,6 @@ mod tests {
     async fn confirm_reenable_repins_the_current_content_and_clears_drift() {
         let env = env();
         seed_extension(&env, "demo").await;
-        // An out-of-band edit, which is what drift reports.
         std::fs::write(env.paths.extension_dir("demo").join("extra.ts"), "// new").unwrap();
         env.ext.registry().mark_drift("demo").await.unwrap();
 
@@ -1124,7 +1067,6 @@ mod tests {
         assert_eq!(body, json!({ "id": "demo" }));
         let row = env.ext.registry().get_or_err("demo").await.unwrap();
         assert_eq!(row.status, ExtensionStatus::Installed);
-        // Re-pinned against what is on disk NOW, so the next verify passes.
         env.ext.registry().verify_fresh("demo").await.unwrap();
     }
 
@@ -1160,9 +1102,8 @@ mod tests {
 
     #[tokio::test]
     async fn enabling_a_tool_with_no_grants_is_allowed() {
-        // "Enabled but not exposed" is a real state and a warning in the UI.
-        // Refusing here would make the permission review impossible to reach:
-        // the user enables first and grants second.
+        // The user enables first and grants second, so refusing here would make
+        // the permission review unreachable.
         let env = env();
         seed_extension(&env, "demo").await;
         let (status, _) = call(
@@ -1226,12 +1167,6 @@ mod tests {
 
     #[tokio::test]
     async fn three_routes_look_their_subject_up_before_they_look_at_the_body() {
-        // The specification checks the extension (or the tool) exists first, so
-        // an unknown one answers 404 whatever the body says. An extractor that
-        // parses first inverts this and answers `validation_error`, which tells
-        // a caller whether an id exists only once it supplies a well-formed
-        // body: the two orderings leak different information.
-        //
         // Every body below is INVALID for its route, so a 404 can only come
         // from the lookup having run first.
         let env = env();
@@ -1259,10 +1194,6 @@ mod tests {
 
     #[tokio::test]
     async fn always_available_is_the_one_route_that_validates_before_it_looks_up() {
-        // Not an oversight on either side, and the reason it is pinned: the
-        // specification reads and screens `value` BEFORE the tool lookup
-        // (`routes/extensions.ts:228-235`), so "check existence first" applied
-        // uniformly would be a divergence rather than a tidy-up.
         let env = env();
         let (status, body) = call(
             &env,
@@ -1303,9 +1234,8 @@ mod tests {
 
     #[tokio::test]
     async fn uninstalling_a_dependency_free_extension_is_refused() {
-        // It has nothing to uninstall: `node_modules` and `deno.lock` are what
-        // uninstall removes, and reverting the status alone would leave the
-        // user pressing Install on something already complete.
+        // Uninstall removes `node_modules` and `deno.lock`; there are none, and
+        // reverting the status alone leaves Install pointing at nothing.
         let env = env();
         seed_extension(&env, "demo").await;
         let (status, body) = call(&env, "POST", "/api/v1/extensions/demo/uninstall", None).await;
@@ -1347,9 +1277,8 @@ mod tests {
         assert_eq!(status, 200);
         assert_eq!(body, json!({ "added": 1, "updated": 0, "removed": 0 }));
 
-        // A second rescan is a no-op: the manifest hash is unchanged, so the
-        // row is left alone rather than being reset to `downloaded` and forcing
-        // the user to press Install again on every rescan.
+        // A no-op: an unchanged manifest hash must not reset the row to
+        // `downloaded` and force Install again on every rescan.
         let (_, body) = call(&env, "POST", "/api/v1/extensions/rescan", None).await;
         assert_eq!(body, json!({ "added": 0, "updated": 0, "removed": 0 }));
 
@@ -1373,8 +1302,6 @@ mod tests {
 
     #[tokio::test]
     async fn rescan_skips_the_installers_staging_directories() {
-        // `demo.new` is a swap in progress and `demo.old` its predecessor.
-        // Registering either creates a row for an id that is about to vanish.
         let env = env();
         for name in ["demo.new", "demo.old"] {
             let folder = env.paths.extensions_dir().join(name);
@@ -1409,8 +1336,6 @@ mod tests {
 
     #[tokio::test]
     async fn reindex_skips_cleanly_when_the_embed_model_is_absent() {
-        // A 500 here would look like a broken core. The requirements flow
-        // prompts for the download separately.
         let env = env();
         assert_eq!(
             call(&env, "POST", "/api/v1/extensions/reindex", None).await,
@@ -1436,75 +1361,44 @@ mod tests {
     async fn filter_answers_all_three_lists_even_with_nothing_embedded() {
         let env = env();
         seed_extension(&env, "demo").await;
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/extensions/filter",
-            Some(json!({ "vector": [0.0, 1.0], "topK": 5 })),
-        )
-        .await;
+        let (status, body) = filter_tools(&env, json!({ "vector": [0.0, 1.0], "topK": 5 })).await;
         assert_eq!(status, 200);
         assert_eq!(body["candidates"], json!([]));
         assert_eq!(body["alwaysAvailable"], json!([]));
-        assert_eq!(
-            body["nameMatched"],
-            json!([]),
-            "the client reads all three; dropping two is the F2 shape bug"
-        );
+        assert_eq!(body["nameMatched"], json!([]), "the client reads all three");
     }
 
     #[tokio::test]
     async fn an_always_available_tool_bypasses_ranking_entirely() {
         let env = env();
         seed_extension(&env, "demo").await;
-        env.ext
-            .registry()
-            .set_tool_enabled("demo", "fetch_thing", true)
-            .await
-            .unwrap();
+        enable(&env, "demo").await;
         env.ext
             .registry()
             .set_tool_always_available("demo", "fetch_thing", true)
             .await
             .unwrap();
-        let (_, body) = call(
-            &env,
-            "POST",
-            "/api/v1/extensions/filter",
-            Some(json!({ "vector": [0.0, 1.0] })),
-        )
-        .await;
+        let (_, body) = filter_tools(&env, json!({ "vector": [0.0, 1.0] })).await;
         assert_eq!(
             body["alwaysAvailable"][0]["name"], "fetch_thing",
-            "it is offered every turn, with no embedding and no candidate slot: {body}"
+            "no embedding and no candidate slot, yet offered every turn: {body}"
         );
         assert_eq!(body["candidates"], json!([]));
     }
 
     #[tokio::test]
     async fn candidates_come_back_most_similar_first() {
-        // Nothing else in this slice compares two tools, so an inverted sort
-        // is invisible: with one tool the ranking is the same in both
-        // directions, and the model is then offered the LEAST relevant tools
-        // on every turn while every other assertion passes.
+        // Nothing else here compares two tools, so an inverted sort is
+        // invisible and the model gets the LEAST relevant tools every turn.
         let env = env();
         seed_extension(&env, "demo").await;
         seed_extension(&env, "other").await;
         let mut ids = Vec::new();
         for id in ["demo", "other"] {
-            env.ext
-                .registry()
-                .set_tool_enabled(id, "fetch_thing", true)
-                .await
-                .unwrap();
-            ids.push(
-                env.ext.registry().list_tools(id).await.unwrap()[0]
-                    .id
-                    .clone(),
-            );
+            enable(&env, id).await;
+            ids.push(first_tool_id(&env, id).await);
         }
-        // Unit vectors, so cosine is the dot product: the first scores 1.0
-        // against the query and the second 0.0.
+        // Unit vectors, so cosine is the dot product: 1.0 then 0.0.
         env.ext
             .registry()
             .store_embedding(&ids[0], vec![1.0, 0.0], "h")
@@ -1516,13 +1410,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/extensions/filter",
-            Some(json!({ "vector": [1.0, 0.0] })),
-        )
-        .await;
+        let (status, body) = filter_tools(&env, json!({ "vector": [1.0, 0.0] })).await;
         assert_eq!(status, 200);
         let candidates = body["candidates"].as_array().unwrap();
         assert_eq!(candidates.len(), 2, "{body}");
@@ -1541,51 +1429,29 @@ mod tests {
         seed_extension(&env, "demo").await;
         seed_extension(&env, "other").await;
         for id in ["demo", "other"] {
-            env.ext
-                .registry()
-                .set_tool_enabled(id, "fetch_thing", true)
-                .await
-                .unwrap();
-            let tool_id = env.ext.registry().list_tools(id).await.unwrap()[0]
-                .id
-                .clone();
+            enable(&env, id).await;
+            let tool_id = first_tool_id(&env, id).await;
             env.ext
                 .registry()
                 .store_embedding(&tool_id, vec![1.0, 0.0], "h")
                 .await
                 .unwrap();
         }
-        let (_, body) = call(
-            &env,
-            "POST",
-            "/api/v1/extensions/filter",
-            Some(json!({ "vector": [1.0, 0.0], "topK": 1 })),
-        )
-        .await;
+        let (_, body) = filter_tools(&env, json!({ "vector": [1.0, 0.0], "topK": 1 })).await;
         assert_eq!(body["candidates"].as_array().unwrap().len(), 1, "{body}");
     }
 
     #[tokio::test]
     async fn a_disabled_tool_is_never_a_candidate() {
-        // The relevance filter is not a second place to decide what the model
-        // sees; a tool the user turned off must not come back with a score.
         let env = env();
         seed_extension(&env, "demo").await;
-        let tool_id = env.ext.registry().list_tools("demo").await.unwrap()[0]
-            .id
-            .clone();
+        let tool_id = first_tool_id(&env, "demo").await;
         env.ext
             .registry()
             .store_embedding(&tool_id, vec![1.0, 0.0], "h")
             .await
             .unwrap();
-        let (_, body) = call(
-            &env,
-            "POST",
-            "/api/v1/extensions/filter",
-            Some(json!({ "vector": [1.0, 0.0] })),
-        )
-        .await;
+        let (_, body) = filter_tools(&env, json!({ "vector": [1.0, 0.0] })).await;
         assert_eq!(body["candidates"], json!([]), "{body}");
     }
 
@@ -1593,9 +1459,7 @@ mod tests {
     async fn tool_schemas_projects_the_openai_shape_and_refuses_an_unknown_id() {
         let env = env();
         seed_extension(&env, "demo").await;
-        let id = env.ext.registry().list_tools("demo").await.unwrap()[0]
-            .id
-            .clone();
+        let id = first_tool_id(&env, "demo").await;
         let (status, body) = call(
             &env,
             "POST",
@@ -1620,9 +1484,8 @@ mod tests {
 
     #[tokio::test]
     async fn tool_schemas_enforces_the_id_cap_the_generated_type_dropped() {
-        // typify drops array cardinality (D-083), so `.max(512)` compiles into
-        // nothing and the cap is restated at the route. Without it a caller can
-        // make the core do unbounded per-id lookups on one request.
+        // Without the restated cap a caller makes the core do unbounded per-id
+        // lookups on one request.
         let env = env();
         let ids: Vec<String> = (0..513).map(|n| format!("demo::t{n}")).collect();
         let (status, body) = call(
@@ -1634,8 +1497,7 @@ mod tests {
         .await;
         assert_eq!(status, 400);
         assert_eq!(body["error"]["code"], "validation_error");
-        // And 512 exactly is accepted, so the cap is a bound rather than an
-        // off-by-one that refuses the documented maximum.
+        // 512 exactly is accepted, so the cap is not an off-by-one.
         let ids: Vec<String> = (0..512).map(|n| format!("demo::t{n}")).collect();
         let (status, body) = call(
             &env,
@@ -1651,9 +1513,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_download_needs_a_slug_and_an_empty_one_does_not_count() {
-        // D-043: `""` is falsy on the oracle, so it is ABSENT rather than a
-        // slug that happens to be empty, which would resolve to the extensions
-        // directory itself.
+        // `""` is ABSENT, not a slug that resolves to the extensions directory.
         let env = env();
         for body in [
             json!({ "source": "local", "path": "/tmp/x" }),
@@ -1689,8 +1549,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_seeded_id_is_refused_at_the_route_rather_than_inside_the_job() {
-        // Refused here as well as in the job, so the user gets a 400 instead of
-        // a job id followed by a failure frame nothing is showing yet.
         let env = env();
         let (status, body) = call(
             &env,
@@ -1725,8 +1583,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_extension_cannot_be_updated() {
-        // There is no upstream to update from, and falling through to an npm
-        // lookup would query a package that does not exist.
         let env = env();
         seed_extension(&env, "demo").await;
         let (status, body) = call(
@@ -1803,9 +1659,8 @@ mod tests {
 
     #[tokio::test]
     async fn builtin_install_queues_while_the_runtime_is_missing() {
-        // Queued is not a failure: the user pressed a button, and the `deno`
-        // download is a separate consent-gated step. Reporting an error would
-        // read as "the built-in is broken".
+        // Queued is not a failure: the `deno` download is a separate
+        // consent-gated step.
         let env = env();
         seed_extension(&env, "loca-extension-builtin").await;
         env.ext
@@ -1863,11 +1718,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_core_with_no_worker_pool_refuses_a_tool_call_rather_than_hanging() {
-        // The pool is an optional seam, and every OTHER absent seam degrades to
-        // an empty answer. This one must not: a call that arrives here means
-        // the catalog offered a tool this core cannot run, and answering
-        // `server_unavailable` is what turns that into something a user sees
-        // instead of a turn that waits out the call budget.
+        // Every OTHER absent seam degrades to an empty answer. This one must
+        // not, or the turn waits out the whole call budget in silence.
         let env = env();
         let (events, _events_rx) = tokio::sync::mpsc::unbounded_channel();
         let err = env
@@ -1894,9 +1746,8 @@ mod tests {
 
     #[test]
     fn the_handle_validates_tool_arguments_against_the_authors_schema() {
-        // The delegation, not the validator: `args.rs` has its own tests and
-        // they would all pass against a handle that never called it. The cache
-        // lives here so a call whose arguments are wrong costs no process.
+        // The delegation, not the validator: `args.rs` has its own tests, and
+        // they all pass against a handle that never calls it.
         let env = env();
         let mut tool = crate::contract::api::Tool {
             always_available: false,
@@ -1944,7 +1795,6 @@ mod tests {
 
     #[test]
     fn a_junk_page_size_falls_back_rather_than_failing_the_request() {
-        // `Number(v)` on the oracle, so a non-finite result is the default.
         assert_eq!(num_query(None, 50), 50);
         assert_eq!(num_query(Some(""), 50), 50);
         assert_eq!(num_query(Some("abc"), 50), 50);

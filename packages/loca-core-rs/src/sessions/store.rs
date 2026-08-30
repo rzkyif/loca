@@ -6,11 +6,9 @@
 //! attachment bytes live beside it under `attachments/` (written by the upload
 //! route, recorded here). Nothing here touches SQLite, deliberately.
 //!
-//! A read-modify-write of one `session.json` spans an await, so two concurrent
-//! callers could interleave and lose an update. A per-session lock serializes
-//! every mutation on a given id. `files::write_atomic` handles the other half
-//! (no two writers ever share a temp file); this handles the lost update above
-//! it, which is what that function's doc comment says the session store owns.
+//! A read-modify-write of one `session.json` spans an await, so a per-session
+//! lock serializes every mutation on a given id. `files::write_atomic` handles
+//! the other half (no two writers share a temp file).
 //!
 //! Owner scoping surfaces as `session_not_found`, never `forbidden`, so probing
 //! cannot tell "not yours" from "does not exist".
@@ -206,11 +204,10 @@ impl SessionsStore {
 
     /// Drop every temporary session this client owns except `keep_id`.
     ///
-    /// A client has at most one reachable temporary session, since they are
-    /// never listed and there is no way back to an older one, so any other one
-    /// it owns was orphaned by navigating away without a clean delete. Calling
-    /// this on each creation and navigation reclaims the memory, and any on-disk
-    /// attachment bytes, instead of waiting for a restart.
+    /// A client has at most one reachable temporary session, so any other it owns
+    /// was orphaned by navigating away without a clean delete. Called on each
+    /// creation and navigation, so the memory and any attachment bytes are
+    /// reclaimed rather than waiting for a restart.
     pub async fn sweep_client_temporary(&self, owner_client_id: &str, keep_id: Option<&str>) {
         let stale: Vec<String> = self
             .ephemeral_mut()
@@ -255,13 +252,10 @@ impl SessionsStore {
     /// Insert directly after `after_id` in chronological order, so a regenerated
     /// mid-history turn lands in its slot instead of at the tail.
     ///
-    /// `None`, or an id no longer present, appends. A tail insert (appending, or
-    /// inserting after the last message, which is the streaming-finalize path
-    /// whose anchor is the tail user message) shifts nothing, so it assigns only
-    /// the new message's ord and skips the renumber. A true mid-history splice
-    /// shifts everything after it, so it renumbers the whole document to keep
-    /// ord equal to the array index. Nothing outside this store depends on
-    /// specific ord values, only on their relative order.
+    /// `None`, or an id no longer present, appends. A tail insert shifts nothing,
+    /// so it assigns only the new message's ord. A true mid-history splice
+    /// renumbers the whole document to keep ord equal to the array index; nothing
+    /// outside this store depends on specific ord values, only their order.
     pub async fn insert_message_after(
         &self,
         session_id: &str,
@@ -335,10 +329,9 @@ impl SessionsStore {
     ///
     /// The validation is the merged message parsing as a `contract::api::Message`
     /// of its own role. That type is per-role strict with `deny_unknown_fields`,
-    /// so it rejects an assistant-only field on a user message at exactly the
-    /// strictness `messagePatchSchemaByRole` had, without any of it being
-    /// restated here. A `role` key is refused before the merge, because merging
-    /// one would let a patch re-role a message.
+    /// so it rejects an assistant-only field on a user message without any of it
+    /// being restated here. A `role` key is refused before the merge, because
+    /// merging one would let a patch re-role a message.
     ///
     /// `id`, `role` and `ord` are pinned from the stored message afterwards: a
     /// content patch can never re-key, re-role or reorder.
@@ -487,11 +480,10 @@ impl SessionsStore {
 
     /// Remove any session directory with no `session.json`.
     ///
-    /// The only way one exists is a temporary session whose attachments were
-    /// written to disk by the upload route while its document lived only in
-    /// memory, and was then lost to an unclean shutdown. A persistent session
-    /// always writes `session.json` at creation, before any attachment, so this
-    /// never touches a real one. Run once at boot.
+    /// The only way one exists is a temporary session whose attachments reached
+    /// disk while its document lived in memory, then lost to an unclean
+    /// shutdown. A persistent session writes `session.json` at creation, before
+    /// any attachment, so this never touches a real one. Run once at boot.
     pub async fn sweep_orphaned_dirs(&self) {
         for name in self.session_dir_names().await {
             // Existence, not parseability: a corrupt but present `session.json`
@@ -531,11 +523,9 @@ impl SessionsStore {
     /// statted present but unreadable a moment later is a race with a concurrent
     /// delete rather than something to raise into a listing.
     async fn read_doc(&self, session_id: &str) -> Option<SessionDoc> {
-        // A snapshot, so a temporary session reads exactly like a persistent
-        // one: every read hands back a private copy and the map changes only
-        // through a write. Handing out the live document would let an in-place
-        // mutation, harmless on the disk path's throwaway parse, corrupt the
-        // canonical state.
+        // A snapshot, so a temporary session reads exactly like a persistent one.
+        // Handing out the live document would let an in-place mutation, harmless
+        // on the disk path's throwaway parse, corrupt the canonical state.
         if let Some(doc) = self.ephemeral_mut().get(session_id) {
             return Some(doc.clone());
         }
@@ -597,13 +587,10 @@ impl SessionsStore {
         };
         let path = self.meta_file(&doc.id);
         if let Err(err) = files::write_atomic(path.clone(), bytes).await {
-            // The write failed, so any previous meta is now stale, and a reader
-            // cannot tell that it drifted: `list` would serve the old title,
-            // count and summary indefinitely. Deleting it makes `list` fall back
-            // to the full document and re-derive. (A crash strictly between the
-            // document and meta writes leaves a stale meta until the next
-            // mutation rewrites it. That window self-heals and is not worth a
-            // cross-file journal to close.)
+            // Any previous meta is now stale and a reader cannot tell, so it is
+            // deleted and `list` falls back to the full document. A crash
+            // between the two writes leaves a stale meta until the next
+            // mutation, a window that self-heals.
             let _ = remove_file(path).await;
             tracing::warn!(
                 target: "loca::sessions-store",
@@ -637,10 +624,9 @@ impl SessionsStore {
     }
 
     fn ephemeral_mut(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionDoc>> {
-        // Poisoning would mean a panic while holding this lock, and every
-        // section under it is a map get, insert or remove. Recovering keeps the
-        // store usable rather than turning one panic into a permanently dead
-        // session store.
+        // Every section under this lock is a map get, insert or remove, so
+        // recovering from poisoning keeps the store usable rather than turning
+        // one panic into a permanently dead session store.
         self.inner
             .ephemeral
             .lock()
@@ -667,11 +653,10 @@ impl SessionsStore {
 
 /// Held for one mutation, and reaped on release.
 ///
-/// The table entry is dropped once nothing holds it, so the map does not grow by
-/// one entry per session id ever touched. The check runs while the table lock is
-/// held and after the guard has been released, which is what makes it safe: a
-/// waiter still holds its own `Arc`, so the count cannot be one while anyone is
-/// queued, and no one can clone the entry while the table is locked.
+/// The entry is dropped once nothing holds it, so the map does not grow by one
+/// per session id ever touched. The check runs under the table lock and after
+/// the guard is released: a waiter holds its own `Arc`, so the count cannot be
+/// one while anyone is queued, and nothing can clone the entry meanwhile.
 struct SessionLock {
     locks: LockTable,
     id: String,
@@ -697,9 +682,8 @@ impl Drop for SessionLock {
 }
 
 /// Fill in the two fields the client may omit: a fresh id and the current time.
-/// An empty string and a zero timestamp count as omitted, matching the
-/// TypeScript's `message.id || newMessageId()`. The ord is assigned by the
-/// caller, which is the only one that knows whether this is a tail insert.
+/// An empty string and a zero timestamp count as omitted. The ord is assigned by
+/// the caller, the only one that knows whether this is a tail insert.
 fn fill_in(mut message: StoredMessage) -> StoredMessage {
     if message.id().is_none_or(str::is_empty) {
         message.set_id(new_id());
@@ -726,9 +710,8 @@ fn attachment_paths(doc: &SessionDoc) -> Vec<PathBuf> {
 
 // --- filesystem ---------------------------------------------------------------
 //
-// `std::fs` on the blocking pool rather than `tokio::fs`, matching `files` (F4):
-// `tokio::fs` is a `spawn_blocking` per call anyway, and the crate does not carry
-// the feature. One hop per logical operation.
+// `std::fs` on the blocking pool rather than `tokio::fs`, matching `files`:
+// `tokio::fs` is a `spawn_blocking` per call anyway. One hop per operation.
 
 async fn blocking<T, F>(f: F) -> Result<T>
 where

@@ -2,7 +2,7 @@
   import type { PresetOption, SettingField, SttCatalogModel } from "@loca/shared";
   import { primaryFileSpec, STT_PRIMARY_ROLE } from "@loca/shared";
   import { settingsState } from "../../../state";
-  import { sttModelsState } from "../../../state/stt-models.svelte";
+  import { sttModelsState } from "$stores/speech-models.svelte";
   import { cores } from "$lib/core";
   import FieldCard from "./FieldCard.svelte";
   import SttPresetFieldView from "@loca/shared/ui/components/settings/SttPresetFieldView.svelte";

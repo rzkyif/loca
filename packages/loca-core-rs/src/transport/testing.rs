@@ -1,13 +1,11 @@
 //! Doubles for the seams the transport is written against, so a transport test
 //! needs no pairing service, no keychain and no listener.
 //!
-//! Also compiled under the `in-memory` feature, so the conformance harness and
-//! other packages' tests can build a working [`AppContext`] without repeating
-//! this.
+//! Also compiled under the `in-memory` feature, so other packages' tests can
+//! build a working [`AppContext`] without repeating this.
 
-// Test support: a failure to build a fixture is a broken test, and panicking
-// says so at the line that caused it rather than propagating a `Result` through
-// every helper. Never compiled into a production build.
+// Test support: a fixture that cannot be built is a broken test, and panicking
+// says so at the line that caused it. Never in a production build.
 #![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashMap;
@@ -24,10 +22,6 @@ use super::frame_bus::FrameBus;
 use super::state::{AppContext, ClientAuth, ClientIdentity, FixedStatus, StatusProvider};
 
 /// A [`ClientAuth`] backed by a map, with a fixed admin token.
-///
-/// It answers the same questions the real service answers and nothing else,
-/// which is the whole value of the seam: none of the transport's behaviour
-/// depends on how a token became a client.
 pub struct StubAuth {
     clients: Mutex<HashMap<String, ClientIdentity>>,
     tickets: Mutex<HashMap<String, String>>,
@@ -101,8 +95,7 @@ impl ClientAuth for StubAuth {
     }
 
     fn consume_ws_ticket(&self, ticket: &str) -> Option<String> {
-        // Single use, exactly like the real one: gone whether or not it was
-        // still valid.
+        // Single use: gone whether or not it was still valid.
         lock(&self.tickets).remove(ticket)
     }
 
@@ -133,26 +126,18 @@ pub fn context() -> AppContext {
 }
 
 /// A `Core` over [`context`], with a real `Auth` sharing that context's
-/// database and paths.
-///
-/// The pairing slice needs the concrete handle, so a test that builds a router
-/// cannot use the `StubAuth` double alone. Everything else about the context is
-/// unchanged, including the in-memory database, so this stays a unit-test
-/// fixture rather than a boot.
+/// database and paths: the pairing slice needs the concrete handle, which the
+/// `StubAuth` double cannot supply.
 pub fn core() -> super::Core {
     core_with(Arc::new(StubAuth::new()))
 }
 
-/// The same, over an auth double the caller configured.
-///
-/// A slice test that wants to reach an authenticated route through the fully
-/// assembled router needs this rather than [`core`], whose `StubAuth` knows no
-/// clients and answers every bearer with 401.
+/// The same, over an auth double the caller configured. Needed to reach an
+/// authenticated route: [`core`]'s `StubAuth` knows no clients.
 pub fn core_with(auth: Arc<dyn ClientAuth>) -> super::Core {
     let ctx = context_with(auth);
-    // The concrete `Auth` alongside the double: the pairing slice needs the
-    // real handle and a trait object cannot be narrowed back. It shares this
-    // context's database and paths, so this stays a unit-test fixture.
+    // The concrete `Auth` alongside the double, sharing this context's
+    // database and paths: a trait object cannot be narrowed back.
     let real = Arc::new(crate::auth::Auth::new(
         ctx.db.clone(),
         Arc::clone(&ctx.paths),
@@ -169,9 +154,8 @@ pub fn context_with(auth: Arc<dyn ClientAuth>) -> AppContext {
     let db = Db::open_in_memory().unwrap_or_else(|e| panic!("in-memory db: {e}"));
     let frames = Arc::new(FrameBus::new());
     AppContext {
-        // The desktop shape, which is what every fixture here assumes: these
-        // helpers build a core with a listener. A test that needs the embedded
-        // answers overrides this field rather than booting.
+        // The desktop shape. A test needing the embedded answers overrides
+        // this field rather than booting.
         capabilities: super::health::Capabilities::detect(crate::boot::Frontend::Service),
         config: Arc::new(Config {
             channel: Channel::Stable,

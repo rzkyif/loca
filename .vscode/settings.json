@@ -1,8 +1,7 @@
 {
   "deno.enablePaths": [
     "packages/loca-shared",
-    "packages/loca-core-engine",
-    "packages/loca-core",
+    "packages/loca-core-rs",
     "packages/loca-extension-builtin",
     "packages/loca-extension-samples",
     "packages/loca-model-catalog",

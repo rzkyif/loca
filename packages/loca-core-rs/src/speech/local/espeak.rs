@@ -1,32 +1,17 @@
-//! The bundled espeak-ng phonemizer data, and getting it onto disk.
+//! The bundled espeak-ng phonemizer data, and getting it onto disk. kokoro,
+//! kitten, vits and matcha all phonemize through espeak-ng, and multilingual
+//! Kokoro terminates the process without it, so this is a required runtime
+//! resource.
 //!
-//! kokoro, kitten, vits and matcha all phonemize through espeak-ng, and
-//! multilingual Kokoro does not merely fail without it: it terminates the
-//! process. So this is a required runtime resource, not an optional one.
+//! Embedded rather than downloaded: fetching a required resource after the user
+//! enabled speech would be a background network call, and at 8.6 MB compressed
+//! embedding is also the cheap option and the only one that behaves the same on
+//! desktop and mobile. Only linked in under `local-speech`.
 //!
-//! # Why it is embedded rather than downloaded
-//!
-//! It used to ride inside the downloaded speech binary's archive. That archive
-//! is gone with the binary, and the three replacements are: embed it in the core
-//! binary, plant it with the installer, or download it. **Downloading is
-//! refused.** The user has already consented to speech by enabling it; fetching
-//! a required resource afterwards would be a background network call, which the
-//! repo's one absolute rule forbids. Measured at 8.6 MB compressed against
-//! 18 MB unpacked across 355 files, embedding is the cheap option, and it is the
-//! only one that behaves identically on desktop and on mobile.
-//!
-//! The archive is only linked in under `local-speech`, so a default build pays
-//! nothing for it.
-//!
-//! # Extraction is idempotent and self-healing
-//!
-//! The tree is written once to `~/.loca/<channel>/espeak-ng-data` and a stamp
-//! file records the sha256 of the archive it came from. A stamp that matches
-//! means the tree is current and extraction is skipped; a stamp that is missing
-//! or different means the data was never written, was written by an older build,
-//! or was partly deleted, and the tree is rewritten. That makes a half-extracted
-//! directory (a crash mid-write, a user clearing caches) recover on the next
-//! synthesis rather than becoming a permanently broken engine.
+//! Extraction is idempotent and self-healing: the tree is written once to
+//! `~/.loca/<channel>/espeak-ng-data` with a stamp recording the archive's
+//! sha256, and a missing or different stamp rewrites it, so a half-extracted
+//! directory recovers on the next synthesis.
 
 use std::path::{Path, PathBuf};
 
@@ -37,14 +22,10 @@ use crate::error::{internal, Result};
 /// The stamp that records which archive the tree on disk came from.
 const STAMP: &str = ".loca-espeak-sha256";
 
-/// The files sherpa itself checks before loading a phonemizer, and therefore the
-/// ones whose absence must invalidate the tree.
-///
-/// Deliberately the SAME four sherpa validates (its "does not exist. Please
-/// check --kokoro-data-dir" message family), rather than a token file of our
-/// own choosing: checking fewer means handing sherpa a tree it will reject,
-/// which surfaces to the user as "the voice model could not be loaded" with a
-/// perfectly good model selected.
+/// The files sherpa itself checks before loading a phonemizer, so their absence
+/// must invalidate the tree. Deliberately the SAME four rather than a token
+/// file of our own: checking fewer means handing sherpa a tree it will reject,
+/// which surfaces as "the voice model could not be loaded".
 const REQUIRED_FILES: &[&str] = &["phondata", "phontab", "phonindex", "intonations"];
 
 /// Where the phonemizer data lives, under the channel root so the storage
@@ -54,12 +35,9 @@ pub fn data_dir(root: &Path) -> PathBuf {
 }
 
 /// Ensure `data_dir(root)` holds the tree packed in `archive`, and answer where
-/// it is.
-///
-/// `archive` is a gzipped tar whose entries are rooted at `espeak-ng-data/`.
-/// Extraction goes to a sibling temporary directory and is renamed into place,
-/// so a reader never sees a half-written tree, and the stamp is written last so
-/// a crash between rename and stamp costs one redundant extraction rather than
+/// it is. `archive` is a gzipped tar rooted at `espeak-ng-data/`. Extraction
+/// goes to a sibling temporary directory and is renamed into place, and the
+/// stamp is written last, so a crash costs one redundant extraction rather than
 /// leaving a tree that claims to be complete.
 pub fn ensure(root: &Path, archive: &[u8]) -> Result<PathBuf> {
     let dir = data_dir(root);
@@ -78,9 +56,8 @@ pub fn ensure(root: &Path, archive: &[u8]) -> Result<PathBuf> {
 
     unpack(archive, &staging)?;
 
-    // The archive is rooted at espeak-ng-data/, so the tree we want is one level
-    // in. An archive that ever ships flat would otherwise produce a directory of
-    // directories and espeak would find no dictionaries.
+    // The archive is rooted at espeak-ng-data/, so the tree we want is one
+    // level in.
     let unpacked = staging.join("espeak-ng-data");
     let source = if unpacked.is_dir() {
         unpacked
@@ -109,12 +86,8 @@ pub fn ensure(root: &Path, archive: &[u8]) -> Result<PathBuf> {
 }
 
 /// True when the tree on disk came from this exact archive AND still has its
-/// dictionaries.
-///
-/// The content check is what makes this self-healing rather than merely
-/// idempotent: a stamp alone would call a tree current after someone deleted its
-/// contents, and the next synthesis would then fail on a model the user
-/// correctly selected.
+/// dictionaries. The content check is what makes this self-healing: a stamp
+/// alone would call a tree current after someone deleted its contents.
 fn is_current(dir: &Path, digest: &str) -> bool {
     if REQUIRED_FILES.iter().any(|name| !dir.join(name).is_file()) {
         return false;
@@ -125,9 +98,8 @@ fn is_current(dir: &Path, digest: &str) -> bool {
 fn unpack(archive: &[u8], into: &Path) -> Result<()> {
     let decoder = flate2::read::GzDecoder::new(archive);
     let mut tar = tar::Archive::new(decoder);
-    // `unpack_in` refuses absolute paths and `..` traversal, which is the
-    // zip-slip class for tar. The archive is ours and pinned by sha256, so this
-    // is defence in depth rather than the primary control.
+    // `unpack_in` refuses absolute paths and `..` traversal. The archive is
+    // ours and pinned by sha256, so this is defence in depth.
     for entry in tar
         .entries()
         .map_err(|err| internal(format!("could not read the phonemizer archive: {err}")))?
@@ -198,8 +170,7 @@ mod tests {
         // dictionaries and the model load would take the process down.
         assert!(!dir.join("espeak-ng-data").exists());
         // The staging directory does not survive. Derived from `data_dir`
-        // rather than spelled out: the literal used to read "espeak-ng", which
-        // is not the name this module builds, so the assertion could not fail.
+        // rather than spelled out, so a wrong literal cannot make it vacuous.
         assert!(!data_dir(root.path()).with_extension("unpacking").exists());
     }
 
@@ -218,21 +189,13 @@ mod tests {
     }
 
     /// Every file sherpa validates must invalidate the tree when it goes
-    /// missing, not just the one this module happened to name first.
-    ///
-    /// Without this, narrowing `REQUIRED_FILES` back to `["phondata"]` passes
-    /// the whole espeak suite: the production archive contains all four, so the
-    /// weaker check is indistinguishable until a tree is partly deleted, and
-    /// then the user gets "the voice model could not be loaded" on a model they
-    /// correctly selected.
+    /// missing, not just the first one named. A narrower `REQUIRED_FILES` is
+    /// indistinguishable until a tree is partly deleted.
     #[test]
     fn removing_any_file_sherpa_checks_invalidates_the_tree() {
-        // Spelled out, NOT read from `REQUIRED_FILES`. A test written in terms
-        // of the constant it guards scales with the mutation: narrowing the
-        // constant to `["phondata"]` shrinks this loop to one iteration and the
-        // test keeps passing, which is exactly what happened on the first
-        // attempt at it. These four are what sherpa validates, so they are
-        // written here independently of what this module currently claims.
+        // Spelled out, NOT read from `REQUIRED_FILES`: a loop over the
+        // constant it guards shrinks with it and keeps passing. These four are
+        // what sherpa validates.
         const SHERPA_CHECKS: &[&str] = &["phondata", "phontab", "phonindex", "intonations"];
         let bytes = archive(b"one");
         for missing in SHERPA_CHECKS {
@@ -273,8 +236,8 @@ mod tests {
 
     #[test]
     fn a_gutted_tree_is_rebuilt_rather_than_trusted() {
-        // The self-healing property. A stamp on its own would say this tree is
-        // current, and the next synthesis would terminate the process.
+        // Self-healing: a stamp on its own would call this tree current, and
+        // the next synthesis would terminate the process.
         let root = tempfile::tempdir().unwrap();
         let bytes = archive(b"one");
         let dir = ensure(root.path(), &bytes).unwrap();
@@ -297,13 +260,9 @@ mod tests {
         assert!(!staging.exists());
     }
 
-    /// A tar entry whose name escapes the extraction directory.
-    ///
-    /// Hand-built, because the `tar` crate's `append_data` refuses to WRITE a
-    /// path containing `..`, which means a malicious archive cannot be produced
-    /// through the builder API at all. That refusal is a property of the writer
-    /// and says nothing about the reader, so the 512-byte ustar header is laid
-    /// out here to get a genuinely hostile input in front of `unpack_in`.
+    /// A tar entry whose name escapes the extraction directory. Hand-built,
+    /// because `tar`'s `append_data` refuses to WRITE a path containing `..`,
+    /// and that refusal is a property of the writer rather than the reader.
     fn escaping_archive() -> Vec<u8> {
         const NAME: &[u8] = b"../escaped";
         const BODY: &[u8] = b"bad";

@@ -1,24 +1,20 @@
 //! Secret generation and the comparisons that must not leak timing.
 //!
-//! Every value here is drawn from the platform CSPRNG, which is what
-//! `crypto.getRandomValues` gives the TypeScript. No distribution sampling is
-//! involved anywhere, so this takes `getrandom` rather than a full RNG crate.
+//! Every value here is drawn from the platform CSPRNG. No distribution sampling
+//! is involved, so this takes `getrandom` rather than a full RNG crate.
 
 use std::fmt;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
-use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::error::{internal, Result};
 
-/// A secret that must not reach a log, an error message, or a panic payload.
-///
-/// The `Debug` is hand-written and the inner string is wiped on drop. Reading it
-/// takes [`SecretString::expose`] or [`SecretString::into_inner`], so every site
-/// that puts a secret somewhere it can be seen is one grep away.
+/// A secret that must not reach a log, an error message, or a panic payload:
+/// hand-written `Debug`, wiped on drop, and read only through
+/// [`SecretString::expose`] or [`SecretString::into_inner`].
 #[derive(Clone)]
 pub struct SecretString(Zeroizing<String>);
 
@@ -34,8 +30,7 @@ impl SecretString {
     /// Take the plaintext, for the one place that has to: serializing the token
     /// into the pairing response the Client stores.
     pub fn into_inner(self) -> String {
-        // `Zeroizing` has no `into_inner`, by design. Clone the contents out and
-        // let the wrapper wipe the original as it drops.
+        // `Zeroizing` has no `into_inner`: clone out and let it wipe.
         self.0.as_str().to_owned()
     }
 }
@@ -46,34 +41,24 @@ impl fmt::Debug for SecretString {
     }
 }
 
-/// Fill `dst` from the platform CSPRNG.
-///
-/// A failure here means the OS could not supply entropy, which is not something
-/// to paper over with a weaker source: it becomes an error and the caller fails
-/// the request.
+/// Fill `dst` from the platform CSPRNG. A failure means the OS could not supply
+/// entropy, which becomes an error rather than a weaker source.
 pub(crate) fn fill_random(dst: &mut [u8]) -> Result<()> {
     getrandom::fill(dst).map_err(|err| internal(format!("failed to read from the CSPRNG: {err}")))
 }
 
-/// A 32-byte bearer token or WS ticket, base64url without padding.
-///
-/// Unpadded because that is what the Client already holds: `@std/encoding`'s
-/// `encodeBase64Url` strips padding, so a paired token is 43 characters.
+/// A 32-byte bearer token or WS ticket, base64url without padding, which is
+/// what every already-paired client holds: 43 characters.
 pub(crate) fn random_token() -> Result<SecretString> {
     let mut bytes = Zeroizing::new([0u8; 32]);
     fill_random(bytes.as_mut_slice())?;
     Ok(SecretString::new(URL_SAFE_NO_PAD.encode(bytes.as_slice())))
 }
 
-/// Six decimal digits, drawn over 0 to 999999 and left-padded.
-///
-/// The modulo over a 32-bit draw is very slightly biased, and that is inherited
-/// from the TypeScript deliberately: both implementations must agree during any
-/// overlap, and the derivation is observable through the codes users read out.
-/// The bias is roughly one part in 4000 across a 10^6 space, which is not what
-/// makes this code safe. What makes it safe is the budget around it: five failed
-/// confirmations poison it, the per-IP limiter caps starts at 20 per 10 minutes,
-/// and it expires in 10 minutes by default.
+/// Six decimal digits, drawn over 0 to 999999 and left-padded. The modulo over a
+/// 32-bit draw is biased by roughly one part in 4000, which is not what makes
+/// this safe: the budget around it is (five failed confirmations poison a code,
+/// 20 starts per IP per 10 minutes, 10-minute expiry).
 pub(crate) fn random_numeric_code() -> Result<String> {
     let mut buf = [0u8; 4];
     fill_random(&mut buf)?;
@@ -89,20 +74,15 @@ pub(crate) fn random_pake_id() -> Result<String> {
     Ok(hex::encode(bytes))
 }
 
-/// Lowercase hex SHA-256 of a string.
-///
-/// Applied to the **UTF-8 bytes of the base64url token string**, not to the 32
-/// raw bytes behind it. Hashing the raw bytes instead would invalidate every
-/// already-paired client, with no diagnosis beyond "nothing authenticates".
+/// Lowercase hex SHA-256 of a string. Applied to the UTF-8 bytes of the
+/// base64url token string, not the 32 raw bytes behind it: hashing those would
+/// invalidate every already-paired client.
 pub(crate) fn sha256_hex(input: &str) -> String {
-    hex::encode(Sha256::digest(input.as_bytes()))
+    crate::files::sha256_hex(input.as_bytes())
 }
 
-/// Constant-time string comparison.
-///
-/// The length check short-circuits, which leaks the length. That matches the
-/// TypeScript and costs nothing here: the only caller compares against an admin
-/// token of a fixed 32 hex characters.
+/// Constant-time string comparison. The length check short-circuits, which
+/// costs nothing here: the only caller compares a fixed-width admin token.
 pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {
@@ -160,9 +140,8 @@ mod tests {
             .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
     }
 
-    /// The digest is over the token string's bytes. This vector is the SHA-256
-    /// of the ASCII text, and it is what the `clients.token_hash` column holds
-    /// for an already-paired client.
+    /// The SHA-256 of the ASCII token text, which is what
+    /// `clients.token_hash` holds for an already-paired client.
     #[test]
     fn sha256_hex_matches_the_digest_of_the_string_bytes() {
         assert_eq!(

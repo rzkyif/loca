@@ -1,27 +1,11 @@
-//! Unpacking a downloaded binary archive.
+//! Unpacking a downloaded binary archive. One format, `.zip`, because every
+//! `deno` release asset is a `.zip` on every triple.
 //!
-//! One format, `.zip`, because every `deno` release asset is a `.zip` on every
-//! triple. The tar/gzip path, the SONAME symlink chain and the companion
-//! libraries-only extractor are dropped with the rest of the sidecar matrix
-//! (plan section 4.2); nothing a `deno`-only core can reach used them.
-//!
-//! # The basename rule IS the zip-slip defence
-//!
-//! The executable is located **by basename, wherever it sits in the archive**,
-//! and it is written to `<target_dir>/<exe_name>`: a path this code builds, never
-//! one the archive supplies. An entry called `../../../etc/cron.d/evil`
-//! therefore has basename `evil`, does not match the executable name, and is
-//! ignored; and even a matching entry cannot steer the destination, because the
-//! destination is not read from the entry at all.
-//!
-//! That is a complete defence against a malicious archive writing outside the
-//! target directory, and **nothing in the TypeScript says so**. It was arrived
-//! at as a side effect of wanting a lenient archive layout (the release asset
-//! nests the executable under `bin/` on some triples and at the root on others),
-//! so a later reader looking at it sees only the leniency and can "simplify" it
-//! into `target_dir.join(entry.name())`, which is the hole. It is preserved
-//! deliberately, it is stated here, and
-//! `a_zip_entry_cannot_write_outside_the_target_dir` fails if it is undone.
+//! The basename rule IS the zip-slip defence: the executable is located by
+//! basename wherever it sits, and written to `<target_dir>/<exe_name>`, a path
+//! this code builds, never one the archive supplies. Do not "simplify" it into
+//! `target_dir.join(entry.name())`; `a_zip_entry_cannot_write_outside_the_target_dir`
+//! fails if that happens.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -29,10 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, ErrorCode, Result};
 
 /// Unpack the executable named `exe_name` out of the `.zip` at `archive_path`
-/// into `target_dir`.
-///
-/// Extra entries (READMEs, licenses, completions) are ignored rather than
-/// refused: the release asset's layout is not ours and varies by triple.
+/// into `target_dir`. Extra entries are ignored: the asset layout varies by triple.
 pub fn extract_zip(archive_path: &Path, target_dir: &Path, exe_name: &str) -> Result<PathBuf> {
     std::fs::create_dir_all(target_dir).map_err(|err| {
         AppError::new(
@@ -57,10 +38,8 @@ pub fn extract_zip(archive_path: &Path, target_dir: &Path, exe_name: &str) -> Re
         if entry.is_dir() {
             continue;
         }
-        // The basename, from the archive's own name, is used ONLY to decide
-        // whether this is the entry we want. It never becomes part of a path.
-        // See the module docs: this is the containment control, not a
-        // convenience.
+        // The basename decides only whether this is the wanted entry; it never
+        // becomes part of a path.
         let name = entry.name().to_string();
         let base = name.rsplit(['/', '\\']).next().unwrap_or(&name);
         if base != exe_name {
@@ -82,12 +61,8 @@ pub fn extract_zip(archive_path: &Path, target_dir: &Path, exe_name: &str) -> Re
     ))
 }
 
-/// Write the executable and make it runnable.
-///
-/// The mode is set on unix only, and it is set explicitly rather than inherited
-/// from the zip entry: an archive that ships mode 0644 for its own executable
-/// would otherwise install a binary that cannot be spawned, and the failure
-/// would surface much later as a confusing permission error at boot.
+/// Write the executable and make it runnable. The mode is set explicitly (unix)
+/// rather than inherited, so an archive shipping 0644 still installs a spawnable binary.
 fn write_executable(destination: &Path, bytes: &[u8]) -> Result<()> {
     std::fs::write(destination, bytes).map_err(|err| {
         AppError::new(
@@ -117,11 +92,6 @@ mod tests {
 
     use super::*;
 
-    /// Build a zip whose entries are `(name, contents)`.
-    ///
-    /// `FileOptions` with a large-file flag off and stored-or-deflated left to
-    /// the default, because what these tests exercise is entry NAMING, not
-    /// compression.
     fn zip_with(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("asset.zip");
@@ -137,18 +107,22 @@ mod tests {
         (dir, path)
     }
 
+    /// Extract `deno` from a zip with `entries` into a fresh target dir.
+    fn extract(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, Result<PathBuf>) {
+        let (_dir, archive) = zip_with(entries);
+        let target = tempfile::tempdir().unwrap();
+        let result = extract_zip(&archive, target.path(), "deno");
+        (target, result)
+    }
+
     #[test]
     fn the_executable_is_found_wherever_it_sits_and_extras_are_ignored() {
-        // The leniency the basename rule exists for: the release asset nests the
-        // executable on some triples and not others.
-        let (_dir, archive) = zip_with(&[
+        let (target, written) = extract(&[
             ("README.md", b"ignore me"),
             ("deno-x86_64/bin/deno", b"EXE-BYTES"),
             ("LICENSE", b"ignore me too"),
         ]);
-        let target = tempfile::tempdir().unwrap();
-
-        let written = extract_zip(&archive, target.path(), "deno").unwrap();
+        let written = written.unwrap();
 
         assert_eq!(written, target.path().join("deno"));
         assert_eq!(std::fs::read(&written).unwrap(), b"EXE-BYTES");
@@ -157,10 +131,6 @@ mod tests {
 
     #[test]
     fn a_zip_entry_cannot_write_outside_the_target_dir() {
-        // The property the TypeScript never states. Two shapes: a traversing
-        // path whose basename does not match (ignored outright), and one whose
-        // basename DOES match, which must still land at the path this code
-        // built rather than the one the archive asked for.
         let (_dir, archive) = zip_with(&[
             ("../../../etc/cron.d/evil", b"PWNED"),
             ("../../../../tmp/deno", b"EXE-BYTES"),
@@ -190,10 +160,8 @@ mod tests {
 
     #[test]
     fn an_absolute_entry_path_cannot_steer_the_destination_either() {
-        let (_dir, archive) = zip_with(&[("/tmp/deno", b"EXE-BYTES")]);
-        let target = tempfile::tempdir().unwrap();
-
-        let written = extract_zip(&archive, target.path(), "deno").unwrap();
+        let (target, written) = extract(&[("/tmp/deno", b"EXE-BYTES")]);
+        let written = written.unwrap();
 
         assert_eq!(written, target.path().join("deno"));
         assert_eq!(std::fs::read(&written).unwrap(), b"EXE-BYTES");
@@ -201,23 +169,15 @@ mod tests {
 
     #[test]
     fn a_backslash_separated_entry_is_split_on_the_backslash_too() {
-        // A zip written on Windows can carry backslashes despite the spec, and
-        // splitting only on `/` would make the basename the whole path, which
-        // then never matches and the install fails with "missing deno".
-        let (_dir, archive) = zip_with(&[("deno-x86_64\\bin\\deno", b"EXE-BYTES")]);
-        let target = tempfile::tempdir().unwrap();
+        let (_target, written) = extract(&[("deno-x86_64\\bin\\deno", b"EXE-BYTES")]);
 
-        let written = extract_zip(&archive, target.path(), "deno").unwrap();
-
-        assert_eq!(std::fs::read(&written).unwrap(), b"EXE-BYTES");
+        assert_eq!(std::fs::read(written.unwrap()).unwrap(), b"EXE-BYTES");
     }
 
     #[test]
     fn an_archive_without_the_executable_is_refused() {
-        let (_dir, archive) = zip_with(&[("README.md", b"nothing useful")]);
-        let target = tempfile::tempdir().unwrap();
-
-        let err = extract_zip(&archive, target.path(), "deno").unwrap_err();
+        let (_target, err) = extract(&[("README.md", b"nothing useful")]);
+        let err = err.unwrap_err();
 
         assert_eq!(err.code, ErrorCode::ExtractFailed);
         assert!(err.message.contains("missing deno"), "{}", err.message);
@@ -226,16 +186,13 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_extracted_executable_is_runnable() {
-        // An archive that ships 0644 for its own executable would otherwise
-        // install a binary that cannot be spawned, and the failure would surface
-        // much later as a confusing permission error at boot.
         use std::os::unix::fs::PermissionsExt;
-        let (_dir, archive) = zip_with(&[("deno", b"EXE-BYTES")]);
-        let target = tempfile::tempdir().unwrap();
+        let (_target, written) = extract(&[("deno", b"EXE-BYTES")]);
 
-        let written = extract_zip(&archive, target.path(), "deno").unwrap();
-
-        let mode = std::fs::metadata(&written).unwrap().permissions().mode();
+        let mode = std::fs::metadata(written.unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o111, 0o111, "not executable: {mode:o}");
     }
 

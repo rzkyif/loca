@@ -1,10 +1,6 @@
 //! The upstream call: one streaming chat completion, normalised into deltas.
-//!
-//! [`ChatProvider`] is the seam Stage 3 swaps. Today both sides of it are
-//! [`HttpProvider`]: the local `llama-server` sidecar and an external provider
-//! are both OpenAI-compatible HTTP. After N2 lands, the local side is an
-//! in-process token loop implementing the same trait, and nothing above here
-//! changes.
+//! [`ChatProvider`] is the seam: [`HttpProvider`] serves any OpenAI-compatible
+//! endpoint, and the in-process engine implements the same trait.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -20,27 +16,22 @@ use super::types::{LlmDelta, LlmRequest, Reasoning};
 /// A completion in flight. Dropping it tears the upstream request down.
 pub type DeltaStream = BoxStream<'static, Result<LlmDelta, ProviderError>>;
 
-/// One upstream that can run a streaming chat completion.
-///
-/// Object-safe and stream-returning rather than `async fn`, which keeps it usable
-/// as a trait object without `async-trait`. Follows `ChatEngine` (D2) and
-/// `SidecarSource` (D14).
+/// One upstream that can run a streaming chat completion. Stream-returning
+/// rather than `async fn`, so it stays usable as a trait object without
+/// `async-trait`.
 pub trait ChatProvider: Send + Sync {
     fn stream(&self, req: LlmRequest) -> DeltaStream;
 }
 
-/// What went wrong upstream, before it is turned into an [`AppError`].
-///
-/// The status and the provider's own error code are only visible here, so this
-/// type is what carries them to whoever decides what they mean. The two callers
-/// decide differently, and deliberately: the utility routes let
-/// [`From<ProviderError>`] make it an `internal_error`, exactly as the
-/// TypeScript's unclassified fall-through does, while the chat path calls
-/// [`classify_provider_error`] and gets a code the client can act on.
+/// What went wrong upstream, before it is turned into an [`AppError`]. The
+/// status and the provider's own code are only visible here, and the two
+/// callers read them differently: the utility routes let
+/// [`From<ProviderError>`] answer `internal_error`, while the chat path calls
+/// [`classify_provider_error`] for a code the client can act on.
 #[derive(Clone, Debug)]
 pub struct ProviderError {
     pub kind: ProviderErrorKind,
-    /// HTTP status, when there was one. An in-process engine (N2) has none.
+    /// HTTP status, when there was one. An in-process engine has none.
     pub status: Option<u16>,
     /// The provider's own `error.code`, when it sent one.
     pub code: Option<String>,
@@ -97,22 +88,18 @@ impl std::fmt::Display for ProviderError {
 
 impl std::error::Error for ProviderError {}
 
-/// The default reading, matching what the TypeScript's error middleware does
-/// with an unclassified provider throw: 500 `internal_error`, message preserved.
-///
-/// The message is scrubbed on its way to the wire by `transport::http`, which is
-/// what makes it safe to carry an upstream body that might echo a URL.
+/// The default reading of an unclassified provider failure: 500
+/// `internal_error`, message preserved. `transport::http` scrubs it on the way
+/// to the wire, which is what makes carrying an upstream body safe.
 impl From<ProviderError> for AppError {
     fn from(err: ProviderError) -> Self {
         AppError::new(ErrorCode::InternalError, err.message)
     }
 }
 
-/// Map an upstream failure to the code the client switches on.
-///
-/// For the chat path. Structured fields first, then the message, because a
-/// provider that sets neither `status` nor `code` still says "maximum context
-/// length" in prose.
+/// Map an upstream failure to the code the client switches on. Structured
+/// fields first, then the message, because a provider that sets neither
+/// `status` nor `code` still says "maximum context length" in prose.
 pub fn classify_provider_error(err: &ProviderError) -> AppError {
     let code = err.code.as_deref();
     let classified = if err.status == Some(401) || code == Some("invalid_api_key") {
@@ -129,22 +116,16 @@ pub fn classify_provider_error(err: &ProviderError) -> AppError {
     AppError::new(classified, err.message.clone())
 }
 
-/// The message-text half of the classification. Case-insensitive, matching the
-/// `/context length|maximum context length|context window/i` the TypeScript
-/// applies.
+/// The message-text half of the classification, case-insensitive.
 fn mentions_context_window(message: &str) -> bool {
     let lower = message.to_lowercase();
     lower.contains("context length") || lower.contains("context window")
 }
 
-/// How long the client waits for ANY byte before giving up.
-///
-/// Deliberately not a total request timeout. `reqwest`'s `timeout` bounds the
-/// whole request including the streamed body, so setting it would kill a long
-/// generation mid-stream; a big thinking model on CPU legitimately takes many
-/// minutes. This bounds silence instead, which is the closest analogue of the
-/// OpenAI SDK's headers-only deadline. **Do not "fix" this by adding
-/// `.timeout()`.**
+/// How long the client waits for ANY byte before giving up. Deliberately not a
+/// total request timeout: `reqwest`'s `timeout` bounds the whole request
+/// including the streamed body, so it would kill a long generation mid-stream.
+/// Do not "fix" this by adding `.timeout()`.
 const READ_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The largest upstream error body worth keeping in a message. A gateway that
@@ -162,9 +143,9 @@ impl HttpProvider {
             client: reqwest::Client::builder()
                 .read_timeout(READ_TIMEOUT)
                 .build()
-                // The builder only fails on a TLS backend it cannot initialise,
-                // which is a broken build rather than a runtime condition; the
-                // default client keeps the core serving everything else.
+                // The builder only fails on a TLS backend it cannot
+                // initialise, which is a broken build rather than a runtime
+                // condition.
                 .unwrap_or_else(|err| {
                     tracing::error!(
                         target: "loca::llm",
@@ -200,8 +181,8 @@ impl ChatProvider for HttpProvider {
 }
 
 enum State {
-    /// Boxed like its sibling: an unboxed request makes every poll of the
-    /// stream move the whole endpoint config around, long after it was sent.
+    /// Boxed: unboxed, every poll of the stream would move the whole endpoint
+    /// config around long after it was sent.
     Start(Box<Pending>),
     Streaming(Box<Streaming>),
     Done,
@@ -218,9 +199,8 @@ struct Streaming {
     /// One SSE chunk can decode to one delta, but a single read can carry
     /// several events, so decoded deltas queue here between polls.
     pending: VecDeque<LlmDelta>,
-    /// A failure that must wait for [`Self::pending`] to drain first. One read
-    /// can carry good events and a malformed one, and the good ones were
-    /// generated by the model before it broke.
+    /// A failure that must wait for [`Self::pending`] to drain: one read can
+    /// carry good events and a malformed one, and the good ones came first.
     failure: Option<ProviderError>,
     saw_done: bool,
 }
@@ -270,10 +250,8 @@ async fn start(
             State::Done,
         ));
     }
-    // A 200 whose body carries no event ends here with no items at all. Yielding
-    // an empty delta instead would put a delta on the stream that says nothing,
-    // which nothing else in this file ever emits and which a consumer counting
-    // deltas would see as a phantom token.
+    // A 200 whose body carries no event ends with no items at all: an empty
+    // delta would be a phantom token to a consumer counting deltas.
     Box::new(Streaming {
         response,
         decoder: SseDecoder::new(),
@@ -289,11 +267,10 @@ impl Streaming {
     /// The next decoded delta, reading more bytes until there is one.
     async fn next(mut self: Box<Self>) -> Option<(Result<LlmDelta, ProviderError>, State)> {
         loop {
-            // Deltas first, and the order is the whole point. One read can
-            // carry a token the model really produced followed by a malformed
-            // sibling, and surfacing the error first discards the token. The
-            // turn fails either way; what differs is whether the text the user
-            // already saw is the text the session persisted.
+            // Deltas first: one read can carry a real token followed by a
+            // malformed sibling, and surfacing the error first discards the
+            // token. The turn fails either way; what the session persisted is
+            // what differs.
             if let Some(delta) = self.pending.pop_front() {
                 return Some((Ok(delta), State::Streaming(self)));
             }
@@ -305,9 +282,8 @@ impl Streaming {
             }
             let chunk = match self.response.chunk().await {
                 Ok(Some(chunk)) => chunk,
-                // The body ended. A stream that stops without `[DONE]` is
-                // ordinary for a provider that closes the connection instead,
-                // so it is not an error.
+                // A stream that stops without `[DONE]` is ordinary for a
+                // provider that closes the connection instead.
                 Ok(None) => return None,
                 Err(err) => {
                     return Some((
@@ -375,11 +351,9 @@ fn truncate(text: &str, max: usize) -> String {
     text.chars().take(max).collect::<String>() + "..."
 }
 
-/// Build the request body.
-///
-/// Split out and public to the module so the sampler and thinking rules can be
-/// asserted directly, without a server: they are the part of this file where a
-/// wrong branch is invisible at runtime and changes what the model does.
+/// Build the request body. Public to the module so the sampler and thinking
+/// rules can be asserted without a server: a wrong branch there is invisible at
+/// runtime and changes what the model does.
 pub(super) fn build_body(req: &LlmRequest) -> Value {
     let endpoint = &req.endpoint;
     let temperature = req.overrides.temperature.or(endpoint.temperature);
@@ -424,11 +398,8 @@ pub(super) fn build_body(req: &LlmRequest) -> Value {
         }
     } else if let Some(reasoning) = endpoint.reasoning {
         if local {
-            // Thinking-by-default models (Qwen3 and friends) keep thinking
-            // unless the template is told `false`, so "off" must SEND the flag
-            // rather than omit it. Deleting this else-branch leaves every
-            // thinking-off turn thinking, and a test that only covers the "on"
-            // case still passes.
+            // Thinking-by-default models keep thinking unless told `false`, so
+            // "off" must SEND the flag rather than omit it.
             let think = reasoning == Reasoning::On;
             body.insert(
                 "chat_template_kwargs".into(),
@@ -454,10 +425,9 @@ pub(super) fn build_body(req: &LlmRequest) -> Value {
         }
     }
 
-    // llama.cpp-only samplers. An OpenAI-style endpoint rejects them, and there
-    // is no per-call override channel, so single-shot utility calls receive
-    // these too: they pin a low temperature, where top_k / min_p are near-inert
-    // and a mild repeat penalty is harmless.
+    // llama.cpp-only samplers; an OpenAI-style endpoint rejects them. Single-
+    // shot utility calls receive them too, but they pin a low temperature where
+    // top_k / min_p are near-inert.
     if local {
         if let Some(value) = endpoint.top_k {
             body.insert("top_k".into(), json!(value));
@@ -487,13 +457,11 @@ pub(super) fn build_body(req: &LlmRequest) -> Value {
     Value::Object(body)
 }
 
-/// Encode a per-request thinking-token cap for llama-server.
-///
-/// Both fields are load-bearing: the budget arrives as `thinking_budget_tokens`,
-/// and `reasoning_control` is what makes the server create the on-demand sampler
-/// that forcibly ends the `<think>` block at the cap. A top-level
-/// `reasoning_budget` is silently DROPPED, so that spelling looks right and does
-/// nothing.
+/// Encode a per-request thinking-token cap for llama-server. Both fields are
+/// load-bearing: the budget arrives as `thinking_budget_tokens`, and
+/// `reasoning_control` is what makes the server create the sampler that ends
+/// the `<think>` block at the cap. A top-level `reasoning_budget` is silently
+/// dropped, so that spelling looks right and does nothing.
 fn set_local_thinking_budget(body: &mut Map<String, Value>, budget: u32) {
     body.insert("thinking_budget_tokens".into(), json!(budget));
     body.insert("reasoning_control".into(), json!(true));
@@ -639,11 +607,9 @@ mod tests {
 
     #[test]
     fn a_loopback_gateway_takes_the_llama_fields_even_though_it_is_not_the_local_provider() {
-        // The configuration where the two localities disagree: an EXTERNAL
-        // provider pointed at a hand-run llama-server or LM Studio. The body
-        // fields follow the URL, not the provider setting, and reading
-        // `is_local_provider` here would silently stop sending samplers to every
-        // such setup.
+        // Where the two localities disagree: an EXTERNAL provider pointed at a
+        // hand-run llama-server. The body fields follow the URL, not the
+        // provider setting.
         let body = body(LlmEndpointConfig {
             base_url: "http://127.0.0.1:1234/v1".into(),
             top_k: Some(20),
@@ -852,8 +818,8 @@ mod tests {
 
     #[test]
     fn an_unclassified_provider_error_reaches_a_route_as_internal_error() {
-        // What the two utility routes do with it, matching the TypeScript's
-        // error middleware rather than the chat path's classification.
+        // What the two utility routes do with it, rather than the chat path's
+        // classification.
         let err: AppError = ProviderError {
             kind: ProviderErrorKind::Http,
             status: Some(401),
@@ -874,9 +840,9 @@ mod tests {
 
     // --- over a real socket ---------------------------------------------------
     //
-    // These drive `reqwest` and the SSE decoder against a server replaying the
-    // same two fixtures the TypeScript suite records, so the parsing they prove
-    // is the parsing production does. Real sockets, so never a paused clock.
+    // These drive `reqwest` and the SSE decoder against a server replaying
+    // recorded fixtures, so the parsing they prove is what production does.
+    // Real sockets, so never a paused clock.
 
     use crate::llm::testing::{FakeUpstream, UpstreamScript};
 
@@ -1026,10 +992,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_malformed_chunk_surfaces_only_after_the_deltas_that_preceded_it() {
-        // Both events arrive in one read, and the first one is a token the model
-        // really produced. Failing the whole read discards it, and what the
-        // client saw and what the session persisted are decided at exactly this
-        // moment: the turn fails either way, with or without the text.
+        // Both events arrive in one read and the first is a real token.
+        // Failing the whole read discards it, and the turn fails either way.
         let upstream = FakeUpstream::start(UpstreamScript::Raw(
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {oops\n\n",
         ))
@@ -1057,9 +1021,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_200_with_an_empty_body_produces_no_deltas_at_all() {
-        // Not one empty delta. `is_empty()` deltas are dropped everywhere else
-        // in this file, so emitting one here would be the single place a
-        // consumer counting deltas sees a token that never existed.
+        // Not one empty delta: they are dropped everywhere else in this file,
+        // so one here is a token that never existed.
         let upstream = FakeUpstream::start(UpstreamScript::Raw("")).await;
         assert!(
             run(&upstream, external()).await.is_empty(),
@@ -1084,8 +1047,7 @@ mod tests {
             "{}",
             err.message
         );
-        // Unclassified, which is what makes the utility routes answer 500 like
-        // the TypeScript core does.
+        // Unclassified, which is what makes the utility routes answer 500.
         assert_eq!(AppError::from(err).code, ErrorCode::InternalError);
     }
 }

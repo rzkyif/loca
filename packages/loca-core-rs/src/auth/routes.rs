@@ -10,10 +10,7 @@
 //! CPace confirmation, and the per-IP budget.
 //!
 //! Inbound bodies deserialize through `contract::inbound`, whose `Deserialize`
-//! already enforces the Zod constraints (the admin password's 8-character floor,
-//! the base64 shape of `sid` / `msgA` / `confirmC`, the client-name length). A
-//! second check after it would be a second source of truth for the wire
-//! contract, so there is none.
+//! already enforces the schema constraints, so nothing re-checks them here.
 
 use std::sync::Arc;
 
@@ -57,10 +54,9 @@ const B64_IN: GeneralPurpose = GeneralPurpose::new(
 
 // --- wire responses ----------------------------------------------------------
 //
-// The pairing responses come from `contract::api`, generated from
-// `@loca/shared/api/pairing`. Rotation is the exception: it has no TypeScript
-// interface, because the token it returns is consumed by the Client's transport
-// rather than rendered, so it is declared here.
+// The pairing responses come from `contract::api`. Rotation is the exception:
+// its token is consumed by the Client's transport rather than rendered, so it
+// has no shared interface and is declared here.
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,13 +64,9 @@ struct RotateResponse {
     token: String,
 }
 
-/// What the handlers are built from: the shared context plus the concrete
-/// pairing service.
-///
-/// The service is threaded in rather than constructed here because it holds the
-/// in-flight handshakes, the ticket table, and the rate-limit buckets. A second
-/// instance would have its own, so a handshake started through the transport's
-/// `ClientAuth` and finished through a route would not find its own session.
+/// The shared context plus the concrete pairing service, which is threaded in
+/// because it holds the in-flight handshakes, the ticket table and the
+/// rate-limit buckets: a second instance would have its own.
 #[derive(Clone)]
 struct PairingState {
     ctx: AppContext,
@@ -102,8 +94,7 @@ pub fn routes(ctx: &AppContext, auth: Arc<Auth>) -> Router {
         .with_state(state.clone());
 
     // Device access, not a paired device: only someone who can read
-    // `<core>/.admin-token` may set or replace the password, so a peer on a
-    // core bound to 0.0.0.0 cannot overwrite it.
+    // `<core>/.admin-token` may set or replace the password.
     let admin = Router::new()
         .route("/api/v1/admin/password", post(set_admin_password))
         .layer(from_fn_with_state(ctx.clone(), require_admin_token))
@@ -114,14 +105,10 @@ pub fn routes(ctx: &AppContext, auth: Arc<Auth>) -> Router {
 
 // --- handlers ----------------------------------------------------------------
 
-/// Mint a pairing code. Two authorization paths, and only two.
-///
-/// `X-Admin-Token` is device access: the installer's mint step, and "pair from
-/// this machine". It is high-entropy, so it carries no rate limit.
-///
-/// A bearer plus the admin password is an already-paired client minting
-/// remotely. The bearer proves the caller is a trusted device and the password
-/// is the second factor, argon2id-hashed and throttled.
+/// Mint a pairing code. Two authorization paths, and only two: `X-Admin-Token`
+/// is device access and is high-entropy enough to carry no rate limit; a bearer
+/// plus the admin password is an already-paired client minting remotely, with
+/// the password as an argon2id-hashed, throttled second factor.
 async fn mint_code(
     State(state): State<PairingState>,
     PeerAddr(ip): PeerAddr,
@@ -130,8 +117,8 @@ async fn mint_code(
 ) -> Result<Json<PairingCodeResponse>> {
     let body: PairingCodeRequest = body_or_default(&body)?;
     match header_str(&headers, "x-admin-token") {
-        // Presenting an admin token means the caller intends that path, so a
-        // wrong one is reported rather than silently retried as a bearer.
+        // Presenting a token means the caller intends that path, so a wrong
+        // one is reported rather than retried as a bearer.
         Some(token) => state.auth.verify_admin_token(Some(&token)).await?,
         None => {
             let client = state.auth.authenticate(bearer(&headers)).await?;
@@ -199,10 +186,9 @@ async fn list_clients(
 
 /// Remove a paired device.
 ///
-/// A client may always remove itself, which is the "leave" action, and `me` is
-/// an alias for its own id. Removing a **different** device is a privileged
-/// fleet action: without this gate any single paired device could wipe and lock
-/// out every other one. It is authorized the same two ways as minting a code.
+/// A client may always remove itself, and `me` is an alias for its own id.
+/// Removing a different device is privileged, authorized the same two ways as
+/// minting a code: without the gate one paired device could lock out the rest.
 async fn revoke_client(
     State(state): State<PairingState>,
     client: AuthedClient,
@@ -252,29 +238,18 @@ async fn set_admin_password(
 
 // --- helpers -----------------------------------------------------------------
 
-/// The value folded into the pairing handshake, binding the TLS channel to it.
+/// The value folded into the pairing handshake, binding the TLS channel to it:
+/// Core's own certificate fingerprint, so a man in the middle that re-terminates
+/// TLS is detected. Behind a terminating HTTPS proxy the Client validates the
+/// proxy's certificate through WebPKI and cannot observe Core's, so both sides
+/// fold nothing. A Core that has a certificate always folds its real one, so a
+/// client that folded nothing fails the confirmation.
 ///
-/// Normally Core's own certificate fingerprint, so a man in the middle that
-/// re-terminates TLS is detected. Behind a terminating HTTPS proxy the Client
-/// validates the proxy's real certificate through WebPKI and cannot observe
-/// Core's, so there is no shared value to bind and both sides fold nothing.
-///
-/// This is the security boundary of the trust mode: a Core that HAS a
-/// certificate always folds its real fingerprint, so a client that folded
-/// nothing fails the confirmation.
-///
-/// **An empty pin has two causes, not one.** The operator set
-/// `server.behindProxy`, which is the deliberate case above; or the Core has no
-/// TLS material at all, which today means an embedded (mobile) Core, since
-/// `boot_with(Frontend::Embedded)` skips certificate generation. The second
-/// falls through the `unwrap_or_default()` below rather than the `behind_proxy`
-/// branch, and it is not operator-chosen.
-///
-/// It is safe today only because an embedded Core binds no listener, so these
-/// routes are reachable only from the app's own webview through the in-process
-/// command boundary. **Give an embedded Core a listener and pairing proceeds
-/// with no channel binding at all**, silently. Anything that does that (a debug
-/// build, a desktop caller passing `Frontend::Embedded`, a LAN-sharing feature)
+/// **An empty pin has two causes.** The deliberate one above; or the Core has no
+/// TLS material at all, which today means an embedded Core, and falls through
+/// the `unwrap_or_default()` rather than the `behind_proxy` branch. That is safe
+/// only because an embedded Core binds no listener. **Give one a listener and
+/// pairing proceeds with no channel binding at all**, so anything that does
 /// must refuse to pair here first.
 fn server_pin(ctx: &AppContext) -> String {
     if ctx.behind_proxy {
@@ -284,12 +259,10 @@ fn server_pin(ctx: &AppContext) -> String {
     }
 }
 
-/// Authorize a privileged fleet action the same two ways minting a code is
-/// authorized: the admin token, which is device access, or the admin password,
-/// which is an already-paired client presenting a second factor.
-///
-/// The caller is already bearer-authenticated, so unlike the mint there is no
-/// third path here and no identity to establish first.
+/// Authorize a privileged fleet action the same two ways minting a code is: the
+/// admin token, or the admin password as a second factor. The caller is already
+/// bearer-authenticated, so there is no third path and no identity to
+/// establish.
 async fn authorize_privileged(
     state: &PairingState,
     headers: &HeaderMap,
@@ -308,11 +281,8 @@ async fn authorize_privileged(
     }
 }
 
-/// Parse a body that is allowed to be absent.
-///
-/// The pairing-code mint and the revoke both take an optional body, so an empty
-/// one is the default value rather than a validation error. A present body still
-/// goes through the generated type, which is where the constraints live.
+/// Parse a body that is allowed to be absent: the mint and the revoke both take
+/// an optional one, so empty is the default rather than a validation error.
 fn body_or_default<T: DeserializeOwned + Default>(body: &Bytes) -> Result<T> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
@@ -327,11 +297,9 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// `Bearer <token>`, case-insensitive on the scheme.
-///
-/// The routes that read this are the two the transport's `require_client` layer
-/// deliberately does not guard, because a caller reaching them may legitimately
-/// have no bearer at all. `authenticate` turns `None` into `missing_token`.
+/// `Bearer <token>`, case-insensitive on the scheme. Read by the two routes
+/// `require_client` deliberately does not guard, where a caller may legitimately
+/// have no bearer; `authenticate` turns `None` into `missing_token`.
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     let header = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, rest) = header.split_once(' ')?;

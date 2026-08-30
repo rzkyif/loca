@@ -1,26 +1,17 @@
 //! One tool call, run to completion, with its outcome folded into the tool
 //! message the orchestrator already announced.
 //!
-//! Ports `core-engine/src/services/chat-tool-dispatch.ts` in full.
+//! Two paths, and the asymmetry is deliberate. An MCP tool runs on its server:
+//! a straight request and response, with no local permissions, no progress and
+//! no askUser flow. An extension tool runs in the worker sandbox with all of
+//! that forwarded to the client as prompts. Only the extension path emits
+//! `tool.result` / `tool.error` frames; the MCP path's outcome reaches the
+//! client through the tool message's own terminal snapshot, and unifying them
+//! would change what the client renders for an MCP failure.
 //!
-//! # Two paths, and the asymmetry between them is deliberate
-//!
-//! An MCP tool runs on its server: a straight request and response, with no
-//! local permissions, no progress, and no askUser flow. An extension tool runs
-//! in the worker sandbox with all of that forwarded to the client as prompts.
-//!
-//! Only the extension path emits `tool.result` / `tool.error` frames. The MCP
-//! path emits none: its outcome reaches the client through the tool message's
-//! own terminal snapshot. That reads like an oversight and is not, so it is
-//! ported as-is and tested in both directions; unifying them would change what
-//! the client renders for an MCP failure.
-//!
-//! # Nothing here ends the turn
-//!
-//! Every failure below produces a `status: "failed"` tool message that is pushed
-//! into the history and shown to the model on the next hop. A tool that does not
-//! exist, an extension tampered with since boot, arguments the schema rejects, a
-//! worker that dies: all of them are answers, not turn-enders.
+//! Nothing here ends the turn. Every failure below produces a
+//! `status: "failed"` tool message pushed into the history and shown to the
+//! model on the next hop.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -38,12 +29,10 @@ use crate::chat::muxer::PendingCall;
 use crate::chat::stream::ActiveStream;
 use crate::chat::writer::{LiveRef, TurnWriter};
 
-/// One running extension tool call, addressable by call id.
-///
-/// The map is process-wide (one per [`Chat`](crate::chat)), which is what makes
-/// the stream-namespaced call id load-bearing: two concurrent turns whose models
-/// both emit `call_1` would otherwise collide here, and a collision makes every
-/// forwarded askUser answer fail its owner check and hang both prompts.
+/// One running extension tool call, addressable by call id. The map is
+/// process-wide, which is what makes the stream-namespaced call id
+/// load-bearing: two concurrent turns whose models both emit `call_1` would
+/// collide here and hang both prompts.
 pub struct InFlightEntry {
     pub client_id: String,
     pub controller: Arc<dyn ToolCallController>,
@@ -69,9 +58,8 @@ impl InFlight {
     }
 
     /// The call `call_id` names, if this client owns the turn that started it.
-    ///
-    /// The ownership check lives here rather than at each of the four `forward*`
-    /// call sites, so a new control frame cannot forget it.
+    /// The ownership check lives here rather than at each `forward*` call site,
+    /// so a new control frame cannot forget it.
     pub fn owned(&self, call_id: &str, client_id: &str) -> Option<Arc<dyn ToolCallController>> {
         let entries = lock(&self.entries);
         let entry = entries.get(call_id)?;
@@ -109,12 +97,10 @@ impl Dispatcher {
         }
     }
 
-    /// Run one call and fold its outcome into `message`.
-    ///
-    /// Returns the display bubbles the tool pushed, BORN but deliberately NOT
-    /// finalized: the caller persists them after the tool message, so the
-    /// durable order (tool, then its displays) equals the live order. Finalizing
-    /// them here would persist them ahead of the still-running tool message.
+    /// Run one call and fold its outcome into `message`. Returns the display
+    /// bubbles the tool pushed, BORN but deliberately NOT finalized: the caller
+    /// persists them after the tool message, so the durable order equals the
+    /// live one.
     pub async fn execute(
         &self,
         stream: &Arc<ActiveStream>,
@@ -218,19 +204,16 @@ impl Dispatcher {
             tokio::pin!(done);
             // The event channel closing is not the call ending: the terminal
             // state is the controller's business. The arm is DISABLED rather
-            // than awaited-forever, because a `pending().await` in the handler
-            // never returns to the select and the controller is then never
-            // polled again. A host that drops its sender the moment it has
-            // emitted everything (which is the normal shape) would deadlock
-            // every call.
+            // than awaited-forever, since a `pending().await` never returns to
+            // the select and a host that drops its sender once it has emitted
+            // everything would deadlock every call.
             let mut events_closed = false;
             loop {
                 tokio::select! {
                     biased;
                     // A chat interrupt cancels the tool and then KEEPS WAITING
                     // for its terminal event, so the worker's own cancel path
-                    // runs and the tool message gets a real outcome. Abandoning
-                    // it here would leave the message `pending` forever.
+                    // runs and the message gets a real outcome.
                     _ = stream.cancel.cancelled(), if !cancelled => {
                         cancelled = true;
                         controller.cancel();
@@ -246,8 +229,7 @@ impl Dispatcher {
                 }
             }
         };
-        // Events queued before the terminal state still belong to this call. The
-        // TypeScript's handler is synchronous, so it had already seen them.
+        // Events queued before the terminal state still belong to this call.
         while let Ok(event) = rx.try_recv() {
             self.on_event(stream, pending, message, writer, &mut displays, event)
                 .await;

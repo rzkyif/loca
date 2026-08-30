@@ -5,16 +5,11 @@
 //! the Core. The client instead links the library and calls it in-process
 //! through Tauri commands.
 //!
-//! The seam is [`super::Core::router`], an `axum::Router`, which is a
+//! The seam is [`super::Core::router`], an `axum::Router` and so a
 //! `tower::Service`. Calling it is `oneshot`: no socket, no TLS, no bound port,
-//! and, importantly, the same routing, the same extractors, the same
-//! middleware and the same error mapping as the wire path. A parallel dispatch
-//! would drift; this cannot.
-//!
-//! The request and reply shapes mirror the client's existing `net_fetch`
-//! command, because the mobile `core_http` command is that command with the
-//! network taken out. That keeps the marshalling here, where it is tested,
-//! rather than in untested Tauri glue.
+//! and the same routing, extractors, middleware and error mapping as the wire
+//! path. The request and reply shapes mirror the client's `net_fetch` command,
+//! keeping the marshalling here rather than in untested Tauri glue.
 
 use std::collections::HashMap;
 
@@ -37,11 +32,9 @@ pub struct InProcRequest {
     pub url: String,
     pub headers: HashMap<String, String>,
     pub body: Vec<u8>,
-    /// The pre-authenticated local client.
-    ///
-    /// Inserted into the request extensions, which is what lets the auth layer
-    /// skip the bearer check. Only server-side code can set an extension, so
-    /// nothing arriving over a socket can forge this.
+    /// The pre-authenticated local client, inserted into the request
+    /// extensions so the auth layer skips the bearer check. Only server-side
+    /// code can set an extension, so a socket cannot forge one.
     pub client: Option<ClientIdentity>,
 }
 
@@ -79,13 +72,8 @@ pub struct InProcResponse {
 }
 
 impl Core {
-    /// Handle a request with no socket underneath it.
-    ///
-    /// The body is buffered. The streaming surfaces on mobile are WS frames,
-    /// which go through [`Core::connect`]; the one streaming HTTP endpoint is
-    /// the SSE chat fallback for clients that cannot hold a WebSocket, which
-    /// the mobile client is not. A streaming variant is M2's to ask for if that
-    /// ever changes.
+    /// Handle a request with no socket underneath it. The body is buffered:
+    /// mobile's streaming surfaces are WS frames, through [`Core::connect`].
     pub async fn call(&self, req: InProcRequest) -> Result<InProcResponse> {
         let request = build_request(req)?;
         let response = self
@@ -123,9 +111,8 @@ fn build_request(req: InProcRequest) -> Result<Request<Body>> {
     let mut builder = Request::builder().method(method).uri(&req.url);
 
     for (name, value) in &req.headers {
-        // A header that cannot be represented fails the call rather than being
-        // dropped: a silently missing content-type or authorization would
-        // surface as a confusing rejection much further downstream.
+        // A header that cannot be represented fails the call: a silently
+        // dropped content-type would be rejected far downstream instead.
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|e| validation(format!("bad header name {name:?}: {e}")))?;
         let value = HeaderValue::from_str(value)

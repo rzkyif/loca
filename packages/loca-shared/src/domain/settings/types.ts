@@ -1,12 +1,8 @@
-/**
- * Type definitions and shared validation constants for the settings schema.
- * Used by every group file under `./groups/` and by the engine in
- * `./engine.ts`. The full schema is built from these primitives and is
- * authoritative for both the client renderer and core's setting reads.
- */
+// Type definitions and shared validation constants for the settings schema,
+// authoritative for both the client renderer and core's setting reads.
 
-// Pulled inline so this file has zero non-type dependencies. Mirrors the
-// client-side command builder's accepted command kinds.
+// Inline so this file has zero non-type dependencies. Mirrors the client-side
+// command builder's accepted command kinds.
 export type CommandType = "llm";
 
 import type { CoreCapabilities } from "../../api/http.ts";
@@ -51,10 +47,8 @@ export interface PresetOption {
 export interface PresetConfig {
   options: PresetOption[];
   secondaryOptions?: PresetOption[];
-  /** Setting ids this preset controls, beyond any in an option's `defaults`.
-   *  Editing one of these flips the preset to "custom". Used when the preset's
-   *  values are computed at runtime (e.g. the adaptive LLM presets) rather than
-   *  baked into static `defaults`. */
+  /** Setting ids this preset controls beyond an option's `defaults` (for
+   *  runtime-computed presets). Editing one flips the preset to "custom". */
   managedKeys?: string[];
 }
 
@@ -74,11 +68,7 @@ export const SECURE_URL_VALIDATION: RegexValidationRule[] = [
   },
 ];
 
-/**
- * Common props every field carries. Anything that influences layout, search,
- * or conditional visibility but not how the field is rendered or what it
- * stores lives here.
- */
+/** Common props every field carries. */
 interface BaseField {
   id: string;
   name: string;
@@ -87,15 +77,12 @@ interface BaseField {
   editableWhen?: FieldCondition;
   optionalWhen?: FieldCondition;
   optional?: boolean;
-  /** When true, the field is hidden on mobile (no equivalent on the touch shell,
-   *  e.g. window geometry). Persisted state is untouched; only the control is
-   *  hidden. The section-level flag covers a whole group of such fields. */
+  /** Hidden on mobile (no touch-shell equivalent). Persisted state is
+   *  untouched; only the control is hidden. */
   desktopOnly?: boolean;
-  /** Controls how the description is presented:
-   *  - `none`: never shown (no info button).
-   *  - `ondemand`: hidden behind an info-button toggle (default for non-empty descriptions).
-   *  - `always`: rendered inline, always visible.
-   *  When unset, falls back to `ondemand` if description is non-empty, else `none`. */
+  /** `none` never shows the description, `ondemand` puts it behind an info
+   *  button, `always` renders it inline. Unset falls back to `ondemand` when
+   *  description is non-empty, else `none`. */
   descriptionTier?: "none" | "ondemand" | "always";
 }
 
@@ -114,11 +101,8 @@ interface NumberLikeFieldProps {
   placeholder?: string;
   regex?: RegexValidation;
   suffix?: string;
-  // Optional inclusive bounds. Unlike number_slider (min/max REQUIRED, rendered
-  // as a track), these are validation-only guards for a plain number/float input.
-  // Enforced by validateSettingsPatch so an out-of-range value can't reach the
-  // core (and a sidecar argv) - declare them for any numeric knob with a valid
-  // range instead of leaving it unbounded.
+  // Optional inclusive bounds: validation-only guards enforced by
+  // validateSettingsPatch, unlike number_slider's required, rendered track.
   min?: number;
   max?: number;
 }
@@ -143,15 +127,10 @@ export type BooleanField = BaseField & {
 export type ColorField = BaseField & {
   type: "color";
   defaultValue: string;
-  /** When set, this color only seeds a derived light/dark scale (its hue and
-   *  chroma are used; the theme sets each shade's lightness). The picker hides
-   *  the lightness slider and pins OKLCH L to this value, since editing
-   *  lightness would have no rendered effect. Choose the light-mode lightness
-   *  of the shade where the color is seen most (e.g. the default color and the
-   *  bubble fills both use the bg-surface step, ~0.985); the picker still
-   *  theme-inverts it, so dark mode shows the matching dark shade. Omit for
-   *  colors rendered as-is (the bubble shadow), which keep a free lightness
-   *  slider. */
+  /** When set, only this color's hue + chroma seed a derived light/dark scale,
+   *  so the picker hides the lightness slider and pins OKLCH L here. Use the
+   *  light-mode lightness of the shade where the color is seen most (bg-surface
+   *  is ~0.985). Omit for colors rendered as-is (the bubble shadow). */
   lockedLightness?: number;
 };
 export type ShortcutField = BaseField & {
@@ -160,20 +139,17 @@ export type ShortcutField = BaseField & {
 };
 
 /** Render-only fields whose value is ignored; defaultValue exists only so the
- *  defaults loader has a stable initial entry. `scope` selects whose resources
- *  the field reflects: the local client (process + on-device files) or the
- *  paired core (service + sidecars + its persistence tree). */
+ *  defaults loader has a stable entry. `scope` selects whose resources the
+ *  field reflects. */
 export type RenderOnlyField = BaseField & {
   type: "services" | "storage";
   scope: "client" | "core";
   defaultValue: string | number | boolean;
 };
 
-/** Discriminator selecting which client-side manager renders an
- *  object_management field. The schema names WHICH manager, never HOW: data
- *  loading, actions, and detail rendering live in the per-type field component
- *  (`components/settings/fields/{Snippets,Extensions,Cores}Field.svelte`), which
- *  `SettingsField.svelte` dispatches to on this value. */
+/** Which client-side manager renders an object_management field. The schema
+ *  names WHICH manager, never HOW: loading, actions, and detail rendering live
+ *  in the per-type field component `SettingsField.svelte` dispatches to. */
 export type ObjectManagementType =
   | "snippets"
   | "tools"
@@ -183,15 +159,10 @@ export type ObjectManagementType =
   | "memories"
   | "scheduled_prompts";
 
-/** A scrollable, searchable manager for a list of objects (snippets, extensions,
- *  paired cores, memories, scheduled prompts). Render-only as far as the
- *  settings store is concerned: the managed objects live in their own stores
- *  (client settings, core REST, keychain), never in this field's value. The
- *  `objectType` discriminator picks the client provider from the registry. */
-// description is optional here (unlike other fields): an object_management
-// field has no label or field-level description of its own; any descriptive
-// copy lives on the owning group (SettingGroup.description), rendered under the
-// group header.
+/** A scrollable, searchable manager for a list of objects. Render-only as far
+ *  as the settings store is concerned: the managed objects live in their own
+ *  stores, never in this field's value. `description` is optional (unlike other
+ *  fields) because the copy lives on the owning group. */
 export type ObjectManagementField = Omit<BaseField, "description"> & {
   type: "object_management";
   objectType: ObjectManagementType;
@@ -209,9 +180,8 @@ export type NumberSliderField = BaseField & {
   suffix?: string;
 };
 
-/** A select either supplies a static `options` list or names an `optionsSource`
- *  the UI should resolve at runtime (monitors, system fonts, etc.). The two
- *  alternatives are mutually exclusive. */
+/** Either a static `options` list or an `optionsSource` the UI resolves at
+ *  runtime, never both. */
 export type SelectField = BaseField & {
   type: "select";
   defaultValue: string | number;
@@ -227,8 +197,7 @@ export type PresetField = BaseField & {
 };
 
 /** Like `preset`, but the cards' models + tuning are computed per-device at
- *  runtime (the adaptive LLM presets) rather than applying static `defaults`.
- *  Rendered by ModelPresetField; otherwise handled identically to `preset`. */
+ *  runtime. Rendered by ModelPresetField. */
 export type ModelPresetField = BaseField & {
   type: "model_preset";
   defaultValue: string;
@@ -236,17 +205,14 @@ export type ModelPresetField = BaseField & {
 };
 
 /** Like `model_preset` for Speech-to-Text: the cards bind to whisper models in
- *  the signed catalog (no per-device fit). Rendered by SttPresetField;
- *  otherwise handled identically to `preset`. */
+ *  the signed catalog (no per-device fit). Rendered by SttPresetField. */
 export type SttPresetField = BaseField & {
   type: "stt_preset";
   defaultValue: string;
   presetConfig: PresetConfig;
 };
 
-/** Like `stt_preset` for Text-to-Speech: the cards bind to TTS models in the
- *  signed catalog. Rendered by TtsPresetField; otherwise handled identically to
- *  `preset`. */
+/** Like `stt_preset` for Text-to-Speech. Rendered by TtsPresetField. */
 export type TtsPresetField = BaseField & {
   type: "tts_preset";
   defaultValue: string;
@@ -281,73 +247,52 @@ export type SettingField =
 export type SettingType = SettingField["type"];
 
 export interface SettingSection {
-  /** A labeled section is collapsible: the label row is the collapse toggle.
-   *  An unlabeled section renders its fields inline (always visible, no
-   *  toggle). Inline sections are allowed, but a group's unlabeled sections
-   *  must come first, above any labeled (collapsible) ones; never place an
-   *  inline section below a collapsible one. */
+  /** A labeled section is collapsible (the label row is the toggle); an
+   *  unlabeled one renders inline. A group's unlabeled sections must all come
+   *  above its labeled ones. */
   label?: string;
   /** Which of the owning group's `tabs` this section belongs to. Required when
-   *  the group sets `tabs`; ignored otherwise. The section's index in
-   *  `group.sections` is still its identity (section keys, expand state), so
-   *  `sections` stays one flat list and only the renderer partitions by tab. */
+   *  the group sets `tabs`. `sections` stays one flat list (index is identity);
+   *  only the renderer partitions by tab. */
   tab?: string;
-  /** Persistence destination for this section's fields, overriding the group's.
-   *  In a hybrid group (one whose `destination` is an array spanning client and
-   *  core), every section MUST be labeled and MUST set this, so each field
-   *  routes correctly and the section header can show a Client/Core badge.
-   *  Single-destination groups normally leave this unset and inherit the group
-   *  destination; the one sanctioned exception is an unlabeled section holding
-   *  only hidden persisted flags (visibleWhen never matches) that must live on
-   *  the other side, e.g. `extensions.skipRiskyGrantWarning`. */
+  /** Persistence destination overriding the group's. In a hybrid group (an
+   *  array destination spanning client and core) every section MUST be labeled
+   *  and MUST set this. The one other sanctioned use is an unlabeled section of
+   *  hidden persisted flags that must live on the other side, e.g.
+   *  `extensions.skipRiskyGrantWarning`. */
   destination?: SettingDestination;
   visibleWhen?: FieldCondition;
   expandWhen?: FieldCondition;
-  /** When true, the whole section is hidden on mobile (no touch-shell
-   *  equivalent, e.g. desktop startup/window options). Persisted state is
-   *  untouched; only the rendering is suppressed. */
+  /** Hidden on mobile. Persisted state is untouched. */
   desktopOnly?: boolean;
   fields: SettingField[];
-  /** When true, the section starts collapsed (its fields hidden behind the
-   *  section header) on a fresh load and on "reset group to defaults". Only
-   *  meaningful for labeled sections, since the label is the collapse toggle.
-   *  Unlabeled sections always render their fields inline. */
+  /** Start collapsed on a fresh load and on "reset group to defaults". Only
+   *  meaningful for labeled sections. */
   defaultCollapsed?: boolean;
 }
 
 /** Where a setting is persisted. Three storage locations, two user-visible
- *  labels (the chip collapses any `client-on-*` to "Client", `core` to "Core"):
- *   - "client-on-client": this device's `~/.loca/client/settings.json` (Tauri).
- *     Pure device preferences the core never reads.
- *   - "client-on-core": this client's row in the core's `client_settings` table,
- *     keyed by `clients.id`. Per-user preferences the core must apply
- *     server-side (inference knobs), including for scheduled/automated sessions
- *     that have no client frame. Reached via PATCH /api/v1/settings, partitioned
- *     by destination; layered over `core` as `loadEffective(clientId)`.
- *   - "core": the shared `~/.loca/core/settings.json` on the selected paired
- *     core via PATCH /api/v1/settings. Shared physical resources. */
+ *  labels (any `client-on-*` chips as "Client", `core` as "Core"):
+ *   - "client-on-client": this device's `~/.loca/client/settings.json`; pure
+ *     device preferences the core never reads.
+ *   - "client-on-core": this client's row in the core's `client_settings`
+ *     table, layered over `core` as `loadEffective(clientId)`, so the core can
+ *     apply them for sessions with no client frame.
+ *   - "core": the shared `~/.loca/core/settings.json`; shared resources. */
 export type SettingDestination = "client-on-client" | "client-on-core" | "core";
 
-/** The user-visible label for a destination: the two-value collapse the chip
- *  renders. Both `client-on-*` values are "this client"; `core` is shared. */
+/** The user-visible label for a destination. */
 export function destinationLabel(dest: SettingDestination): "Client" | "Core" {
   return dest === "core" ? "Core" : "Client";
 }
 
-/** True when persisting this destination requires a live core connection: both
- *  `core` (shared store) and `client-on-core` (per-client overlay) live on the
- *  core, while `client-on-client` is a local file write. Drives the client's
- *  save-layer routing and the reconnect-dim of core-backed groups. */
+/** True when persisting this destination requires a live core connection. */
 export function destinationNeedsCore(dest: SettingDestination): boolean {
   return dest !== "client-on-client";
 }
 
-/** One mode of a tabbed group. A tab partitions the group's sections (by
- *  `section.tab`) behind a selector rendered below the group description. A tab
- *  may hold a single object_management section (a full-height manager) or a
- *  stack of config sections, never forcing the manager into its own group. The
- *  group's single description still owns the explanatory copy; a tab is just a
- *  label. */
+/** One mode of a tabbed group, partitioning its sections behind a selector
+ *  below the group description. The group's description still owns the copy. */
 export interface SettingTab {
   id: string;
   label: string;
@@ -356,53 +301,33 @@ export interface SettingTab {
 export interface SettingGroup {
   id: string;
   name: string;
-  /** Optional group-level description rendered under the group header. Same
-   *  presentation tiers as a field's description: `always` shows it
-   *  persistently, `ondemand` keeps it behind the header's info-button toggle,
-   *  `none` (or unset, when description is empty) shows nothing. Primarily for
-   *  object_management groups whose single field carries no label of its own. */
+  /** Rendered under the group header, with the same tiers as a field's. */
   description?: string;
   descriptionTier?: "none" | "ondemand" | "always";
-  /** When true, the group is omitted from the settings UI entirely (no sidebar
-   *  entry, not rendered). Used for groups that exist only to register setting
-   *  ids / a persistence destination (e.g. `cores`). */
+  /** Omitted from the settings UI entirely. For groups that exist only to
+   *  register setting ids / a persistence destination (e.g. `cores`). */
   hidden?: boolean;
-  /** When true, the group is hidden on mobile (the platform has no equivalent of
-   *  the feature it configures, e.g. global keyboard shortcuts). Honored by
-   *  `isGroupVisible(group, platform)` so the desktop UI is unaffected.
+  /** Hidden on mobile, honored by `isGroupVisible(group, platform)`.
    *
-   *  About the DEVICE. Its sibling `requiresCapability` is about the CORE, and
-   *  the two are not interchangeable: a phone paired to a desktop Core still
-   *  gets that Core's extensions, because the extensions are the Core's. */
+   *  About the DEVICE, where `requiresCapability` is about the CORE: a phone
+   *  paired to a desktop Core still gets that Core's extensions. */
   desktopOnly?: boolean;
-  /** When set, the group is hidden unless the connected Core reports that
-   *  capability on `GET /api/v1/health`.
-   *
-   *  About the CORE, where `desktopOnly` is about the device. Use it for a
-   *  group configuring something the connected Core cannot do at all (an
-   *  embedded Core has no worker spawner, so its extensions could install and
-   *  then never run), never for something the screen cannot show.
-   *
-   *  Unknown counts as capable, so a Core that predates negotiation is
-   *  unaffected. See `capabilitiesState.can`. */
+  /** Hidden unless the connected Core reports that capability on
+   *  `GET /api/v1/health`. Use it for something the connected Core cannot do at
+   *  all, never for something the screen cannot show. Unknown counts as
+   *  capable. */
   requiresCapability?: keyof CoreCapabilities;
-  /** Where this group's values are persisted. Usually a single destination. A
-   *  group may declare BOTH (an array) when it spans client and core - currently
-   *  only the render-only `usage` group, which shows client + core resources
-   *  side by side. A group with real (persistable) fields should stay single-
-   *  destination, since persistable fields route to the first listed
-   *  destination; only render-only groups should span both. The header renders
-   *  one chip per destination. */
+  /** Where this group's values are persisted, usually one destination. Only a
+   *  render-only group should declare both (persistable fields route to the
+   *  first listed). The header renders one chip per destination. */
   destination: SettingDestination | SettingDestination[];
   /** Filled-variant icon class. Used when the group is the active sidebar entry. */
   icon: string;
   /** Outline-variant icon class. Falls back to `icon` when the icon set has no
-   *  outline equivalent (e.g. tune, call-split). */
+   *  outline equivalent. */
   iconInactive?: string;
-  /** When set, the group renders a tab selector below its description and shows
-   *  only the sections whose `tab` matches the active tab. The first tab is the
-   *  default. Lets one group host both a config view and an object_management
-   *  manager, instead of splitting them across two groups. */
+  /** Renders a tab selector below the description, showing only the sections
+   *  whose `tab` matches. The first tab is the default. */
   tabs?: SettingTab[];
   sections: SettingSection[];
 }
@@ -433,16 +358,9 @@ export interface SearchResultGroup {
 export type SettingsRecord = Record<string, unknown>;
 
 // --- Group id registry -----------------------------------------------------
-// The full set of group ids known to the schema, classified by destination.
-// Used by the client persistence layer to decide which settings go where.
-// Hand-maintained here so they carry literal types (ClientGroupId/CoreGroupId);
-// a derive-check in engine.test.ts fails CI if these ever drift from each
-// group's `destination` in SETTINGS_SCHEMA.
-
-// A group id appears in CLIENT_GROUP_IDS if any of its destinations carry the
-// "Client" label (either `client-on-client` or `client-on-core`) and in
-// CORE_GROUP_IDS if any carry the "Core" label. A group spanning both (e.g.
-// `usage`, or a hybrid llm/tools group) is listed in BOTH.
+// Group ids classified by the label of their destinations, so a group spanning
+// both is listed twice. Hand-maintained so they carry literal types; a
+// derive-check in engine.test.ts fails CI if they drift from SETTINGS_SCHEMA.
 export const CLIENT_GROUP_IDS = [
   "appearance",
   "shortcuts",
@@ -492,10 +410,8 @@ export function groupDestinations(group: {
   return Array.isArray(group.destination) ? group.destination : [group.destination];
 }
 
-/** The chips a group header shows: its destinations deduped by visible label
- *  (so a group spanning `client-on-client` and `client-on-core` shows one
- *  "Client" chip, not two), preserving declared order. Each returned value is a
- *  representative destination for its label, rendered as a group-header chip. */
+/** The chips a group header shows: destinations deduped by visible label,
+ *  preserving declared order. */
 export function groupDestinationChips(group: {
   destination: SettingDestination | SettingDestination[];
 }): SettingDestination[] {

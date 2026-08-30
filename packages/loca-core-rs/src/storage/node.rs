@@ -4,9 +4,8 @@
 //! their five fields, so every read of a shared field is a two-arm match. These
 //! helpers keep that match in one place instead of at forty call sites.
 //!
-//! `size` is `f64` on the wire, because the TypeScript declares it `number`.
-//! Sizes are accumulated as `u64` and converted once, here, so a large tree
-//! cannot lose precision part way through a sum.
+//! `size` is `f64` on the wire, so sizes are accumulated as `u64` and converted
+//! once, here, and a large tree cannot lose precision part way through a sum.
 
 use std::path::PathBuf;
 

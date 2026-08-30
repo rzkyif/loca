@@ -11,16 +11,12 @@
 //
 // The renderer is hand-authored (one card block per View), not a blind iteration
 // of the registry, so listing a View in GALLERY_VIEWS is not enough: this walker
-// also asserts the renderer references it, closing the gap where a registered
-// View is silently never rendered.
+// also asserts the renderer references it.
 //
-// EMBEDDED_VIEWS are the exception: a pure structural sub-piece always rendered
-// inside one parent View, whose card already shows it, earns coverage
-// transitively instead of via a redundant card of its own. Such a View is exempt
-// from requirements 1-2; instead its declared parent must be galleried, rendered,
-// and must actually render the child (so it can never silently disappear). The
-// askuser question sub-views are the analogous hardcoded case below. Wired into
-// `deno task lint`.
+// EMBEDDED_VIEWS are the exception: a structural sub-piece always rendered inside
+// one parent View earns coverage transitively, so it is exempt from requirements
+// 1-2. Instead its declared parent must be galleried, rendered, and must actually
+// render the child. Wired into `deno task lint`.
 
 import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";
@@ -158,12 +154,10 @@ for (const parent of Object.values(EMBEDDED_VIEWS)) {
   }
 }
 
-// The askUser question sub-views (chat/messages/askuser/*) are tightly coupled
-// internals of AskUserFormView (callbacks + draft state), not standalone Views,
-// so they earn coverage transitively: AskUserFormView is galleried and the
-// askUserForm samples exercise each question kind. Enforce that every one is
-// actually imported by AskUserFormView, so a new question kind cannot be added
-// without being wired into (and thus shown by) the galleried parent.
+// The askUser question sub-views are tightly coupled internals of
+// AskUserFormView, not standalone Views, so they earn coverage transitively.
+// Enforcing that each is imported by AskUserFormView stops a new question kind
+// being added without being shown by the galleried parent.
 const ASKUSER_DIR = `${VIEWS_DIR}chat/messages/askuser/`;
 const askUserFormSrc = await read(`${VIEWS_DIR}chat/userinput/AskUserFormView.svelte`);
 for await (const e of walk(ASKUSER_DIR, { exts: [".svelte"], includeDirs: false })) {

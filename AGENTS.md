@@ -9,58 +9,47 @@ and link it._
 ## Project Overview
 
 Loca is a local-first modular AI client split into a long-running service and a
-thin desktop UI that talk over an HTTP+WS API, plus helper binaries, a bundled
+thin desktop UI that talk over an HTTP+WS API, plus one helper binary, a bundled
 extension, and a distribution website. Tools come from two kinds of provider: an
 **extension** (a `loca.json` bundle the core installs) and an **MCP server** (a
 Model Context Protocol process the core connects to). The packages:
 
-- **`@loca/core`**: Deno service that hosts the engine and owns everything
-  runtime- or OS-bound: the HTTPS/WSS transport, TLS + multi-client pairing auth,
-  sandboxed tool execution, MCP server connections, TTS/STT supervision, model +
-  binary downloads, extension installation, and self-update. It supplies the
-  engine a `DenoHost` (Deno FS, `@db/sqlite`, the OS keychain) and serves it over
-  `Deno.serve`.
-- **`@loca/core-engine`**: the runtime-agnostic heart of core, extracted so the
-  same TypeScript can run both in the Deno service and, in a future pass, inside
-  the mobile Client's webview. Owns the portable stateful logic (session/message
-  storage, LLM streaming, settings, memories + embedding-based relevance, external
-  STT/TTS) behind a `Host` abstraction; imports no `Deno.*`,
-  `@db/sqlite`, `@tauri-apps/*`, or `node:*` (enforced by `loca/no-host-import`).
-  It serves the `/api/v1/mcp` admin routes, but the MCP subsystem itself (the
-  registry, the connection manager, the OAuth flow) lives in `@loca/core` behind
-  `host.mcp`, so "the engine owns remote MCP" is not accurate.
-- **`@loca/core-rs`**: the Rust core being ported from the two packages above,
-  which it replaces at cutover. One library with a desktop service binary and a
-  mobile staticlib frontend, so the phone embeds the real Core rather than a
-  reimplementation of it. Under construction; see
-  [docs/rust-port/](docs/rust-port/).
+- **`loca-core-rs`**: the Rust core. One library that runs as the `loca-core`
+  service binary on desktop and links into the Tauri app on mobile (via
+  **`loca-core-ffi`**), so the phone embeds the real Core. It owns everything:
+  the HTTPS/WSS transport, TLS + multi-client pairing auth, sessions and chat,
+  LLM streaming (llama.cpp compiled in behind `local-inference`, GPU backends
+  loaded as separate libraries), settings, memories + embedding relevance, local
+  speech (sherpa-onnx compiled in behind `local-speech`) and external STT/TTS,
+  model + binary downloads, sandboxed extension tool execution (a TypeScript
+  worker under the pinned `deno`, in `workers/`), MCP server connections, the OS
+  keychain, and self-update. Wire types under `src/contract/` are generated.
 - **`@loca/core-updater`**: standalone Rust binary (`loca-core-updater`) that
-  swaps in a staged core build during self-update, then restarts core.
-- **`@loca/core-keychain`**: standalone Rust binary (`loca-core-keychain`)
-  that reads/writes/deletes secrets in the OS keychain over a stdio protocol.
-- **`@loca/client`**: Tauri + Svelte desktop UI, intentionally "dumb": it
-  renders, captures input, plays audio, manages global shortcuts, and talks to
-  one or more paired cores.
-- **`@loca/shared`**: TypeScript types + Zod validators consumed by both sides
-  (API contract, domain shapes, `loca.json` schema, WS frame unions), plus the
-  shared UI layer under `./ui/*` (design tokens, UnoCSS preset, and the
-  presentational Svelte components the client and website both render). The
-  non-UI exports stay side-effect-free; only `./ui/*` pulls in
-  `svelte`/`unocss`, and core never imports it.
+  swaps in a staged core build during self-update, then restarts core. Separate
+  because a process cannot replace the file it runs from on Windows.
+- **`@loca/client`**: Tauri + Svelte desktop and mobile UI, intentionally
+  "dumb": it renders, captures input, plays audio, manages global shortcuts, and
+  talks to one or more paired cores.
+- **`@loca/shared`**: TypeScript types + Zod validators (API contract, domain
+  shapes, `loca.json` schema, WS frame unions) that the client, the website, and
+  the contract generator consume, plus the shared UI layer under `./ui/*`
+  (design tokens, UnoCSS preset, and the presentational Svelte components the
+  client and website both render). The non-UI exports stay side-effect-free.
+- **`@loca/model-catalog`**: hand-authored source for the signed model catalog.
 - **`@loca/loca-extension-builtin`**: reference/baseline extension installed by
   default on a fresh core; doubles as the worked example for the `loca.json`
   format.
 - **`@loca/loca-extension-samples`**: dev-only capability showcase exercising
-  the full `loca.json` surface (every askUser kind, display kinds, llm/tts/stt/db/schedulePrompt,
-  a sample knowledge memory and a sample skill); NOT installed in production,
-  only codebase-installed in the dev environment.
+  the full `loca.json` surface; NOT installed in production, only
+  codebase-installed in the dev environment.
 - **`@loca/website`**: Astro static site at `loca.rzkyif.com`: the landing page,
   the feature showcase, and the user manual. Renders the shared
   `@loca/shared/ui` components so demos match the app, and is multi-page (link
   navigation + view transitions, not an SPA) so navigation works without JS.
 
-**Tech stack:** Deno 2, Hono, and SQLite (`jsr:@db/sqlite`) for the core; Tauri
-2, Svelte 5, Vite, and UnoCSS for the client. Deno-first workspace: no
+**Tech stack:** Rust (axum, tokio, rusqlite, llama.cpp, sherpa-onnx) for the
+core; Tauri 2, Svelte 5, Vite, and UnoCSS for the client; Deno 2 for every
+script, test runner, and TypeScript package. Deno-first workspace: no
 `package.json`, no bun, no pnpm; the client invokes Vite and the Tauri CLI
 through `npm:` specifiers from `deno task`.
 
@@ -68,49 +57,20 @@ through `npm:` specifiers from `deno task`.
 
 - Domain types, the API contract, and the `loca.json` schema live in
   `packages/loca-shared/src/`. When changing the wire format, update this
-  package first.
-- HTTP routes are split: the app-domain slice (sessions, settings, memories, llm,
-  stt, tts, mcp) lives in `packages/loca-core-engine/src/http/` and is served via
-  `engine.handleHttp`; the OS-bound + transport routes (health, pairing, admin,
-  models, binaries, requirements, update, sidecars, storage, scheduled-prompts,
-  greetings, extensions, tools) stay in `packages/loca-core/src/http/routes/`. The
-  Deno shell's `main.ts` dispatches each request to whichever owns it. WS frames:
-  `packages/loca-shared/src/api/ws.ts`. Settings keys consumed by core are
-  documented in the header of `packages/loca-core-engine/src/services/chat.ts`.
+  package first, then run `deno task contract` to regenerate
+  `packages/loca-core-rs/src/contract/`; `deno task check` fails on stale
+  output. See [scripts/contract/README.md](scripts/contract/README.md).
+- HTTP routes: each core module owns its slice in
+  `packages/loca-core-rs/src/<module>/routes.rs`, mounted by
+  `src/transport/router.rs`. WS frames: `packages/loca-shared/src/api/ws.ts`.
+  Boot wiring: `src/boot.rs`.
 - Client API access: `packages/loca-client/src/ui/lib/core/`. Platform-specific
   Tauri calls: `packages/loca-client/src/ui/lib/platform/`.
 - Extension author API: the Zod schema in
   `packages/loca-shared/src/validation/loca-json.ts` and the published JSON
-  Schema in `packages/loca-shared/src/loca-json-schema.json`.
-- MCP server connections (the other tool provider): the subsystem under
-  `packages/loca-core/src/mcp/` (manager, registry, token resolution).
-
-## Current state: feature freeze, Rust port in progress
-
-**All other development is frozen.** Core is being rewritten from TypeScript
-(`@loca/core` + `@loca/core-engine`) into one Rust library at
-`packages/loca-core-rs/` that runs as a service on desktop and links into the
-Tauri app on mobile. The freeze exists because the rewrite is a big-bang
-cutover: there is no dual-shipping period, so a concurrent change to the
-TypeScript core is a change that has to be ported again.
-
-If you are picking up work in this repo, read
-[docs/rust-port/README.md](docs/rust-port/README.md) first. It is the map:
-stages, the work-package protocol, and how to resume a stopped package.
-[docs/rust-port/registry.md](docs/rust-port/registry.md) is the index of who
-owns what, and [docs/rust-port/shared/decisions.md](docs/rust-port/shared/decisions.md)
-records every deviation from the plan and why.
-
-Two things that already apply to work anywhere in the repo:
-
-- **The wire contract generates Rust.** `@loca/shared` stays the single source
-  of truth, and `packages/loca-core-rs/src/contract/` is generated from it by
-  `deno task contract`. `deno task check` fails on stale output. Change the
-  TypeScript, regenerate, commit both. See
-  [scripts/contract/README.md](scripts/contract/README.md).
-- **The TypeScript core is the specification.** Until cutover it is also what
-  ships, so a bug fixed there has to be fixed in the Rust port too. Prefer
-  fixing it in both, and record anything non-obvious in the ADR log.
+  Schema in `packages/loca-shared/src/loca-json-schema.json`. The worker the
+  core spawns for tools: `packages/loca-core-rs/workers/tool-worker.ts`.
+- MCP server connections: `packages/loca-core-rs/src/mcp/`.
 
 ## Conventions
 
@@ -129,16 +89,11 @@ Two things that already apply to work anywhere in the repo:
   section, a group header, a sidebar, a whole panel). "Shared" means BOTH sides
   render it: the client wraps the shared component feeding live state; the
   website wraps the same component feeding scripted/default state. A shared
-  component that ONLY the website uses is NOT allowed - it is a
-  re-implementation in disguise and WILL drift (this is exactly how the settings
-  demo diverged from the app). The fix for any represented-component mismatch is
-  to push that layer into `@loca/shared/ui` and make the client consume it,
-  NEVER to hand-mirror the client's markup on the website. If extracting a layer
-  breaks the client, that breakage is the next task to fix (by making the client
-  wrap the shared component); it is never acceptable to leave a
-  client-vs-website divergence standing. Client-only behavior on a shared
-  component (validation, pickers, capture, live catalogs) is injected via
-  props/callbacks/snippets, so the rendered markup stays single-source. The
+  component that ONLY the website uses is NOT allowed. The fix for any
+  represented-component mismatch is to push that layer into `@loca/shared/ui`
+  and make the client consume it, NEVER to hand-mirror the client's markup on
+  the website. Client-only behavior on a shared component (validation, pickers,
+  capture, live catalogs) is injected via props/callbacks/snippets. The
   mechanism is a four-tier component taxonomy (A0 primitive / A `*View` / B thin
   client wrapper / C client shell) recorded in
   `packages/loca-client/src/ui/components/.tiers.json`, sample bundles + a
@@ -164,26 +119,23 @@ Two things that already apply to work anywhere in the repo:
   proper noun, in prose, headings, and user-facing copy. The two halves are
   **Core** (the service) and **Client** (the desktop UI), capitalized when named
   in a sentence, whether on their own (preferred: "Core", "Client") or with the
-  brand ("Loca Core", "Loca Client"). The thin vocabulary: `Loca` (the
-  product), `Loca Core` / `Core` (the service), `Loca Client` / `Client` (the
-  desktop UI), and `Loca built-in extension`. Identifiers keep their own casing
-  and stay lowercase: hyphenated package, crate, and binary names
-  (`loca-core`), the `@loca/*` import scope, the all-caps `LOCA_*` env vars,
-  `loca.rzkyif.com` and the `com.rzkyif.loca` bundle ids derived from it, the
-  `~/.loca` paths, the
+  brand ("Loca Core", "Loca Client"). Identifiers keep their own casing and stay
+  lowercase: hyphenated package, crate, and binary names (`loca-core`), the
+  `@loca/*` import scope, the all-caps `LOCA_*` env vars, `loca.rzkyif.com` and
+  the `com.rzkyif.loca` bundle ids derived from it, the `~/.loca` paths, the
   `loca.json` manifest filename, release artifact filenames (`loca.pkg`), CSS
   classes (`loca-scroll`), and the `loca::<scope>` log targets.
-- **Logging.** `loca-core` modules log via `getLogger("scope")` from
-  `src/shared/log.ts`; `console.*` is forbidden except the boot-failure catch in
-  `main.ts`. Every line runs through `scrubSecrets` (same module) which masks
-  tokens before they reach `core.log` or stderr.
+- **Logging.** Core modules log through `tracing` with a `loca::<scope>`
+  target; every line passes through `scrub_secrets` before it reaches `core.log`
+  or stderr.
 - **Icons.** UI icons are UnoCSS `presetIcons` classes (`i-<collection>-<name>`,
   almost always `i-material-symbols-*`). A missing icon emits no CSS and renders
   as an invisible box with no build error, so every icon name is validated
   against the bundled `@iconify/json` by the `check-icon-classes.ts` walker in
   `deno task lint`. Verify a name exists (e.g. at https://icones.js.org) before
   using it; not every icon has a `-rounded`/`-outline` variant.
-- **Library reuse.** Prefer maintained npm/JSR packages over hand-rolled code.
+- **Library reuse.** Prefer maintained crates and npm/JSR packages over
+  hand-rolled code.
 - **User-facing copy.** Every string a user can read (settings, manual, tool and
   extension descriptions, messages) follows the one guide at [COPY.md](COPY.md):
   voice, the canonical terminology glossary, and the per-surface rules. Read it
@@ -194,61 +146,61 @@ Two things that already apply to work anywhere in the repo:
 - **No non-consented network (absolute rule).** Once installed, the running Core
   and Client make NO outbound network request without an explicit user action:
   update checks happen on a button press, downloads behind a confirmation modal
-  (see `downloads/manager.ts` + the requirements/download routes + the client's
+  (see `downloads/` + the requirements routes + the client's
   `requestRequiredModal`). Boot and background code must not fetch, poll, check
   for updates, or download. The built-in extension is installed on first boot
   OFFLINE from artifacts fetched + verified during install (the installer
   payload carries `extensions/.loca-extension-builtin.{tgz,json}` when the
   build could stage it, and the Core binary's `bootstrap`/`install-service`
-  subcommand - which every native installer's install hook wraps - plants them
-  otherwise; `seeding.ts` then re-verifies the Ed25519 signature + tarball
-  sha256 and installs them with zero network) - never a boot-time fetch. If the
-  plant is missing (an offline installer run), boot leaves the built-in for
-  the user to install from the extensions UI rather than fetching.
-  The ONLY place network is expected without a user action is the install phase
-  itself - the `install-service` subcommand the native installers delegate to -
-  which runs before the app is considered installed. New boot/background work
-  routes through the user-gated download and update flows; it never reaches out
-  on its own.
+  subcommand, which every native installer's install hook wraps, plants them
+  otherwise; boot seeding re-verifies the Ed25519 signature + tarball sha256 and
+  installs them with zero network). If the plant is missing (an offline
+  installer run), boot leaves the built-in for the user to install from the
+  extensions UI rather than fetching. The ONLY place network is expected without
+  a user action is the install phase itself, which runs before the app is
+  considered installed. Build-time fetches on a developer machine (vendoring
+  llama.cpp, sherpa-onnx prebuilts) are not covered by this rule.
 - **Channels and persistence.** All state lives under `~/.loca/<channel>/`,
   where the channel (`stable` default, `dev`, `latest`) is selected by
   `LOCA_CHANNEL` and resolved identically in core, client, and the native
   installers. The one exception is `models/`, shared across channels at
   `~/.loca/models` so multi-GB weights are not re-downloaded per channel.
   Keychain entries, default ports, and service labels are channel-namespaced so
-  two channels can run at once. See [DEVELOPMENT.md](DEVELOPMENT.md) for the
-  channel/port tables.
+  two channels can run at once. See [DEVELOPMENT.md](DEVELOPMENT.md).
 - **Trust root.** Release manifests are Ed25519-signed. The private key lives in
   a gitignored `.env`; the public key is committed in
-  `packages/loca-core/data/signing-keys.json` so every compiled core trusts the
-  matching signatures. Three signing identities are in play: (1) the Ed25519
+  `packages/loca-core-rs/data/signing-keys.json` and baked into every compiled
+  core by `build.rs`. Three signing identities are in play: (1) the Ed25519
   keypair signs `core.json`, `binaries.json`, and `android.json` (the Android
-  client also verifies `android.json.sig` against the committed public key before
-  self-updating); (2) a separate Tauri-format keypair signs `client.json` and the
-  bundled desktop installers; (3) a Java keystore signs the Android APK for
-  install (Android enforces it at install time). The keystore is supplied at
-  release time via base64 in the gitignored `.env`
-  (`LOCA_ANDROID_KEYSTORE_B64`); the decoded `*.jks` + `keystore.properties` are
-  gitignored and never committed. A fourth, OPTIONAL identity pair applies to macOS
-  (via the `APPLE_*` vars in `.env`): an Apple Developer ID Application
-  certificate signs + notarizes the macOS client bundle,
-  and a Developer ID Installer certificate signs + notarizes the macOS `.pkg`
-  installer (`productsign` rejects the Application cert). Both are inert when unset - the
-  build falls back to ad-hoc signing (`signingIdentity` "-") and the `.pkg` ships
-  unsigned, so Gatekeeper warns until the user clears it once. The
-  same `APPLE_*` env (its App Store Connect API key) also gates + signs the iOS
-  App Store build, purely secret-driven. A fifth, also-dormant identity is
-  Windows Authenticode (`WINDOWS_CERTIFICATE_THUMBPRINT` / `WINDOWS_SIGN_COMMAND`),
-  which would sign the client NSIS + the unified installer; unset today, so
-  Windows installers ship unsigned and SmartScreen warns on first run. See
+  client also verifies `android.json.sig` against the committed public key
+  before self-updating); (2) a separate Tauri-format keypair signs `client.json`
+  and the bundled desktop installers; (3) a Java keystore signs the Android APK
+  for install. The keystore is supplied at release time via base64 in the
+  gitignored `.env` (`LOCA_ANDROID_KEYSTORE_B64`); the decoded `*.jks` +
+  `keystore.properties` are gitignored and never committed. A fourth, OPTIONAL
+  identity pair applies to macOS (via the `APPLE_*` vars in `.env`): a Developer
+  ID Application certificate signs + notarizes the macOS client bundle, and a
+  Developer ID Installer certificate signs + notarizes the macOS `.pkg`
+  installer. Both are inert when unset (ad-hoc signing, unsigned `.pkg`). The
+  same `APPLE_*` env also gates + signs the iOS App Store build. A fifth,
+  also-dormant identity is Windows Authenticode
+  (`WINDOWS_CERTIFICATE_THUMBPRINT` / `WINDOWS_SIGN_COMMAND`). See
   [scripts/release/macos-signing.md](scripts/release/macos-signing.md).
 - **Distribution split.** Two Cloudflare-hosted hostnames, aligned with content
-  type: `loca.rzkyif.com` (Astro Worker, landing page only) and `get.loca.rzkyif.com`
-  (R2 public bucket, every release artifact: installers, schemas, manifests,
-  binaries). Both are defined in `packages/loca-core/src/config.ts`.
-- **Helper-binary boundary.** The updater and keychain helpers are standalone
-  Rust crates compiled to their own small binaries (not `deno compile` entries)
-  so the binary boundary is explicit and the artifacts stay a few hundred KB.
+  type: `loca.rzkyif.com` (Astro Worker, landing page only) and
+  `get.loca.rzkyif.com` (R2 public bucket, every release artifact: installers,
+  schemas, manifests, binaries). Both are defined in
+  `packages/loca-core-rs/src/config.rs`.
+- **Native features are opt-in at build time.** `local-inference` and
+  `local-speech` compile vendored C/C++ trees and are OFF by default so a fresh
+  checkout builds without `vendor/`; releases and `deno task dev` turn both on.
+- **GPU backends load dynamically.** The core ships with the CPU baseline;
+  per-GPU llama.cpp backends are separate shared libraries downloaded on
+  consent. Mobile is CPU-only and downloads no executable code.
+- **Byte-exact parity surfaces.** The TLS SPKI pin derivation, CPace, and the
+  on-disk persistence tree must not change shape: already-paired clients and
+  existing installs depend on them. Committed fixtures under
+  `packages/loca-core-rs/src/*/testdata/` pin them.
 
 ## Pointers
 
@@ -258,14 +210,12 @@ For anything beyond the above, the canonical docs are:
 - Package vs release-item separation and the standardized per-package task
   vocabulary (`<verb>` / `<verb>:<pkg>`, fanned out by `scripts/pkg.ts`):
   [DEVELOPMENT.md](DEVELOPMENT.md). A package is a development unit (the root
-  `deno.json` `workspace` array is the source of truth, 7 Deno + 5 Rust crates);
-  a release item is a distribution unit that may span packages
-  (`scripts/release/*.ts`, each declaring its `packages`).
+  `deno.json` `workspace` array is the source of truth); a release item is a
+  distribution unit that may span packages (`scripts/release/*.ts`, each
+  declaring its `packages`).
 - Per-package overview (layout, run/build/test, internals): the
-  `packages/<name>/README.md` of the package in question. Subsystem deep dives
-  are nested next to the code:
-  `packages/loca-core/src/{sidecars,extensions,mcp,update}/README.md` and
-  `packages/loca-client/src/ui/lib/core/README.md`.
+  `packages/<name>/README.md` of the package in question, and
+  `packages/loca-client/src/ui/lib/core/README.md` for the client transport.
 - Test-suite guide (layout, helpers, fixtures, scratch tests, CI):
   [tests/README.md](tests/README.md). Two opt-in, local-only, never-in-CI E2E
   lanes sit alongside the co-located unit/component suites: a headless
@@ -275,27 +225,25 @@ For anything beyond the above, the canonical docs are:
   [tests/e2e/headless/README.md](tests/e2e/headless/README.md).
 - Release + deploy, channels, Cloudflare + R2 setup:
   [packages/loca-website/README.md](packages/loca-website/README.md)
-- macOS Developer ID signing + notarization (cert-ready checklist, entitlements,
-  iOS notes): [scripts/release/macos-signing.md](scripts/release/macos-signing.md)
+- macOS Developer ID signing + notarization:
+  [scripts/release/macos-signing.md](scripts/release/macos-signing.md)
 - Extension author API:
   [packages/loca-extension-builtin/README.md](packages/loca-extension-builtin/README.md)
-- User-facing copy (the single source for any string a user can read: settings,
-  manual, tool and extension descriptions, messages): [COPY.md](COPY.md).
-  Whenever a task touches user-facing copy, in any package, follow it.
+- User-facing copy: [COPY.md](COPY.md).
 - Settings system architecture (schema, routing, persistence):
   [packages/loca-shared/src/domain/settings/README.md](packages/loca-shared/src/domain/settings/README.md)
 - External services we depend on (HuggingFace, GitHub releases, R2) and how to
   fix breakage when they change: [EXTERNAL.md](EXTERNAL.md)
 
-Tests are co-located with source as `*.test.ts`; scratch tests are
-`*.tmp.test.ts` (gitignored anywhere). After a change, run `deno task check`,
-`deno task fmt`, `deno task lint`, and `deno task test`.
+Tests are co-located with source (`*.test.ts`, Rust `tests.rs` / inline
+`#[cfg(test)]`); scratch tests are `*.tmp.test.ts` / `*.tmp.test.rs`
+(gitignored anywhere). After a change, run `deno task check`, `deno task fmt`,
+`deno task lint`, and `deno task test`.
 
 Gate output is intentionally concise: a passing gate is roughly a dozen lines
 (one `ok <package> <verb> (Ns)` line per package plus summaries), and each
 failing package adds a bounded block with the last 20 output lines (which name
-the failing test/file), a `rerun:` command, and a `full:` log path. Reading the
-last ~50 lines of a gate run is sufficient even on failure. The complete
+the failing test/file), a `rerun:` command, and a `full:` log path. The complete
 untruncated output of every package run is always written to
 `.gate-logs/<verb>-<pkg>.log` (gitignored); read that file only when the
 excerpt is not enough.
@@ -333,3 +281,8 @@ Touch only what you must. Clean up only your own mess.
 
 Define success criteria. Loop until verified. For multi-step tasks, state a
 brief plan with a verification check per step.
+
+### 5. Concise Code
+
+Keep code concise and line counts low. Comments are short, to the point, and
+added only when necessary: explain the non-obvious, never restate the code.

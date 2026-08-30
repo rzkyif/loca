@@ -5,14 +5,12 @@
 //! terminates every assigned process. It is the only way to guarantee
 //! orphan-free cleanup on Windows when the core never reaches its shutdown path.
 //!
-//! Windows-only by necessity, not by omission. On Linux and macOS the service
-//! supervisor already reaps: systemd kills the unit's cgroup and launchd kills
-//! the job's process group. Windows Task Scheduler does neither. See the
-//! process-group note in [`super::process`] for why the unix side deliberately
-//! does not opt out of that.
+//! Windows-only by necessity: systemd kills the unit's cgroup and launchd the
+//! job's process group, while Windows Task Scheduler does neither. See the
+//! process-group note in [`super::process`].
 //!
-//! Best effort throughout: a failure here means a child could outlive a hard
-//! core kill, which is worth a warning and never worth failing a spawn over.
+//! Best effort throughout: a failure means a child could outlive a hard core
+//! kill, which is worth a warning and never worth failing a spawn over.
 
 /// A handle to the kill-on-close job. Constructed once per [`super::Manager`];
 /// a no-op on every platform except Windows.
@@ -118,7 +116,6 @@ impl JobObject {
     }
 }
 
-// Deliberately no `Drop`. Closing the job handle terminates every assigned
-// process immediately, which would race the graceful shutdown and kill children
-// mid-write. The core exiting closes it as its last act, which is the ordering
-// we want. One handle per Manager is the cost, and production has one Manager.
+// Deliberately no `Drop`: closing the job handle terminates every assigned
+// process at once, racing the graceful shutdown. The core exiting closes it as
+// its last act, which is the ordering wanted.

@@ -1,26 +1,15 @@
-//! Keeping the resident models equal to what the settings ask for.
+//! Keeping the resident models equal to what the settings ask for: the decision
+//! table, with no process to restart.
 //!
-//! This is `applySpeech` (`services/sidecar-boot.ts:268-301`) with the process
-//! removed. The Deno core reconciled by POSTing `/configure` to a child and
-//! restarting it when its identity changed; here the slots are ours, so the
-//! whole restart-versus-reconfigure distinction disappears and what is left is
-//! the decision table.
+//! Three triggers: boot, a settings change, and a model finishing its download.
+//! The third is not a subscription of ours, because boot already owns one
+//! download-queue subscription and a second subscriber would duplicate the edge
+//! detection, so [`Reconciler::note_downloads`] is called BY that loop.
 //!
-//! # The three triggers, and why the download one is not a subscription of ours
-//!
-//! Boot, a settings change, and a model finishing its download. The first two
-//! are ours. The third is not: boot already owns one download-queue
-//! subscription, and a second subscriber would duplicate the edge detection that
-//! guards against the download-versus-present race. So [`Reconciler::note_downloads`]
-//! is called BY that loop rather than driving one of its own.
-//!
-//! # Why a completed row is not the same as a completion
-//!
-//! Download rows survive restarts. On the first broadcast after boot, a row left
-//! `Completed` by an earlier run would read as a fresh completion and reload a
-//! multi-gigabyte model the moment anything touched the queue. The Deno core
-//! seeds its last-seen map from the persisted snapshot before subscribing for
-//! exactly this reason, and so does this.
+//! Download rows survive restarts, so a row left `Completed` by an earlier run
+//! would read as a fresh completion and reload a multi-gigabyte model the
+//! moment anything touched the queue. The last-seen map is therefore seeded
+//! from the persisted snapshot before subscribing.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,19 +44,13 @@ pub struct Reconciler {
     espeak_dir: PathBuf,
     models_dir: PathBuf,
     seen: Mutex<HashMap<String, DownloadStatus>>,
-    /// Serialises the whole read-settings-then-apply sequence.
-    ///
-    /// **Without it the last writer of the STATUS is not necessarily the last
-    /// writer of the MODELS.** Three things call `reconcile` (boot, the settings
-    /// watch, the download consumer) and a load takes seconds, so two can
-    /// overlap: one reads "speech off" and one reads "speech on", they apply in
-    /// one order and publish in the other, and the row ends up saying `Running`
-    /// with nothing resident, or cleared with a multi-gigabyte model still held.
-    /// Neither state is recoverable without another settings change.
-    ///
-    /// A `tokio::sync::Mutex` because it is held across an `await`. Reconciles
-    /// are rare and already serialise on the engine slots underneath, so the
-    /// only thing this costs is the overlap that was producing the wrong answer.
+    /// Serialises the whole read-settings-then-apply sequence: without it the
+    /// last writer of the STATUS need not be the last writer of the MODELS.
+    /// Three things call `reconcile` and a load takes seconds, so two can
+    /// overlap, apply in one order and publish in the other, and leave the row
+    /// saying `Running` with nothing resident. Neither state recovers without
+    /// another settings change. `tokio`'s mutex because it is held across an
+    /// `await`.
     reconciling: tokio::sync::Mutex<()>,
 }
 
@@ -92,16 +75,12 @@ impl Reconciler {
 
     /// Reconcile once against the settings as they are now.
     ///
-    /// **`load_resolved`, never `load`.** The sparse record holds only what the
-    /// user has explicitly set, and `stt.modelType` / `stt.modelFiles` are not
-    /// written while they hold their schema defaults. Reading sparse here means
-    /// a fresh install where the user accepted the offered model, downloaded it,
-    /// and turned transcription on (patching `stt.enabled` and nothing else)
-    /// derives `stt: None` and never loads a thing. The defaults are real
-    /// models, and the requirements computation already downloads them, so the
-    /// two halves have to read the settings the same way. This is what
-    /// `speechDesiredState` does with `schemaDefault` (`sidecars/speech.ts:95`),
-    /// and what every other core-global consumer in this crate does. See D-072.
+    /// `load_resolved`, never `load`: the sparse record omits `stt.modelType` /
+    /// `stt.modelFiles` while they hold their schema defaults, so a user who
+    /// accepted the offered model and patched only `stt.enabled` would derive
+    /// `stt: None` and never load a thing. The requirements computation reads
+    /// resolved settings and downloads those defaults, so both halves have to
+    /// read the same way.
     pub async fn reconcile(&self) {
         // Held for the read AND the apply: see `reconciling`.
         let _serialised = self.reconciling.lock().await;
@@ -115,19 +94,12 @@ impl Reconciler {
         self.apply(&settings).await;
     }
 
-    /// **Every call into [`Slots`] goes through `spawn_blocking`, and that is not
-    /// a detail.** Loading a speech model is a multi-gigabyte read plus an ONNX
-    /// session build, and the first TTS load also unpacks 18 MB of phonemizer
-    /// data. Run inline it would occupy a tokio worker thread for seconds or
-    /// minutes: tokio cannot steal work from a thread that is blocked, so
-    /// unrelated tasks scheduled on it stall with no diagnosis. Boot's initial
-    /// reconcile is the worst case, because it happens while the core is coming
-    /// up and everything else is contending for the runtime.
-    ///
-    /// The engine's own decodes go through the dedicated worker thread instead
-    /// (see [`super::worker`]); loads use the blocking pool because they are
-    /// driven by settings rather than by a client, so no caller can abandon one
-    /// and no client can produce them in a loop.
+    /// Every call into [`Slots`] goes through `spawn_blocking`: a load is a
+    /// multi-gigabyte read plus an ONNX session build, and run inline it would
+    /// occupy a tokio worker for minutes, stalling whatever else was scheduled
+    /// there with no diagnosis. Decodes use the dedicated worker thread
+    /// instead ([`super::worker`]); loads use the blocking pool because they
+    /// are driven by settings rather than by a client.
     async fn apply(&self, settings: &SettingsRecord) {
         let models_dir = self.models_dir.clone();
         let desired = config::desired(
@@ -139,8 +111,7 @@ impl Reconciler {
 
         if desired.is_off() {
             // Cleared rather than published as Disabled: a kind nobody has
-            // published does not occupy a subsystem row at all, which is what
-            // the Deno core did for a sidecar that was never started.
+            // published occupies no subsystem row at all.
             if let Err(err) = self.apply_off_runtime(&desired).await {
                 tracing::warn!(target: "loca::speech", "unloading the speech models failed: {err}");
             }
@@ -168,10 +139,8 @@ impl Reconciler {
                 );
             }
             Err(message) => {
-                // Reported rather than swallowed. The sidecar had no path to
-                // tell the client a model failed to load: a failed /configure
-                // was an HTTP error to a caller nobody was watching, and the
-                // subsystem row just stayed as it was.
+                // Reported rather than swallowed: nothing else would tell the
+                // client a model failed to load.
                 tracing::error!(target: "loca::speech", "speech model load failed: {message}");
                 self.publish(SidecarStatus::Error, Some(message));
             }
@@ -197,8 +166,7 @@ impl Reconciler {
             status,
             message,
             progress: None,
-            // No pid, no cpu, no rss: there is no process. The client already
-            // renders these as absent for a subsystem that has none.
+            // No pid, no cpu, no rss: there is no process.
             pid: None,
             cpu_pct: None,
             rss_mb: None,
@@ -216,10 +184,8 @@ impl Reconciler {
         }
     }
 
-    /// Reconcile if a speech model just finished downloading.
-    ///
-    /// Answers whether it acted, which is what makes "a redundant snapshot does
-    /// nothing" assertable instead of invisible.
+    /// Reconcile if a speech model just finished downloading. Answers whether it
+    /// acted, so "a redundant snapshot does nothing" is assertable.
     pub async fn note_downloads(&self, entries: &[DownloadEntry]) -> bool {
         let completed = {
             let mut seen = lock(&self.seen);
@@ -251,10 +217,9 @@ impl Reconciler {
             .any(|key| SPEECH_KEYS.contains(&key.as_str()))
     }
 
-    /// Reconcile now, then on every settings change that touches [`SPEECH_KEYS`].
-    ///
-    /// Owns its own subscription so boot carries no key list. A lagged receiver
-    /// resyncs rather than breaking out of the loop: breaking would silently
+    /// Reconcile now, then on every settings change that touches
+    /// [`SPEECH_KEYS`]. Owns its own subscription so boot carries no key list.
+    /// A lagged receiver resyncs rather than breaking the loop, which would
     /// stop every future reload for the life of the process.
     pub fn spawn_settings_watch(self: &Arc<Self>) {
         let this = Arc::clone(self);
@@ -404,9 +369,8 @@ mod tests {
         assert!(lock(&h.slots.applied)[0].is_off());
     }
 
-    /// Put a whisper bundle on disk where the resolver will find it, and turn
-    /// local STT on, so the desired state is genuinely "loaded" rather than
-    /// falling through to "off".
+    /// Put a whisper bundle on disk where the resolver will find it and turn
+    /// local STT on, so the desired state is genuinely "loaded".
     async fn enable_stt(h: &Harness) {
         let specs = [
             ("encoder", "@a/b/main/enc.onnx"),
@@ -438,18 +402,11 @@ mod tests {
             .unwrap();
     }
 
-    /// The path a real user takes, which every other test in this file skips.
-    ///
-    /// `enable_stt` below patches `stt.modelType` and `stt.modelFiles`
-    /// explicitly, so it can only ever exercise a selection the user typed. The
-    /// far more common case is that they accept the model Loca offers: those
-    /// keys keep their schema defaults and are therefore NOT in the sparse
-    /// record at all, and the only key patched is `stt.enabled`.
-    ///
-    /// Reading `load()` there derives `stt: None` and local transcription
-    /// silently never works, on a machine where the weights are on disk because
-    /// the requirements flow (which reads resolved settings) just downloaded
-    /// them.
+    /// The path a real user takes: accepting the offered model, so
+    /// `stt.modelType` and `stt.modelFiles` keep their schema defaults and are
+    /// absent from the sparse record, with `stt.enabled` the only key patched.
+    /// Reading `load()` there derives `stt: None` and transcription silently
+    /// never works on a machine where the weights are on disk.
     #[tokio::test]
     async fn the_default_model_selection_loads_when_only_the_toggle_is_set() {
         let h = harness().await;
@@ -505,10 +462,8 @@ mod tests {
             h.sidecars.status(SidecarKind::Speech).status,
             SidecarStatus::Running,
         );
-        // Loading is published BEFORE the load, which is what the client renders
-        // while a multi-gigabyte model is read. Observed through the recorder
-        // rather than by racing the status: the recorder is called between the
-        // two publishes.
+        // Loading is published BEFORE the load. Observed through the recorder
+        // rather than by racing the status.
         assert_eq!(
             lock(&h.slots.seen_status).as_slice(),
             &[SidecarStatus::Loading]
@@ -607,18 +562,11 @@ mod tests {
 
     /// A model load must not occupy a tokio worker thread.
     ///
-    /// Driven from OUTSIDE the runtime on purpose, and the first version of this
-    /// test is the reason. Written as `#[tokio::test(worker_threads = 1)]` it
-    /// detected the defect by HANGING: the test body shares the single worker
-    /// with the blocked load, so it never resumes to make its assertion. A test
-    /// whose failure mode is a wedged binary holding the cargo build lock is
-    /// worse than no test (D-070), and this package has now caused that twice.
-    ///
-    /// Here the runtime is built by hand, both tasks are spawned onto its single
-    /// worker, and the MAIN thread (which is not a runtime worker and cannot be
-    /// starved) waits on a channel with a deadline. Inline, the second task never
-    /// runs and this fails in five seconds naming the cause; on the blocking
-    /// pool, it completes while the load is still in progress.
+    /// Driven from OUTSIDE the runtime: under `#[tokio::test(worker_threads =
+    /// 1)]` the test body shares the single worker with the blocked load and
+    /// detects the defect by hanging. Here the runtime is built by hand, both
+    /// tasks are spawned onto its single worker, and the main thread waits on a
+    /// channel with a deadline.
     #[test]
     fn a_model_load_does_not_occupy_the_async_runtime() {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -667,16 +615,10 @@ mod tests {
         );
     }
 
-    /// Two reconciles racing must not leave the row and the models disagreeing.
-    ///
-    /// A load takes seconds and three things trigger reconciles, so an off/on
-    /// flip can overlap: without serialisation one call reads "on" and one reads
-    /// "off", they apply in one order and publish in the other, and the row ends
-    /// up saying `Running` with nothing resident (or cleared with a model still
-    /// held). Neither state recovers without another settings change.
-    ///
-    /// The property asserted is the one that matters: whatever the final
-    /// settings say, the LAST applied state and the published row agree.
+    /// Two reconciles racing must not leave the row and the models disagreeing:
+    /// without serialisation an off/on flip applies in one order and publishes
+    /// in the other. Whatever the final settings say, the last applied state
+    /// and the published row agree.
     #[tokio::test]
     async fn concurrent_reconciles_leave_the_row_agreeing_with_the_models() {
         let h = harness().await;
@@ -719,9 +661,8 @@ mod tests {
 
     #[test]
     fn the_watch_filter_covers_the_model_selection_keys_and_ignores_unrelated_ones() {
-        // D-139: the TypeScript watched the TTS model pair and not the STT one,
-        // so picking a transcription model did nothing until something else
-        // reconciled.
+        // Watching only the TTS model pair would leave picking a transcription
+        // model doing nothing until something else reconciled.
         let set = |key: &str| BTreeSet::from([key.to_string()]);
         assert!(Reconciler::watches(&set("stt.modelFiles")));
         assert!(Reconciler::watches(&set("stt.modelType")));

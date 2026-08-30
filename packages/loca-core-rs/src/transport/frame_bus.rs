@@ -5,13 +5,11 @@
 //! [`FrameBus::broadcast_to_client`]. The bus renders the frame once and hands
 //! the same bytes to every registered [`Connection`]. What a connection is
 //! attached to is not the bus's concern: on desktop it is a WebSocket
-//! (`super::ws`), and on mobile it is a stream of Tauri events. That is the
-//! whole reason this layer exists rather than services calling the socket.
+//! (`super::ws`), and on mobile it is a stream of Tauri events.
 //!
-//! Inbound is the mirror image. A connection hands a decoded frame to the bus,
+//! Inbound is the mirror image: a connection hands a decoded frame to the bus,
 //! which routes it to the one registered [`InboundHandler`]. The transport
-//! itself answers `ping` and swallows `pong`; everything else is the chat
-//! package's, which owns the per-kind types.
+//! answers `ping` and swallows `pong`; the rest is the chat package's.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,11 +34,8 @@ pub enum Outbound {
 /// Receives client frames the transport did not handle itself.
 ///
 /// Registered once, by the chat package. `kind` is pre-extracted and already
-/// validated as a non-empty string by the envelope check; `frame` is the whole
-/// object, for the handler to deserialize into the per-kind `contract::inbound`
-/// type. The transport does not pre-parse it: those types belong to the handler
-/// and deserializing them IS their validation, so doing it here would either
-/// duplicate that or weaken it.
+/// validated as a non-empty string; `frame` is the whole object, for the
+/// handler to deserialize into its own `contract::inbound` type.
 pub trait InboundHandler: Send + Sync {
     fn handle(&self, client_id: &str, kind: &str, frame: serde_json::Value);
 }
@@ -57,15 +52,11 @@ pub trait ConnectionSeed: Send + Sync {
 /// How many frames may queue on one connection before the bus starts warning.
 ///
 /// Not a cap: dropping a frame silently is worse than the memory, and a socket
-/// this far behind is about to be closed by the transport's per-write budget
-/// (`ws::WRITE_TIMEOUT`), which releases the whole queue with the connection.
-///
-/// That budget is what makes this a warning rather than a leak, and it is worth
-/// naming which guarantee does the work. The comment here used to point at the
-/// PONG timeout instead, which cannot do it: a client that stops reading blocks
-/// the write the pump is parked on, and the pong deadline is an arm of the same
-/// `select!`, so it never gets polled to fire. The bound has to come from the
-/// write itself.
+/// this far behind is about to be closed by `ws::WRITE_TIMEOUT`, which releases
+/// the whole queue with the connection. That budget, not the pong deadline, is
+/// what makes this a warning rather than a leak: a client that stops reading
+/// blocks the write the pump is parked on, and the pong deadline is an arm of
+/// the same `select!`, so it never gets polled to fire.
 const QUEUE_WARN_DEPTH: usize = 4096;
 
 struct Registered {
@@ -107,13 +98,9 @@ impl FrameBus {
         *lock(&self.inbound) = Some(handler);
     }
 
-    /// Whether an inbound handler is registered.
-    ///
-    /// Exists for the boot-seam suite (D-165), and it reads the LIVE field
-    /// rather than restating what boot intended. Losing boot's `on_inbound`
-    /// call makes the whole chat module unreachable in silence: the hub parses
-    /// a `chat.start`, finds nothing here, and drops it, so every route in the
-    /// module can be perfect and no client can start a turn.
+    /// Whether an inbound handler is registered, for the boot-seam suite:
+    /// losing boot's `on_inbound` call silently makes the whole chat module
+    /// unreachable, since the hub then drops every `chat.start`.
     pub fn has_inbound(&self) -> bool {
         lock(&self.inbound).is_some()
     }
@@ -125,9 +112,9 @@ impl FrameBus {
 
     /// Attach a new connection for `client_id`.
     ///
-    /// The seed frames are already queued on the returned connection, so a
-    /// transport that simply drains it delivers them first, on every transport,
-    /// with no ordering to get right at each call site.
+    /// The seed frames are already queued on the returned connection, so any
+    /// transport that drains it delivers them first with no ordering to get
+    /// right per call site.
     pub fn register(self: &Arc<Self>, client_id: &str) -> Connection {
         let (tx, rx) = mpsc::unbounded_channel();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -163,10 +150,8 @@ impl FrameBus {
         }
     }
 
-    /// Deliver to every connection of one client. Used for anything that is
-    /// that client's business alone: an askUser request belonging to its chat,
-    /// or its own per-client settings overlay, which another client must never
-    /// see or converge onto.
+    /// Deliver to every connection of one client: an askUser request belonging
+    /// to its chat, or its own per-client settings overlay.
     pub fn broadcast_to_client(&self, client_id: &str, frame: &ServerToClientFrame) {
         let Some(payload) = render(frame) else { return };
         let registry = self.registry.read().unwrap_or_else(|e| e.into_inner());
@@ -189,11 +174,9 @@ impl FrameBus {
         }
     }
 
-    /// Force every live connection of one client closed.
-    ///
-    /// Called when a client is revoked or its token rotated. A WS connection
-    /// authenticates once, at upgrade, so without this a now-untrusted device
-    /// keeps a working socket until it happens to disconnect.
+    /// Force every live connection of one client closed, on revocation or a
+    /// token rotation. A WS connection authenticates once, at upgrade, so
+    /// without this an untrusted device keeps a working socket.
     pub fn close_client(&self, client_id: &str, code: u16, reason: &'static str) {
         let mut registry = self.registry.write().unwrap_or_else(|e| e.into_inner());
         if let Some(conns) = registry.by_client.remove(client_id) {
@@ -262,10 +245,8 @@ fn send(conn: &Registered, payload: &Arc<str>) {
     }
 }
 
-/// Render once per broadcast, not once per connection.
-///
-/// A frame that will not serialize is a bug in the caller, not a reason to take
-/// the core down, so it is logged and dropped.
+/// Render once per broadcast, not once per connection. A frame that will not
+/// serialize is logged and dropped rather than taking the core down.
 fn render(frame: &ServerToClientFrame) -> Option<Arc<str>> {
     match serde_json::to_string(frame) {
         Ok(json) => Some(Arc::from(json.as_str())),
@@ -280,10 +261,8 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// One attached client connection.
-///
-/// Dropping it deregisters, so a transport task that returns early or panics
-/// cannot leak a registry entry.
+/// One attached client connection. Dropping it deregisters, so a transport
+/// task that returns early cannot leak a registry entry.
 pub struct Connection {
     bus: Arc<FrameBus>,
     client_id: String,
@@ -344,15 +323,9 @@ mod tests {
         }
     }
 
-    /// Take the next item from `conn`, BOUNDED.
-    ///
-    /// Every drain in this module goes through here, and the timeout is the
-    /// whole point rather than a precaution: a connection with nothing queued
-    /// parks forever, so a frame that never arrives is a HANG rather than a
-    /// failure. A hung test does not report red, it wedges the entire `--lib`
-    /// binary and takes every other result with it, which has cost this project
-    /// several outages that all looked like something else. Five seconds is far
-    /// longer than any frame here legitimately takes.
+    /// Take the next item from `conn`, bounded. A connection with nothing
+    /// queued parks forever, so an unbounded drain turns a missing frame into a
+    /// hang that wedges the whole `--lib` binary rather than reporting red.
     async fn next_item(conn: &mut Connection) -> Option<Outbound> {
         tokio::time::timeout(std::time::Duration::from_secs(5), conn.next())
             .await

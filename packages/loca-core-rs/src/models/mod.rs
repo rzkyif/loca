@@ -1,27 +1,14 @@
-//! Model catalog, on-device fit, and the model manager. Absorbs the hardware introspection helper.
+//! Model catalog, on-device fit, the model manager, and hardware introspection.
 //!
-//! Work package **D6** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
+//! [`Models`] is `Clone` over an `Arc` and `boot` builds exactly one, because of
+//! the hardware cache: a probe spawns the vendor GPU tools on Linux and Windows
+//! and loads the Vulkan loader, so a second instance repeats that per caller and
+//! the two can disagree about what machine they are on after a re-probe.
 //!
-//! # One handle, because the hardware probe is expensive and cacheable
-//!
-//! [`Models`] is `Clone` over an `Arc` and `boot` builds exactly one, the same
-//! shape `SessionsStore` and `Auth` take. The reason is the hardware cache: a
-//! probe spawns the vendor GPU tools on Linux and Windows and loads the Vulkan
-//! loader, so a second instance repeats that per caller, and after a
-//! `POST /recommend/recheck` forces a re-probe the two instances can disagree
-//! about what machine they are on.
-//!
-//! # What the rest of the core reaches for here
-//!
-//! | consumer          | needs                                          |
-//! | ----------------- | ---------------------------------------------- |
-//! | D9 storage        | [`ModelLocks`], implemented below              |
-//! | D7 downloads      | [`CatalogHashes`], implemented below           |
-//! | D8 requirements   | [`required::required_model_refs`], [`Models::hardware`], [`Models::ensure_kind`] |
-//! | D7 binaries       | [`Models::hardware`], for the GPU backend      |
-//! | D14, N2, N3       | [`Models::resolve_hf_path`]                    |
-//! | D15, N3           | [`required::EMBED_MODEL_FILE`]                 |
+//! The rest of the core reaches in for [`ModelLocks`] and [`CatalogHashes`]
+//! (both implemented below), [`Models::hardware`], [`Models::ensure_kind`],
+//! [`Models::resolve_hf_path`], [`required::required_model_refs`] and
+//! [`required::EMBED_MODEL_FILE`].
 
 pub mod canonical;
 pub mod catalog;
@@ -54,10 +41,9 @@ use deps::ModelsDeps;
 
 /// What `POST /api/v1/models/ensure` answers with.
 ///
-/// An object literal in `http/routes/models.ts` with no declaration in
-/// `@loca/shared`, so neither contract generator can see it and there is no
-/// generated type to point at (D-067). It lives here rather than in
-/// `routes.rs` because [`Models::ensure_kind`] is what returns it.
+/// Declared here rather than generated, because it is a response envelope no
+/// schema describes, and here rather than in `routes.rs` because
+/// [`Models::ensure_kind`] is what returns it.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnsureModelsResponse {
@@ -106,10 +92,9 @@ impl Models {
         &self.inner.deps
     }
 
-    /// The process-wide settings store, never a second instance: three of the
-    /// model routes write through it, and a second handle would carry its own
-    /// file cache and its own write lock over one `settings.json`, which is the
-    /// lost update `withSettingsLock` exists to prevent.
+    /// The process-wide settings store, never a second instance: a second handle
+    /// would carry its own file cache and write lock over one `settings.json`,
+    /// which is exactly the lost update the settings lock exists to prevent.
     pub fn settings(&self) -> &Settings {
         &self.inner.settings
     }
@@ -120,9 +105,8 @@ impl Models {
 
     /// Detected hardware, cached. `force` re-probes.
     ///
-    /// The probe is blocking (sysctls, and subprocesses on Linux and Windows),
-    /// so it runs on the blocking pool rather than stalling a runtime worker
-    /// for as long as `nvidia-smi` takes to start.
+    /// The probe is blocking (sysctls, and subprocesses on Linux and Windows), so
+    /// it runs on the blocking pool.
     pub async fn hardware(&self, force: bool) -> HardwareInfo {
         if !force {
             if let Some(cached) = self.inner.hardware.read().await.clone() {
@@ -159,11 +143,9 @@ impl Models {
     /// files already on disk come back in `already_have`.
     ///
     /// This enqueues real multi-gigabyte downloads, so it runs only from a
-    /// user-confirmed path: `POST /api/v1/models/ensure` (an explicit download
-    /// button) or D8's `POST /api/v1/requirements/download` (the confirm
-    /// modal). It is deliberately NOT called on a settings change or a preset
-    /// select; those write settings, which prompts the client's modal, and the
-    /// user starts the download from there.
+    /// user-confirmed path: `POST /api/v1/models/ensure` or
+    /// `POST /api/v1/requirements/download`. Never on a settings change or a
+    /// preset select; those prompt the client's modal instead.
     pub async fn ensure_kind(&self, kind: RequirementGroup) -> Result<EnsureModelsResponse> {
         let settings = self.inner.settings.load_resolved().await?;
         let sources = required::sources_for_kind(&settings, kind);
@@ -218,11 +200,8 @@ pub fn parse_group(raw: &str) -> Option<RequirementGroup> {
     }
 }
 
-/// D9's seam: the model files the current settings pin in place, so the storage
-/// view refuses to reclaim one that is in use.
-///
-/// This is the whole of `services/storage.ts:69`, which is why the seam is
-/// filled here rather than in D9: both halves live in this module.
+/// The storage seam: the model files the current settings pin in place, so the
+/// storage view refuses to reclaim one that is in use.
 #[async_trait]
 impl ModelLocks for Models {
     async fn required_model_paths(&self) -> Result<Vec<PathBuf>> {
@@ -234,38 +213,22 @@ impl ModelLocks for Models {
     }
 }
 
-/// D7's seam: the sha256 the SIGNED catalog pins for one downloadable file, so
-/// a transfer verifies its bytes against an anchor this core checked a signature
-/// on rather than against a header a proxy could have written.
+/// The downloads seam: the sha256 the SIGNED catalog pins for one downloadable
+/// file, so a transfer verifies its bytes against an anchor this core checked a
+/// signature on rather than a header a proxy could have written.
 ///
-/// This is the whole of `models/catalog.ts:152`, and it is filled here because
-/// the index it reads is this module's.
+/// The key is the `@user/repo/branch/file` spec exactly as the catalog writes
+/// it, and nothing is normalised on either side: the derived forms (the
+/// branch-less relative path, the absolute path under the models root) are what
+/// a file is called ON DISK and none of them is a catalog key.
 ///
-/// # The key is the source spec exactly as the catalog writes it
-///
-/// `build_sha256_index` keys by `modelSpec`, which is the
-/// `@user/repo/branch/file` string, and D7 hands over `EnqueueSpec.source`,
-/// which is the same string: every model download originates either from a
-/// settings value copied out of the catalog or from a user-supplied spec in the
-/// same form. So nothing is normalised on either side, and nothing may be: the
-/// derived forms (the branch-less relative path `resolveHfPath` produces, the
-/// absolute path under the models root) are what a file is called ON DISK, and
-/// none of them is a catalog key.
-///
-/// # A catalog that will not load answers `None`, deliberately
-///
-/// Matching `modelCatalogSha256`, which swallows the load failure. The reachable
-/// cause is a stable-channel core whose manifest host is down or whose cache was
-/// never written, and the consequence is that the transfer falls through to
-/// HuggingFace's own published sha256, which for a git-LFS weight IS a content
-/// hash and is shape-checked before it is trusted. So this is a step down to a
-/// weaker anchor rather than a step to no anchor, and the alternative (refusing
-/// the download outright) would make a manifest-host outage stop every model
-/// download on a core that can reach HuggingFace perfectly well.
-///
-/// What it must NOT do is answer from an unsigned source. In particular the
-/// embedded dev payload is not a fallback for a stable core: it is unsigned by
-/// construction, and using it would pin a hash the release process never signed.
+/// A catalog that will not load answers `None` deliberately. The transfer then
+/// falls through to HuggingFace's own published sha256, which for a git-LFS
+/// weight IS a content hash: a step down to a weaker anchor rather than to none,
+/// where refusing outright would make a manifest-host outage stop every model
+/// download on a core that can reach HuggingFace perfectly well. What it must
+/// NOT do is answer from an unsigned source: the embedded dev payload is
+/// unsigned by construction, so using it would pin a hash nobody signed.
 #[async_trait]
 impl CatalogHashes for Models {
     async fn catalog_sha256(&self, spec: &str) -> Option<String> {
@@ -281,12 +244,10 @@ mod tests {
     use crate::config::Channel;
     use crate::transport::testing::context;
 
-    // Two specs from the shipped dev catalog, one reaching the index by each of
-    // its two arms (a family variant's quant, and a speech model's file). Both
-    // are literals rather than reads off the payload, so the pin a download
-    // verifies against is asserted rather than derived from the same data the
-    // implementation walked. `deno task contract:check` is what keeps them
-    // current: it fails on a stale `catalog.dev.json`.
+    // Two specs from the shipped dev catalog, one per arm of the index (a family
+    // variant's quant, and a speech model's file). Literals rather than reads off
+    // the payload, so the pin is asserted rather than derived from the same data
+    // the implementation walked.
     const LLM_SPEC: &str = "@unsloth/Qwen3.6-27B-GGUF/main/Qwen3.6-27B-Q8_0.gguf";
     const LLM_SHA: &str = "f93f517f38e696d35a1a7df2c0e3155a64f4c4dcd662107a146ae263f7fb14ce";
     const STT_SPEC: &str = "@csukuangfj/sherpa-onnx-whisper-tiny.en/main/tiny.en-encoder.int8.onnx";
@@ -307,7 +268,7 @@ mod tests {
         models_on(Channel::Dev, "https://get.loca.rzkyif.com")
     }
 
-    /// Held as a trait object, which is how D7's transfer holds it.
+    /// Held as a trait object, which is how the transfer holds it.
     #[tokio::test]
     async fn a_catalog_file_resolves_to_the_hash_the_signed_catalog_pins() {
         let catalog: Arc<dyn CatalogHashes> = Arc::new(dev_models());
@@ -321,11 +282,8 @@ mod tests {
             Some(STT_SHA)
         );
 
-        // The absence case lives next to the two positives on purpose: an
-        // implementation that answered `None` for everything passes a lone
-        // absence assertion, and those two are the instrument that would notice
-        // (D-050). A spec the catalog does not list is a custom user pick, and
-        // the transfer falls through to HuggingFace's hash for it.
+        // Next to the two positives on purpose: an implementation answering
+        // `None` for everything passes a lone absence assertion.
         assert_eq!(
             catalog
                 .catalog_sha256("@someone/custom-repo/main/model.gguf")
@@ -337,10 +295,9 @@ mod tests {
     /// The key is the spec as written, in both directions: the catalog's own
     /// string hits, and every form derived from it misses.
     ///
-    /// Worth pinning because the derived forms are all reachable at the call
-    /// site. Normalising here would either invent a pin for a path that is not a
-    /// catalog key, or (case-folding) match a repo whose name differs only in
-    /// case from the one the catalog signed.
+    /// The derived forms are all reachable at the call site, and normalising here
+    /// would either invent a pin for a path that is not a catalog key or, by
+    /// case-folding, match a repo the catalog never signed.
     #[tokio::test]
     async fn the_lookup_key_is_the_spec_verbatim_and_never_a_form_derived_from_it() {
         let models = dev_models();
@@ -382,14 +339,12 @@ mod tests {
     #[tokio::test]
     async fn a_catalog_that_cannot_be_loaded_yields_no_pin_rather_than_an_unsigned_one() {
         // A manifest base the URL parser refuses, so the load fails without
-        // reaching the network at all. The failure it produces is the one an
-        // offline stable core with no written cache produces.
+        // reaching the network, the way an offline stable core does.
         let stable = models_on(Channel::Stable, "not-a-url");
         assert_eq!(stable.catalog_sha256(LLM_SPEC).await, None);
 
-        // The same spec through the same code path against a catalog that does
-        // load, so the assertion above is about the catalog being unavailable
-        // rather than about the spec being unknown.
+        // The same spec against a catalog that does load, so the assertion above
+        // is about the catalog being unavailable, not the spec being unknown.
         assert_eq!(
             dev_models().catalog_sha256(LLM_SPEC).await.as_deref(),
             Some(LLM_SHA)

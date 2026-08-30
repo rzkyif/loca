@@ -5,24 +5,15 @@
 //! plus this process) and never taken from the request, so a caller cannot use
 //! this to probe an arbitrary process on the machine.
 //!
-//! `POST /api/v1/sidecars/:kind/{start,restart}` is served, and re-homed onto
-//! the in-process engines the sidecars became. It was absent for a while and
-//! that was a REGRESSION rather than a simplification: the client's Retry
-//! button in the Services field (`ServicesField.svelte:99`) is the recovery
-//! path for a subsystem stuck in `Error`, and it had no route to call.
+//! `POST /api/v1/sidecars/:kind/{start,restart}` is what the client's Retry
+//! button reaches for a subsystem stuck in `Error`. The two are equivalent and
+//! both mean "apply the current settings again": for the language model that is
+//! dropping the resident weights, since `ensure_loaded` reloads from settings at
+//! the top of every turn; for speech it is a reconcile.
 //!
-//! `start` and `restart` are equivalent, exactly as in the oracle
-//! (`http/routes/sidecars.ts:60`): both mean "apply the current settings
-//! again". For the language model that is dropping the resident weights, since
-//! `ensure_loaded` runs at the top of every turn and reloads from settings; for
-//! speech it is a reconcile.
-//!
-//! **`stop` is deliberately NOT served**, and that is a real difference rather
-//! than an oversight. The oracle could stop a child process and leave it
-//! stopped. There is no process now, and whether an engine is resident is
-//! derived from settings, so a "stopped" state would be re-derived away by the
-//! next turn. Nothing in the client calls it (`lib/core/sidecars.ts` exposes
-//! `status` and `restart` only).
+//! **`stop` is deliberately not served.** There is no process to stop, and
+//! whether an engine is resident is derived from settings, so a "stopped" state
+//! would be re-derived away by the next turn.
 
 use std::sync::Arc;
 
@@ -94,10 +85,9 @@ fn pid_of(snapshot: &SidecarSnapshot) -> Option<u32> {
 
 /// `POST /api/v1/sidecars/:kind/{start,restart}`.
 ///
-/// 204 on success, matching the oracle. An unknown or uncontrollable kind is a
-/// validation error rather than a 404: the path names a KIND from a closed set,
-/// so "there is no such subsystem to restart" is a bad request about a known
-/// vocabulary, not a missing resource.
+/// 204 on success. An unknown or uncontrollable kind is a validation error
+/// rather than a 404: the path names a kind from a closed set, so this is a bad
+/// request about a known vocabulary, not a missing resource.
 async fn restart(
     State(state): State<SidecarsState>,
     Path(kind): Path<String>,

@@ -1,34 +1,20 @@
 //! One turn: prompt, prefill, sample, parse, emit.
 //!
-//! Blocking from top to bottom. llama.cpp decode is CPU work and a
-//! [`shim::Context`] is `Send` but never `Sync`, so a turn owns the context for
-//! its whole duration and runs on a dedicated blocking thread that
-//! [`super::runtime`] provides. Nothing here is `async`, and nothing here knows
-//! about channels: deltas go to a [`DeltaSink`], which is also what makes the
-//! loop testable against a `Vec`.
+//! Blocking from top to bottom. A [`shim::Context`] is `Send` but never `Sync`,
+//! so a turn owns it for its whole duration on a blocking thread
+//! [`super::runtime`] provides. Deltas go to a [`DeltaSink`], which is also
+//! what makes the loop testable against a `Vec`.
 //!
-//! # Cancellation is the sink saying no
-//!
-//! A dropped [`crate::llm::DeltaStream`] closes the channel, and the sink then
-//! answers `false`. That is the ONLY cancellation signal, deliberately: a second
-//! one (a token, a flag) could disagree with the first, and D3's scheduler
-//! already ties the turn's permit to the stream's lifetime. The obligation this
-//! module carries is that the answer is CHECKED often enough, which is why
-//! prefill is chunked rather than decoded in one call: a single-shot prefill of
-//! a full context would hold the context for seconds after the user pressed
-//! stop, and the next turn would queue behind it invisibly.
-//!
-//! # What is parsed, and what is emitted
+//! Cancellation is the sink answering `false`, and that is the only signal: a
+//! second one could disagree with the first. The obligation is that it is
+//! checked often enough, which is why prefill is chunked: a single-shot prefill
+//! would hold the context for seconds after the user pressed stop.
 //!
 //! Every token, the accumulated text is parsed with `is_partial = true` and
-//! diffed against the previous parse ([`super::diff`], a port of upstream's
-//! `common_chat_msg_diff::compute_diffs`). That is what makes tool-call
-//! arguments and reasoning stream as they are produced rather than arriving in
-//! one lump at the end, which is what the client renders live.
-//!
-//! The text handed to the parser is the STOP-SAFE prefix, never the raw
-//! accumulation: a half-emitted stop marker must not reach the parser, be
-//! emitted as content, and then have to be retracted when it completes.
+//! diffed against the previous parse ([`super::diff`]), which is what makes
+//! tool-call arguments and reasoning stream as they are produced. The text
+//! handed to the parser is the STOP-SAFE prefix, never the raw accumulation: a
+//! half-emitted stop marker must not be emitted and then retracted.
 
 use std::sync::Arc;
 
@@ -58,19 +44,16 @@ pub trait DeltaSink {
     fn wanted(&self) -> bool;
 }
 
-/// Run one turn to completion, to cancellation, or to failure.
-///
-/// `Ok(())` covers both a finished generation and a cancelled one: a consumer
-/// that has gone away is not an error, and there is nobody left to tell.
+/// Run one turn to completion, to cancellation, or to failure. `Ok(())` covers
+/// a cancelled turn too: a consumer that has gone away is not an error.
 pub fn run_turn(
     ready: &Ready,
     state: &mut ContextState,
     req: &LlmRequest,
     sink: &mut dyn DeltaSink,
 ) -> Result<(), ProviderError> {
-    // Images are lifted out BEFORE the template runs, because the template
-    // renders text and libmtmd needs a marker sitting at each image's position
-    // in the rendered prompt. `None` is every ordinary turn.
+    // Before the template runs: it renders text, and libmtmd needs a marker at
+    // each image's position in the rendered prompt.
     let split = image_split(ready.mtmd.as_ref(), req)?;
     let transcript = split.as_ref().map(|s| s.messages.as_slice());
 
@@ -85,16 +68,15 @@ pub fn run_turn(
         .map_err(|err| ProviderError::transport(err.message))?;
     let applied = turn.applied().clone();
 
-    // `parse_special = true`: the rendered prompt is full of control tokens the
-    // template placed there, and tokenizing them as literal text would feed the
-    // model the characters `<|im_start|>` instead of the token that means it.
+    // `parse_special = true`: tokenizing the template's control tokens as
+    // literal text would feed the model `<|im_start|>` as characters.
     let tokens = ready
         .model
         .tokenize(&applied.prompt, true, true)
         .map_err(|err| ProviderError::transport(err.message))?;
 
     // llama.cpp's own answer, not the setting: the context may have been created
-    // with a different size than the record now says.
+    // at a different size than the record now says.
     let n_ctx = state.context.n_ctx() as usize;
     if tokens.len() >= n_ctx {
         return Err(context_window_exceeded(tokens.len(), n_ctx));
@@ -113,12 +95,10 @@ pub fn run_turn(
         shim::SamplerChain::new(Arc::clone(&ready.model), &sampler_spec(&plan, &applied))
             .map_err(|err| ProviderError::transport(err.message))?;
 
-    // The WHOLE prompt, including the part that was already in the KV cache, and
-    // with `is_generated = false`. This is what primes the penalty ring buffer
-    // and advances the grammar past the prompt, and upstream does exactly the
-    // same in `server_slot::init_sampler` (`server-context.cpp:376-383`).
-    // Skipping it is invisible: generation still works, and the repeat penalty
-    // silently stops seeing the conversation it is supposed to penalise against.
+    // The WHOLE prompt, reused prefix included, with `is_generated = false`:
+    // this primes the penalty ring buffer and advances the grammar past the
+    // prompt. Skipping it is invisible, and the repeat penalty silently stops
+    // seeing the conversation it is meant to penalise against.
     for token in &tokens {
         sampler.accept(*token, false);
     }
@@ -137,17 +117,11 @@ pub fn run_turn(
 
 /// Lift the images out of the request, or `None` for a text-only turn.
 ///
-/// The refusal here is deliberate and is the point of the whole change: a turn
-/// that carries images against a model with no projector loaded FAILS, naming
-/// the reason, rather than silently answering as though the user had sent text
-/// alone. That silent answer is what the port did before libmtmd was linked, and
-/// it is the worst available outcome: the model describes something it never
-/// saw, fluently, with nothing anywhere reporting a problem.
-/// Takes the projector rather than the whole [`Ready`] so this is reachable from
-/// a test with `None` and no model on disk. The refusal below is the branch that
-/// matters and it needs no llama.cpp to exercise; requiring a `Ready` would have
-/// made the one dangerous path testable only with a real vision model, which is
-/// how a branch like this ends up with no test at all.
+/// A turn carrying images against a model with no projector FAILS, naming the
+/// reason, rather than answering as though the user had sent text alone: the
+/// model would describe something it never saw with nothing reporting a
+/// problem. Takes the projector rather than the whole [`Ready`] so that branch
+/// is reachable from a test with no model on disk.
 fn image_split(
     mtmd: Option<&Arc<Mutex<shim::Mtmd>>>,
     req: &LlmRequest,
@@ -160,9 +134,8 @@ fn image_split(
             "this message contains an image, but the loaded model has no multimodal projector.              Turn on image support and pick a vision model in settings, or send the message              without the image.",
         ));
     };
-    // The marker is the projector's own, never a constant: it is model-family
-    // specific, and the wrong one leaves the image attached to no position in
-    // the prompt rather than failing.
+    // The projector's own marker, never a constant: it is model-family
+    // specific, and the wrong one silently detaches the image from its position.
     let marker = {
         let guard = mtmd.blocking_lock();
         guard.marker().to_string()
@@ -174,16 +147,10 @@ fn image_split(
 
 /// Evaluate an image-bearing prompt into the context through libmtmd.
 ///
-/// Replaces [`prefill`] for the turn rather than extending it, and the KV cache
-/// is always reset first. Both follow from the same fact: the cache will hold
-/// IMAGE EMBEDDINGS, which have no token ids. `state.tokens` is the record of
-/// what the cache holds and it cannot represent them, so any prefix reuse
-/// computed from it afterwards would be a claim about content that is not there.
-///
-/// Leaving `state.tokens` empty is what makes that safe rather than merely
-/// avoided: the next turn's `reusable_prefix` finds `n_past` disagreeing with an
-/// empty token list, answers 0, and resets. The cache self-heals instead of
-/// being trusted.
+/// Replaces [`prefill`] and resets the KV cache first: the cache will hold
+/// image embeddings, which have no token ids, so `state.tokens` cannot
+/// represent what it holds. Leaving `state.tokens` empty makes the next turn's
+/// `reusable_prefix` see `n_past` disagree, answer 0, and reset.
 fn prefill_multimodal(
     ready: &Ready,
     state: &mut ContextState,
@@ -191,8 +158,7 @@ fn prefill_multimodal(
     split: &super::vision::SplitPrompt,
 ) -> Result<(), ProviderError> {
     let Some(mtmd) = ready.mtmd.as_ref() else {
-        // Unreachable: `image_split` returns `None` when there is no projector,
-        // and this is only called for a `Some`. Stated rather than unwrapped.
+        // Unreachable: `image_split` answers `None` when there is no projector.
         return Err(ProviderError::transport(
             "internal: a multimodal prefill was attempted with no projector loaded",
         ));
@@ -207,8 +173,8 @@ fn prefill_multimodal(
         .eval(
             &mut state.context,
             prompt,
-            // `add_special` true, matching the text path's tokenize: the BOS the
-            // template expects is added once, here.
+            // `add_special` true, matching the text path: the BOS the template
+            // expects is added once, here.
             true,
             &split.images,
             ready.spec.context.n_batch as i32,
@@ -233,10 +199,8 @@ fn prefill(
         state.tokens.truncate(reuse);
     }
 
-    // What the reuse actually saved, for the turn that follows and for the test
-    // that proves the second turn decodes less than the first. Production state
-    // carrying a test-visible number, rather than a test driving its own copy of
-    // this loop (D-084).
+    // What the reuse saved. Not observable from the delta stream, so it is
+    // recorded here rather than inferred.
     state.reused = reuse;
 
     let batch = ready.spec.context.n_batch.max(1) as usize;
@@ -255,31 +219,25 @@ fn prefill(
 
 /// How much of the cached prompt this turn can keep.
 ///
-/// **Extension only**, which is Q3's approved fallback: the shim exposes
-/// `Context::reset` and no partial removal, so a prefix that DIVERGES cannot be
-/// trimmed out of the KV cache and the whole cache has to go. Appending to a
-/// conversation (the common case) reuses everything; a regenerate or an edit
-/// re-prefills. Adding `llama_memory_seq_rm` to the shim would close that gap
-/// and is a performance change rather than a correctness one.
+/// Extension only: the shim exposes `Context::reset` and no partial removal, so
+/// a prefix that DIVERGES costs the whole cache. Appending to a conversation
+/// reuses everything; a regenerate or an edit re-prefills.
 ///
-/// The cached tokens are compared together with the [`LoadSpec`] they belong to.
-/// Reusing a cache across a spec change would condition this turn on another
-/// configuration's state, and the output of that is fluent, confident and wrong
-/// with nothing failing.
+/// The cached tokens are compared together with the [`LoadSpec`] they belong
+/// to: reusing a cache across a spec change would condition this turn on
+/// another configuration's state with nothing failing.
 fn reusable_prefix(state: &ContextState, spec: &LoadSpec, tokens: &[i32]) -> usize {
     if state.spec != *spec {
         return 0;
     }
-    // llama.cpp's own count, not a Rust shadow of it. If the two disagree the
-    // cache is not what this module thinks it is, and starting over is the only
-    // safe reading.
+    // llama.cpp's own count. A disagreement means the cache is not what this
+    // module thinks it is, so starting over is the only safe reading.
     let held = usize::try_from(state.context.n_past()).unwrap_or(0);
     if held != state.tokens.len() {
         return 0;
     }
-    // A prompt that only EXTENDS what is held. The last cached token is left in
-    // place rather than re-decoded, so a prompt equal to the cache would leave
-    // nothing to decode at all, which llama.cpp rejects: keep one token back.
+    // Keep one token back: a prompt equal to the cache would otherwise leave
+    // nothing to decode, which llama.cpp rejects.
     if tokens.len() <= state.tokens.len() || !tokens.starts_with(&state.tokens) {
         return 0;
     }
@@ -315,10 +273,9 @@ fn generate(
         let token = sampler
             .sample(&mut state.context, -1)
             .map_err(|err| ProviderError::transport(err.message))?;
-        // Exactly one advance per token, and it belongs here rather than inside
-        // `sample`: `common_sampler_sample` deliberately does not accept what it
-        // returns. Skipping this is how a grammar-constrained generation quietly
-        // stops being constrained.
+        // Exactly one advance per token: `common_sampler_sample` deliberately
+        // does not accept what it returns, and skipping this is how a
+        // grammar-constrained generation quietly stops being constrained.
         sampler.accept(token, true);
         generated = generated.saturating_add(1);
 
@@ -365,8 +322,8 @@ fn generate(
         }
     }
 
-    // The final parse is the one that completes a tool call: a partial parse
-    // leaves a call it has not finished reading out of the message entirely.
+    // The final parse completes a tool call: a partial parse leaves a call it
+    // has not finished reading out of the message entirely.
     let final_message = parse(turn, acc.text(), false)?;
     for delta in diff_messages(&previous, &final_message, &mut ids)
         .map_err(|err| ProviderError::decode(err.0))?
@@ -376,8 +333,7 @@ fn generate(
         }
     }
 
-    // Its own delta, carrying nothing else, which is what the SSE path produces
-    // and what the consumer counts on.
+    // Its own delta, carrying nothing else, as the SSE path produces.
     let finish_reason = if final_message.tool_calls.is_empty() {
         finish.as_str()
     } else {
@@ -390,8 +346,8 @@ fn generate(
         return Ok(());
     }
 
-    // The full prompt length including anything reused, because that is what
-    // `llama-server` reports and what the consumer's token accounting expects.
+    // The full prompt length, reused prefix included: what the consumer's token
+    // accounting expects.
     let prompt_count = i64::try_from(prompt_len).unwrap_or(i64::MAX);
     let completion = i64::from(generated);
     sink.emit(LlmDelta {
@@ -464,10 +420,9 @@ fn parsed_message(message: shim::AssistantMessage) -> ParsedMessage {
             .map(|call| ParsedToolCall {
                 name: call.function.name,
                 arguments: call.function.arguments,
-                // Absent is the NORMAL case: llama.cpp's id-generating line is
-                // commented out and its generator lives in the server we do not
-                // build, so most templates hand back no id at all. `ids` fills
-                // one in, stably per index.
+                // Absent is the normal case: llama.cpp's id generator lives in
+                // the server we do not build. `ids` fills one in, stably per
+                // index.
                 id: call.id.unwrap_or_default(),
             })
             .collect(),
@@ -481,34 +436,26 @@ fn chat_inputs(prompt: &TurnPrompt) -> shim::ChatInputs {
         tools: prompt.tools.clone(),
         tool_choice: "auto".to_string(),
         add_generation_prompt: true,
-        // A real field rather than an omission, and it must be SENT as false:
-        // a thinking-by-default model keeps thinking unless the template is told
-        // not to, and a test covering only the "on" case passes either way.
+        // Must be SENT as false: a thinking-by-default model keeps thinking
+        // unless the template is told not to.
         enable_thinking: prompt.thinking.enabled,
         parallel_tool_calls: false,
-        // Pinned, exactly as `--reasoning-format deepseek` is pinned today, so
-        // the thoughts always arrive in `reasoning_content` whatever llama.cpp's
-        // default becomes.
+        // Pinned so thoughts always arrive in `reasoning_content`, whatever
+        // llama.cpp's default becomes.
         reasoning_format: shim::ReasoningFormat::Deepseek,
     }
 }
 
 /// [`SamplerPlan`] plus the applied turn's grammar to the shim's sampler spec.
 ///
-/// The grammar half is pass-through data, and two decisions ride with it:
+/// An EMPTY grammar means no grammar sampler at all. A template-produced
+/// grammar must be [`shim::GrammarKind::ToolCalls`], which is what makes
+/// llama.cpp prefill the generation prompt into the grammar sampler; without
+/// that a tool-capable template constrains from the first token and forces a
+/// tool call on every turn.
 ///
-/// - an EMPTY grammar means no grammar sampler at all, which is the ordinary
-///   case for a turn with no tools;
-/// - a template-produced grammar is [`shim::GrammarKind::ToolCalls`], which is
-///   what makes llama.cpp prefill the generation prompt into the grammar
-///   sampler. Without that prefill a tool-capable template constrains from the
-///   first token, and the model is forced to emit a tool call on every turn.
-///
-/// `penalty_last_n` is deliberately absent: llama.cpp's own default is 64
-/// (`common/common.h:238`) and `llama-server` is launched without
-/// `--repeat-last-n` today, so leaving it unset reproduces what ships. Setting
-/// it to 64 here would say the same thing in a place that has to be kept in
-/// sync with someone else's default.
+/// `penalty_last_n` is deliberately unset, so llama.cpp's own default of 64
+/// applies rather than a copy of it that has to be kept in sync.
 fn sampler_spec(plan: &SamplerPlan, applied: &shim::AppliedChat) -> shim::SamplerSpec {
     let grammar = (!applied.grammar.is_empty()).then(|| applied.grammar.clone());
     shim::SamplerSpec {
@@ -537,10 +484,9 @@ fn sampler_spec(plan: &SamplerPlan, applied: &shim::AppliedChat) -> shim::Sample
             .then(|| applied.preserved_tokens.clone()),
         generation_prompt: (!applied.generation_prompt.is_empty())
             .then(|| applied.generation_prompt.clone()),
-        // Built whenever the template carries the tags, whatever the budget is.
-        // The budget sampler is also what suppresses a think block for a lazy
-        // grammar, so omitting it when there is no cap would silently drop that
-        // suppression; `-1` is how "no cap" is spelled to llama.cpp.
+        // Built whenever the template carries the tags, whatever the budget:
+        // the budget sampler also suppresses a think block for a lazy grammar,
+        // and `-1` is how "no cap" is spelled to llama.cpp.
         reasoning_budget: (!applied.thinking_end_tags.is_empty()).then(|| shim::ReasoningBudget {
             tokens: plan.reasoning_budget_tokens,
             start_tag: applied.thinking_start_tag.clone(),
@@ -552,11 +498,8 @@ fn sampler_spec(plan: &SamplerPlan, applied: &shim::AppliedChat) -> shim::Sample
     }
 }
 
-/// The refusal the client has a path for.
-///
-/// `status` is `None` (there is no HTTP here), so `code` carries the
-/// classification: `classify_provider_error` maps `context_length_exceeded` to
-/// `ErrorCode::ContextWindowExceeded` before it ever looks at the prose.
+/// The refusal the client has a path for. `status` is `None` (no HTTP here), so
+/// `code` carries the classification `classify_provider_error` reads.
 fn context_window_exceeded(tokens: usize, n_ctx: usize) -> ProviderError {
     ProviderError {
         kind: crate::llm::ProviderErrorKind::Transport,
@@ -584,8 +527,8 @@ mod tests {
     /// Collects deltas, and can walk away mid-turn.
     struct VecSink {
         deltas: Vec<LlmDelta>,
-        /// Stop wanting anything after this many deltas, which is what a dropped
-        /// stream looks like from in here.
+        /// Stop wanting anything after this many deltas: what a dropped stream
+        /// looks like from in here.
         leave_after: Option<usize>,
     }
 
@@ -670,12 +613,9 @@ mod tests {
         )
     }
 
-    /// The Qwen3.5 template, applied with one tool, and no weights anywhere.
-    ///
+    /// The Qwen3.5 template applied with one tool and no weights anywhere:
     /// `ChatTemplates::from_source` accepts a null model, so the whole
-    /// apply-parse-diff chain runs against a REAL tool-calling grammar and a real
-    /// PEG parser without a GGUF. The tiny stories model cannot exercise any of
-    /// this: it has no chat template and no tool support.
+    /// apply-parse-diff chain runs against a real grammar and parser.
     fn qwen_turn() -> shim::ChatTurn {
         let path =
             PathBuf::from(env!("LOCA_LLAMA_VENDOR_DIR")).join("models/templates/Qwen3.5-4B.jinja");
@@ -702,11 +642,9 @@ mod tests {
 
     #[test]
     fn streaming_a_tool_call_through_the_real_parser_emits_one_stable_id_and_one_name() {
-        // The defect this guards is the one D3's `ToolCallRef` describes: the
-        // `tool` message that follows references the call by id, and an id that
-        // changes between fragments (or is absent, which is what llama.cpp
-        // returns for this template) renders as an orphaned response and garbles
-        // every hop after it.
+        // The `tool` message that follows references the call by id, so an id
+        // that changes between fragments (or is absent, which is what llama.cpp
+        // returns here) renders as an orphaned response.
         let turn = qwen_turn();
         let output = concat!(
             "The user is asking about weather. I should call the tool.\n</think>\n\n",
@@ -717,9 +655,8 @@ mod tests {
         let mut previous = ParsedMessage::default();
         let mut ids = ToolCallIds::new();
         let mut sink = VecSink::new();
-        // One delta pass per character, which is more granular than a token loop
-        // and therefore strictly harder: every intermediate parse state the real
-        // loop can reach is visited here.
+        // One pass per character: strictly harder than a token loop, since
+        // every intermediate parse state the real loop can reach is visited.
         for (at, ch) in output.char_indices() {
             let end = at + ch.len_utf8();
             emit_parse(&turn, &output[..end], &mut previous, &mut ids, &mut sink).unwrap();
@@ -765,8 +702,7 @@ mod tests {
         );
         assert!(arguments.contains("Jakarta"), "{arguments}");
 
-        // And the reasoning arrived on its own channel rather than inside the
-        // answer, which is what `--reasoning-format deepseek` buys.
+        // Reasoning arrives on its own channel rather than inside the answer.
         let reasoning: String = sink
             .deltas
             .iter()
@@ -781,8 +717,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_turn_emits_content_then_one_finish_reason_then_usage_and_nothing_empty() {
-        // The shape of the stream, which is the whole of what this engine owes
-        // its consumer: D3's `Streaming` counts deltas, keys on the finish
+        // The shape of the stream: `Streaming` counts deltas, keys on the finish
         // reason arriving alone, and reads usage once.
         let Some((engine, _ctx)) = loaded(512).await else {
             eprintln!("{NO_GGUF}");
@@ -821,9 +756,8 @@ mod tests {
             "the finish reason arrives alone",
         );
 
-        // Ordering, not merely presence: a finish reason emitted before the last
-        // content delta would truncate the answer for a consumer that stops
-        // reading when it sees one.
+        // Ordering, not merely presence: a finish reason before the last content
+        // delta truncates the answer for a consumer that stops on it.
         let finish_at = sink
             .deltas
             .iter()
@@ -849,9 +783,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_same_prompt_at_temperature_zero_generates_the_same_text_twice() {
-        // Determinism is what makes every other assertion here meaningful: a
-        // sampler wired up wrongly (the double-advance N1's redesign removed, a
-        // missing `accept`) shows up as output that will not reproduce.
+        // Determinism makes every other assertion here meaningful: a sampler
+        // wired up wrongly shows up as output that will not reproduce.
         let Some((engine, _ctx)) = loaded(512).await else {
             eprintln!("{NO_GGUF}");
             return;
@@ -872,10 +805,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_consumer_that_walks_away_stops_the_turn_rather_than_running_it_out() {
-        // The D15-class obligation. `spawn_blocking` cannot be cancelled by the
-        // runtime, so if the loop did not notice, a cancelled turn would hold the
-        // one context for its full length and the next turn would queue behind it
-        // invisibly.
+        // `spawn_blocking` cannot be cancelled by the runtime, so a loop that
+        // did not notice would hold the one context for its full length.
         let Some((engine, _ctx)) = loaded(512).await else {
             eprintln!("{NO_GGUF}");
             return;
@@ -905,8 +836,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_prompt_longer_than_the_window_is_refused_before_anything_is_decoded() {
-        // A real error the client has a path for, and it must arrive as a
-        // refusal rather than as a truncation: silently dropping the front of a
+        // A refusal rather than a truncation: silently dropping the front of a
         // conversation answers a question the user did not ask.
         let Some((engine, _ctx)) = loaded(64).await else {
             eprintln!("{NO_GGUF}");
@@ -936,10 +866,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_second_turn_that_extends_the_first_reuses_the_prompt_it_already_decoded() {
-        // What the llama-server slot was quietly paying for. Without it every
-        // turn re-prefills the whole transcript, which on CPU is seconds per turn
-        // and grows with the session, and nothing in the delta stream would say
-        // so.
+        // Without reuse every turn re-prefills the whole transcript, which on
+        // CPU is seconds per turn and nothing in the delta stream would say so.
         let Some((engine, _ctx)) = loaded(512).await else {
             eprintln!("{NO_GGUF}");
             return;
@@ -978,10 +906,8 @@ mod tests {
             "the second turn re-decoded the whole transcript",
         );
 
-        // Usage reports the WHOLE prompt, reused prefix included, which is what
-        // `llama-server` reports and what the token accounting above this
-        // expects. Counting only what was decoded would make a long conversation
-        // look cheaper every turn.
+        // Usage reports the WHOLE prompt, reused prefix included. Counting only
+        // what was decoded would make a long conversation look cheaper.
         let usage = second
             .deltas
             .last()
@@ -997,11 +923,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_context_belonging_to_another_configuration_is_never_reused() {
-        // The cache is keyed on the spec because the alternative is conditioning
-        // a turn on another configuration's KV state, and that does not fail: it
-        // produces fluent, confident, wrong output. The engine also replaces a
-        // stale context before the turn starts, so this is the second of two
-        // guards, and the one that survives someone hand-building a context.
+        // Conditioning a turn on another configuration's KV state does not
+        // fail, it produces confident wrong output. The second of two guards,
+        // and the one that survives someone hand-building a context.
         let Some((engine, _ctx)) = loaded(512).await else {
             eprintln!("{NO_GGUF}");
             return;
@@ -1018,13 +942,8 @@ mod tests {
         )
         .unwrap();
 
-        // A second turn that WOULD reuse: the test above proves this exact pair
-        // reuses. The only difference here is that the cache is now labelled as
+        // A pair the test above proves reuses, with the cache relabelled as
         // another configuration's, so a zero can only come from the spec check.
-        //
-        // Written the obvious way first (the same request twice), where the
-        // reuse was zero anyway because the cache is longer than the prompt, and
-        // the test passed with the spec check deleted.
         slot.spec.n_gpu_layers += 1;
         let mut second = VecSink::new();
         run_turn(
@@ -1075,16 +994,10 @@ mod vision_routing_tests {
 
     #[test]
     fn an_image_turn_against_a_model_with_no_projector_is_refused() {
-        // **The failure this exists to prevent is a SILENT one.** Before libmtmd
-        // was linked, an image part simply did not survive into the rendered
-        // prompt, so the model answered a question about a picture it had never
-        // been shown: fluently, confidently, with nothing reporting a problem.
-        // Refusing is the only honest answer, and it is the branch that would go
-        // unnoticed if it regressed, because a wrong answer still looks like an
-        // answer.
-        //
-        // `None` is a model loaded without a projector, which is every text
-        // model and every vision model with `llm.supportImages` off.
+        // The failure this prevents is silent: an image part that does not
+        // survive into the prompt leaves the model answering about a picture it
+        // was never shown, and a wrong answer still looks like an answer.
+        // `None` is a model loaded without a projector.
         let err = image_split(None, &with_image())
             .expect_err("an image turn with no projector must not be silently accepted");
         assert!(
@@ -1095,10 +1008,8 @@ mod vision_routing_tests {
 
     #[test]
     fn a_text_turn_takes_the_text_path_and_never_asks_for_a_projector() {
-        // The other half, and it is what stops the refusal above from being
-        // implemented as "always refuse": an ordinary turn must reach the plain
-        // decode path with no projector involved, which is what `None` here
-        // means to the caller.
+        // The other half, so the refusal above cannot be "always refuse": an
+        // ordinary turn reaches the plain decode path.
         let text = LlmRequest::new(
             LlmEndpointConfig::default(),
             vec![ChatMessage::user("no pictures here")],

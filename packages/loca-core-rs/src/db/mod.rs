@@ -1,8 +1,5 @@
 //! SQLite storage: the schema, PRAGMA user_version migrations, and connection handling.
 //!
-//! Work package **F4** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
 //! # The handle
 //!
 //! One connection, behind a mutex, reached through [`Db::call`], which hands the
@@ -10,27 +7,18 @@
 //! and dropped inside it, so a `MutexGuard` can never be held across an `.await`
 //! and no handler can block a tokio worker thread on SQLite by accident.
 //!
-//! One connection rather than a pool because every query here is a small
-//! metadata read or write (paired clients, tools, grants, memories metadata, the
-//! sparse per-client settings overlay), so the concurrent readers WAL would buy
-//! go unused, while the extra page cache per connection would be charged to the
-//! mobile embed, where the core shares an address space and a memory ceiling
-//! with the app. All database work therefore serializes, which is what the Deno
-//! core did too, except that there a slow query blocked the whole event loop and
-//! here it blocks only other database users.
+//! One connection rather than a pool: every query is a small metadata read or
+//! write, so the concurrent readers WAL would buy go unused while the extra page
+//! cache per connection would be charged to the mobile embed. All database work
+//! therefore serializes, blocking only other database users.
 //!
-//! There is deliberately no global handle and no `db()` accessor. `cargo test`
-//! runs tests as threads in one process, so a `OnceLock<Db>` would force every
-//! database test in the crate onto one database. [`Db`] is a cheap `Arc` clone
-//! instead, constructed at boot and carried in the application state (D-010).
-//!
-//! # Persistence parity
+//! No global handle and no `db()` accessor: `cargo test` runs tests as threads
+//! in one process, so a `OnceLock<Db>` would force every database test onto one
+//! database. [`Db`] is a cheap `Arc` clone carried in the application state.
 //!
 //! `core.sqlite` is opened as-is: no re-create, no re-key, no `VACUUM`, no page
-//! size or encoding change. `PRAGMA synchronous` is left at the SQLite default,
-//! because setting it would be a silent durability change dressed up as a
-//! performance win. Sessions, messages, and attachments are JSON files on disk,
-//! not tables here; `schema.sql` says so and means it.
+//! size or encoding change, and `PRAGMA synchronous` left at the default.
+//! Sessions, messages, and attachments are JSON files on disk, not tables.
 
 pub mod migrate;
 
@@ -50,17 +38,14 @@ pub use migrate::{migrate, user_version, CURRENT_SCHEMA_VERSION};
 /// opened without it silently loses every `ON DELETE CASCADE`.
 /// `busy_timeout` makes momentary lock contention retry instead of failing.
 ///
-/// A trap worth naming, because it makes the failure invisible rather than
-/// loud: stock SQLite defaults `foreign_keys` to OFF, but `libsqlite3-sys`
-/// compiles the bundled amalgamation with `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so
-/// in this build cascades fire whether or not this pragma runs. Dropping it
-/// would therefore break nothing here and everything on a build that links a
-/// system SQLite. `open_pragmas_turn_foreign_keys_back_on` tests the constant
-/// against an explicitly-off connection so it cannot ride on the build default.
+/// A trap worth naming: `libsqlite3-sys` compiles the bundled amalgamation with
+/// `-DSQLITE_DEFAULT_FOREIGN_KEYS=1`, so dropping this pragma would break
+/// nothing here and everything on a build linking a system SQLite.
+/// `open_pragmas_turn_foreign_keys_back_on` starts from an explicitly-off
+/// connection so it cannot ride on that build default.
 ///
-/// `journal_mode = WAL` is absent on purpose. It is a persisted property of the
-/// database file and is applied by the v1 migration (`schema.sql`), so
-/// re-asserting it here would be a second source of truth for it.
+/// `journal_mode = WAL` is absent: it is a persisted property of the file and is
+/// applied by the v1 migration.
 const OPEN_PRAGMAS: &str = "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;";
 
 /// A handle to the core's SQLite database. Cloning is cheap and every clone
@@ -76,9 +61,8 @@ impl Db {
     /// the databases that carry no schema of ours, such as an extension's
     /// private `data.sqlite`.
     ///
-    /// The path is a parameter rather than read from `paths` so that this module
-    /// stays independent of the filesystem layout and testable against a
-    /// tempdir; the two meet in the boot frontend.
+    /// The path is a parameter rather than read from `paths`, so this module
+    /// stays independent of the filesystem layout.
     pub fn open(path: &Path) -> Result<Self> {
         Self::wrap(Connection::open(path)?)
     }
@@ -107,17 +91,13 @@ impl Db {
     /// Run `f` against the connection on the blocking pool. This is the way
     /// route handlers reach the database.
     ///
-    /// The closure is `&mut Connection` because the guard already gives
-    /// exclusive access and `Connection::transaction` needs a `&mut`. Prepared
-    /// statements should go through `Connection::prepare_cached`, which is the
-    /// per-connection statement cache and the equivalent of the Deno core
-    /// reusing prepared statements against one long-lived handle.
+    /// The closure takes `&mut Connection` because `Connection::transaction`
+    /// needs one; prepared statements should go through `prepare_cached`.
     ///
     /// Concurrent calls each occupy a blocking-pool thread while parked on the
-    /// mutex. tokio's pool defaults to 512 threads against a handful of paired
-    /// clients running sub-millisecond queries, so this is bounded and cheap. If
-    /// it ever stops being so, the escalation is a single dedicated database
-    /// thread fed by a channel of boxed closures, which stays inside this module.
+    /// mutex, which is bounded and cheap against sub-millisecond queries. The
+    /// escalation, if ever needed, is one dedicated database thread fed by a
+    /// channel of boxed closures, inside this module.
     pub async fn call<T, F>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
@@ -139,11 +119,9 @@ impl Db {
 
     /// Run `f` against the connection on the current thread.
     ///
-    /// For boot (before the server is serving), shutdown, tests, and any caller
-    /// with no ambient tokio runtime, such as a mobile FFI entry point. Route
-    /// handlers use [`Db::call`]: this one blocks the thread it is called on, so
-    /// reaching for it to avoid making a function `async` is exactly the mistake
-    /// [`Db::call`] exists to prevent.
+    /// For boot, shutdown, tests, and any caller with no ambient tokio runtime.
+    /// Route handlers use [`Db::call`]: this blocks the calling thread, so
+    /// reaching for it to avoid making a function `async` is the mistake.
     pub fn call_blocking<T, F>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&mut Connection) -> Result<T>,
@@ -155,9 +133,8 @@ impl Db {
     /// Fold the WAL back into the main database file, best-effort, so the `-wal`
     /// does not grow across the process lifetime and the next open is clean.
     ///
-    /// Takes `&self` because other clones may still exist; the connection itself
-    /// closes when the last one drops. A checkpoint failure must not block
-    /// shutdown, so it is logged and swallowed.
+    /// Takes `&self` because other clones may exist; the connection closes when
+    /// the last drops. A checkpoint failure is logged and swallowed.
     pub fn close(&self) {
         let guard = lock(&self.conn);
         if let Err(err) = guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)") {
@@ -166,10 +143,9 @@ impl Db {
     }
 }
 
-/// Take the connection lock, recovering from poisoning rather than propagating
-/// it. A panicking query leaves the connection usable (rusqlite finalizes a
-/// half-stepped statement on drop), and the release profile aborts on panic, so
-/// a poisoned mutex is only ever reachable under test.
+/// Take the connection lock, recovering from poisoning: rusqlite finalizes a
+/// half-stepped statement on drop, and the release profile aborts on panic, so
+/// a poisoned mutex is only reachable under test.
 fn lock(conn: &Mutex<Connection>) -> MutexGuard<'_, Connection> {
     conn.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -180,20 +156,12 @@ impl From<rusqlite::Error> for AppError {
     }
 }
 
-/// Map a SQLite failure onto the wire contract.
-///
-/// `DiskFull` matches the `From<std::io::Error>` mapping in `error.rs`, so a
-/// full disk reaches the client's "free some space" path whether the write went
-/// through a file or a table.
-///
-/// Only a duplicate key is a conflict the client can resolve, so the extended
-/// code is checked rather than the primary `ConstraintViolation`: a `NOT NULL`
-/// or `CHECK` violation is a bug in the core, and answering 409 would blame the
-/// client for it.
-///
-/// `QueryReturnedNoRows` is internal rather than 404 on purpose. A missing row
-/// is a domain decision, and call sites use `.optional()` so they never reach
-/// this arm; a route wanting 404 returns `not_found` itself.
+/// Map a SQLite failure onto the wire contract. `DiskFull` matches the
+/// `From<std::io::Error>` mapping, so a full disk reaches the client's "free
+/// some space" path either way. Only a duplicate key is a conflict the client
+/// can resolve, so the extended code is checked: a `NOT NULL` or `CHECK`
+/// violation is a bug in the core. `QueryReturnedNoRows` is internal rather than
+/// 404, because a missing row is a domain decision the route makes.
 fn code_for(err: &rusqlite::Error) -> ErrorCode {
     let rusqlite::Error::SqliteFailure(inner, _) = err else {
         return ErrorCode::InternalError;
@@ -237,10 +205,9 @@ mod tests {
         assert_eq!(pragma(&db, "busy_timeout"), 5000);
     }
 
-    /// The real tripwire for the pragma string. Asserting `foreign_keys` after a
-    /// plain open proves nothing, because the bundled build already defaults it
-    /// on; starting from an explicitly-off connection is what pins that
-    /// [`OPEN_PRAGMAS`] itself turns it back on.
+    /// The real tripwire for the pragma string: the bundled build already
+    /// defaults `foreign_keys` on, so this starts from an explicitly-off
+    /// connection.
     #[test]
     fn open_pragmas_turn_foreign_keys_back_on() {
         let conn = Connection::open_in_memory().unwrap();
@@ -257,9 +224,8 @@ mod tests {
         assert_eq!(on, 1, "OPEN_PRAGMAS no longer enables foreign_keys");
     }
 
-    /// The schema's `ON DELETE CASCADE` clauses do what they say. This passes on
-    /// the build default alone, so it is a behaviour assertion rather than the
-    /// pragma tripwire above.
+    /// The schema's `ON DELETE CASCADE` clauses do what they say. Passes on the
+    /// build default alone, so it is behaviour rather than the tripwire above.
     #[test]
     fn on_delete_cascade_actually_fires() {
         let db = migrated();

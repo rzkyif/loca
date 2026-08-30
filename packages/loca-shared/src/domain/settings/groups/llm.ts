@@ -4,12 +4,8 @@ import { DEFAULT_CONTEXT_SIZE, localThinkingBudget } from "../../quick-controls.
 import { DEFAULT_SAMPLING } from "../../recommend.ts";
 
 // Static fallbacks for the local model fields, mirroring the Smallest-floor
-// catalog model (the Qwen 3.5 family; see packages/loca-model-catalog). They
-// keep a fresh install coherent with an accepted baseline before the Smart
-// Preset resolves the hardware-fit values; the preset overwrites all of these on
-// model select, so they only hold for the brief pre-preset window and for
-// external/custom setups. Temperature mirrors the shared sampling default so a
-// fresh app's Creativity reads as "Balanced" in the quick model bar.
+// catalog model. They hold only until the Smart Preset resolves the
+// hardware-fit values (and for external/custom setups).
 const BASELINE_SAMPLING = {
   temperature: DEFAULT_SAMPLING.temperature,
   topP: 0.95,
@@ -22,11 +18,9 @@ const BASELINE_SAMPLING = {
 
 export const llmGroup: SettingGroup = {
   id: "llm",
-  // Hybrid. The local/external model, its server, and the vision/idle-unload
-  // gates that drive what the shared core loads are core resources (core);
-  // showing thinking and the per-message sampling/thinking knobs are per-client
-  // preferences the core applies per turn (client-on-core). The header collapses
-  // to "Client" + "Core" chips.
+  // Hybrid. What the shared core loads (the model, its server, the vision /
+  // idle-unload gates) is a core resource; the per-message sampling and
+  // thinking knobs are per-client preferences the core applies per turn.
   destination: ["client-on-core", "core"],
   name: "Language Model",
   description:
@@ -44,12 +38,9 @@ export const llmGroup: SettingGroup = {
           name: "Image Attachments",
           description: "Let yourself attach images to messages. The model must support vision.",
           type: "boolean",
-          // Off until asked for. Turning this on makes the projector a required
-          // download (205 MB to 1.2 GB), and selecting a vision model already
-          // writes `llm.mmprojPath`, so a default of on would pull that file in
-          // on every fresh install whose preset happens to ship one. Requirement
-          // computation and the mobile fit budget both read this key as the
-          // user's answer, not as a capability.
+          // Off until asked for: turning it on makes the projector a required
+          // download (205 MB to 1.2 GB). Requirement computation and the mobile
+          // fit budget read this key as the user's answer, not a capability.
           defaultValue: false,
           descriptionTier: "ondemand",
         },
@@ -108,8 +99,8 @@ export const llmGroup: SettingGroup = {
           defaultValue: "smallest",
           presetConfig: {
             // The adaptive presets compute their values at runtime (no static
-            // `defaults`), so list the keys they manage here: editing any of
-            // them flips the preset to Custom.
+            // `defaults`), so list the keys they manage: editing one flips the
+            // preset to Custom.
             managedKeys: [
               "llm.modelPath",
               "llm.mmprojPath",
@@ -118,14 +109,10 @@ export const llmGroup: SettingGroup = {
               "llm.gpuLayers",
               "llm.flashAttn",
               "llm.idleUnloadSeconds",
-              // Image Attachments is deliberately NOT managed: turning vision on
-              // or off is the user's call and must not flip the preset to Custom.
-              // The preset still sets it as a side effect on model select (a
-              // vision model enables it), it just isn't a preset-defining edit.
-              // Thinking budget and temperature are behavior preferences, not
-              // part of the model's identity: editing them (from the quick
-              // model controls or here) leaves the chosen preset intact. Only
-              // the model-defining tuning below flips the preset to Custom.
+              // Image Attachments, thinking budget, and temperature are
+              // deliberately NOT managed: they are the user's call and must not
+              // flip the preset to Custom. Model select still sets them as a
+              // side effect. Only the model-defining tuning below flips it.
               "llm.topP",
               "llm.topK",
               "llm.minP",
@@ -134,10 +121,9 @@ export const llmGroup: SettingGroup = {
               "llm.presencePenalty",
               "llm.samplers",
             ],
-            // These are placeholders: the client fills each card's title, badges,
-            // and description from GET /api/v1/models/recommend, and selecting a
-            // card calls POST /api/v1/models/select { bucket } rather than
-            // applying static defaults.
+            // Placeholders: the client fills each card from
+            // GET /api/v1/models/recommend, and selecting one calls
+            // POST /api/v1/models/select { bucket }.
             options: [
               {
                 id: "smallest",
@@ -202,9 +188,8 @@ export const llmGroup: SettingGroup = {
           name: "Thinking Budget",
           description: "How many tokens the model may spend thinking.",
           type: "number",
-          // The budget to start from once thinking is turned on: "Low" (1/16 of
-          // the default context), so enabling thinking lands on a modest budget
-          // rather than an open-ended "Unlimited".
+          // "Low" (1/16 of the default context), so enabling thinking lands on
+          // a modest budget rather than an open-ended "Unlimited".
           defaultValue: localThinkingBudget("low", DEFAULT_CONTEXT_SIZE),
           visibleWhen: {
             allOf: [
@@ -328,9 +313,8 @@ export const llmGroup: SettingGroup = {
           name: "Model File",
           description: "Path to the model file to load, e.g. @user/repo/branch/model.gguf.",
           type: "string",
-          // Smallest-floor catalog model (Qwen/Qwen3.5-2B). The Smart Preset
-          // overwrites this on first run with the hardware-fit pick; this static
-          // default just keeps a fresh config on an accepted baseline.
+          // Smallest-floor catalog model; the Smart Preset overwrites it on
+          // first run with the hardware-fit pick.
           defaultValue: "@unsloth/Qwen3.5-2B-GGUF/main/Qwen3.5-2B-Q4_K_M.gguf",
           descriptionTier: "ondemand",
         },
@@ -402,16 +386,11 @@ export const llmGroup: SettingGroup = {
         },
         {
           id: "llm.mmap",
-          // On by default, and neither hidden nor forced. Turning it off makes
-          // the weight pages resident anonymous memory instead of file-backed
-          // and evictable, which on a phone invites an OS kill. That argues for
-          // the default being on, not for the switch being unreachable, and it
-          // is the user's own device either way (D-178).
-          //
-          // It is also a CORE setting: it governs the machine the model loads
-          // on, which is not the machine rendering this panel. `desktopOnly`
-          // filters on the device, so marking it would have hidden the control
-          // from a phone driving a desktop Core, where it is entirely live.
+          // On by default: turning it off makes the weight pages resident
+          // anonymous memory rather than file-backed and evictable, which on a
+          // phone invites an OS kill. NOT `desktopOnly`: it governs the machine
+          // the model loads on, not the one rendering this panel, so a phone
+          // driving a desktop Core must still reach it.
           name: "Memory-Mapped Loading",
           description:
             "Load the model straight from disk for faster startup and much lower RAM use. Turning it off can crash the core on a phone.",

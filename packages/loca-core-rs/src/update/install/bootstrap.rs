@@ -1,41 +1,23 @@
 //! One-time secret and content bootstrap for a core install.
 //!
-//! Ports `install/bootstrap.ts`. Runs before, or as part of,
-//! `install-service`: it ensures the core tree exists, mints the admin token
-//! that authorises pairing-code minting over loopback, optionally seeds the two
-//! server settings that are not API-writable, and plants the built-in extension
-//! so the core installs it OFFLINE on first boot.
+//! Runs before, or as part of, `install-service`: it ensures the core tree
+//! exists, mints the admin token that authorises pairing-code minting over
+//! loopback, optionally seeds the two server settings that are not
+//! API-writable, and plants the built-in extension so the core installs it
+//! OFFLINE on first boot.
 //!
-//! # Idempotent in four separate ways, and each one is a different promise
+//! `install-service` re-runs on every upgrade, so each step guards separately:
+//! an existing non-empty admin token is left alone (re-minting would invalidate
+//! a paired client), an existing `settings.json` is left entirely alone, an
+//! already-planted extension is not re-fetched, and the plant is non-fatal in
+//! every branch because the core seeds the built-in itself when it is missing.
 //!
-//! `install-service` runs on every upgrade, so every step here runs again on a
-//! machine that is already configured. Each guard protects something different,
-//! which is why they are not one check:
+//! The plant writes the manifest bytes it received. The core verifies an
+//! Ed25519 signature over the RAW document, so re-serialising the parsed value
+//! would silently invalidate a perfectly valid manifest.
 //!
-//! - an existing non-empty admin token is left alone, or every upgrade would
-//!   invalidate a paired client's admin access;
-//! - an existing `settings.json` is left **entirely** alone, because a re-run
-//!   must not clobber a configured core (`bootstrap.ts:60-63`);
-//! - an already-planted extension is not re-fetched;
-//! - and the plant is non-fatal in every branch, because the core seeds the
-//!   built-in itself when the plant is missing.
-//!
-//! # The plant writes the manifest bytes it received, and that is a control
-//!
-//! D12's `read_planted` verifies an Ed25519 signature over the RAW document
-//! (`extensions/install/manifest.rs:145-148`). Re-serialising the parsed value
-//! before writing it would drop any field this core does not model and reorder
-//! the rest, so the signature would fail on a manifest that is perfectly valid.
-//! The failure is silent: the core would simply decide there is no plant and
-//! fall back to the user-gated install. Same shape as D-065 one layer down.
-//!
-//! # Consent
-//!
-//! The plant is the one outbound path here and it runs only from the
-//! `bootstrap` / `install-service` verbs, which is the install phase
-//! `AGENTS.md` names as the single sanctioned exception. Nothing in this file
-//! is reachable from a booted core, and every request goes through
-//! [`crate::update::net`] so the counter stays honest.
+//! The plant is the one outbound path here and runs only from the `bootstrap` /
+//! `install-service` verbs, which is the install phase `AGENTS.md` sanctions.
 
 use std::path::Path;
 
@@ -52,11 +34,9 @@ use crate::update::artifact::{stream_to_file, Decompress};
 use crate::update::install::io::Io;
 use crate::update::net::Net;
 
-/// The two install-time server settings.
-///
-/// Both are deliberately not API-writable: a paired client must not be able to
-/// widen the core's exposure or flip how pairing establishes trust. Install
-/// time is the one moment they can be set without hand-editing the file.
+/// The two install-time server settings, deliberately not API-writable: a
+/// paired client must not widen the core's exposure or change how pairing
+/// establishes trust.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BootstrapOptions {
     /// `server.bindHost = 0.0.0.0`, so LAN devices can pair.
@@ -66,7 +46,6 @@ pub struct BootstrapOptions {
     pub behind_proxy: bool,
 }
 
-/// `bootstrap.ts:30-35`.
 pub async fn bootstrap(
     config: &Config,
     paths: &Paths,
@@ -81,13 +60,9 @@ pub async fn bootstrap(
     Ok(())
 }
 
-/// Mint the admin token, once.
-///
-/// Written owner-only **at creation** via [`write_owner_atomic`], where the
-/// oracle writes it and then chmods (`bootstrap.ts:44-45`). The oracle's order
-/// leaves the file world-readable for the width of two syscalls, on the one
-/// credential that authorises minting a pairing code. A deliberate improvement
-/// rather than an accident of the port.
+/// Mint the admin token, once. Written owner-only **at creation** via
+/// [`write_owner_atomic`] rather than written then chmodded, so the one
+/// credential that authorises minting a pairing code is never world-readable.
 async fn ensure_admin_token(paths: &Paths, io: &dyn Io) -> Result<()> {
     let file = paths.admin_token_file();
     if file_non_empty(&file).await {
@@ -106,15 +81,10 @@ async fn ensure_admin_token(paths: &Paths, io: &dyn Io) -> Result<()> {
 
 /// Seed a FRESH `settings.json` with the install-time server settings.
 ///
-/// Two guards, and they are not the same guard:
-///
-/// - nothing to seed writes **no file at all**, rather than an empty object. A
-///   `{}` here would make every later re-run take the "already present" branch,
-///   so a machine installed once without `--bind-all` could never be given it
-///   by re-running the installer with the flag;
-/// - an existing file is left untouched, whatever is in it. This is the only
-///   correct behaviour for a re-run: the alternative overwrites a configured
-///   core's settings on every upgrade.
+/// Two distinct guards: nothing to seed writes **no file at all**, since a `{}`
+/// would make every re-run take the "already present" branch and a machine
+/// installed without `--bind-all` could never be given it; and an existing file
+/// is left untouched whatever is in it, or an upgrade would clobber it.
 async fn seed_server_settings(paths: &Paths, io: &dyn Io, opts: BootstrapOptions) -> Result<()> {
     let mut seed = Map::new();
     if opts.bind_all {
@@ -141,16 +111,13 @@ async fn seed_server_settings(paths: &Paths, io: &dyn Io, opts: BootstrapOptions
 
 /// Turn on `server.behindProxy` for an ALREADY-installed core.
 ///
-/// Additive read-modify-write, unlike [`seed_server_settings`]'s refusal, and
-/// the difference is the whole reason both exist. The client's "install, pair,
-/// then flip" flow calls this AFTER the loopback pair, because a proxy-served
-/// core folds no certificate pin and so cannot be paired over loopback. By that
-/// point `settings.json` exists and holds the user's configuration, so a seed
-/// would refuse and an overwrite would erase it.
+/// An additive read-modify-write, unlike [`seed_server_settings`]'s refusal,
+/// which is why both exist: the "install, pair, then flip" flow calls this
+/// AFTER the loopback pair (a proxy-served core folds no certificate pin), by
+/// which point `settings.json` holds the user's configuration.
 ///
-/// An absent or unparseable file starts fresh rather than failing: `ensure_dirs`
-/// has already made the parent, and refusing here would leave the verb with no
-/// way to do the one thing it is for.
+/// An absent or unparseable file starts fresh rather than failing, or the verb
+/// could not do the one thing it is for.
 pub async fn enable_behind_proxy(paths: &Paths, io: &dyn Io) -> Result<()> {
     let file = paths.settings_file();
     let mut settings = match tokio::fs::read_to_string(&file).await {
@@ -165,8 +132,8 @@ pub async fn enable_behind_proxy(paths: &Paths, io: &dyn Io) -> Result<()> {
         return Ok(());
     }
     settings.insert("server.behindProxy".into(), Value::Bool(true));
-    // Two-space pretty, matching the core's own settings writer, so the core's
-    // next write produces no spurious reformat diff (`bootstrap.ts:92-94`).
+    // Two-space pretty, matching the core's own settings writer, so its next
+    // write produces no spurious reformat diff.
     let body = serde_json::to_string_pretty(&Value::Object(settings))
         .unwrap_or_else(|_| "{\"server.behindProxy\":true}".to_string());
     tokio::fs::write(&file, body).await?;
@@ -176,18 +143,16 @@ pub async fn enable_behind_proxy(paths: &Paths, io: &dyn Io) -> Result<()> {
 
 /// Plant `.loca-extension-builtin.{tgz,json}` beside the extensions dir.
 ///
-/// **Never fails.** Every branch reports and returns, because the core fetches,
-/// verifies and seeds the built-in itself when the plant is missing
-/// (`extensions/install/seed.rs`). A plant failure that aborted `install-service`
-/// would turn a CDN hiccup into a failed install of the whole product.
+/// **Never fails.** Every branch reports and returns, because the core seeds
+/// the built-in itself when the plant is missing, and a plant failure that
+/// aborted `install-service` would turn a CDN hiccup into a failed install.
 ///
-/// The filenames come from D12 rather than being re-derived here. Two copies of
-/// that convention is how an installer plants a file the core never looks for,
-/// and neither side would fail a test (D-049).
+/// The filenames come from the extensions module rather than being re-derived,
+/// or an installer could plant a file the core never looks for.
 async fn plant_builtin_extension(config: &Config, paths: &Paths, net: &Net, io: &dyn Io) {
     if config.channel == Channel::Dev {
-        // Dev resolves the built-in and the samples from the codebase, so a
-        // plant here would install CDN bytes over a developer's working copy.
+        // Dev resolves the built-in from the codebase, so a plant here would
+        // install CDN bytes over a developer's working copy.
         return;
     }
     let extensions = paths.extensions_dir();
@@ -221,10 +186,8 @@ async fn plant_builtin_extension(config: &Config, paths: &Paths, net: &Net, io: 
         .staging_dir()
         .join(format!("builtin-extension-{}.tgz", uuid::Uuid::new_v4()));
 
-    // Hashed AS RECEIVED, not decompressed: `.tgz` is the artifact, and the
-    // digest in the manifest is over those bytes. This sha256 is only a
-    // transport-corruption guard anyway; the core re-verifies the signature and
-    // the tarball hash OFFLINE before it installs on boot.
+    // Hashed AS RECEIVED: the `.tgz` is the artifact the manifest digests.
+    // Only a transport guard; the core re-verifies offline before installing.
     let got = match stream_to_file(net, &tarball_url, &tmp, Decompress::None).await {
         Ok(digest) => digest,
         Err(err) => {
@@ -247,9 +210,8 @@ async fn plant_builtin_extension(config: &Config, paths: &Paths, net: &Net, io: 
         ));
         return;
     }
-    // The RAW document, byte for byte. D12 verifies an Ed25519 signature over
-    // exactly these bytes, so a re-encode here breaks a valid manifest and the
-    // core silently decides nothing was planted. See the module docs.
+    // The RAW document: the core verifies an Ed25519 signature over exactly
+    // these bytes, so a re-encode silently invalidates a valid manifest.
     if let Err(err) = tokio::fs::write(&manifest_dest, raw.as_bytes()).await {
         io.progress(&format!(
             "built-in extension plant skipped (core will seed): {err}"
@@ -259,13 +221,9 @@ async fn plant_builtin_extension(config: &Config, paths: &Paths, net: &Net, io: 
     io.progress("planted built-in extension for offline seed");
 }
 
-/// The two fields the plant needs, read tolerantly.
-///
-/// Deliberately NOT a parse into D12's `SeededManifest`: the plant does not
-/// verify the signature and must not appear to. It copies bytes the core will
-/// verify later, and reading only the two fields it uses keeps that honest. A
-/// document missing either field is treated as absent rather than as an error,
-/// matching `bootstrap.ts:120-123`.
+/// The two fields the plant needs, read tolerantly. Deliberately not a parse
+/// into the seeded-manifest type: the plant does not verify the signature and
+/// must not appear to. A document missing either field reads as absent.
 fn read_plant_manifest(raw: &str) -> Option<(String, String)> {
     let value: Value = serde_json::from_str(raw).ok()?;
     let tarball_url = value.get("tarballUrl")?.as_str()?;
@@ -329,9 +287,8 @@ mod tests {
     }
 
     fn plant_manifest(tarball_url: &str, sha256: &str) -> String {
-        // Deliberately carries a field this core does not model AND a
-        // signature, because the plant copies BYTES: a test whose fixture is
-        // exactly the two fields read cannot see a re-encode dropping the rest.
+        // Carries a field this core does not model AND a signature: a fixture
+        // of exactly the two fields read cannot see a re-encode drop the rest.
         format!(
             r#"{{"schemaVersion":1,"id":"loca-extension-builtin","version":"1.2.3","tarballUrl":"{tarball_url}","sha256":"{sha256}","publishedAt":"2026-01-01T00:00:00Z","signature":"c2ln"}}"#
         )
@@ -364,8 +321,8 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_is_idempotent_for_the_admin_token() {
-        // An upgrade re-runs install-service. Re-minting would invalidate the
-        // admin access of an already-paired install on every upgrade.
+        // An upgrade re-runs install-service, and re-minting would invalidate
+        // an already-paired install's admin access.
         let e = env();
         bounded(ensure_admin_token(&e.paths, &e.io)).await.unwrap();
         let first = std::fs::read_to_string(e.paths.admin_token_file()).unwrap();
@@ -379,10 +336,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_token_file_is_replaced_rather_than_kept() {
-        // A zero-length file is what an interrupted first install leaves, and
-        // an empty token authorises nothing: `fileNonEmpty`, not `fileExists`
-        // (`bootstrap.ts:39`). Treating it as present bricks pairing with no
-        // way out but deleting the file by hand.
+        // What an interrupted first install leaves. An empty token authorises
+        // nothing, so treating it as present bricks pairing.
         let e = env();
         std::fs::write(e.paths.admin_token_file(), "").unwrap();
 
@@ -394,9 +349,8 @@ mod tests {
 
     #[tokio::test]
     async fn two_installs_do_not_mint_the_same_token() {
-        // The token is a credential, so it has to come from the CSPRNG rather
-        // than from anything derived. A constant would satisfy every other
-        // assertion in this file.
+        // A credential, so it must come from the CSPRNG; a constant would
+        // satisfy every other assertion in this file.
         let a = env();
         let b = env();
         bounded(ensure_admin_token(&a.paths, &a.io)).await.unwrap();
@@ -435,9 +389,8 @@ mod tests {
 
     #[tokio::test]
     async fn nothing_to_seed_writes_no_file_at_all() {
-        // Not a cosmetic point. An empty `{}` would make every later re-run
-        // take the "already present" branch, so a core installed once without
-        // --bind-all could never be given it by re-running with the flag.
+        // An empty `{}` would make every later re-run take the "already
+        // present" branch, so --bind-all could never be added afterwards.
         let e = env();
         bounded(seed_server_settings(
             &e.paths,
@@ -497,9 +450,8 @@ mod tests {
 
     #[tokio::test]
     async fn turning_on_behind_proxy_keeps_every_other_key() {
-        // The flow this exists for: install, pair over loopback, THEN flip. By
-        // that point settings.json holds the user's configuration, so this is
-        // the one path that must merge rather than seed.
+        // Install, pair over loopback, THEN flip: by that point settings.json
+        // holds the user's configuration, so this must merge, not seed.
         let e = env();
         std::fs::write(
             e.paths.settings_file(),
@@ -538,8 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_absent_or_unreadable_settings_file_still_gets_the_key() {
-        // Refusing here would leave the verb unable to do the one thing it is
-        // for, on the two states where it is most needed.
+        // Refusing here would leave the verb unable to do its one job.
         for staged in [None, Some("{ not json"), Some("[1,2,3]")] {
             let e = env();
             if let Some(raw) = staged {
@@ -618,9 +569,8 @@ mod tests {
             std::fs::read(ext.join(planted_tarball_name(BUILTIN_EXTENSION_ID))).unwrap(),
             tarball
         );
-        // BYTE for byte. D12 verifies an Ed25519 signature over exactly these
-        // bytes, so a re-encode here breaks a valid manifest and the core
-        // silently decides nothing was planted.
+        // BYTE for byte: the signature is over exactly these bytes, so a
+        // re-encode silently invalidates a valid manifest.
         assert_eq!(
             std::fs::read_to_string(ext.join(planted_manifest_name(BUILTIN_EXTENSION_ID))).unwrap(),
             raw
@@ -655,9 +605,8 @@ mod tests {
     #[tokio::test]
     async fn only_half_a_plant_is_completed_rather_than_accepted() {
         // A tarball with no manifest is unusable: the core verifies the
-        // signature before it extracts anything, so it would find bytes it
-        // cannot trust and seed over the network anyway. `fileExists &&
-        // fileExists` (`bootstrap.ts:108`), not `||`.
+        // signature before extracting, so it would seed over the network
+        // anyway. Both files, not either.
         let e = env();
         let ext = e.paths.extensions_dir();
         std::fs::write(ext.join(planted_tarball_name(BUILTIN_EXTENSION_ID)), b"old").unwrap();
@@ -692,13 +641,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_plant_is_not_fatal_because_core_seeds_it_instead() {
-        // Four ways it can fail, all of them reported and none of them fatal.
-        // An install of the whole product must not fail on a CDN hiccup.
+        // Four ways to fail, all reported and none fatal: an install of the
+        // whole product must not fail on a CDN hiccup.
         let tarball = b"bytes".to_vec();
         let good = sha256_hex(&tarball);
 
-        // The routes are built from the base URL, which is not known until the
-        // port is reserved, so each case is a closure rather than a value.
+        // The routes need the base URL, unknown until the port is reserved,
+        // so each case is a closure rather than a value.
         type Routes = Box<dyn Fn(&str) -> Vec<(&'static str, Serve)>>;
         let cases: Vec<(&str, Routes)> = vec![
             (
@@ -741,7 +690,6 @@ mod tests {
             let up = reserved.serve(routes(&base));
             let net = Net::new().unwrap();
 
-            // Returns `()`: there is no error to propagate, by design.
             bounded(plant_builtin_extension(
                 &config(Channel::Stable, up.base()),
                 &e.paths,
@@ -796,8 +744,8 @@ mod tests {
             .join(planted_manifest_name(BUILTIN_EXTENSION_ID))
             .exists());
         assert!(e.err.text().contains("checksum mismatch"));
-        // The partial is destroyed rather than left in staging, where the next
-        // attempt could resume onto bytes that already failed verification.
+        // The partial is destroyed, or the next attempt could resume onto
+        // bytes that already failed verification.
         let staged: Vec<_> = std::fs::read_dir(e.paths.staging_dir())
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -808,9 +756,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_uppercase_manifest_digest_still_matches() {
-        // `sha256.toLowerCase()` (`bootstrap.ts:129`). A publisher emitting
-        // uppercase hex would otherwise fail every plant with a checksum
-        // mismatch, which reads as a corrupt CDN.
+        // A publisher emitting uppercase hex would otherwise fail every plant
+        // with a checksum mismatch that reads as a corrupt CDN.
         let e = env();
         let tarball = b"bytes".to_vec();
         let reserved = Upstream::reserve().await;
@@ -849,9 +796,8 @@ mod tests {
             read_plant_manifest(r#"{"tarballUrl":"https://x/y.tgz","sha256":"ab"}"#),
             Some(("https://x/y.tgz".into(), "ab".into()))
         );
-        // Absent, wrong type, and empty all read as absent, matching the
-        // oracle's `!manifest.tarballUrl || !manifest.sha256`, which is falsy
-        // rather than a presence check (`bootstrap.ts:120`).
+        // Absent, wrong type, and empty all read as absent: a falsiness check
+        // rather than a presence one.
         for raw in [
             r#"{"sha256":"ab"}"#,
             r#"{"tarballUrl":"https://x/y.tgz"}"#,
@@ -870,8 +816,7 @@ mod tests {
     #[tokio::test]
     async fn bootstrap_provisions_a_fresh_core_in_one_call() {
         // The composition, not the parts: install-service calls this once and
-        // expects a fully provisioned core. Driving the pieces separately would
-        // leave the order and the composition itself asserted nowhere.
+        // expects a fully provisioned core.
         let e = env();
         let tarball = b"tarball".to_vec();
         let reserved = Upstream::reserve().await;
@@ -914,10 +859,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_admin_token_and_the_settings_seed_make_no_outbound_call() {
-        // The consent rule, at the level where it can be checked: the ONLY
-        // outbound path in this file is the plant, so everything else must
-        // leave the counter at zero. A counter that never counts would satisfy
-        // this vacuously, which is why `net.rs` separately asserts it goes UP.
+        // The plant is the ONLY outbound path here, so everything else must
+        // leave the counter at zero. `net.rs` asserts the counter goes up.
         let e = env();
         let net = Net::new().unwrap();
 

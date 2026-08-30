@@ -1,26 +1,13 @@
 //! The models route slice: seventeen routes under `/api/v1/models`.
 //!
-//! All of them require a paired client, which is the bearer-only posture the
-//! TypeScript applies with `r.use("*", bearerMiddleware())`. There is no
-//! admin-only tier: a paired device already chooses the model it talks to.
+//! All of them require a paired client and there is no admin-only tier: a
+//! paired device already chooses the model it talks to. Six reach the download
+//! manager through [`super::deps::Downloads`]; the rest are this module's own.
 //!
-//! Six of the seventeen are D7-backed and reach the download manager through
-//! [`super::deps::Downloads`]; the rest are this package's own.
-//!
-//! # Two shape notes that are not free in axum
-//!
-//! **Registration order is not what saves the catch-all.** Hono needs
-//! `DELETE /:relPath{.+}` registered last so it does not shadow
-//! `DELETE /downloads/:id`, and the TypeScript says so at the call site. axum
-//! matches by specificity rather than declaration order, so the static segment
-//! wins regardless. The hazard is real in the file being ported, so the note
-//! moves with the code.
-//!
-//! **Selecting a model never downloads.** `/select` writes the `llm.*` settings
-//! and stops. Writing settings triggers a requirements recompute, which
-//! surfaces any missing file in the client's confirm modal, and the user starts
-//! the download from there. Downloading multi-gigabyte weights is always an
-//! explicit choice, never a side effect of picking a preset.
+//! Selecting a model never downloads. `/select` writes the `llm.*` settings and
+//! stops; that triggers a requirements recompute, which surfaces any missing
+//! file in the client's confirm modal, and the user starts the download from
+//! there. Multi-gigabyte weights are always an explicit choice.
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -53,35 +40,16 @@ use super::speech::{
 };
 use super::{parse_group, EnsureModelsResponse, Models};
 
-/// The cap `validation/models.ts` puts on both batch bodies.
-///
-/// Restated here because it cannot survive the bridge: typify renders a
-/// constraint only where some Rust type expresses it, and nothing is shaped
-/// like "at most 256 items", so `maxItems` is dropped from the generated
-/// `Deserialize`. See D-095.
+/// The cap on both batch bodies, restated here because typify drops `maxItems`
+/// from the generated `Deserialize`: nothing in Rust is shaped like it.
 const MAX_BATCH: usize = 256;
-
-// --- the bodies and envelopes -----------------------------------------------
-//
-// The four request bodies are generated: their Zod schemas live in
-// `@loca/shared/validation/models.ts`, so `emit-zod.ts` sees them and
-// `contract::inbound` carries the enforcing `Deserialize`. Only the response
-// envelopes are declared here, because those are object literals built inside
-// the TypeScript handlers and no generator can see an object literal.
-//
-// The generated bodies carry `deny_unknown_fields` because the schemas are
-// `.strict()`, which D-031 settled is the schema's call rather than the
-// direction of travel. The Zod half is exempt from the `relaxRequestBodies`
-// pass in `scripts/contract/generate.ts` for the same reason.
 
 /// An empty string is the same as an absent field to a discriminator chain.
 ///
 /// The Zod schemas are `z.string().optional()` with no `.min(1)`, so `""`
-/// reaches the handler, and the TypeScript then branches on JavaScript
-/// truthiness (`if (body.bucket)`), which `""` fails: the field FALLS THROUGH to
-/// the next discriminator. `Option::as_deref()` would take the branch instead
-/// and answer 400 or 404 where the specification answers 200. Every
-/// discriminator on the bodies below reads through this. See D-043.
+/// reaches the handler and must FALL THROUGH to the next discriminator.
+/// `Option::as_deref()` would take the branch and answer 400 or 404 where the
+/// specification answers 200. Every discriminator below reads through this.
 fn present(value: &Option<String>) -> Option<&str> {
     value.as_deref().filter(|s| !s.is_empty())
 }
@@ -100,10 +68,9 @@ impl ModelSelectBody {
     }
 }
 
-/// [`SpeechSelectBody`] is shared by the STT and TTS select routes, which take
-/// the same three discriminators. The accessors live here rather than beside
-/// the generated type because [`present`] is this module's rule, not the
-/// contract's.
+/// Shared by the STT and TTS select routes, which take the same three
+/// discriminators. The accessors live here because [`present`] is this module's
+/// rule, not the contract's.
 impl SpeechSelectBody {
     pub fn preset_id(&self) -> Option<&str> {
         present(&self.preset_id)
@@ -118,9 +85,8 @@ impl SpeechSelectBody {
     }
 }
 
-/// `/ensure` reads its body with a bare cast in the TypeScript
-/// (`routes/models.ts:115`) and rejects anything whose `kind` is not one of the
-/// four groups, so an unknown sibling field is ignored there. Matched here.
+/// `/ensure` rejects anything whose `kind` is not one of the four groups, and
+/// ignores unknown sibling fields.
 #[derive(Debug, Deserialize)]
 struct EnsureRequest {
     #[serde(default)]
@@ -208,10 +174,8 @@ async fn download(
     State(models): State<Models>,
     Json(body): Json<ModelDownloadBody>,
 ) -> Result<Json<DownloadModelsResponse>> {
-    // `source`'s `.min(1)` needs no check here: it is a `minLength` in the Zod
-    // schema, so the generated newtype refuses an empty source in the
-    // deserializer and the request never reaches this line. Only the array
-    // bound has to be restated. See D-095 and [`MAX_BATCH`].
+    // `source`'s `.min(1)` is a `minLength` the generated newtype enforces in
+    // the deserializer; only the array bound has to be restated.
     if body.items.len() > MAX_BATCH {
         return Err(validation(format!("at most {MAX_BATCH} items")));
     }
@@ -225,8 +189,7 @@ async fn download(
                 ModelDownloadBodyItemsItemGroup::Tts => "tts",
                 ModelDownloadBodyItemsItemGroup::Embed => "embed",
             })
-            // The default group when the client does not say, matching the
-            // TypeScript's `item.group ?? "llm"`.
+            // The default group when the client does not say.
             .unwrap_or("llm");
         items.push((item.source.to_string(), group.to_string()));
     }
@@ -261,8 +224,7 @@ async fn probe(
     State(models): State<Models>,
     Json(body): Json<ModelProbeBody>,
 ) -> Result<Json<Vec<DownloadPlan>>> {
-    // As in [`download`]: the per-source `.min(1)` is enforced by the generated
-    // newtype, and only the array bound has to be restated (D-095).
+    // As in [`download`]: only the array bound has to be restated.
     if body.sources.len() > MAX_BATCH {
         return Err(validation(format!("at most {MAX_BATCH} sources")));
     }
@@ -323,9 +285,8 @@ async fn recheck(State(models): State<Models>) -> Result<Json<RecommendationSet>
         async { Ok(models.hardware(true).await) },
         applied_from_settings(&models),
     )?;
-    // Re-probing can change the desired GPU binary variant, because a GPU or a
-    // driver may have appeared, so the required-files snapshot is re-evaluated:
-    // a now-wrong-variant binary surfaces as a pending reinstall.
+    // A GPU or driver may have appeared, changing the desired binary variant, so
+    // the snapshot is re-evaluated and a now-wrong variant surfaces as pending.
     models.deps().requirements.changed();
     Ok(Json(compute_recommendations(
         &catalog,
@@ -441,11 +402,9 @@ fn apply_to_patch(a: &AppliedModelSettings, preset: &str) -> Vec<(String, Value)
         ("llm.threads".to_string(), json!(a.threads)),
         ("llm.gpuLayers".to_string(), json!(a.gpu_layers)),
         ("llm.flashAttn".to_string(), json!(a.flash_attn)),
-        // `llm.supportImages` is deliberately NOT written. Image support is a
-        // user choice, off by default and decoupled from the preset, so
-        // selecting a vision-capable model must not silently turn vision on and
-        // pull in the projector download. `mmprojPath` is still set so vision
-        // works immediately if the user opts in.
+        // `llm.supportImages` is deliberately NOT written: turning vision on
+        // would pull in the projector download as a side effect of picking a
+        // model. `mmprojPath` is still set so opting in works immediately.
         (
             "llm.idleUnloadSeconds".to_string(),
             json!(a.idle_unload_seconds),
@@ -466,9 +425,8 @@ fn apply_to_patch(a: &AppliedModelSettings, preset: &str) -> Vec<(String, Value)
             json!(a.samplers.as_ref().map(|s| s.join(";")).unwrap_or_default()),
         ),
     ];
-    // Both are filled from DEFAULT_SAMPLING by `applied_settings`, so in
-    // practice they are always present. An absent one is skipped rather than
-    // written as null, matching a JavaScript `undefined` in the patch object.
+    // `applied_settings` fills both from the default sampling, so in practice
+    // they are always present. An absent one is skipped rather than nulled.
     if let Some(dry) = a.dry_multiplier {
         out.push(("llm.dryMultiplier".to_string(), json!(dry)));
     }
@@ -543,10 +501,9 @@ async fn tts_catalog(State(models): State<Models>) -> Result<Json<TtsCatalogResp
 
 /// Picking a model resets `tts.voice` to that model's default voice.
 ///
-/// `tts.voice` is a `client-on-client` key, and this writes it into the SHARED
-/// store anyway, because `patchCoreSettings` in the TypeScript persists
-/// whatever it is handed with no destination check. Preserved rather than
-/// corrected: the value is already in real installs' `settings.json`.
+/// `tts.voice` is a `client-on-client` key that lands in the SHARED store
+/// anyway, because the patch path persists whatever it is handed with no
+/// destination check. The value is already in real installs' `settings.json`.
 async fn tts_select(
     State(models): State<Models>,
     Json(body): Json<SpeechSelectBody>,
@@ -584,8 +541,7 @@ mod tests {
     const TOKEN: &str = "token-abc";
     const CLIENT: &str = "client-1";
 
-    /// A download queue that records what it was asked to do. Everything the
-    /// four D7-backed routes need, and nothing more: the real one is D7's.
+    /// A download queue that records what it was asked to do.
     #[derive(Default)]
     struct FakeDownloads {
         /// Sources reported as already on disk.
@@ -654,12 +610,11 @@ mod tests {
         _dir: tempfile::TempDir,
     }
 
-    fn env_with(downloads: Option<Arc<FakeDownloads>>) -> Env {
+    fn env_from(deps: ModelsDeps, downloads: Option<Arc<FakeDownloads>>) -> Env {
         let dir = tempfile::tempdir().unwrap();
         let mut ctx = context_with(Arc::new(StubAuth::new().with_client(TOKEN, CLIENT)));
-        // The dev channel, so the catalog comes from the embedded payload and
-        // no route reaches the network. `context_with` is F6's and hardcodes
-        // stable, so this is rebuilt rather than edited.
+        // The dev channel, so the catalog comes from the embedded payload and no
+        // route reaches the network. `context_with` hardcodes stable.
         ctx.config = Arc::new(Config {
             channel: Channel::Dev,
             ..(*ctx.config).clone()
@@ -677,12 +632,6 @@ mod tests {
             })
             .unwrap();
 
-        let deps = match &downloads {
-            Some(fake) => {
-                ModelsDeps::unwired().with_downloads(Arc::clone(fake) as Arc<dyn Downloads>)
-            }
-            None => ModelsDeps::unwired(),
-        };
         let models = Models::new(&ctx, deps);
         Env {
             router: routes(&ctx, models.clone()),
@@ -690,6 +639,16 @@ mod tests {
             downloads,
             _dir: dir,
         }
+    }
+
+    fn env_with(downloads: Option<Arc<FakeDownloads>>) -> Env {
+        let deps = match &downloads {
+            Some(fake) => {
+                ModelsDeps::unwired().with_downloads(Arc::clone(fake) as Arc<dyn Downloads>)
+            }
+            None => ModelsDeps::unwired(),
+        };
+        env_from(deps, downloads)
     }
 
     fn env() -> Env {
@@ -734,13 +693,33 @@ mod tests {
         call_as(env, Some(TOKEN), method, path, body).await
     }
 
+    async fn get_json(env: &Env, path: &str) -> (u16, Value) {
+        call(env, "GET", path, None).await
+    }
+
+    async fn del_json(env: &Env, path: &str) -> (u16, Value) {
+        call(env, "DELETE", path, None).await
+    }
+
+    async fn post_none(env: &Env, path: &str) -> (u16, Value) {
+        call(env, "POST", path, None).await
+    }
+
+    async fn post_json(env: &Env, path: &str, body: Value) -> (u16, Value) {
+        call(env, "POST", path, Some(body)).await
+    }
+
+    /// An env with the download seam wired to a recording fake.
+    fn wired() -> (Arc<FakeDownloads>, Env) {
+        let fake = Arc::new(FakeDownloads::default());
+        let env = env_with(Some(Arc::clone(&fake)));
+        (fake, env)
+    }
+
     #[tokio::test]
     async fn a_fresh_core_lists_no_models() {
         let env = env();
-        assert_eq!(
-            call(&env, "GET", "/api/v1/models", None).await,
-            (200, json!([]))
-        );
+        assert_eq!(get_json(&env, "/api/v1/models").await, (200, json!([])));
     }
 
     /// Every route in the slice is bearer-gated, including the catch-all
@@ -769,26 +748,22 @@ mod tests {
     /// that says so rather than the ordering of the `.route` calls.
     #[tokio::test]
     async fn the_catch_all_delete_does_not_shadow_the_download_routes() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
+        let (fake, env) = wired();
         assert_eq!(
-            call(&env, "DELETE", "/api/v1/models/downloads/job-7", None)
-                .await
-                .0,
+            del_json(&env, "/api/v1/models/downloads/job-7").await.0,
             204
         );
         assert_eq!(fake.actions.lock().unwrap().as_slice(), ["remove:job-7"]);
         // And a real model path still reaches the model delete, which reports
         // it is not on disk rather than removing a download row.
-        let (status, body) = call(&env, "DELETE", "/api/v1/models/u/r/f.gguf", None).await;
+        let (status, body) = del_json(&env, "/api/v1/models/u/r/f.gguf").await;
         assert_eq!(status, 404);
         assert_eq!(body["error"]["code"], "model_not_found");
     }
 
     #[tokio::test]
     async fn the_download_actions_are_no_ops_for_an_unknown_id() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
+        let (fake, env) = wired();
         for (method, path) in [
             ("POST", "/api/v1/models/downloads/nope/cancel"),
             ("POST", "/api/v1/models/downloads/nope/retry"),
@@ -806,18 +781,17 @@ mod tests {
     /// was deleted does not linger in the list.
     #[tokio::test]
     async fn listing_downloads_reconciles_first() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
+        let (fake, env) = wired();
         assert_eq!(
-            call(&env, "GET", "/api/v1/models/downloads", None).await,
+            get_json(&env, "/api/v1/models/downloads").await,
             (200, json!([]))
         );
         assert_eq!(fake.actions.lock().unwrap().as_slice(), ["reconcile"]);
     }
 
-    /// The unwired seam refuses rather than reporting an empty result. An empty
-    /// probe reads as "everything is already on disk" and an empty enqueue as
-    /// "nothing needed downloading", and both are silent.
+    /// The unwired seam refuses rather than reporting an empty result: an empty
+    /// probe reads as "already on disk" and an empty enqueue as "nothing
+    /// needed", and both are silent.
     #[tokio::test]
     async fn the_unwired_download_seam_refuses_the_two_routes_that_would_lie() {
         let env = env();
@@ -832,31 +806,22 @@ mod tests {
             ),
             ("/api/v1/models/ensure", json!({ "kind": "llm" })),
         ] {
-            let (status, response) = call(&env, "POST", path, Some(body)).await;
+            let (status, response) = post_json(&env, path, body).await;
             assert_eq!(status, 503, "{path}");
             assert_eq!(response["error"]["code"], "server_unavailable", "{path}");
         }
         // The read-only queue routes still answer, because empty is the true
         // answer for a core that has enqueued nothing.
         assert_eq!(
-            call(&env, "GET", "/api/v1/models/downloads", None).await,
+            get_json(&env, "/api/v1/models/downloads").await,
             (200, json!([]))
         );
     }
 
     #[tokio::test]
     async fn a_download_defaults_its_group_to_llm_and_bounds_the_batch() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/download",
-            Some(json!({ "items": [
-                { "source": "@u/r/main/a.gguf" },
-                { "source": "@u/r/main/b.onnx", "group": "stt" }
-            ]})),
-        )
+        let (fake, env) = wired();
+        let (status, body) = post_json(&env, "/api/v1/models/download", json!({ "items": [ { "source": "@u/r/main/a.gguf" }, { "source": "@u/r/main/b.onnx", "group": "stt" } ]}))
         .await;
         assert_eq!(status, 200);
         assert_eq!(body, json!({ "jobIds": ["job-0", "job-1"] }));
@@ -871,21 +836,19 @@ mod tests {
         let too_many: Vec<Value> = (0..=MAX_BATCH)
             .map(|i| json!({ "source": format!("@u/r/main/{i}.gguf") }))
             .collect();
-        let (status, body) = call(
+        let (status, body) = post_json(
             &env,
-            "POST",
             "/api/v1/models/download",
-            Some(json!({ "items": too_many })),
+            json!({ "items": too_many }),
         )
         .await;
         assert_eq!(status, 400);
         assert_eq!(body["error"]["code"], "validation_error");
 
-        let (status, _) = call(
+        let (status, _) = post_json(
             &env,
-            "POST",
             "/api/v1/models/download",
-            Some(json!({ "items": [{ "source": "" }] })),
+            json!({ "items": [{ "source": "" }] }),
         )
         .await;
         assert_eq!(status, 400);
@@ -895,15 +858,9 @@ mod tests {
     /// missing. On a default core that is the embedding model and nothing else.
     #[tokio::test]
     async fn ensure_enqueues_only_the_missing_files() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/ensure",
-            Some(json!({ "kind": "embed" })),
-        )
-        .await;
+        let (fake, env) = wired();
+        let (status, body) =
+            post_json(&env, "/api/v1/models/ensure", json!({ "kind": "embed" })).await;
         assert_eq!(status, 200);
         assert_eq!(body["enqueued"], json!(["job-0"]));
         assert_eq!(body["alreadyHave"], json!([]));
@@ -914,23 +871,13 @@ mod tests {
 
         // A kind the settings do not need at all short-circuits without ever
         // reaching the queue.
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/ensure",
-            Some(json!({ "kind": "stt" })),
-        )
-        .await;
+        let (status, body) =
+            post_json(&env, "/api/v1/models/ensure", json!({ "kind": "stt" })).await;
         assert_eq!(status, 200);
         assert_eq!(body, json!({ "enqueued": [], "alreadyHave": [] }));
 
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/ensure",
-            Some(json!({ "kind": "nonsense" })),
-        )
-        .await;
+        let (status, body) =
+            post_json(&env, "/api/v1/models/ensure", json!({ "kind": "nonsense" })).await;
         assert_eq!(status, 400);
         assert_eq!(body["error"]["code"], "validation_error");
     }
@@ -942,13 +889,8 @@ mod tests {
             ..FakeDownloads::default()
         });
         let env = env_with(Some(Arc::clone(&fake)));
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/ensure",
-            Some(json!({ "kind": "embed" })),
-        )
-        .await;
+        let (status, body) =
+            post_json(&env, "/api/v1/models/ensure", json!({ "kind": "embed" })).await;
         assert_eq!(status, 200);
         assert_eq!(body["enqueued"], json!([]));
         assert_eq!(
@@ -958,20 +900,14 @@ mod tests {
         assert!(fake.enqueued.lock().unwrap().is_empty());
     }
 
-    /// Applying a preset writes the `llm.*` settings and PARTITIONS them: the
-    /// shared store takes the model and server keys, and the caller's own
-    /// overlay takes the sampling tuning, so one client picking a model does not
-    /// rewrite every other client's sampling baseline.
+    /// Applying a preset PARTITIONS the `llm.*` settings: the shared store takes
+    /// the model and server keys, the caller's overlay takes the sampling, so
+    /// one client picking a model does not rewrite everyone's baseline.
     #[tokio::test]
     async fn selecting_a_bucket_partitions_the_patch_by_destination() {
         let env = env();
-        let (status, body) = call(
-            &env,
-            "POST",
-            "/api/v1/models/select",
-            Some(json!({ "bucket": "full" })),
-        )
-        .await;
+        let (status, body) =
+            post_json(&env, "/api/v1/models/select", json!({ "bucket": "full" })).await;
         assert_eq!(status, 200);
         assert_eq!(body["applied"]["preset"], "full");
 
@@ -988,9 +924,8 @@ mod tests {
         for key in ["llm.temperature", "llm.topK", "llm.samplers"] {
             assert!(!shared.contains_key(key), "{key} is not a shared key");
         }
-        // Image support is deliberately never written: turning vision on is the
-        // user's choice, and writing it here would add a projector download as
-        // a side effect of picking a model.
+        // Image support is never written: it would add a projector download as a
+        // side effect of picking a model.
         assert!(!shared.contains_key("llm.supportImages"));
 
         let effective = env.models.settings().load_effective(CLIENT).await.unwrap();
@@ -1012,19 +947,15 @@ mod tests {
             (json!({ "modelId": "nobody/nothing" }), 404, "not_found"),
         ];
         for (body, want_status, want_code) in cases {
-            let (status, response) =
-                call(&env, "POST", "/api/v1/models/select", Some(body.clone())).await;
+            let (status, response) = post_json(&env, "/api/v1/models/select", body.clone()).await;
             assert_eq!(status, want_status, "{body}");
             assert_eq!(response["error"]["code"], want_code, "{body}");
         }
     }
 
-    /// An empty string is not a choice on any of the three select routes. The
-    /// Zod schemas are `z.string().optional()` with no `.min(1)`, so `""`
-    /// reaches the handler on both cores, and the TypeScript's `if (body.x)` is
-    /// falsy for it: the field falls through to the next discriminator instead
-    /// of being looked up and missed. Reachable from any client that clears a
-    /// field rather than omitting it (D-043).
+    /// An empty string is not a choice on any of the three select routes: it
+    /// falls through to the next discriminator instead of being looked up and
+    /// missed. Reachable from any client that clears a field.
     #[tokio::test]
     async fn an_empty_discriminator_falls_through_like_an_omitted_one() {
         let env = env();
@@ -1051,7 +982,7 @@ mod tests {
             ),
         ];
         for (path, body, want_preset) in cases {
-            let (status, response) = call(&env, "POST", path, Some(body.clone())).await;
+            let (status, response) = post_json(&env, path, body.clone()).await;
             assert_eq!(status, 200, "{path} {body}: {response}");
             assert_eq!(response["applied"]["preset"], want_preset, "{path} {body}");
         }
@@ -1067,7 +998,7 @@ mod tests {
                 json!({ "presetId": "", "modelId": "", "modelSpec": "" }),
             ),
         ] {
-            let (status, response) = call(&env, "POST", path, Some(body)).await;
+            let (status, response) = post_json(&env, path, body).await;
             assert_eq!(status, 400, "{path}");
             assert_eq!(response["error"]["code"], "validation_error", "{path}");
         }
@@ -1078,11 +1009,10 @@ mod tests {
     #[tokio::test]
     async fn selecting_a_speech_preset_writes_the_exact_settings() {
         let env = env();
-        let (status, body) = call(
+        let (status, body) = post_json(
             &env,
-            "POST",
             "/api/v1/models/stt/select",
-            Some(json!({ "presetId": "light-multilingual" })),
+            json!({ "presetId": "light-multilingual" }),
         )
         .await;
         assert_eq!(status, 200);
@@ -1099,11 +1029,10 @@ mod tests {
             "STT is compact"
         );
 
-        let (status, body) = call(
+        let (status, body) = post_json(
             &env,
-            "POST",
             "/api/v1/models/tts/select",
-            Some(json!({ "presetId": "kokoro" })),
+            json!({ "presetId": "kokoro" }),
         )
         .await;
         assert_eq!(status, 200);
@@ -1115,17 +1044,15 @@ mod tests {
             applied["modelFiles"].as_str().unwrap().contains('\n'),
             "TTS is pretty-printed, and that asymmetry is the specification"
         );
-        // `tts.voice` is a client-on-client key and lands in the SHARED store
-        // anyway, because `patchCoreSettings` persists whatever it is handed.
-        // Preserved rather than corrected: the value is already on disk in real
-        // installs.
+        // `tts.voice` is a client-on-client key that lands in the SHARED store
+        // anyway; the value is already on disk in real installs.
         assert_eq!(shared["tts.voice"], applied["voice"]);
     }
 
     #[tokio::test]
     async fn recommending_reports_the_device_and_what_the_settings_point_at() {
         let env = env();
-        let (status, body) = call(&env, "GET", "/api/v1/models/recommend", None).await;
+        let (status, body) = get_json(&env, "/api/v1/models/recommend").await;
         assert_eq!(status, 200);
         assert!(body["hardware"]["totalRamBytes"].as_u64().unwrap() > 0);
         assert!(body["catalogGeneratedAt"].as_str().unwrap().ends_with('Z'));
@@ -1135,14 +1062,13 @@ mod tests {
         }
         assert_eq!(body["applied"], json!({}), "nothing chosen yet");
 
-        call(
+        post_json(
             &env,
-            "POST",
             "/api/v1/models/select",
-            Some(json!({ "bucket": "smallest" })),
+            json!({ "bucket": "smallest" }),
         )
         .await;
-        let (_, body) = call(&env, "GET", "/api/v1/models/recommend", None).await;
+        let (_, body) = get_json(&env, "/api/v1/models/recommend").await;
         assert_eq!(body["applied"]["preset"], "smallest");
         assert!(body["applied"]["modelPath"].is_string());
     }
@@ -1158,31 +1084,15 @@ mod tests {
             }
         }
         let notifier = Arc::new(CountingNotifier(Mutex::new(0)));
-        let dir = tempfile::tempdir().unwrap();
-        let mut ctx = context_with(Arc::new(StubAuth::new().with_client(TOKEN, CLIENT)));
-        ctx.config = Arc::new(Config {
-            channel: Channel::Dev,
-            ..(*ctx.config).clone()
-        });
-        ctx.paths.ensure_dirs().unwrap();
-        ctx.db.call_blocking(|conn| migrate(conn)).unwrap();
-        let models = Models::new(
-            &ctx,
+        let env = env_from(
             ModelsDeps::unwired().with_requirements(
                 Arc::clone(&notifier) as Arc<dyn crate::storage::deps::RequirementsNotifier>
             ),
+            None,
         );
-        let env = Env {
-            router: routes(&ctx, models.clone()),
-            models,
-            downloads: None,
-            _dir: dir,
-        };
 
         assert_eq!(
-            call(&env, "POST", "/api/v1/models/recommend/recheck", None)
-                .await
-                .0,
+            post_none(&env, "/api/v1/models/recommend/recheck").await.0,
             200
         );
         assert_eq!(*notifier.0.lock().unwrap(), 1);
@@ -1191,29 +1101,24 @@ mod tests {
         // requirement the snapshot only re-probes when told.
         std::fs::create_dir_all(env.models.models_dir().join("u/r")).unwrap();
         std::fs::write(env.models.models_dir().join("u/r/f.gguf"), b"x").unwrap();
-        assert_eq!(
-            call(&env, "DELETE", "/api/v1/models/u/r/f.gguf", None)
-                .await
-                .0,
-            204
-        );
+        assert_eq!(del_json(&env, "/api/v1/models/u/r/f.gguf").await.0, 204);
         assert_eq!(*notifier.0.lock().unwrap(), 2);
     }
 
     #[tokio::test]
     async fn the_browser_and_the_speech_pickers_serve_the_catalog() {
         let env = env();
-        let (status, body) = call(&env, "GET", "/api/v1/models/catalog", None).await;
+        let (status, body) = get_json(&env, "/api/v1/models/catalog").await;
         assert_eq!(status, 200);
         assert!(body["generatedAt"].as_str().unwrap().ends_with('Z'));
         assert_eq!(body["models"].as_array().unwrap().len(), 9);
 
-        let (status, body) = call(&env, "GET", "/api/v1/models/stt/catalog", None).await;
+        let (status, body) = get_json(&env, "/api/v1/models/stt/catalog").await;
         assert_eq!(status, 200);
         assert_eq!(body["models"].as_array().unwrap().len(), 17);
         assert_eq!(body["presets"].as_array().unwrap().len(), 4);
 
-        let (status, body) = call(&env, "GET", "/api/v1/models/tts/catalog", None).await;
+        let (status, body) = get_json(&env, "/api/v1/models/tts/catalog").await;
         assert_eq!(status, 200);
         assert_eq!(body["models"].as_array().unwrap().len(), 6);
         // Each card carries its model's voices, so the voice dropdown fills
@@ -1226,35 +1131,26 @@ mod tests {
         let env = env();
         // Percent-encoded, because a client library would normalise a literal
         // `..` out of the path before it ever reached the core.
-        let (status, body) = call(&env, "DELETE", "/api/v1/models/u/%2e%2e/escape", None).await;
+        let (status, body) = del_json(&env, "/api/v1/models/u/%2e%2e/escape").await;
         assert_eq!(status, 400);
         assert_eq!(body["error"]["code"], "validation_error");
     }
 
-    /// The seam is threaded rather than reached for, and this is what that
-    /// buys: two handles over one core answer from the same queue.
+    /// Two handles over one core answer from the same queue.
     #[tokio::test]
     async fn every_route_reads_the_one_download_handle() {
-        let fake = Arc::new(FakeDownloads::default());
-        let env = env_with(Some(Arc::clone(&fake)));
+        let (fake, env) = wired();
         assert!(env.downloads.is_some());
-        call(&env, "POST", "/api/v1/models/downloads/a/cancel", None).await;
-        call(&env, "GET", "/api/v1/models/downloads", None).await;
+        post_none(&env, "/api/v1/models/downloads/a/cancel").await;
+        get_json(&env, "/api/v1/models/downloads").await;
         assert_eq!(
             fake.actions.lock().unwrap().as_slice(),
             ["cancel:a", "reconcile"]
         );
     }
 
-    /// The slice is reachable through the fully assembled router, not just
-    /// through a bare mount of itself.
-    ///
-    /// This was a merge of the slice into the real router, standing in for a
-    /// mount that did not exist yet. Now that boot mounts it, merging again is
-    /// a duplicate and axum panics on the overlap, which is the router-assembly
-    /// check doing its job. What is left worth asserting is that the catch-all
-    /// `DELETE /api/v1/models/{*rel_path}` did not shadow, or get shadowed by, a
-    /// sibling package's paths once everything is mounted together.
+    /// The catch-all `DELETE /api/v1/models/{*rel_path}` neither shadows nor is
+    /// shadowed by a sibling slice's paths once everything is mounted together.
     #[tokio::test]
     async fn the_slice_is_reachable_through_the_assembled_router() {
         let assembled = crate::transport::testing::core_with(Arc::new(

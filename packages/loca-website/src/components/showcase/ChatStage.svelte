@@ -11,7 +11,7 @@
   import { BASE_MS } from "@loca/shared/ui/animations";
   import type { Alignment } from "@loca/shared/ui/types";
   import Cursor from "./Cursor.svelte";
-  import { awaitStableHeight, Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, awaitStableHeight, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   // The flagship demo ends by flipping the chat alignment (right, then left), so
   // unlike the other stages it owns its OWN subtree UI context whose
@@ -32,13 +32,7 @@
   );
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   const PROMPT = "Help me write a fun invite for game night at my place this Friday.";
   const REASONING = "Keep it short and upbeat: the plan, the time, and what to bring.";

@@ -1,9 +1,7 @@
-//! The shapes a completion is asked for and answered in.
-//!
-//! The request half serialises straight onto the OpenAI-compatible wire, so the
-//! serde attributes here ARE the wire format; the response half
-//! ([`LlmDelta`]) is the normalised form every consumer reads, whether the
-//! completion came over HTTP or, after Stage 3, from the in-process engine.
+//! The shapes a completion is asked for and answered in. The request half
+//! serialises straight onto the OpenAI-compatible wire, so the serde attributes
+//! here ARE the wire format; [`LlmDelta`] is the normalised form every consumer
+//! reads, whether the completion came over HTTP or from the in-process engine.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -70,13 +68,10 @@ impl ReasoningEffort {
     }
 }
 
-/// Everything about the upstream a completion goes to.
-///
-/// Resolved from settings by [`super::resolver::resolve_endpoint`], or built by
-/// hand in a test. Every sampler is `Option`, and absent means "do not put the
-/// field on the wire" rather than "use zero", which is also what makes the
-/// derived `Default` the right empty endpoint rather than a set of zeroed
-/// samplers.
+/// Everything about the upstream a completion goes to. Every sampler is
+/// `Option`, and absent means "do not put the field on the wire" rather than
+/// "use zero", which is also what makes the derived `Default` an empty endpoint
+/// rather than a set of zeroed samplers.
 #[derive(Clone, Debug, Default)]
 pub struct LlmEndpointConfig {
     pub base_url: String,
@@ -99,20 +94,16 @@ pub struct LlmEndpointConfig {
     /// llama.cpp sampler-chain order, by canonical name. `None` leaves the
     /// server's default chain alone.
     pub samplers: Option<Vec<String>>,
-    /// Whether the llama.cpp-only body fields may be sent, derived from the base
-    /// URL being loopback.
-    ///
-    /// **This is not the same question as [`Self::is_local_provider`], and the
-    /// two disagree for a real configuration.** An external provider pointed at
-    /// a loopback gateway (LM Studio, Ollama, a hand-run llama-server) has this
-    /// set and `is_local_provider` clear: it receives the llama samplers and
-    /// does not queue. Folding them into one flag would start queueing external
-    /// traffic behind one slot AND stop sending samplers to a hand-run
-    /// llama-server, in one edit, with nothing failing to say so.
+    /// Whether the llama.cpp-only body fields may be sent, derived from the
+    /// base URL being loopback. NOT the same question as
+    /// [`Self::is_local_provider`]: an external provider on a loopback gateway
+    /// has this set and that clear, so it receives the llama samplers and does
+    /// not queue. Folding them into one flag would queue external traffic
+    /// behind one slot and stop sending samplers to a hand-run llama-server.
     pub llama_body_extras: bool,
     /// Whether this is the core's own local model, from `llm.provider`. Gates
-    /// the scheduler's semaphore, and after Stage 3 selects the in-process
-    /// engine over HTTP. See the note on [`Self::llama_body_extras`].
+    /// the scheduler's semaphore and selects the in-process engine over HTTP.
+    /// See the note on [`Self::llama_body_extras`].
     pub is_local_provider: bool,
 }
 
@@ -161,10 +152,8 @@ impl LlmRequest {
     }
 }
 
-/// One message in the transcript, in the shape the model API takes.
-///
-/// Reasoning traces are deliberately absent: they are not part of the message
-/// protocol, and the TypeScript drops them when building a request too.
+/// One message in the transcript, in the shape the model API takes. Reasoning
+/// traces are deliberately absent: they are not part of the message protocol.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum ChatMessage {
@@ -178,8 +167,7 @@ pub enum ChatMessage {
         content: String,
         /// The calls this turn emitted. They MUST be replayed: the `tool`
         /// messages that follow reference them by id, and an undeclared
-        /// `tool_call_id` renders as an orphaned response in the chat template,
-        /// garbling every hop after it.
+        /// `tool_call_id` renders as an orphaned response.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<ToolCallRef>,
     },
@@ -210,11 +198,9 @@ impl ChatMessage {
     }
 }
 
-/// User content is either plain text or a multipart list.
-///
-/// The multipart form only earns its keep when there is an image: some providers
-/// reject a parts array that carries no `image_url` sibling, so a caller with
-/// only text collapses it to the string form.
+/// User content is either plain text or a multipart list. The multipart form
+/// only earns its keep when there is an image: some providers reject a parts
+/// array with no `image_url` sibling, so a text-only caller collapses it.
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum UserContent {
@@ -337,8 +323,7 @@ impl LlmDelta {
     }
 }
 
-/// Hand-written because the generated [`TokenUsage`] carries no `PartialEq`, and
-/// comparing a whole delta is what makes a provider test readable.
+/// Hand-written because the generated [`TokenUsage`] carries no `PartialEq`.
 impl PartialEq for LlmDelta {
     fn eq(&self, other: &Self) -> bool {
         let usage = |u: &Option<TokenUsage>| u.as_ref().map(|u| (u.prompt, u.completion, u.total));
@@ -454,11 +439,9 @@ mod tests {
 
     #[test]
     fn every_effort_level_survives_the_round_trip_to_the_wire() {
-        // All four are real values of `llm.reasoningEffort` in the settings
-        // schema, and each goes on the wire verbatim. A level with no arm here
-        // does not fail: it falls through to the schema default and silently
-        // sends "high", so the model thinks harder (and costs more) than the
-        // user asked. Only asserting one level leaves the other three free.
+        // Each goes on the wire verbatim. A level with no arm falls through to
+        // the schema default and silently sends "high", so the model thinks
+        // harder (and costs more) than the user asked.
         for level in [
             ReasoningEffort::Minimal,
             ReasoningEffort::Low,

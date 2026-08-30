@@ -1,8 +1,12 @@
 {
   "name": "loca-core-rs",
   "exports": {},
+  "imports": { "@loca/shared": "../loca-shared/src/index.ts" },
   "tasks": {
     "build": "cargo build --release",
+    "//workers": "workers/ is the TypeScript tool worker the core spawns under deno; the JS half of check/test covers it.",
+    "check": "deno check workers/",
+    "test:js": "deno test -A --quiet --reporter=dot workers/",
     "//dev": "Runs the core from source with both native features on, which is what `deno task dev` spawns and what ships. Needs `deno run -A scripts/vendor-llama.ts` once; the full dev environment (admin token, seeded extension manifest, client) is `deno task dev` from the repo root, and this is the core-only half of it.",
     "dev": "cargo run --bin loca-core --features local-inference,local-speech",
     "//mobile-check": "Cross-compiles for both mobile triples. NOT decoration: the crate silently stopped building for Android and iOS and nothing noticed (D-117), because cargo test and cargo build are host-target and the client's check:android/check:ios check the TAURI crate, which does not depend on this one until M1 lands loca-core-ffi. The mobile half of this project had no build coverage at all. Deliberately NOT named `check`, so scripts/pkg.ts does not fan it into `deno task check`: the iOS half needs a macOS runner with Xcode and would fail the ubuntu check job. CI runs the android half in the existing `android` job, which already has the NDK; the iOS half is local-only until a macOS runner exists.",
@@ -12,6 +16,6 @@
     "lint": "cargo clippy -q --all-targets -- -D warnings",
     "fmt": "cargo fmt",
     "fmt:check": "cargo fmt --check",
-    "test": "cargo test -q"
+    "test": "deno task test:js && cargo test -q"
   }
 }

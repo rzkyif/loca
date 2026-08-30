@@ -1,11 +1,9 @@
-//! D10's suite.
+//! The scheduled-prompts suite.
 //!
-//! Split the way the module is: the calendar is pure and tested against values
-//! measured from the oracle, the store is tested against a real SQLite, the
-//! tick is driven by an explicit `now` so nothing sleeps, and the timer is
-//! tested with bounded waits only. An unbounded drain would HANG the whole
-//! `--lib` run rather than fail it, and take every other package's results with
-//! it, so there is not one in here.
+//! Split the way the module is: the calendar is pure and tested against measured
+//! values, the store against a real SQLite, the tick driven by an explicit `now`
+//! so nothing sleeps, and the timer with bounded waits only. An unbounded drain
+//! would HANG the whole `--lib` run rather than fail it, so there is not one.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -15,8 +13,7 @@ use crate::contract::api::ScheduleSpec;
 
 // --- helpers -----------------------------------------------------------------
 
-/// The instant of a wall clock in a zone, for writing expectations in the same
-/// terms the oracle's own test does.
+/// The instant of a wall clock in a zone.
 fn at(tz: &TestZone, y: i32, m: u32, d: u32, h: u32, min: u32) -> i64 {
     use chrono::TimeZone as _;
     tz.with_ymd_and_hms(y, m, d, h, min, 0)
@@ -111,8 +108,7 @@ fn a_monthly_clamps_the_day_to_the_length_of_the_month() {
         next_occurrence_in(&tz, &spec, at(&tz, 2026, 2, 28, 12, 0)),
         Some(at(&tz, 2026, 3, 31, 9, 0)),
     );
-    // December rolls the YEAR, which is the case the oracle gets for free from
-    // `new Date(year, 12, ...)` and this port has to do explicitly.
+    // December rolls the YEAR, which this has to do explicitly.
     assert_eq!(
         next_occurrence_in(&tz, &spec, at(&tz, 2026, 12, 31, 12, 0)),
         Some(at(&tz, 2027, 1, 31, 9, 0)),
@@ -140,24 +136,10 @@ fn a_yearly_wraps_the_year_and_clamps_the_29th_of_february() {
     );
 }
 
-// --- DST, against values measured from the oracle ----------------------------
-//
-// Every number below was printed by V8 through Deno before this test was
-// written, rather than reasoned about from the ECMAScript spec. The commands
-// and their output:
-//
-//   TZ=America/New_York
-//     new Date(2026, 2, 8, 9, 0)  -> 1772974800000   (09:00 EDT, the DST day)
-//     new Date(2026,10, 1, 9, 0)  -> 1793541600000   (09:00 EST, the fold day)
-//     new Date(2026, 2, 8, 2,30)  -> 1772955000000   (SKIPPED; renders 03:30 EDT)
-//     new Date(2026,10, 1, 1,30)  -> 1793511000000   (AMBIGUOUS; the earlier)
-//   TZ=Australia/Sydney
-//     new Date(2026, 9, 4, 2,30)  -> 1791045000000   (SKIPPED; renders 03:30 AEDT)
-//     new Date(2026, 3, 5, 2,30)  -> 1775316600000   (AMBIGUOUS; the earlier)
+// --- DST, against measured values --------------------------------------------
 //
 // Both zones agree, in both hemispheres: the offset in force BEFORE the
-// transition is the one used, for a skipped local time and a repeated one
-// alike.
+// transition is the one used, for a skipped local time and a repeated one alike.
 
 #[test]
 fn a_weekly_keeps_its_wall_clock_across_both_dst_edges() {
@@ -178,8 +160,8 @@ fn a_weekly_keeps_its_wall_clock_across_both_dst_edges() {
 #[test]
 fn a_skipped_wall_clock_resolves_with_the_offset_from_before_the_gap() {
     // 02:30 on 2026-03-08 does not exist in New York: the clock jumps 02:00 to
-    // 03:00. The oracle answers 1772955000000, which is 02:30 EST, the
-    // pre-transition offset, and renders as 03:30 EDT.
+    // 03:00. 1772955000000 is 02:30 EST, the pre-transition offset, which
+    // renders as 03:30 EDT.
     let ny = TestZone::new_york_2026();
     assert_eq!(
         next_occurrence_in(&ny, &weekly(&[0], 2, 30), at(&ny, 2026, 3, 7, 12, 0)),
@@ -196,9 +178,9 @@ fn a_skipped_wall_clock_resolves_with_the_offset_from_before_the_gap() {
 
 #[test]
 fn an_ambiguous_wall_clock_resolves_to_the_earlier_of_the_two_instants() {
-    // 01:30 on 2026-11-01 happens twice in New York. The oracle answers
-    // 1793511000000, the first pass (01:30 EDT). The second is 1793514600000,
-    // and answering that would run the schedule an hour late once a year.
+    // 01:30 on 2026-11-01 happens twice in New York. 1793511000000 is the first
+    // pass (01:30 EDT); the second is 1793514600000, and answering that would run
+    // the schedule an hour late once a year.
     let ny = TestZone::new_york_2026();
     assert_eq!(
         next_occurrence_in(&ny, &weekly(&[0], 1, 30), at(&ny, 2026, 10, 31, 12, 0)),
@@ -214,10 +196,9 @@ fn an_ambiguous_wall_clock_resolves_to_the_earlier_of_the_two_instants() {
 
 #[test]
 fn a_weekly_on_a_skipped_wall_clock_is_judged_by_the_day_it_landed_on() {
-    // The oracle reads `candidate.getDay()` off the CONSTRUCTED Date, so a wall
-    // clock the zone moved is matched against where it ended up. 02:30 on the
-    // spring-forward Sunday lands at 03:30 the same Sunday, so a Sunday
-    // schedule still matches; a Monday one still does not.
+    // The weekday is read off the CONSTRUCTED instant, so a wall clock the zone
+    // moved is matched against where it ended up: 02:30 on the spring-forward
+    // Sunday lands at 03:30 the same Sunday and a Sunday schedule still matches.
     let ny = TestZone::new_york_2026();
     let saturday = at(&ny, 2026, 3, 7, 12, 0);
     assert_eq!(
@@ -230,7 +211,7 @@ fn a_weekly_on_a_skipped_wall_clock_is_judged_by_the_day_it_landed_on() {
     );
 }
 
-// --- validation: D-083 and D-095 --------------------------------------------
+// --- validation --------------------------------------------------------------
 
 #[test]
 fn a_weekly_with_no_weekdays_is_refused_and_the_message_says_what_to_do() {
@@ -249,9 +230,8 @@ fn a_weekly_with_no_weekdays_is_refused_and_the_message_says_what_to_do() {
 
 #[test]
 fn every_bound_the_contract_bridge_dropped_is_re_asserted() {
-    // D-095: a constraint survives the bridge only if some Rust type expresses
-    // it. Each of these is a Zod bound with no Rust type to become, so it is
-    // enforced here or nowhere.
+    // A constraint survives the bridge only if some Rust type expresses it, and
+    // each of these is a schema bound with no Rust type to become.
     let bad = [
         weekly(&[7], 9, 0),
         weekly(&[-1], 9, 0),
@@ -342,14 +322,10 @@ fn a_spec_at_every_boundary_is_accepted() {
 #[test]
 fn the_inbound_narrowing_refuses_a_value_that_does_not_fit() {
     use crate::contract::inbound::ScheduleSpec as Inbound;
-    // `NonZeroU64` is unbounded above where the oracle caps at
-    // MAX_SAFE_INTEGER, so the narrowing is where an oversized value is caught
-    // rather than silently wrapping negative.
-    // Two mechanisms, and the first test of this only exercised one. `u64::MAX`
-    // is refused by `i64::try_from` before the ceiling is consulted at all, so
-    // it says nothing about the ceiling; 2^53 fits an `i64` comfortably and is
-    // refused ONLY by it. A mutation that deleted the ceiling survived the
-    // single-value version of this test.
+    // `NonZeroU64` is unbounded above where the wire caps at MAX_SAFE_INTEGER,
+    // so the narrowing is where an oversized value is caught rather than wrapping
+    // negative. Two mechanisms: `u64::MAX` is refused by `i64::try_from` before
+    // the ceiling is consulted, and 2^53 fits an `i64` and is refused ONLY by it.
     for at_ms in [u64::MAX, 9_007_199_254_740_992] {
         let huge = Inbound::Once {
             at_ms: std::num::NonZeroU64::new(at_ms).unwrap(),
@@ -510,14 +486,11 @@ enum InTheGap {
 
 /// A probe that mutates a row WHILE the tick awaits it.
 ///
-/// This exists because staging the final state does not test the guard at all.
-/// `Store::due` already filters on `enabled = 1 AND next_run_at_ms <= now`, so a
-/// row disabled or advanced BEFORE the tick simply never appears in the due
-/// list and the loop body is never reached. The re-read after the probe only
+/// Staging the final state does not test the guard at all: `Store::due` already
+/// filters on `enabled = 1 AND next_run_at_ms <= now`, so a row changed BEFORE
+/// the tick never appears in the due list. The re-read after the probe only
 /// matters for a row that was due when the query ran and changed during the
-/// await, and the only way to produce that window in a test is to change it from
-/// inside the await. Three mutations survived the staged-state version of these
-/// tests; all three are caught by this one.
+/// await, and the only way to produce that window is from inside the await.
 struct GapProbe {
     db: Db,
     plan: GapPlan,
@@ -584,8 +557,7 @@ impl Env {
         }
     }
 
-    /// A scheduler with no runner attached, which is what a core has before
-    /// `Chat` is built.
+    /// A scheduler with no runner attached.
     fn unattached() -> Self {
         let db = migrated_db();
         insert_client(&db, "owner");
@@ -881,7 +853,7 @@ async fn update_refuses_an_enabled_schedule_that_can_never_fire() {
     assert!(matches!(after.schedule, ScheduleSpec::Weekly { .. }));
 }
 
-// --- D-083 at all three write paths -----------------------------------------
+// --- the unfireable-schedule guard at all three write paths ------------------
 
 #[tokio::test]
 async fn an_empty_weekday_list_is_refused_on_every_path_that_stores_a_schedule() {
@@ -1225,9 +1197,8 @@ fn gap_env() -> (Env, GapPlan) {
 
 #[tokio::test]
 async fn a_row_disabled_while_the_probe_was_awaited_is_not_fired() {
-    // The re-read after the loading probe, tested through the window it exists
-    // for: the row is due when `due()` runs and is disabled while the tick is
-    // parked on the probe.
+    // The re-read after the loading probe, through the window it exists for: the
+    // row is due when `due()` runs and is disabled while the tick is parked.
     let (env, plan) = gap_env();
     let created = env
         .scheduler
@@ -1487,10 +1458,9 @@ async fn start_catches_up_a_row_the_core_was_off_for() {
 
 #[tokio::test]
 async fn shutdown_stops_a_loop_that_is_parked_on_a_deadline() {
-    // The loop is parked on a real sleep with a row due at the end of it, and
-    // NOTHING pokes it afterwards. So the only way out is the cancellation
-    // branch of the `select!`, which is what makes this test pin that branch
-    // rather than the loop-top guard.
+    // The loop is parked on a real sleep with a row due at the end and nothing
+    // pokes it afterwards, so the only way out is the cancellation branch of the
+    // `select!` rather than the loop-top guard.
     let env = Env::new();
     let created = env
         .scheduler
@@ -1535,13 +1505,9 @@ async fn the_same_schedule_does_fire_when_nothing_stops_it() {
 // --- the route slice ---------------------------------------------------------
 //
 // These drive `super::routes::routes`, the production slice function, which
-// applies its own `require_client` layer. Deleting that line makes the auth test
-// go red, which is the question D-088 says to ask of every route suite.
-//
-// What they deliberately do NOT cover is the `.merge(...)` line in
-// `transport/router.rs`: that file is orchestrator-owned, the mount is an open
-// interfaces request, and nothing inside this package can assert it. The
-// conformance cases are what prove it, and they are why they exist.
+// applies its own `require_client` layer: deleting that line makes the auth test
+// go red. They deliberately do not cover the `.merge(...)` in
+// `transport/router.rs`, which nothing inside this module can assert.
 
 fn route_env() -> (crate::transport::state::AppContext, Env) {
     let env = Env::new();
@@ -1549,6 +1515,53 @@ fn route_env() -> (crate::transport::state::AppContext, Env) {
         crate::transport::testing::StubAuth::new().with_client("t0ken", "owner"),
     ));
     (ctx, env)
+}
+
+/// One request through a freshly built slice. `token` absent means no bearer.
+async fn route_call(
+    ctx: &crate::transport::state::AppContext,
+    env: &Env,
+    token: Option<&str>,
+    method: &str,
+    uri: &str,
+    body: Option<serde_json::Value>,
+) -> (StatusCode, serde_json::Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("content-type", "application/json");
+    if let Some(token) = token {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+    let request = match body {
+        Some(value) => builder.body(Body::from(value.to_string())).unwrap(),
+        None => builder.body(Body::empty()).unwrap(),
+    };
+    let response = super::routes::routes(ctx, env.scheduler.clone())
+        .oneshot(request)
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let value = if bytes.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+    };
+    (status, value)
+}
+
+/// The same, as the paired owner.
+async fn call(
+    ctx: &crate::transport::state::AppContext,
+    env: &Env,
+    method: &str,
+    uri: &str,
+    body: Option<serde_json::Value>,
+) -> (StatusCode, serde_json::Value) {
+    route_call(ctx, env, Some("t0ken"), method, uri, body).await
 }
 
 #[tokio::test]
@@ -1562,20 +1575,10 @@ async fn every_route_needs_a_bearer() {
         ("POST", "/api/v1/scheduled-prompts/abc/run"),
     ];
     for (method, uri) in cases {
-        let router = super::routes::routes(&ctx, env.scheduler.clone());
-        let response = router
-            .oneshot(
-                Request::builder()
-                    .method(method)
-                    .uri(uri)
-                    .header("content-type", "application/json")
-                    .body(Body::from("{}"))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let (status, _) =
+            route_call(&ctx, &env, None, method, uri, Some(serde_json::json!({}))).await;
         assert_eq!(
-            response.status(),
+            status,
             StatusCode::UNAUTHORIZED,
             "{method} {uri} answered an unauthenticated caller",
         );
@@ -1591,57 +1594,31 @@ async fn the_slice_round_trips_a_schedule() {
         "schedule": { "kind": "weekly", "weekdays": [1], "hour": 9, "minute": 0 },
         "runMissed": false,
     });
-    let created = super::routes::routes(&ctx, env.scheduler.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/scheduled-prompts")
-                .header("authorization", "Bearer t0ken")
-                .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(created.status(), StatusCode::CREATED);
-    let created: serde_json::Value = json_body(created).await;
+    let (status, created) = call(&ctx, &env, "POST", "/api/v1/scheduled-prompts", Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED);
     let id = created["id"].as_str().unwrap().to_string();
     assert_eq!(created["ownerClientId"], "owner");
     assert!(created["nextRunAtMs"].is_i64());
 
-    let listed = super::routes::routes(&ctx, env.scheduler.clone())
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/scheduled-prompts")
-                .header("authorization", "Bearer t0ken")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let listed: serde_json::Value = json_body(listed).await;
+    let (_, listed) = call(&ctx, &env, "GET", "/api/v1/scheduled-prompts", None).await;
     assert_eq!(listed["scheduledPrompts"].as_array().unwrap().len(), 1);
 
-    let deleted = super::routes::routes(&ctx, env.scheduler.clone())
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri(format!("/api/v1/scheduled-prompts/{id}"))
-                .header("authorization", "Bearer t0ken")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(deleted.status(), StatusCode::OK);
-    let deleted: serde_json::Value = json_body(deleted).await;
+    let (status, deleted) = call(
+        &ctx,
+        &env,
+        "DELETE",
+        &format!("/api/v1/scheduled-prompts/{id}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(deleted["ok"], true);
     assert!(env.scheduler.list("owner").await.unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn the_create_route_refuses_a_weekly_with_no_weekdays() {
-    // The D-083 case at the wire, where a user meets it.
+    // The unfireable-schedule case at the wire, where a user meets it.
     let (ctx, env) = route_env();
     let body = serde_json::json!({
         "title": "Never fires",
@@ -1649,20 +1626,8 @@ async fn the_create_route_refuses_a_weekly_with_no_weekdays() {
         "schedule": { "kind": "weekly", "weekdays": [], "hour": 9, "minute": 0 },
         "runMissed": false,
     });
-    let response = super::routes::routes(&ctx, env.scheduler.clone())
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/scheduled-prompts")
-                .header("authorization", "Bearer t0ken")
-                .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = json_body(response).await;
+    let (status, body) = call(&ctx, &env, "POST", "/api/v1/scheduled-prompts", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "validation_error");
     assert!(
         body["error"]["message"]
@@ -1676,8 +1641,8 @@ async fn the_create_route_refuses_a_weekly_with_no_weekdays() {
 
 #[tokio::test]
 async fn the_patch_route_is_strict_and_refuses_an_empty_title() {
-    // The patch body is a route-local Zod schema, which per D-093 the contract
-    // bridge never sees at all, so both of these are enforced here or nowhere.
+    // The patch body is a route-local schema the contract bridge never sees, so
+    // both of these are enforced here or nowhere.
     let (ctx, env) = route_env();
     let created = env
         .scheduler
@@ -1693,29 +1658,14 @@ async fn the_patch_route_is_strict_and_refuses_an_empty_title() {
             serde_json::json!({ "instruction": "" }),
         ),
     ] {
-        let response = super::routes::routes(&ctx, env.scheduler.clone())
-            .oneshot(
-                Request::builder()
-                    .method("PATCH")
-                    .uri(format!("/api/v1/scheduled-prompts/{}", created.id))
-                    .header("authorization", "Bearer t0ken")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body.to_string()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            response.status(),
-            StatusCode::BAD_REQUEST,
-            "{label} was accepted",
-        );
+        let (status, _) = call(
+            &ctx,
+            &env,
+            "PATCH",
+            &format!("/api/v1/scheduled-prompts/{}", created.id),
+            Some(body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{label} was accepted");
     }
-}
-
-async fn json_body(response: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
-        .await
-        .unwrap();
-    serde_json::from_slice(&bytes).unwrap()
 }

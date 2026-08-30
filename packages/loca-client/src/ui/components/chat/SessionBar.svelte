@@ -24,10 +24,8 @@
     onWidth?: (width: number) => void;
   } = $props();
 
-  // getContextSize lived in $lib/sidecar/llm and read from the LLM HTTP
-  // /props endpoint. Context size is now reported by core; until the
-  // /api/v1/llm/status endpoint exists this falls back to a static default
-  // (8192 is the llama.cpp default for most models).
+  // Until a /api/v1/llm/status endpoint exists, fall back to llama.cpp's
+  // 8192 default.
   function getContextSize(): number {
     return Number(settingsState.currentSettings["llm.contextSize"]) || 8192;
   }

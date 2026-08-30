@@ -1,11 +1,7 @@
-// Text-to-Speech: one hybrid group spanning client and core. The enable toggle
-// and the synthesis model (type, model path, bundle files) live on the core
-// because the synthesis engine does: core computes the model files into its
-// required-downloads snapshot, so a client-side value would leave requirements
-// (and the pending-downloads gate) blind to it. Playback and batching settings
-// stay on the client. A provider select switches the model section between the
-// local synthesis engine and an external OpenAI-compatible endpoint, mirroring
-// the Speech-to-Text structure.
+// Text-to-Speech: one hybrid group mirroring the Speech-to-Text structure. The
+// enable toggle and the synthesis model live on the core, which computes the
+// model files into its required-downloads snapshot; playback and batching stay
+// on the client.
 
 import type { RegexValidationRule, SettingGroup } from "../types.ts";
 import { externalModelSection, speechBackendField } from "./factories.ts";
@@ -72,11 +68,10 @@ export const ttsGroup: SettingGroup = {
           type: "tts_preset",
           defaultValue: "kokoro",
           presetConfig: {
-            // The model resolves from the signed catalog at runtime, so list the
-            // keys each card manages: editing any flips the preset to Custom.
-            // The chosen voice is not managed here (it is independent of which
-            // model is selected), though picking a model resets it to that
-            // model's default voice.
+            // The model resolves from the signed catalog at runtime, so list
+            // the keys each card manages: editing one flips the preset to
+            // Custom. The voice is not managed here (it is independent of the
+            // model), though picking a model resets it to that model's default.
             managedKeys: ["tts.modelType", "tts.modelPath", "tts.modelFiles"],
             options: [
               {

@@ -1,28 +1,15 @@
 //! Speech-to-Text and Text-to-Speech catalog resolution.
 //!
-//! Neither has a fit engine. STT bundles run from about 31 MB to 3.1 GB and TTS
-//! bundles are small, so everything fits on every device and selection is a
-//! direct lookup. What these do is the job `fit.rs` does for the LLM picker:
-//! turn a `{presetId | modelId | modelSpec}` choice into the `stt.*` or `tts.*`
-//! settings to write.
+//! Neither has a fit engine: the bundles are small enough to fit everywhere, so
+//! selection is a direct lookup that turns a `{presetId | modelId | modelSpec}`
+//! choice into the `stt.*` or `tts.*` settings to write.
 //!
-//! # The `modelFiles` string is a wire format, and two things about it are traps
-//!
-//! A speech model is a bundle of role-tagged files, and selection bakes the
-//! chosen bundle into `stt.modelFiles` / `tts.modelFiles` as JSON. That string
-//! is persisted, read back by the speech engine and by the download flow, and
-//! compared byte for byte by the conformance suite. Two properties of it are
-//! easy to "tidy" into a divergence:
-//!
-//! 1. **Key order is the catalog's file order, not sorted.** `modelFilesObject`
-//!    iterates `quant.files` and `JSON.stringify` preserves insertion order.
-//!    `serde_json::Map` is a `BTreeMap` in this crate, so serialising a map
-//!    would emit `decoder` before `encoder` where the TypeScript emits
-//!    `encoder` first. The string is therefore built in file order by hand.
-//! 2. **STT writes compact JSON and TTS writes two-space pretty JSON.**
-//!    `stt.ts:64` is `JSON.stringify(obj)`; `tts.ts:48` is
-//!    `JSON.stringify(obj, null, 2)`. The asymmetry reads as an accident and is
-//!    the specification: both values are already on disk in real installs.
+//! The `modelFiles` string is a persisted wire format with two trap properties.
+//! Key order is the catalog's FILE order, not sorted, so the JSON is built by
+//! hand rather than through `serde_json::Map` (a `BTreeMap` here). And STT
+//! writes compact JSON while TTS writes two-space pretty JSON; the asymmetry
+//! reads as an accident and is the specification, because both forms are
+//! already on disk in real installs.
 
 use indexmap::IndexMap;
 
@@ -61,11 +48,10 @@ fn tts_primary_role(family: TtsFamily) -> &'static str {
     }
 }
 
-/// The catalog's family enum and the response's are two generated types over
-/// the same wire strings: the catalog is validated on the way IN and the
-/// applied settings are produced on the way OUT, and `contract` partitions by
-/// direction of travel (D-003). The mapping is total in both directions and is
-/// written out so a variant added on one side cannot compile without the other.
+/// The catalog's family enum and the response's are two generated types over the
+/// same wire strings, because `contract` partitions by direction of travel. The
+/// mapping is written out so a variant added on one side cannot compile without
+/// the other.
 fn stt_family_out(family: SttFamily) -> crate::contract::api::SttFamily {
     use crate::contract::api::SttFamily as Out;
     match family {
@@ -92,8 +78,7 @@ fn tts_family_out(family: TtsFamily) -> crate::contract::api::TtsFamily {
 }
 
 /// The role to spec map a `*.modelFiles` setting stores, in the catalog's file
-/// order. A duplicate role keeps its first position and its last value, which is
-/// what assigning twice into a JavaScript object does.
+/// order. A duplicate role keeps its first position and its last value.
 fn model_files_map(quant: &SpeechQuant) -> IndexMap<&str, &str> {
     let mut out = IndexMap::new();
     for file in &quant.files {
@@ -102,9 +87,8 @@ fn model_files_map(quant: &SpeechQuant) -> IndexMap<&str, &str> {
     out
 }
 
-/// `JSON.stringify(modelFilesObject(quant))`, or its two-space form. Written
-/// out rather than serialised: see the module docs for why the obvious way is
-/// wrong on both counts.
+/// Serialised by hand: see the module docs for why the obvious way is wrong on
+/// both counts.
 fn model_files_json(quant: &SpeechQuant, indent: bool) -> String {
     let map = model_files_map(quant);
     if map.is_empty() {
@@ -197,8 +181,8 @@ fn applied_stt(
         model_type: stt_family_out(model.family),
         model_path: primary_file_spec(quant, stt_primary_role(model.family)),
         model_files: model_files_json(quant, false),
-        // One thread per physical core, capped: the same policy the LLM fit
-        // engine applies, read from the same function so the two cannot drift.
+        // The same policy the LLM fit engine applies, from the same function so
+        // the two cannot drift.
         threads: threads_for(hw),
     }
 }
@@ -351,10 +335,9 @@ pub fn resolve_tts_selection(
     Err(validation("presetId, modelId, or modelSpec required"))
 }
 
-/// The voices of the TTS model the settings currently select, for
-/// `GET /tts/voices`. Falls back to the first model of the same family when the
-/// settings do not match a catalog model, which is what a hand-typed custom
-/// path produces.
+/// The voices of the TTS model the settings select, for `GET /tts/voices`.
+/// Falls back to the first model of the same family when the settings do not
+/// match a catalog model, as a hand-typed custom path produces.
 pub fn selected_tts_voices(
     catalog: &CatalogPayload,
     model_type: &str,
@@ -391,18 +374,11 @@ fn family_str(model: &TtsCatalogModel) -> &'static str {
 
 /// Answers the client's voice dropdown from the model catalog.
 ///
-/// Implements `speech::TtsVoiceSource`, which the speech module declares and
-/// deliberately keeps OFF its engine trait (D-039): voices are a catalog fact,
-/// so the dropdown has to fill on a core with no local speech engine at all,
-/// including every mobile build until N3 ships. The impl lives here because this
-/// module owns the catalog, which is the same rule every other seam in the crate
-/// follows, and the resulting `models -> speech` edge runs one way only.
-///
-/// The conversion is the whole of the work: `selected_tts_voices` returns the
-/// catalog's `TtsVoice` and the wire wants `TtsVoiceEntry`. They are structurally
-/// identical today and are still converted field by field rather than
-/// transmuted, because one is a downloaded-catalog shape and the other is our
-/// response shape, and nothing keeps them aligned.
+/// Implements `speech::TtsVoiceSource`, which is deliberately OFF the engine
+/// trait: voices are a catalog fact, so the dropdown must fill on a core with no
+/// local speech engine at all. The catalog's `TtsVoice` and the wire's
+/// `TtsVoiceEntry` are structurally identical today and still converted field by
+/// field, because nothing keeps a downloaded shape aligned with a response one.
 pub struct CatalogVoices {
     models: crate::models::Models,
 }
@@ -419,13 +395,11 @@ impl crate::speech::TtsVoiceSource for CatalogVoices {
         &self,
         settings: &crate::settings::SettingsRecord,
     ) -> crate::error::Result<Vec<crate::contract::api::TtsVoiceEntry>> {
-        // `false`: the cached catalog is what the settings screen should read.
-        // Forcing a refresh here would put a network fetch behind a dropdown,
-        // which the no-non-consented-network rule forbids outright.
+        // `false`: forcing a refresh would put a network fetch behind a
+        // dropdown, which the no-non-consented-network rule forbids.
         let catalog = self.models.catalog(false).await?;
-        // The same two defaults the oracle applies at
-        // `host/deno-local-endpoints.ts:50-52`. A core whose settings have never
-        // been written still fills the dropdown.
+        // A core whose settings have never been written still fills the
+        // dropdown.
         let model_type = settings
             .get("tts.modelType")
             .and_then(|v| v.as_str())
@@ -452,9 +426,8 @@ mod tests {
     use crate::contract::api::{GpuBackend, GpuInfo};
     use crate::models::catalog::{dev_payload, validate};
 
-    /// `TtsVoice` is generated and typify derives no `PartialEq`, so two voice
-    /// lists are compared field by field rather than by hanging an impl on a
-    /// generated type (D-067).
+    /// typify derives no `PartialEq` on `TtsVoice`, so two voice lists are
+    /// compared field by field.
     fn voice_keys(voices: &[TtsVoice]) -> Vec<(&str, &str, Option<&str>)> {
         voices
             .iter()
@@ -484,13 +457,10 @@ mod tests {
         }
     }
 
-    /// The exact string a `stt.modelFiles` setting stores. Compact, and in the
-    /// catalog's file order rather than sorted.
-    ///
-    /// The order is checked against the raw STRING rather than by parsing it,
-    /// because `serde_json::Value`'s map is a `BTreeMap` here: reading the keys
-    /// back through it sorts them and the assertion passes whatever the code
-    /// emitted. That mistake was made once while writing this test.
+    /// The exact string a `stt.modelFiles` setting stores: compact, in the
+    /// catalog's file order. Checked against the raw STRING, because
+    /// `serde_json::Value`'s map is a `BTreeMap` here and reading the keys back
+    /// through it would sort them and pass whatever the code emitted.
     #[test]
     fn stt_model_files_is_compact_and_in_catalog_order() {
         let catalog = dev_payload().expect("the dev catalog loads");
@@ -621,14 +591,10 @@ mod tests {
         );
     }
 
-    /// A catalog whose speech presets do not all resolve is SERVED, not
-    /// refused. The Zod schema checks no referential integrity (`domain/catalog.ts`
-    /// has no `.superRefine`), and the specification degrades on purpose:
-    /// `buildSttPresetViews` skips a card whose model or quant is missing and
-    /// keeps the rest. Rejecting the payload would turn a repointed card into
-    /// `manifest_fetch_failed` on `/recommend`, `/catalog`, `/select` and both
-    /// speech pickers, so the blast radius of a release mistake would be the
-    /// whole models surface rather than one missing card (D-044).
+    /// A catalog whose speech presets do not all resolve is SERVED, not refused:
+    /// a card whose model or quant is missing is skipped and the rest kept.
+    /// Rejecting the payload would turn one repointed card into
+    /// `manifest_fetch_failed` across the whole models surface.
     #[test]
     fn a_dangling_preset_is_skipped_rather_than_failing_the_whole_catalog() {
         let good = dev_payload().expect("the dev catalog loads");
@@ -737,12 +703,9 @@ mod tests {
         assert_eq!(applied.model_path, spec, "modelSpec wins over modelId");
     }
 
-    /// An empty string is not a choice. The Zod schema is
-    /// `z.string().optional()` with no `.min(1)`, so `""` reaches the handler,
-    /// and the TypeScript's `if (body.presetId)` is falsy for it: the field
-    /// falls through to the next discriminator rather than being looked up and
-    /// missed. A client that clears a field instead of omitting it reaches this
-    /// (D-043).
+    /// An empty string is not a choice: `""` reaches the handler and falls
+    /// through to the next discriminator rather than being looked up and missed.
+    /// A client that clears a field instead of omitting it reaches this.
     #[test]
     fn an_empty_discriminator_falls_through_like_an_omitted_one() {
         let catalog = dev_payload().expect("the dev catalog loads");

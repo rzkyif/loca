@@ -6,27 +6,19 @@
 // attacker cannot recover. See `@loca/shared/validation/pairing` for the wire
 // shapes and AGENTS.md for the flow.
 //
-// Implemented per the CFRG draft draft-irtf-cfrg-cpace-21 (April 2026),
-// Section 8.3 (G_Ristretto255) + Appendix B.3 (ristretto255 / SHA-512 test
-// vectors). We run CPace in the initiator/responder mode, so the transcript is
-// `transcript_ir` (Section 6.3 / 7.2). All group / map-to-curve / scalar
-// arithmetic is delegated to @noble/curves' pure-JS ristretto255, so the module
-// behaves identically under Deno and in a Vite browser bundle.
+// Implemented per draft-irtf-cfrg-cpace-21 (April 2026), Section 8.3
+// (G_Ristretto255) + Appendix B.3, in initiator/responder mode (transcript
+// `transcript_ir`, Section 6.3 / 7.2). Group / map-to-curve / scalar arithmetic
+// is delegated to @noble/curves' pure-JS ristretto255, so the module behaves
+// identically under Deno and in a Vite browser bundle.
 //
-// The draft's raw ISK is the full 64-byte SHA-512 output. Both of our endpoints
-// truncate it identically to 32 bytes for the public key material; the full
-// 64-byte value is only reachable through the test-only `__test` seam so the
-// appendix vector can be reproduced byte-for-byte.
+// Both endpoints truncate the draft's raw 64-byte ISK identically to 32 bytes;
+// the full value is only reachable through the test-only `__test` seam.
 
 import { ristretto255, ristretto255_hasher } from "@noble/curves/ed25519.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { hmac } from "@noble/hashes/hmac.js";
 
-// @noble/curves exposes the ristretto255 group as `ristretto255.Point`. Statics
-// we use: `fromBytes` (decode, throws on bad length / invalid encoding), `ZERO`
-// (identity). Instance: `multiply(scalar)`, `toBytes`, `is0()`. The
-// element-derivation / one-way map taking a 64-byte uniform string is
-// `ristretto255_hasher.deriveToCurve`.
 const Point = ristretto255.Point;
 type Pt = InstanceType<typeof Point>;
 
@@ -85,10 +77,8 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 
 /**
  * generator_string(DSI, PRS, CI, sid, s_in_bytes) =
- *   lv_cat(DSI, PRS, zero_bytes(len_zpad), CI, sid)
- * with len_zpad = MAX(0, s_in_bytes - len(prepend_len(PRS)) -
- *   len(prepend_len(DSI)) - 1). The zero padding fills the first hash block so
- * the byte count to hash is independent of short-password length.
+ *   lv_cat(DSI, PRS, zero_bytes(len_zpad), CI, sid). The zero padding fills the
+ * first hash block so the byte count is independent of password length.
  */
 function generatorString(prs: Uint8Array, ci: Uint8Array, sid: Uint8Array): Uint8Array {
   const lenZpad = Math.max(
@@ -98,11 +88,7 @@ function generatorString(prs: Uint8Array, ci: Uint8Array, sid: Uint8Array): Uint
   return lvCat(DSI, prs, new Uint8Array(lenZpad), ci, sid);
 }
 
-/**
- * calculate_generator: hash the generator string to 2*field_size bytes with
- * SHA-512, then apply ristretto255 element_derivation (deriveToCurve). Returns
- * the decoded internal point _g.
- */
+/** Hash the generator string to 2*field_size bytes, then element_derivation. */
 function calculateGenerator(prs: Uint8Array, ci: Uint8Array, sid: Uint8Array): Pt {
   const genStr = generatorString(prs, ci, sid);
   const genHash = sha512(genStr).subarray(0, 2 * FIELD_SIZE_BYTES);
@@ -136,10 +122,8 @@ function clampScalarLe(bytes: Uint8Array): bigint {
 }
 
 /**
- * scalar_mult_vfy(y, X): decode the encoded point X; if decoding fails or the
- * result is the identity, abort by throwing. Otherwise return encode(y * X).
- * The draft returns G.I on failure and the caller MUST abort on G.I; we collapse
- * that into a thrown error so callers can't forget the check.
+ * scalar_mult_vfy(y, X). The draft returns G.I on failure and the caller MUST
+ * abort on it; we throw instead, so callers can't forget the check.
  */
 function scalarMultVfy(y: bigint, encodedX: Uint8Array): Uint8Array {
   let X: Pt;
@@ -226,27 +210,19 @@ export interface CpaceInitiator {
  * responder and a `finish` closure that completes the run on msgB. The secret
  * scalar `ya` never leaves this closure.
  *
- * `ci` is the CPace channel identifier: a public value both parties must agree
- * on for the run to succeed (it is folded into the generator, so the derived key
- * differs if the two sides disagree). In Loca we pass the observed TLS cert
- * pin, binding it INTO the key. A MITM that presents a different cert yields a
- * different key on each side, so the handshake fails.
+ * `ci` is the CPace channel identifier, folded into the generator so the derived
+ * key differs if the two sides disagree. Loca passes the observed TLS cert pin,
+ * so a MITM presenting a different cert yields a different key on each side.
+ *
+ * `ada` / `adb` / `scalarSource` exist for the `__test` seam's fixed vectors.
  */
 export function cpaceInitiatorStart(
   password: string,
   sid: Uint8Array,
   ci: Uint8Array = EMPTY,
-): CpaceInitiator {
-  return cpaceInitiatorStartInternal(password, sid, ci, EMPTY, EMPTY, () => sampleScalar());
-}
-
-function cpaceInitiatorStartInternal(
-  password: string,
-  sid: Uint8Array,
-  ci: Uint8Array,
-  ada: Uint8Array,
-  adb: Uint8Array,
-  scalarSource: () => bigint,
+  ada: Uint8Array = EMPTY,
+  adb: Uint8Array = EMPTY,
+  scalarSource: () => bigint = sampleScalar,
 ): CpaceInitiator {
   const prs = utf8(password);
   const g = calculateGenerator(prs, ci, sid);
@@ -276,26 +252,17 @@ export interface CpaceResponderResult {
 /**
  * Run CPace as the responder (party B): consume msgA (Ya) and the shared
  * password, producing msgB to send back plus the derived key. Throws if msgA is
- * an invalid / identity / wrong-length encoding. `ci` is the channel identifier
- * (see `cpaceInitiatorStart`); pass the server's real cert pin.
+ * an invalid / identity / wrong-length encoding. Parameters as for
+ * `cpaceInitiatorStart`.
  */
 export function cpaceResponder(
   password: string,
   sid: Uint8Array,
   msgA: Uint8Array,
   ci: Uint8Array = EMPTY,
-): CpaceResponderResult {
-  return cpaceResponderInternal(password, sid, msgA, ci, EMPTY, EMPTY, () => sampleScalar());
-}
-
-function cpaceResponderInternal(
-  password: string,
-  sid: Uint8Array,
-  msgA: Uint8Array,
-  ci: Uint8Array,
-  ada: Uint8Array,
-  adb: Uint8Array,
-  scalarSource: () => bigint,
+  ada: Uint8Array = EMPTY,
+  adb: Uint8Array = EMPTY,
+  scalarSource: () => bigint = sampleScalar,
 ): CpaceResponderResult {
   const prs = utf8(password);
   const g = calculateGenerator(prs, ci, sid);
@@ -321,10 +288,9 @@ function lv2(data: Uint8Array): Uint8Array {
 /**
  * Channel-bound confirmation tag:
  *   HMAC-SHA256(isk, role || lv(msgA) || lv(msgB) || lv(utf8(pin)))
- * `role` is the single byte 0x43 ("C") or 0x53 ("S"). `pin` is the value each
- * side observed for the channel (e.g. the TLS cert pin); folding it in lets a
- * MITM that re-terminates TLS be detected even though it relays the PAKE
- * messages. Returns the 32-byte HMAC.
+ * `role` is 0x43 ("C") or 0x53 ("S"); `pin` is the channel value each side
+ * observed, so a MITM that re-terminates TLS is detected even while relaying
+ * the PAKE messages.
  */
 export function confirmTag(
   isk: Uint8Array,
@@ -357,11 +323,8 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-// --- test-only seam -------------------------------------------------------
-//
-// Exposes internals so `pake.test.ts` can drive the protocol with the fixed
-// scalars, CI, and associated data from a published test vector and check the
-// raw 64-byte ISK. NOT part of the supported API; do not import outside tests.
+// Internals exposed so `pake.test.ts` can drive the protocol with a published
+// vector's fixed scalars. NOT part of the supported API.
 export const __test: {
   calculateGenerator: typeof calculateGenerator;
   scalarMultVfy: typeof scalarMultVfy;
@@ -370,8 +333,8 @@ export const __test: {
   transcriptIr: typeof transcriptIr;
   generatorString: typeof generatorString;
   lvCat: typeof lvCat;
-  initiatorStart: typeof cpaceInitiatorStartInternal;
-  responder: typeof cpaceResponderInternal;
+  initiatorStart: typeof cpaceInitiatorStart;
+  responder: typeof cpaceResponder;
   pointToBytes: (scalarLe: Uint8Array, g: Pt) => Uint8Array;
 } = {
   calculateGenerator,
@@ -381,7 +344,7 @@ export const __test: {
   transcriptIr,
   generatorString,
   lvCat,
-  initiatorStart: cpaceInitiatorStartInternal,
-  responder: cpaceResponderInternal,
+  initiatorStart: cpaceInitiatorStart,
+  responder: cpaceResponder,
   pointToBytes: (scalarLe, g) => g.multiply(clampScalarLe(scalarLe)).toBytes(),
 };

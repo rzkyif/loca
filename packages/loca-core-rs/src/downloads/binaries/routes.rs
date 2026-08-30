@@ -1,28 +1,11 @@
-//! The `/api/v1/binaries` route slice.
+//! The `/api/v1/binaries` route slice. The auth layer is added where this
+//! router is mounted, since `require_client` needs the application state.
 //!
-//! Six routes, all requiring a paired client. The auth layer is added where this
-//! router is mounted rather than here, because `require_client` needs the
-//! application state and this slice only needs the installer; mounting it is the
-//! one-line boot task already on the interfaces queue.
-//!
-//! # Absent, empty, and invalid are three different requests
-//!
-//! `/install` distinguishes an absent `kinds` from an empty one (D-028): absent
-//! installs everything missing, `[]` installs nothing and returns no job ids.
-//! The generated request type keeps `Option<Vec<_>>` for exactly that reason, so
-//! neither a `#[serde(default)]` nor an `unwrap_or_default` may be added to it.
-//!
-//! `/update` refuses an absent or empty `kind` with a 400 rather than looking it
-//! up and 404ing, which is the oracle's `if (!body.kind) throw` (D-043). The
-//! generated `UpdateBinaryRequest.kind` is the `BinaryKind` enum, so `""` is
-//! already refused at deserialization; this route is written so that the answer
-//! is a `validation_error` either way, rather than depending on which layer
-//! happens to catch it.
-//!
-//! # A missing body is an empty object, not a 400
-//!
-//! All three POSTs use `readJson(c, { allowEmpty: true })`, so a client that
-//! sends no body at all gets the default request rather than a parse error.
+//! `/install` distinguishes an absent `kinds` (install everything missing) from
+//! an empty one (install nothing), so the generated `Option<Vec<_>>` must not
+//! gain a `#[serde(default)]` or an `unwrap_or_default`. `/update` refuses an
+//! absent or empty `kind` with a 400 rather than a 404. A missing POST body is
+//! read as `{}`.
 
 use axum::body::Bytes;
 use axum::extract::State;
@@ -57,10 +40,6 @@ async fn list(State(installer): State<BinariesInstaller>) -> Result<Response> {
 }
 
 async fn install(State(installer): State<BinariesInstaller>, body: Bytes) -> Result<Response> {
-    // Parsed from raw bytes rather than through an extractor, so an empty body
-    // is the default request (`allowEmpty: true`) rather than a 400. The inner
-    // `Option<Vec<_>>` is the D-028 half and is passed through untouched, so
-    // absent and empty stay different all the way down.
     let request: InstallBinariesRequest = serde_json::from_value(body_json(&body)?)
         .map_err(|err| validation(format!("invalid install request: {err}")))?;
     let kinds = request.kinds;
@@ -69,9 +48,8 @@ async fn install(State(installer): State<BinariesInstaller>, body: Bytes) -> Res
 }
 
 async fn update(State(installer): State<BinariesInstaller>, body: Bytes) -> Result<Response> {
-    // Read as raw JSON rather than the generated request type so that an absent,
-    // empty, or unknown `kind` all produce the same `validation_error` this
-    // route owns, instead of three different failures from three layers.
+    // Raw JSON rather than the generated type, so absent, empty, and unknown
+    // `kind` all produce this route's `validation_error`.
     let raw = body_json(&body)?;
     let kind = raw.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
     if kind.is_empty() {
@@ -110,9 +88,6 @@ async fn probe(State(installer): State<BinariesInstaller>, body: Bytes) -> Resul
 }
 
 /// A request body as JSON, treating an empty body as `{}`.
-///
-/// This is `readJson(c, { allowEmpty: true })`: a client that sends no body at
-/// all gets the default request rather than a parse error.
 fn body_json(body: &Bytes) -> Result<serde_json::Value> {
     if body.is_empty() {
         return Ok(serde_json::json!({}));
@@ -143,7 +118,8 @@ mod tests {
 
     const HF: &str = "https://huggingface.co";
 
-    fn app(dir: &tempfile::TempDir) -> Router {
+    fn app() -> (tempfile::TempDir, Router) {
+        let dir = tempfile::tempdir().unwrap();
         let db = Db::open_in_memory().unwrap();
         db.call_blocking(|conn| migrate(conn)).unwrap();
         let store = DownloadStore::new(db, HF);
@@ -155,13 +131,14 @@ mod tests {
         let paths = Paths::rooted(dir.path());
         let queue = DownloadQueue::new(store, transfer, paths.clone(), HF)
             .with_delay(Duration::from_millis(0));
-        router(BinariesInstaller::new(
+        let router = router(BinariesInstaller::new(
             net,
             queue,
             paths,
             Channel::Dev,
             "http://127.0.0.1:1/binaries.json",
-        ))
+        ));
+        (dir, router)
     }
 
     async fn post(app: &Router, path: &str, body: Option<&str>) -> (StatusCode, serde_json::Value) {
@@ -189,10 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_kind_is_a_400_not_a_404() {
-        // D-043: `if (!body.kind) throw` is JavaScript truthiness, so "" is a
-        // validation error rather than a lookup that misses.
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         let (status, body) = post(&app, "/update", Some(r#"{"kind":""}"#)).await;
 
@@ -203,8 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_absent_kind_is_the_same_400_as_an_empty_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         for body in [Some("{}"), None] {
             let (status, value) = post(&app, "/update", body).await;
@@ -215,8 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_kind_is_a_validation_error_naming_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         let (status, body) = post(&app, "/update", Some(r#"{"kind":"nonesuch"}"#)).await;
 
@@ -232,25 +204,20 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_kinds_array_returns_no_jobs_and_an_absent_one_does_not() {
-        // The route half of D-028: these two bodies must not collapse.
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         let (status, explicit) = post(&app, "/install", Some(r#"{"kinds":[]}"#)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(explicit["jobIds"].as_array().unwrap().len(), 0);
 
-        // Absent means "everything missing", which here tries deno and fails to
-        // reach GitHub. What matters is that it ATTEMPTED, which the recorded
-        // failure below shows, rather than returning early like the empty case.
+        // Absent tries deno (and fails to reach GitHub); what matters is that it attempted.
         let (status, _) = post(&app, "/install", Some("{}")).await;
         assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]
     async fn a_missing_body_is_an_empty_object_rather_than_a_parse_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         let (status, _) = post(&app, "/probe", None).await;
 
@@ -259,8 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_answers_every_kind_on_the_contract() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = app(&dir);
+        let (_dir, app) = app();
 
         let response = app
             .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -272,6 +238,6 @@ mod tests {
             .await
             .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value.as_array().unwrap().len(), 3);
+        assert_eq!(value.as_array().unwrap().len(), 2);
     }
 }

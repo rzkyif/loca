@@ -1,29 +1,13 @@
 //! The extensions, tools, grants and embeddings registry.
 //!
-//! Ports `packages/loca-core/src/extensions/registry.ts`. Four tables, already
-//! present in `schema.sql`, plus the lifecycle rules over them.
+//! Four tables, already present in `schema.sql`, plus the lifecycle rules over
+//! them.
 //!
-//! # The lifecycle, and which transitions are gates
-//!
-//! | from         | to           | where                                          |
-//! | ------------ | ------------ | ---------------------------------------------- |
-//! | none         | `downloaded` | [`Registry::upsert_extension`]                 |
-//! | `downloaded` | `installed`  | [`Registry::mark_installed`], the ONLY hash pin |
-//! | `installed`  | `drift`      | [`Registry::verify_all_on_boot`], [`Registry::verify_hash_fresh`] |
-//! | `drift`      | `installed`  | [`Registry::repin_and_clear`], user-confirmed only |
-//! | `installed`  | `downloaded` | [`Registry::mark_downloaded`], unpins the hash |
-//!
-//! Two of those are security gates rather than bookkeeping. **Drift never
-//! auto-clears**: leaving it requires the user pressing confirm-reenable, which
-//! re-pins whatever is on disk now. And **flagging drift always disables every
-//! tool in the same breath**, which is why the two steps are one private
+//! Two status transitions are security gates rather than bookkeeping. **Drift
+//! never auto-clears**: leaving it requires the user pressing confirm-reenable,
+//! which re-pins whatever is on disk now. And **flagging drift always disables
+//! every tool in the same breath**, which is why the two steps are one private
 //! function here rather than two calls each caller has to remember.
-//!
-//! # There is no singleton
-//!
-//! `extensionsRegistry()` and its `__resetForTesting` do not port (D-010): the
-//! handle is constructed at boot and threaded, so `cargo test` can run a
-//! database test per thread instead of forcing every one onto a shared handle.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -45,11 +29,9 @@ use super::broker::{GateFacts, RegistryFacts};
 use super::hash::{hash_extension, stat_signature};
 use super::sandbox::permission_key;
 
-/// A tool's id is derived, not generated: `<extension id>::<tool name>`.
-///
-/// That is load-bearing in [`Registry::replace_tools`], which deletes and
-/// re-inserts every row: a re-inserted tool keeps the id its grant rows already
-/// reference, so grants can be carried across without a rewrite.
+/// A tool's id is derived, not generated: `<extension id>::<tool name>`, so a
+/// tool re-inserted by [`Registry::replace_tools`] keeps the id its grant rows
+/// already reference.
 pub fn tool_id(extension_id: &str, tool_name: &str) -> String {
     format!("{extension_id}::{tool_name}")
 }
@@ -99,24 +81,18 @@ pub struct StoredEmbedding {
     pub source_hash: String,
 }
 
-/// The per-call re-hash skip key: the stat signature that was seen, and the
-/// hash it verified against.
-///
-/// BOTH halves are compared. The hash matters because a re-pin (an update, a
-/// confirm-reenable) changes what "verified" means, and a cache keyed on the
-/// signature alone would keep answering for the old pin.
+/// The per-call re-hash skip key. BOTH halves are compared: a re-pin changes
+/// what "verified" means, so a cache keyed on the signature alone would keep
+/// answering for the old pin.
 #[derive(Debug, Clone)]
 struct Verified {
     signature: String,
     hash: String,
 }
 
-/// Cheap to clone, and the clones SHARE the verification cache rather than each
-/// getting their own. That is the load-bearing half: `forget_verified` is what
-/// invalidates an entry when a grant, an enable or a reinstall changes what
-/// "verified" means, and a second independent cache would keep answering from a
-/// map that no mutation ever reaches. Boot hands one to the installer and the
-/// same one to the module broker's `RegistryFacts`.
+/// Cheap to clone, and the clones SHARE the verification cache: a second
+/// independent cache would keep answering from a map `forget_verified` never
+/// reaches.
 #[derive(Clone)]
 pub struct Registry {
     db: Db,
@@ -131,10 +107,8 @@ impl Registry {
         Self::with_platforms(db, paths, host_platforms())
     }
 
-    /// The platform tokens are injected rather than read inside, so the OS
-    /// gating can be tested for a host this test is not running on. Reading
-    /// them from the process would make every gating test assert whatever the
-    /// developer's laptop happens to be.
+    /// Platform tokens are injected, so OS gating can be tested for a host the
+    /// test is not running on.
     pub fn with_platforms(db: Db, paths: Paths, host_platforms: Vec<String>) -> Self {
         Self {
             db,
@@ -165,18 +139,9 @@ impl Registry {
             .next())
     }
 
-    /// The ids of every INSTALLED extension.
-    ///
-    /// One query and one snapshot, for [`super::ExtensionProviderGate`]: a
-    /// memory listing asks once rather than once per row, and cannot answer from
-    /// two different worlds because an uninstall landed between two of its
-    /// lookups.
-    ///
-    /// `installed` reaches the SQL through [`enum_str`] rather than as a
-    /// literal, so the status vocabulary has exactly one spelling. A literal
-    /// here would be a string that no compiler and no test relates to
-    /// `ExtensionStatus`, which is the failure mode this whole seam exists to
-    /// avoid re-introducing (D-141).
+    /// The ids of every INSTALLED extension: one query and one snapshot, for
+    /// [`super::ExtensionProviderGate`]. `installed` reaches the SQL through
+    /// [`enum_str`], so the status vocabulary has exactly one spelling.
     pub async fn installed_ids(&self) -> Result<HashSet<String>> {
         let installed = enum_str(&ExtensionStatus::Installed);
         self.db
@@ -203,11 +168,8 @@ impl Registry {
         let now = now_ms();
         self.db
             .call(move |conn| {
-                // One statement rather than a read followed by a branch: the
-                // TypeScript's get-then-insert-or-update races itself, and the
-                // race is reachable because two downloads of the same id can be
-                // queued at once.
-                //
+                // One statement rather than a read then a branch, because two
+                // downloads of the same id can be queued at once.
                 // `installed_at_ms` is set only on the INSERT, so a re-download
                 // keeps the date the user first added the extension.
                 conn.execute(
@@ -268,18 +230,14 @@ impl Registry {
             vec![content_hash.to_string()],
         )
         .await?;
-        // Paired with the hash comparison in `verify_fresh`'s cache lookup: see
-        // the comment there. Each masks the other, so a mutation of either
-        // alone survives and only removing both is observable.
+        // Paired with the hash comparison in `verify_fresh`'s cache lookup.
         self.forget_verified(id);
         Ok(())
     }
 
     /// Out-of-band content change: flip to `drift`, keeping the pinned hash for
-    /// reference, and leave it for the user.
-    ///
-    /// Prefer [`Registry::flag_drift`], which also takes the tools out of
-    /// exposure. This is public only because confirm-reenable's inverse is.
+    /// reference. Prefer [`Registry::flag_drift`], which also takes the tools
+    /// out of exposure.
     pub async fn mark_drift(&self, id: &str) -> Result<()> {
         self.update_extension(id, "status = 'drift'", Vec::new())
             .await?;
@@ -287,29 +245,21 @@ impl Registry {
         Ok(())
     }
 
-    /// Flag drift AND disable every tool.
-    ///
-    /// The two halves are one function because every drift detection has to do
-    /// both: a drifted extension whose tools stayed enabled is still offered to
-    /// the model, which is the whole failure the hash gate exists to prevent.
+    /// Flag drift AND disable every tool. One function because a drifted
+    /// extension whose tools stayed enabled is still offered to the model.
     async fn flag_drift(&self, id: &str) -> Result<()> {
         self.mark_drift(id).await?;
         self.disable_all_tools(id).await
     }
 
-    /// Confirm-reenable: re-pin what is on disk NOW as trusted and clear drift.
-    ///
-    /// Reached only from `POST /:id/confirm-reenable`. Never automatic: an
-    /// auto-clear on a later match would let an attacker restore the original
-    /// bytes after running once and leave no trace.
+    /// Confirm-reenable: re-pin what is on disk NOW and clear drift. Never
+    /// automatic, or tampered content could run once and put itself back.
     pub async fn repin_and_clear(&self, id: &str, content_hash: &str) -> Result<()> {
         self.mark_installed(id, content_hash).await
     }
 
-    /// Uninstall (revert): drop back to `downloaded` and unpin the hash.
-    ///
-    /// Tool `enabled` flags are deliberately KEPT, so a later re-install
-    /// restores the user's prior selection rather than making them redo it.
+    /// Uninstall (revert): drop back to `downloaded` and unpin the hash. Tool
+    /// `enabled` flags are deliberately KEPT, so a re-install restores them.
     pub async fn mark_downloaded(&self, id: &str) -> Result<()> {
         self.update_extension(id, "status = 'downloaded', content_hash = ''", Vec::new())
             .await?;
@@ -326,21 +276,14 @@ impl Registry {
                 Ok(())
             })
             .await?;
-        // Hygiene rather than a correctness guard, and it is worth saying which:
-        // every path back to `verify_fresh` for this id has to go through
-        // `mark_installed` first, which invalidates anyway. What this stops is a
-        // map entry per deleted extension living for the process's lifetime.
-        // The mutation that removes it SURVIVES, correctly.
+        // Hygiene, not a correctness guard: every path back to `verify_fresh`
+        // goes through `mark_installed`, which invalidates anyway.
         self.forget_verified(id);
         Ok(())
     }
 
-    /// One `UPDATE`, with `updated_at_ms` appended.
-    ///
-    /// `set` is a literal from this module and every value is bound, so the
-    /// interpolation carries no caller input. Bumping `updated_at_ms` lives here
-    /// rather than at each call site because a write that forgets it leaves the
-    /// UI showing a stale timestamp with nothing to notice it.
+    /// One `UPDATE`, with `updated_at_ms` appended here rather than at each
+    /// call site. `set` is a literal from this module and every value is bound.
     async fn update_extension(&self, id: &str, set: &str, args: Vec<String>) -> Result<()> {
         let id = id.to_string();
         let sql = format!(
@@ -369,11 +312,9 @@ impl Registry {
 
     // --- the hash gate --------------------------------------------------------
 
-    /// Boot-time integrity check over every INSTALLED extension.
-    ///
-    /// Returns the ids that drifted, for boot logging. A `downloaded` extension
-    /// has no pinned hash to check and a `drift` one is already flagged, so
-    /// both are skipped rather than re-examined.
+    /// Boot-time integrity check over every INSTALLED extension, returning the
+    /// ids that drifted. A `downloaded` extension has no pinned hash and a
+    /// `drift` one is already flagged, so both are skipped.
     pub async fn verify_all_on_boot(&self) -> Result<Vec<String>> {
         let mut drifted = Vec::new();
         for extension in self.list().await? {
@@ -387,9 +328,8 @@ impl Registry {
                     AppError::new(ErrorCode::InternalError, format!("hash task failed: {err}"))
                 })?;
             let drift_reason = match actual {
-                // A hash that cannot be computed is treated as drift, not as a
-                // pass. Failing open here would make "delete a file the walk
-                // needs" a way to skip verification entirely.
+                // Drift, not a pass: failing open would make "delete a file
+                // the walk needs" a way to skip verification.
                 Err(err) => Some(format!("hash failed: {}", err.message)),
                 Ok(actual) if actual != extension.content_hash => Some(format!(
                     "content drift: stored={} actual={}",
@@ -410,27 +350,19 @@ impl Registry {
         Ok(drifted)
     }
 
-    /// Per-call integrity check, run before a tool call is dispatched.
-    ///
-    /// [`Registry::verify_all_on_boot`] only runs at startup, so without this
-    /// an extension tampered with at any point afterwards executes freely until
-    /// the next restart. On a mismatch it flags drift, disables every tool, and
-    /// raises `extension_hash_drift`; there is no auto-clear.
-    ///
-    /// The skip cache is what makes this affordable. Its limitation is real and
-    /// documented on [`stat_signature`]: a modification preserving the count,
-    /// the summed size and the newest mtime is invisible to it until the next
-    /// boot.
+    /// Per-call integrity check, run before a tool call is dispatched, since
+    /// boot verification alone lets post-boot tampering run until restart. On a
+    /// mismatch it flags drift, disables every tool, and raises
+    /// `extension_hash_drift`; there is no auto-clear. The skip cache makes it
+    /// affordable, with the limitation documented on [`stat_signature`].
     pub async fn verify_fresh(&self, extension_id: &str) -> Result<()> {
         // An unknown extension is the tool lookup's problem, and it has already
-        // answered `tool_not_found`. Returning Ok here rather than inventing a
-        // second error for it matches the specification.
+        // answered `tool_not_found`.
         let Some(extension) = self.get(extension_id).await? else {
             return Ok(());
         };
-        // Defence in depth: only an installed extension is ever exposed to the
-        // model, so reaching here in any other state means a caller skipped the
-        // exposure gate.
+        // Defence in depth: reaching here in any other state means a caller
+        // skipped the exposure gate.
         if extension.status != ExtensionStatus::Installed {
             return Err(drift_error(format!(
                 "extension {extension_id} is not installed (status {})",
@@ -448,14 +380,9 @@ impl Registry {
                 })?
         };
         if let Some(cached) = lock(&self.verified).get(extension_id) {
-            // The hash comparison is REDUNDANT with `forget_verified`, which
-            // every write path that changes `content_hash` calls, and it is
-            // kept anyway. Neither guard is individually observable: mutate
-            // either one alone and the other covers it, which is exactly what
-            // makes the pair worth naming rather than simplifying. What it
-            // defends is a `content_hash` that changed without going through
-            // this handle at all, and a future write path whose author forgets
-            // the invalidation call. Removing BOTH is the mutation that fails.
+            // The hash comparison is redundant with `forget_verified` and kept
+            // anyway: it covers a `content_hash` changed without going through
+            // this handle, and a future write path that forgets to invalidate.
             if cached.signature == signature && cached.hash == extension.content_hash {
                 return Ok(());
             }
@@ -494,17 +421,10 @@ impl Registry {
 
     // --- tool level -----------------------------------------------------------
 
-    /// Atomically replace an extension's tools.
-    ///
-    /// Two user choices survive a re-download, and one deliberately does not:
-    ///
-    /// - `enabled` and `always_available` are carried across BY NAME, so an
-    ///   update does not silently switch a tool the user turned on back off.
-    /// - **Grants survive only when the canonical permission-key SET is
-    ///   unchanged.** A changed set drops every grant so the user re-reviews.
-    ///   Carrying grants across by key would keep an approval the user gave for
-    ///   a different declaration, which is the whole point of the permission
-    ///   review at install time.
+    /// Atomically replace an extension's tools. `enabled` and
+    /// `always_available` carry across BY NAME, but **grants survive only when
+    /// the canonical permission-key SET is unchanged**: a changed set drops
+    /// every grant so the user re-reviews.
     pub async fn replace_tools(&self, extension_id: &str, tools: Vec<ToolInsert>) -> Result<()> {
         let extension_id = extension_id.to_string();
         self.db
@@ -534,9 +454,8 @@ impl Registry {
                                 i64::from(p.always_available)
                             }),
                             serde_json::to_string(&tool.platforms)?,
-                            // A brand-new tool is OFF. An extension that adds a
-                            // tool in an update must not have it enabled by an
-                            // upgrade the user only agreed to as an upgrade.
+                            // A brand-new tool is OFF: an update must not enable
+                            // a tool the user never agreed to.
                             previous.map_or(0, |p| i64::from(p.enabled)),
                             serde_json::to_string(&tool.required_permissions)?,
                         ],
@@ -567,11 +486,9 @@ impl Registry {
             .await
     }
 
-    /// The tools of one extension, with their grants attached.
-    ///
-    /// Tools the host OS does not support are filtered out HERE rather than at
-    /// each consumer, so an OS-gated tool is invisible to chat selection, the
-    /// routes and the Tools UI alike.
+    /// The tools of one extension, with their grants attached. Host-unsupported
+    /// tools are filtered out HERE, so an OS-gated tool is invisible to chat
+    /// selection, the routes and the Tools UI alike.
     pub async fn list_tools(&self, extension_id: &str) -> Result<Vec<Tool>> {
         let extension_id = extension_id.to_string();
         let host = self.host_platforms.clone();
@@ -588,10 +505,8 @@ impl Registry {
     }
 
     /// Every tool of every INSTALLED extension, flat, tagged with its
-    /// provider's display name.
-    ///
-    /// A `downloaded` or `drift` extension contributes nothing, exactly as it
-    /// contributes nothing to chat exposure.
+    /// provider's display name. A `downloaded` or `drift` one contributes
+    /// nothing.
     pub async fn list_all_tools(&self) -> Result<Vec<Tool>> {
         let host = self.host_platforms.clone();
         self.db
@@ -617,11 +532,8 @@ impl Registry {
             .await
     }
 
-    /// One tool by id, or `None` for a tool this host does not support.
-    ///
-    /// The platform filter is repeated here on purpose: dispatch takes a tool
-    /// id directly, so filtering only in the listing would let an OS-gated tool
-    /// run whenever its id was already known.
+    /// One tool by id, or `None` for a tool this host does not support. The
+    /// platform filter is repeated here because dispatch takes an id directly.
     pub async fn get_tool(&self, id: &str) -> Result<Option<Tool>> {
         let id = id.to_string();
         let host = self.host_platforms.clone();
@@ -658,8 +570,7 @@ impl Registry {
         let name = name.to_string();
         self.db
             .call(move |conn| {
-                // `column` is a `&'static str` from this module, never user
-                // input, which is what makes the interpolation safe.
+                // `column` is a `&'static str` from this module, never input.
                 conn.execute(
                     &format!(
                         "UPDATE tools SET {column} = ?1 WHERE extension_id = ?2 AND name = ?3"
@@ -768,10 +679,8 @@ impl Registry {
             .await
     }
 
-    /// Every stored embedding in one query.
-    ///
-    /// Relevance runs on every chat turn over every enabled tool, and one
-    /// prepared statement per tool was N round trips per turn.
+    /// Every stored embedding in one query, since relevance runs over every
+    /// enabled tool on every chat turn.
     pub async fn load_all_embeddings(&self) -> Result<HashMap<String, StoredEmbedding>> {
         self.db
             .call(|conn| {
@@ -799,10 +708,8 @@ impl Registry {
 impl RegistryFacts for Registry {
     async fn gate_facts(&self, extension_id: &str, tool_name: &str) -> Result<GateFacts> {
         let extension = self.get_or_err(extension_id).await?;
-        // The tool lookup goes through `list_tools`, so an OS-gated tool has no
-        // facts at all rather than facts with an empty permission set: an empty
-        // `required` reads as "undeclared" to the gate, which the `ask` policy
-        // would then offer to the user for a tool that cannot run here.
+        // Through `list_tools`, so an OS-gated tool has no facts at all: an
+        // empty `required` reads as "undeclared" to the gate.
         let tool = self
             .list_tools(extension_id)
             .await?
@@ -833,8 +740,7 @@ const EXTENSION_COLUMNS: &str = "id, source, display_name, description, version,
      installed_at_ms, updated_at_ms";
 
 fn select_extensions(conn: &Connection, id: Option<&str>) -> Result<Vec<Extension>> {
-    // `COLLATE NOCASE` on the sort, so the list reads the way a user expects
-    // rather than putting every capitalised name first.
+    // `COLLATE NOCASE`, or every capitalised name sorts first.
     let sql = match id {
         Some(_) => format!("SELECT {EXTENSION_COLUMNS} FROM extensions WHERE id = ?1"),
         None => format!(
@@ -898,9 +804,8 @@ fn select_tools(
             platforms: json_of(&row.get::<_, String>(8)?),
             enabled: row.get::<_, i64>(9)? == 1,
             required_permissions: json_of(&row.get::<_, String>(10)?),
-            // Both are derived at read time by the layer that has the grants:
-            // `missing_required` depends on current grant state, so a row
-            // cannot answer it.
+            // Derived at read time: `missing_required` depends on current grant
+            // state, so a row cannot answer it.
             missing_required: Vec::new(),
             grants: Vec::new(),
             provider_name: None,
@@ -910,10 +815,7 @@ fn select_tools(
 }
 
 /// Drop the tools this host does not support, then attach each survivor's
-/// grants.
-///
-/// In that order: attaching grants to a tool that is about to be dropped is a
-/// query per tool for nothing.
+/// grants. In that order, or dropped tools cost a query each.
 fn keep_supported(conn: &Connection, tools: Vec<Tool>, host: &[String]) -> Result<Vec<Tool>> {
     tools
         .into_iter()
@@ -925,20 +827,15 @@ fn keep_supported(conn: &Connection, tools: Vec<Tool>, host: &[String]) -> Resul
         .collect()
 }
 
-/// An empty declaration means every platform.
-///
-/// The empty case is not an accident of the data model: most tools are pure
-/// TypeScript and run anywhere, so declaring nothing is the common case and
-/// must not read as "runs nowhere".
+/// An empty declaration means every platform: most tools are pure TypeScript
+/// and run anywhere, so declaring nothing is the common case.
 pub fn tool_platform_supported(declared: &[String], host: &[String]) -> bool {
     declared.is_empty() || declared.iter().any(|p| host.iter().any(|h| h == p))
 }
 
-/// The host's platform tokens.
-///
-/// The only one needing runtime detection is Linux's display server: an X11
-/// window can be positioned from the command line and a Wayland one cannot, so
-/// a window-managing tool targets `linux_x11` specifically.
+/// The host's platform tokens. Only Linux's display server needs runtime
+/// detection: an X11 window can be positioned from the command line and a
+/// Wayland one cannot.
 pub fn host_platforms() -> Vec<String> {
     if cfg!(target_os = "macos") {
         return vec!["darwin".to_string()];
@@ -1022,32 +919,22 @@ fn prior_tools(conn: &Connection, extension_id: &str) -> Result<HashMap<String, 
     Ok(out)
 }
 
-/// The canonical, order-independent signature of a required-permission set.
-///
-/// Sorted and joined so two manifests that declare the same permissions in a
-/// different order count as unchanged, which is what stops a cosmetic reorder
-/// from throwing away every grant the user gave.
+/// The canonical, order-independent signature of a required-permission set, so
+/// a cosmetic reorder does not throw away every grant the user gave.
 fn key_set(declarations: &[PermissionDecl]) -> String {
     let mut keys: Vec<String> = declarations.iter().map(permission_key).collect();
     keys.sort();
     keys.join("|")
 }
 
-/// A stored JSON column, or the type's default when it will not parse.
-///
-/// Defaulting rather than failing is deliberate and narrow: every one of these
-/// columns is written by this module from a typed value, so an unparseable one
-/// means the file was edited by hand or corrupted, and answering with an empty
-/// list keeps the rest of the extension list readable in the UI where the user
-/// can remove it.
+/// A stored JSON column, or the type's default when it will not parse, so one
+/// corrupted row leaves the rest of the extension list readable in the UI.
 fn json_of<T: serde::de::DeserializeOwned + Default>(raw: &str) -> T {
     serde_json::from_str(raw).unwrap_or_default()
 }
 
-/// The wire spelling of a contract enum.
-///
-/// Via serde rather than a hand-written match, so a variant added to the
-/// contract cannot be persisted under a name this module invented.
+/// The wire spelling of a contract enum, via serde rather than a hand-written
+/// match, so a new variant cannot be persisted under an invented name.
 fn enum_str<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(Value::String(text)) => text,
@@ -1055,27 +942,19 @@ fn enum_str<T: serde::Serialize>(value: &T) -> String {
     }
 }
 
-/// The inverse, for a column this module itself wrote.
-///
-/// A value that does not parse is an ERROR rather than a fallback, and that is
-/// the deliberate half. Every one of these columns is written here from a typed
-/// value, so an unreadable one means the database was edited by hand or
-/// corrupted, and there is no least-privileged answer for `source` or
-/// `permission_kind` to fall back to. The specification casts the string
-/// blindly (`row.status as ExtensionStatus`), which produces a value no branch
-/// matches and a tool that is neither exposed nor reported.
+/// The inverse, for a column this module itself wrote. A value that does not
+/// parse is an ERROR rather than a fallback: there is no least-privileged
+/// answer for `source` or `permission_kind`, and a value no branch matches is a
+/// tool that is neither exposed nor reported.
 fn parse_enum<T: serde::de::DeserializeOwned>(column: usize, raw: &str) -> rusqlite::Result<T> {
     serde_json::from_value(Value::String(raw.to_string())).map_err(|err| {
         rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, err.into())
     })
 }
 
-/// The embedding, as little-endian `f32` bytes.
-///
-/// Explicitly little-endian rather than `to_ne_bytes`: the database file is
-/// copied between machines by the storage browser and by a user moving
-/// `~/.loca`, and a native-endian blob would decode to noise on the other side
-/// rather than failing loudly.
+/// The embedding, as explicitly little-endian `f32` bytes: the database file
+/// gets copied between machines, and a native-endian blob would decode to noise
+/// rather than fail loudly.
 fn encode_vector(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
@@ -1170,8 +1049,8 @@ mod tests {
         }
     }
 
-    /// `PermissionDecl` carries no `PartialEq`, and comparing the wire form is
-    /// the truer comparison anyway: it is what the column stores.
+    /// `PermissionDecl` carries no `PartialEq`, and the wire form is what the
+    /// column stores anyway.
     fn same(left: &[PermissionDecl], right: &[PermissionDecl]) -> bool {
         serde_json::to_value(left).ok() == serde_json::to_value(right).ok()
     }
@@ -1180,6 +1059,16 @@ mod tests {
     fn write_extension(root: &std::path::Path, body: &str) {
         std::fs::create_dir_all(root).unwrap();
         std::fs::write(root.join("main.ts"), body).unwrap();
+    }
+
+    /// A fresh registry with extension `a` installed at the temp root.
+    async fn installed_a() -> (tempfile::TempDir, Registry) {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = registry(&dir);
+        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
+            .await
+            .unwrap();
+        (dir, reg)
     }
 
     #[tokio::test]
@@ -1206,9 +1095,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_re_download_keeps_the_date_the_user_first_added_it() {
-        // `installedAtMs` is what the UI sorts and labels by. Resetting it on
-        // every update would make an extension the user has had for a year look
-        // brand new after a patch release.
         let dir = tempfile::tempdir().unwrap();
         let reg = registry(&dir);
         reg.upsert_extension(insert("a", ExtensionStatus::Downloaded, dir.path()))
@@ -1229,9 +1115,8 @@ mod tests {
     async fn the_extension_list_is_ordered_case_insensitively() {
         let dir = tempfile::tempdir().unwrap();
         let reg = registry(&dir);
-        // The capital must be in the MIDDLE of the alphabet for this to
-        // distinguish the two collations: with "Apple" first, a byte-wise sort
-        // happens to agree and the test passes either way.
+        // The capital must be in the MIDDLE of the alphabet, or a byte-wise
+        // sort happens to agree.
         for (id, name) in [("b", "Banana"), ("a", "apple"), ("c", "cherry")] {
             let mut row = insert(id, ExtensionStatus::Downloaded, dir.path());
             row.display_name = name.to_string();
@@ -1244,21 +1129,14 @@ mod tests {
             .into_iter()
             .map(|e| e.display_name)
             .collect();
-        // A byte-wise sort puts every capitalised name ahead of every
-        // lowercase one, so it would answer Banana, apple, cherry.
         assert_eq!(names, vec!["apple", "Banana", "cherry"]);
     }
 
     #[tokio::test]
     async fn an_uninstall_unpins_the_hash_and_keeps_the_users_tool_switches() {
-        // Unpinning is the point: a `downloaded` extension whose content hash
-        // survived would verify clean the moment it was re-installed, without
-        // the install ever re-pinning what is actually on disk now.
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        // A surviving hash would verify clean on re-install without ever
+        // re-pinning what is on disk now.
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![])])
             .await
             .unwrap();
@@ -1272,8 +1150,6 @@ mod tests {
             after.content_hash, "",
             "the pinned hash outlived the uninstall"
         );
-        // The enable flag is deliberately kept, so re-installing restores the
-        // user's selection rather than making them redo it.
         assert!(reg.list_tools("a").await.unwrap()[0].enabled);
     }
 
@@ -1285,9 +1161,7 @@ mod tests {
             .await
             .unwrap();
         let before = reg.get_or_err("a").await.unwrap().updated_at_ms;
-        // The clock has millisecond resolution and these writes are faster than
-        // that, so the write is staged behind a real gap rather than asserted
-        // to be strictly greater by luck.
+        // The clock has millisecond resolution and these writes are faster.
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
         reg.set_undeclared_policy("a", UndeclaredPolicy::Ask)
@@ -1341,11 +1215,10 @@ mod tests {
             after.enabled_tool_count, 0,
             "a drifted extension kept tools exposed to the model"
         );
-        // The pinned hash is KEPT, so the user can see what it was.
+        // KEPT, so the user can see what it was.
         assert_eq!(after.content_hash, hash);
 
-        // Restoring the bytes does NOT clear drift on its own. Otherwise an
-        // extension could run tampered once and put itself back.
+        // Restoring the bytes does NOT clear drift on its own.
         std::fs::write(root.join("main.ts"), "export const x = 1;\n").unwrap();
         assert_eq!(
             reg.verify_fresh("a").await.unwrap_err().code,
@@ -1370,9 +1243,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_verify_of_anything_but_an_installed_extension_is_refused() {
-        // Defence in depth: the exposure gate should already have stopped this,
-        // so reaching here means a caller skipped it, and answering "fine" would
-        // dispatch a tool call against unpinned content.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("ext");
         write_extension(&root, "x");
@@ -1387,17 +1257,14 @@ mod tests {
                 "{status:?} verified clean"
             );
         }
-        // An extension nobody has heard of is the tool lookup's problem, and it
-        // has already answered. Inventing a second error here would report a
-        // drift that did not happen.
+        // An unknown extension is the tool lookup's problem; inventing a
+        // second error would report a drift that did not happen.
         reg.delete("a").await.unwrap();
         reg.verify_fresh("a").await.unwrap();
     }
 
     #[tokio::test]
     async fn a_hash_that_cannot_be_computed_is_drift_rather_than_a_pass() {
-        // Failing open here would make "delete a file the walk needs" a way to
-        // skip verification entirely.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("ext");
         write_extension(&root, "x");
@@ -1448,9 +1315,6 @@ mod tests {
             "export const x = 9;\n",
         )
         .unwrap();
-        // A hash that cannot be computed at all is drift too, not a pass:
-        // otherwise "delete a file the walk needs" is a way to skip
-        // verification entirely.
         std::fs::remove_dir_all(dir.path().join("vanished")).unwrap();
 
         let mut drifted = reg.verify_all_on_boot().await.unwrap();
@@ -1463,8 +1327,6 @@ mod tests {
             reg.get_or_err("vanished").await.unwrap().status,
             ExtensionStatus::Drift
         );
-        // A downloaded extension has no pinned hash, so hashing it would flag
-        // every freshly-downloaded extension as drifted.
         assert_eq!(
             reg.get_or_err("downloaded").await.unwrap().status,
             ExtensionStatus::Downloaded
@@ -1492,8 +1354,7 @@ mod tests {
         reg.verify_fresh("a").await.unwrap();
         assert!(lock(&reg.verified).contains_key("a"), "nothing was cached");
 
-        // Re-pin to a hash the content does NOT have, with the files untouched
-        // so the stat signature is identical.
+        // Files untouched, so the stat signature is identical.
         reg.mark_installed("a", &"0".repeat(64)).await.unwrap();
         assert_eq!(
             reg.verify_fresh("a").await.unwrap_err().code,
@@ -1506,11 +1367,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_re_register_keeps_the_users_switches_but_not_a_changed_permission_set() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools(
             "a",
             vec![
@@ -1542,9 +1399,8 @@ mod tests {
             .unwrap();
         }
 
-        // The update: `keep` declares the same permission in a different shape
-        // that produces the same key, `changed` declares a different host, and
-        // `gone` disappears.
+        // `keep` re-declares the same key, `changed` a different host, `gone`
+        // disappears.
         reg.replace_tools(
             "a",
             vec![
@@ -1593,13 +1449,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reordered_permission_list_is_not_a_changed_one() {
-        // Otherwise a cosmetic manifest edit throws away every grant and the
-        // user is re-asked for nothing.
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         let first = vec![net("a.example.com"), net("b.example.com")];
         let reordered = vec![net("b.example.com"), net("a.example.com")];
         reg.replace_tools("a", vec![tool("t", first.clone())])
@@ -1631,14 +1481,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_required_permissions_are_persisted_and_read_back() {
-        // The specification's comment says they are not persisted. The column
-        // exists and is written; the comment is simply wrong, and a port that
-        // believed it would re-parse `loca.json` on every read.
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![net("api.example.com")])])
             .await
             .unwrap();
@@ -1651,14 +1494,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_tool_this_host_does_not_support_is_invisible_by_id_as_well_as_in_the_list() {
-        // Filtering only in the listing would let dispatch run an OS-gated tool
-        // whenever its id was already known, which is exactly how it arrives:
-        // the model names the tool.
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        // The model names the tool, so its id is always already known.
+        let (_dir, reg) = installed_a().await;
         let mut windows_only = tool("winonly", vec![]);
         windows_only.platforms = vec!["windows".to_string()];
         let mut anywhere = tool("anywhere", vec![]);
@@ -1700,9 +1537,6 @@ mod tests {
 
     #[tokio::test]
     async fn only_installed_extensions_contribute_to_the_flat_tool_catalog() {
-        // The flat catalog is what the model is offered. A downloaded or
-        // drifted extension being in it is the failure the whole lifecycle
-        // exists to prevent.
         let dir = tempfile::tempdir().unwrap();
         let reg = registry(&dir);
         for (id, status) in [
@@ -1726,18 +1560,13 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["live-tool".to_string()]);
 
-        // But `list_tools` for one extension still answers, because the
-        // extension detail view has to show tools you cannot yet enable.
+        // But the detail view still shows tools you cannot yet enable.
         assert_eq!(reg.list_tools("staged").await.unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn the_flat_catalog_tags_each_tool_with_its_provider() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![])])
             .await
             .unwrap();
@@ -1748,11 +1577,7 @@ mod tests {
 
     #[tokio::test]
     async fn deleting_an_extension_cascades_to_its_tools_grants_and_embeddings() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![net("h")])])
             .await
             .unwrap();
@@ -1781,11 +1606,7 @@ mod tests {
 
     #[tokio::test]
     async fn setting_a_grant_twice_updates_it_rather_than_duplicating_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![net("h")])])
             .await
             .unwrap();
@@ -1827,11 +1648,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_embedding_round_trips_exactly() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = registry(&dir);
-        reg.upsert_extension(insert("a", ExtensionStatus::Installed, dir.path()))
-            .await
-            .unwrap();
+        let (_dir, reg) = installed_a().await;
         reg.replace_tools("a", vec![tool("t", vec![]), tool("u", vec![])])
             .await
             .unwrap();
@@ -1842,8 +1659,7 @@ mod tests {
             .unwrap();
 
         let loaded = reg.load_embedding(&t).await.unwrap().unwrap();
-        // Bit-exact, not approximately: a lossy round trip changes every cosine
-        // score by a little and nothing ever fails.
+        // Bit-exact: a lossy round trip skews every cosine score silently.
         assert_eq!(loaded.vector, vector);
         assert_eq!(loaded.source_hash, "src-1");
 
@@ -1867,8 +1683,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_gate_facts_come_from_the_invoked_tool_and_not_from_its_siblings() {
-        // The broker gates on ONE tool's declarations. Answering with the
-        // extension's union would let a benign tool use a sibling's grant.
         let dir = tempfile::tempdir().unwrap();
         let reg = registry(&dir);
         let mut row = insert("a", ExtensionStatus::Installed, dir.path());
@@ -1916,8 +1730,7 @@ mod tests {
     #[tokio::test]
     async fn an_os_gated_tool_has_no_gate_facts_at_all() {
         // Not "facts with an empty permission set": an empty `required` reads
-        // as undeclared to the gate, which an `ask` policy would then offer to
-        // the user for a tool that cannot run on this host.
+        // as undeclared to the gate.
         let dir = tempfile::tempdir().unwrap();
         let reg = registry(&dir);
         let mut row = insert("a", ExtensionStatus::Installed, dir.path());
@@ -1935,9 +1748,8 @@ mod tests {
 
     #[test]
     fn a_registry_can_be_handed_to_the_broker_as_its_facts_source() {
-        // The seam is a trait object and nothing in the crate constructs the
-        // pair yet, so without this the two halves compile independently and
-        // meet for the first time at a boot wiring that is somebody else's.
+        // Nothing in the crate constructs the pair yet, so the two halves would
+        // otherwise meet for the first time at boot.
         fn takes_the_seam(_: std::sync::Arc<dyn RegistryFacts>) {}
         let dir = tempfile::tempdir().unwrap();
         takes_the_seam(std::sync::Arc::new(registry(&dir)));
@@ -1945,16 +1757,12 @@ mod tests {
 
     #[test]
     fn a_tool_id_is_derived_from_its_names() {
-        // Grants reference it, and `replace_tools` deletes and re-inserts the
-        // row, so a generated id would orphan every grant on every update.
+        // A generated id would orphan every grant on every `replace_tools`.
         assert_eq!(tool_id("ext", "do-thing"), "ext::do-thing");
     }
 
     #[test]
     fn a_corrupted_enum_column_is_an_error_rather_than_a_guess() {
-        // The specification casts the string blindly, which produces a value no
-        // branch matches: a tool that is neither exposed nor reported. There is
-        // also no least-privileged answer for `source` to fall back to.
         assert!(parse_enum::<ExtensionStatus>(8, "nonsense").is_err());
         assert!(parse_enum::<GrantState>(3, "nonsense").is_err());
         assert!(parse_enum::<UndeclaredPolicy>(11, "nonsense").is_err());
@@ -1962,7 +1770,6 @@ mod tests {
             parse_enum::<ExtensionStatus>(8, "drift").unwrap(),
             ExtensionStatus::Drift
         );
-        // And the round trip through the wire spelling is exact.
         assert_eq!(enum_str(&ExtensionStatus::Drift), "drift");
         assert_eq!(enum_str(&GrantState::Granted), "granted");
         assert_eq!(enum_str(&PermissionKind::Memories), "memories");
@@ -1977,16 +1784,14 @@ mod tests {
             decode_embedding(&bytes, "h".to_string()).unwrap().vector,
             vec![1.0f32]
         );
-        // A truncated blob is an error rather than a silently shorter vector,
-        // which would compare against every other embedding at the wrong
-        // dimension.
+        // A truncated blob is an error, not a silently shorter vector.
         assert!(decode_embedding(&[0, 0, 0], "h".to_string()).is_err());
     }
 
     #[test]
     fn a_memories_declaration_keys_by_access() {
-        // `permission_key` is the sandbox's, and `replace_tools` compares key
-        // SETS, so a read declaration becoming a write must read as changed.
+        // `replace_tools` compares key SETS, so read becoming write must read
+        // as changed.
         let read = PermissionDecl::Memories {
             access: PermissionDeclAccess::Read,
             optional: None,
@@ -2001,7 +1806,6 @@ mod tests {
             key_set(std::slice::from_ref(&read)),
             key_set(std::slice::from_ref(&write))
         );
-        // And order does not matter.
         assert_eq!(
             key_set(&[read.clone(), write.clone()]),
             key_set(&[write, read])

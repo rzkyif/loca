@@ -1,25 +1,17 @@
 //! A tool call's time budget: a PAUSABLE countdown, not a deadline.
 //!
-//! Ports `packages/loca-core/src/extensions/worker-call-timeout.ts`.
-//!
-//! # Why this is not a `sleep_until`
-//!
-//! While a call waits on a human (an `askUser` form, a permission prompt, a
-//! schedule confirmation) the budget is paused, so a slow answer never counts
-//! against the tool's COMPUTE time. A fixed deadline computed once at the start
-//! of the call gets this exactly backwards: every prompt a user leaves open
-//! longer than the remaining budget kills its own call, and the symptom is a
-//! tool that times out while the form it is waiting on is still on screen.
+//! While a call waits on a human the budget is paused, so a slow answer never
+//! counts against the tool's COMPUTE time. A fixed deadline gets that exactly
+//! backwards: a prompt left open longer than the remaining budget kills its own
+//! call while the form is still on screen.
 //!
 //! So this type owns no timer and spawns no task. It answers one question,
 //! [`CallTimeout::deadline`], and the call's driver sleeps until whatever it
-//! currently says. `arm` after a `pause` therefore acts as "resume": the
-//! REMAINING budget persists across pause/arm cycles, and the deadline moves
-//! forward by however long the pause lasted.
+//! currently says. `arm` after a `pause` therefore acts as "resume".
 //!
-//! Every instant is a [`tokio::time::Instant`] rather than a
-//! `std::time::Instant`, per D-038: a `std` deadline never expires under a
-//! paused runtime, and a test built on one passes whatever the code does.
+//! Every instant is a [`tokio::time::Instant`]: a `std` deadline never expires
+//! under a paused runtime, so a test built on one passes whatever the code
+//! does.
 
 use std::time::Duration;
 
@@ -55,13 +47,9 @@ impl CallTimeout {
         self.budget
     }
 
-    /// Start, or resume, the countdown over the remaining budget.
-    ///
-    /// A spent budget is a no-op, matching a deadline that has already passed.
-    /// So is arming something already armed: the TypeScript leaves the earlier
-    /// `setTimeout` in place when that happens, so the EARLIER deadline is the
-    /// one that fires, and keeping the existing anchor is the same observable
-    /// behaviour without the leaked timer.
+    /// Start, or resume, the countdown over the remaining budget. A spent
+    /// budget is a no-op, and so is arming something already armed: the EARLIER
+    /// deadline wins, or a call that keeps arming itself runs forever.
     pub fn arm(&mut self) {
         if self.budget.is_zero() || self.armed_at.is_some() {
             return;
@@ -69,20 +57,16 @@ impl CallTimeout {
         self.armed_at = Some(Instant::now());
     }
 
-    /// When the budget runs out, or `None` while it is not counting down.
-    ///
-    /// The caller sleeps until this and calls [`CallTimeout::expire`] if it
-    /// arrives. Recomputed on every `arm`, which is what makes the countdown
-    /// pausable.
+    /// When the budget runs out, or `None` while it is not counting down. The
+    /// caller sleeps until this and calls [`CallTimeout::expire`] if it
+    /// arrives; recomputing it on every `arm` is what makes it pausable.
     pub fn deadline(&self) -> Option<Instant> {
         self.armed_at.map(|at| at + self.budget)
     }
 
-    /// Stop the countdown, subtracting what it consumed.
-    ///
-    /// Idempotent: a second `pause` before the next `arm` subtracts nothing,
-    /// because the anchor is cleared here. Two prompts opening back to back
-    /// must cost the budget one span of wall clock, not two.
+    /// Stop the countdown, subtracting what it consumed. Idempotent, because
+    /// the anchor is cleared here: two prompts opening back to back must cost
+    /// the budget one span of wall clock, not two.
     pub fn pause(&mut self) {
         let Some(armed_at) = self.armed_at.take() else {
             return;
@@ -96,13 +80,9 @@ impl CallTimeout {
         self.armed_at = None;
     }
 
-    /// The deadline arrived.
-    ///
-    /// Clears the anchor BEFORE the owner acts on it, so the owner may re-arm
-    /// from inside its own expiry handling. That is not hypothetical: the call
-    /// re-arms defensively when the budget somehow expires while a prompt is
-    /// still open, and a version that cleared the anchor afterwards would
-    /// silently undo that re-arm.
+    /// The deadline arrived. Clears the anchor BEFORE the owner acts, so the
+    /// call's defensive re-arm from inside its own expiry handling is not a
+    /// silent no-op.
     pub fn expire(&mut self) {
         self.armed_at = None;
     }
@@ -115,10 +95,8 @@ mod tests {
 
     const BUDGET: Duration = Duration::from_secs(60);
 
-    /// Literal seconds throughout rather than arithmetic on `BUDGET`. A fixture
-    /// derived from the constant it is testing scales with any mutation of that
-    /// constant and cannot see it change; that is how two of this package's
-    /// phase-1 mutations survived.
+    /// Literal seconds throughout rather than arithmetic on `BUDGET`, which
+    /// would move with it.
     fn budget() -> CallTimeout {
         CallTimeout::new(BUDGET)
     }
@@ -143,9 +121,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn resuming_does_not_hand_the_call_a_fresh_full_budget() {
-        // The other direction of the same mutation: a `pause` that forgets to
-        // subtract looks identical to a correct one until you check that the
-        // resumed window is SHORTER.
+        // A `pause` that forgets to subtract looks correct until the resumed
+        // window is checked for being SHORTER.
         let mut t = budget();
         t.arm();
         advance(45).await;
@@ -160,10 +137,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn two_prompts_back_to_back_cost_the_budget_one_span_not_two() {
-        // `pause` clears its anchor, so the second one has nothing to subtract.
-        // Without that, a second prompt opening while the first is still open
-        // charges the same 20 seconds twice and the call dies at 40s of an
-        // untouched 60s budget.
+        // Without the cleared anchor the same 20 seconds is charged twice.
         let mut t = budget();
         t.arm();
         advance(20).await;
@@ -188,9 +162,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn arming_an_already_armed_budget_keeps_the_earlier_deadline() {
-        // The TypeScript leaves the first `setTimeout` pending, so the earlier
-        // deadline wins there too. A re-anchor here would let a call that keeps
-        // arming itself run forever.
+        // A re-anchor would let a call that keeps arming itself run forever.
         let mut t = budget();
         t.arm();
         let first = t.deadline().unwrap();
@@ -217,10 +189,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn expiry_clears_the_anchor_so_the_owner_can_re_arm_from_inside_it() {
-        // The defensive re-arm: the budget ran out while a prompt was still
-        // open, so the owner declines to kill the call and re-arms instead. If
-        // `expire` left the anchor set, that re-arm would be a silent no-op and
-        // the call would hang with no timer at all.
+        // With the anchor left set, the owner's defensive re-arm is a silent
+        // no-op and the call hangs with no timer at all.
         let mut t = budget();
         t.arm();
         advance(60).await;
@@ -243,10 +213,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_shipping_call_budget_is_sixty_seconds() {
-        // Pinned against the pool's own default rather than restated: the two
-        // are the same number in the specification (`worker-pool.ts:34-39`) and
-        // a divergence between them is invisible until a call outlives its
-        // worker.
+        // Pinned against the pool's default: a divergence is invisible until a
+        // call outlives its worker.
         assert_eq!(
             super::super::pool::DEFAULT_POOL_CONFIG.call_timeout,
             Duration::from_secs(60)

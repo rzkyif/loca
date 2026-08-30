@@ -1,13 +1,8 @@
 //! Every SQL statement this package issues.
 //!
-//! Kept in one file rather than inline in the service so the `clients` and
-//! `pairing_codes` access is reviewable in one read, and so a change to F4's
-//! connection handle is a single-file reconcile.
-//!
-//! Both tables are declared in `schema.sql`, which is orchestrator-owned. The
-//! pairing code is stored in the clear on purpose: the PAKE keys off the code
-//! value itself, so Core needs it for the code's lifetime, and `schema.sql` says
-//! so.
+//! Kept in one file so the `clients` and `pairing_codes` access is reviewable in
+//! one read. Both tables are declared in `schema.sql`. The pairing code is
+//! stored in the clear because the PAKE keys off the code value itself.
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -148,9 +143,8 @@ pub(crate) fn update_last_seen(conn: &Connection, id: &str, now_ms: i64) -> Resu
     Ok(())
 }
 
-/// Delete a client. Its `client_settings` rows and `scheduled_prompts` go with
-/// it through `ON DELETE CASCADE`; the sessions on disk do not, which is what
-/// the revocation hooks are for.
+/// Delete a client. Its `client_settings` and `scheduled_prompts` cascade; the
+/// sessions on disk do not, which is what the revocation hooks are for.
 pub(crate) fn delete_client(conn: &Connection, id: &str) -> Result<bool> {
     let changed = conn
         .prepare_cached("DELETE FROM clients WHERE id = ?")?

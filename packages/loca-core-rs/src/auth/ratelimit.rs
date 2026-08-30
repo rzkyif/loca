@@ -12,17 +12,13 @@ use super::{
     PASSWORD_FAIL_MAX_PER_KEY, PASSWORD_FAIL_WINDOW_MS,
 };
 
-/// The key the global password budget accumulates under.
-///
-/// The leading space is load-bearing: every real key is `c:<clientId>` or
-/// `ip:<peerIp>`, so a space-prefixed key cannot be produced by a caller and the
-/// global bucket cannot be reset by resetting a client's.
+/// The key the global password budget accumulates under. The leading space is
+/// load-bearing: every real key is `c:<clientId>` or `ip:<peerIp>`, so a caller
+/// cannot produce this one and reset the global bucket.
 const GLOBAL_PASSWORD_KEY: &str = " global";
 
-/// Event timestamps per key, pruned on access.
-///
-/// An event counts as live while `now - t < window_ms`, so one exactly
-/// `window_ms` old has expired. Every method takes `&mut self` because reading
+/// Event timestamps per key, pruned on access. An event is live while
+/// `now - t < window_ms`. Every method takes `&mut self` because reading
 /// the count prunes.
 pub(crate) struct SlidingWindowCounter {
     window_ms: i64,
@@ -75,22 +71,13 @@ impl SlidingWindowCounter {
     }
 
     /// Bring the map back to at most `max` keys, whatever the window says.
+    /// [`sweep_expired`](Self::sweep_expired) alone is not a cap: a source
+    /// rotating addresses faster than the window keeps every entry live, so the
+    /// sweep reclaims nothing.
     ///
-    /// [`sweep_expired`](Self::sweep_expired) alone is not a cap, and the gap is
-    /// the case a cap is for: a source rotating addresses faster than the window
-    /// keeps every entry LIVE, so the sweep reclaims nothing and the map grows
-    /// past the ceiling unbounded. The ceiling only did anything against slow
-    /// rotation, which is the case that did not need it.
-    ///
-    /// Eviction is by least-recent activity, and that order is the security
-    /// argument rather than an implementation detail. Evicting a key resets that
-    /// key's budget, so evicting the WRONG one hands an attacker a way to clear
-    /// their own throttle by flooding from other addresses. Oldest-first means
-    /// the entries that go are the ones that have gone quiet, and an address
-    /// actively being throttled is the last thing dropped: to evict itself it
-    /// would have to out-rotate its own traffic, at which point every one of its
-    /// addresses is under the per-IP budget anyway and this limiter is not the
-    /// control doing the work.
+    /// Eviction is by least-recent activity, and the order is the security
+    /// argument: evicting a key resets its budget, so evicting the hot one would
+    /// let an attacker clear their own throttle by flooding from elsewhere.
     pub(crate) fn enforce_cap(&mut self, max: usize, now: i64) {
         self.sweep_expired(now);
         if self.events.len() <= max {
@@ -127,16 +114,11 @@ impl IpRateLimiter {
         }
     }
 
-    /// True when this attempt is allowed, recording it. False when the IP is at
-    /// or over its cap, recording nothing: a refused attempt must not extend the
-    /// lockout, or a client hammering the endpoint would never recover.
+    /// True when this attempt is allowed, recording it. A refused attempt
+    /// records nothing, so hammering does not extend the lockout.
     pub(crate) fn record_and_check(&mut self, ip: &str, now: i64) -> bool {
-        // Bound the map across many distinct source addresses. Only reachable
-        // off loopback, and cheap enough to keep as a belt-and-braces bound.
-        //
-        // `enforce_cap` rather than `sweep_expired`, because the sweep alone
-        // reclaims nothing from the case that produces the growth: an address
-        // rotation faster than the ten-minute window leaves every entry live.
+        // `enforce_cap` rather than `sweep_expired`: the sweep reclaims nothing
+        // from an address rotation faster than the window.
         if self.hits.len() > MAX_TRACKED_IPS {
             self.hits.enforce_cap(MAX_TRACKED_IPS, now);
         }
@@ -170,9 +152,8 @@ impl PasswordRateLimiter {
             .any(|k| self.fails.live_count(k, now) >= PASSWORD_FAIL_MAX_PER_KEY)
     }
 
-    /// Count one wrong guess against every key **and** the global bucket. Both
-    /// the client id and the peer address are charged, so rotating either one
-    /// does not buy a fresh budget.
+    /// Count one wrong guess against every key and the global bucket, so
+    /// rotating the client id or the peer address alone buys nothing.
     pub(crate) fn record_failure(&mut self, keys: &[String], now: i64) {
         for key in keys {
             self.fails.record(key, now);
@@ -180,9 +161,8 @@ impl PasswordRateLimiter {
         self.fails.record(GLOBAL_PASSWORD_KEY, now);
     }
 
-    /// Clear the per-key budgets after a correct guess. The global bucket is
-    /// deliberately left alone: one legitimate success must not wipe the
-    /// evidence of a spray across many clients.
+    /// Clear the per-key budgets after a correct guess, leaving the global
+    /// bucket: one success must not wipe the evidence of a spray.
     pub(crate) fn reset(&mut self, keys: &[String]) {
         for key in keys {
             self.fails.remove(key);
@@ -201,12 +181,8 @@ mod tests {
 
     #[test]
     fn the_cap_holds_against_a_rotation_faster_than_the_window() {
-        // The case the sweep cannot touch, and the one a cap exists for. Every
-        // key here is recorded at `now`, so every key is LIVE: `sweep_expired`
-        // finds nothing to drop and the map keeps growing past its ceiling for
-        // as long as the source keeps rotating. The old code called only the
-        // sweep, so the ceiling did something only against slow rotation, which
-        // is the case that never threatened it.
+        // The case the sweep cannot touch: every key is recorded at `now`, so
+        // every key is live and `sweep_expired` finds nothing to drop.
         let mut c = SlidingWindowCounter::new(1000);
         for i in 0..50 {
             c.record(&format!("ip:{i}"), 0);
@@ -222,10 +198,8 @@ mod tests {
 
     #[test]
     fn the_cap_evicts_the_quietest_keys_and_keeps_the_active_one() {
-        // The eviction ORDER, which is the security half. Evicting a key resets
-        // its budget, so evicting the currently-hot address would let an
-        // attacker clear their own throttle by flooding from others. Oldest
-        // activity first means the address still sending is the last to go.
+        // The eviction order is the security half: evicting a key resets its
+        // budget, so the address still sending must be the last to go.
         let mut c = SlidingWindowCounter::new(10_000);
         for i in 0..20 {
             c.record(&format!("stale:{i}"), 100);
@@ -288,8 +262,8 @@ mod tests {
         for _ in 0..CLAIMS_PER_IP_MAX {
             assert!(l.record_and_check("ip", 0));
         }
-        // Hammering while locked records nothing, so the window still clears at
-        // exactly one window past the last ALLOWED attempt.
+        // Hammering while locked records nothing, so the window clears one
+        // window past the last allowed attempt.
         for t in 1..500 {
             assert!(!l.record_and_check("ip", t));
         }
@@ -344,8 +318,7 @@ mod tests {
         assert!(l.locked(&k, 0));
         l.reset(&k);
         assert!(!l.locked(&k, 0));
-        // The global bucket still carries those five, which is what makes a
-        // spray across many clients accumulate.
+        // The global bucket still carries those five.
         for i in 0..(PASSWORD_FAIL_MAX_GLOBAL - PASSWORD_FAIL_MAX_PER_KEY) {
             l.record_failure(&keys(&format!("c{i}"), &format!("10.1.0.{i}")), 0);
         }

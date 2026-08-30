@@ -24,8 +24,7 @@
 //! that `Deno.stat().size` reports. A sparse or filesystem-compressed file
 //! reports its logical length, so the number answers "how big is this" rather
 //! than "how much would be freed". Hard links are not deduplicated, so two
-//! directory entries pointing at one inode are counted twice, which is what the
-//! oracle does.
+//! directory entries pointing at one inode are counted twice.
 //!
 //! Every failure is zero. An unreadable directory contributes nothing and is
 //! not descended, an unreadable file stats as zero, and a directory entry that
@@ -100,10 +99,9 @@ pub fn is_model_file(name: &str) -> bool {
 /// `localeCompare`.
 ///
 /// `str::cmp` is byte order, which puts every uppercase letter before every
-/// lowercase one and visibly reorders a list of HuggingFace repo names against
-/// what the oracle produces. ICU root collation compares case-insensitively
-/// first and puts lowercase first at the tiebreak, which is what the two levels
-/// here reproduce.
+/// lowercase one and visibly reorders a list of HuggingFace repo names. ICU root
+/// collation compares case-insensitively first and puts lowercase first at the
+/// tiebreak, which is what the two levels here reproduce.
 ///
 /// **Deliberately approximate.** It is exact for the ASCII alphanumeric names
 /// this actually sorts (repo names, `core.log` and its rotated siblings,
@@ -158,9 +156,8 @@ mod tests {
         assert_eq!(dir_size(tmp.path()), 0);
     }
 
-    /// Two names for one inode are two entries, and the oracle counts both.
-    /// Deduplicating would report reclaimable bytes more truthfully and would
-    /// disagree with the core this is replacing.
+    /// Two names for one inode are two entries. Deduplicating would report
+    /// reclaimable bytes more truthfully and is deliberately not done.
     #[test]
     #[cfg(unix)]
     fn a_hard_link_is_counted_once_per_name() {

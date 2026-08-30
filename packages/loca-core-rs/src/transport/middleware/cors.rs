@@ -6,18 +6,14 @@
 //! (the Tauri Rust side, curl, anything using a raw socket) do not enforce CORS
 //! at all, so omitting the headers for them is harmless.
 //!
-//! Why this matters even on loopback: the API accepts `X-Admin-Token`, a custom
-//! header. Without an origin allowlist a malicious page could trigger a
-//! preflight against a core bound on `0.0.0.0` and then send the token-stealing
-//! request. Reflecting `*` alongside `X-Admin-Token` in `Allow-Headers` would
-//! be a wildcard credential grant.
+//! This matters even on loopback: the API accepts the custom `X-Admin-Token`
+//! header, so reflecting `*` in `Allow-Headers` would be a wildcard credential
+//! grant against a core bound on `0.0.0.0`.
 //!
 //! Hand-written rather than `tower-http`'s `CorsLayer` because three behaviours
-//! here are not that crate's defaults and all three are load bearing: a
-//! preflight from a disallowed origin answers 204 with no CORS headers at all;
-//! a request with no `Origin` gets no CORS headers; and the headers are applied
-//! to the finished response rather than before the handler, so a handler that
-//! returns its own `Response` (the `audio/wav` body) does not drop them.
+//! are not its defaults: a preflight from a disallowed origin answers 204 with
+//! no CORS headers, a request with no `Origin` gets none, and the headers go on
+//! the finished response so a handler returning its own does not drop them.
 
 use axum::extract::Request;
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
@@ -29,10 +25,8 @@ const ALLOW_METHODS: &str = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
 const ALLOW_HEADERS: &str = "Authorization,Content-Type,X-Admin-Token";
 const MAX_AGE: &str = "86400";
 
-/// Whether an `Origin` may see a response.
-///
-/// Also used on the WS upgrade, where rejecting a cross-origin browser upgrade
-/// is defence in depth on top of the ticket check.
+/// Whether an `Origin` may see a response. Also used on the WS upgrade, as
+/// defence in depth on top of the ticket check.
 pub fn is_origin_allowed(origin: &str) -> bool {
     if ALLOWED_ORIGINS.contains(&origin) {
         return true;
@@ -40,13 +34,9 @@ pub fn is_origin_allowed(origin: &str) -> bool {
     is_loopback_origin(origin)
 }
 
-/// `^https?://(localhost|127\.0\.0\.1)(:\d+)?$`, spelled out rather than
-/// compiled, because a regex here would be a per-request allocation on the hot
-/// path and the grammar is four cases wide.
-///
-/// The anchoring is the point: `https://x.tauri.localhost` and
-/// `http://127.0.0.2` are not loopback, and a substring match would accept
-/// both.
+/// `^https?://(localhost|127\.0\.0\.1)(:\d+)?$`, spelled out to avoid a
+/// per-request regex allocation. The anchoring is the point:
+/// `https://x.tauri.localhost` and `http://127.0.0.2` are not loopback.
 fn is_loopback_origin(origin: &str) -> bool {
     let rest = match origin.strip_prefix("https://") {
         Some(rest) => rest,

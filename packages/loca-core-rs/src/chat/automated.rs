@@ -1,25 +1,14 @@
 //! Core-initiated ("automated") sessions, and the readiness predicate that
-//! decides when one may start.
+//! decides when one may start. Two callers, greetings and scheduled prompts.
 //!
-//! Work package **D8**, living in D4's module by ruling (D-090, D-094). Both
-//! things here have exactly two callers, greetings (D8) and scheduled prompts
-//! (D10), and both were about to be ported twice. They are here rather than
-//! under `requirements/` because the concept is a core-initiated chat turn: a
-//! `scheduled -> requirements` module edge would state something false, and
-//! module edges are read by people deciding what may call what.
-//!
-//! # What an automated session is
-//!
-//! A fresh session for the owner client, with the instruction persisted as an
-//! `automated: true` user message, announced over WS as `session.created`, and
-//! then a normal chat turn started on it.
-//!
-//! The turn deliberately runs the standard pipeline. No `systemPrompt` on the
-//! frame means the turn falls back to the `prompts.defaultSystemPrompt` core
-//! setting, and [`DEFAULT_TOOLS_HINT`] is appended only if the turn actually
-//! exposes tools. Everything persists even when the owner client is offline:
-//! `broadcast_to_client` drops frames nobody is listening for, and the client
-//! catches up from the session list on its next connect.
+//! An automated session is a fresh session for the owner client, with the
+//! instruction persisted as an `automated: true` user message, announced as
+//! `session.created`, and then a normal chat turn started on it. The turn runs
+//! the standard pipeline: no `systemPrompt` on the frame means it falls back to
+//! `prompts.defaultSystemPrompt`, and [`DEFAULT_TOOLS_HINT`] is appended only
+//! if the turn exposes tools. Everything persists even when the owner client is
+//! offline, and the client catches up from the session list on its next
+//! connect.
 
 use std::sync::Arc;
 
@@ -38,23 +27,16 @@ use crate::sidecars::Manager;
 
 use super::Chat;
 
-/// Appended to an automated turn iff that turn exposes tools.
-///
-/// A copy of `@loca/shared`'s `DEFAULT_TOOLS_HINT` (`domain/prompts.ts:129`),
-/// because the contract bridge emits types and not constants. Its one other
-/// reader is the `[toolsAvailable:...]` block of the default system prompt, on
-/// the TypeScript side only.
+/// Appended to an automated turn iff that turn exposes tools. A copy of
+/// `@loca/shared`'s `DEFAULT_TOOLS_HINT`, because the contract bridge emits
+/// types and not constants.
 pub const DEFAULT_TOOLS_HINT: &str = "Tools are available for this turn. Use one only when the user's request actually needs it; for greetings or small talk, just reply normally without calling any tool.";
 
-/// The placeholder a user may put in an automated session's title.
-///
-/// `domain/prompts.ts:151`. Persisted in the `greetings.sessionTitle` and
-/// scheduled-prompt settings a user has already written, so the spelling is
-/// fixed.
+/// The placeholder a user may put in an automated session's title. Persisted in
+/// settings a user has already written, so the spelling is fixed.
 pub const TITLE_DATETIME_PLACEHOLDER: &str = "{datetime}";
 
-/// What opening an automated session needs. Ports `AutomatedSessionInput`
-/// (`services/automated-session.ts:23-33`).
+/// What opening an automated session needs.
 #[derive(Clone, Debug)]
 pub struct AutomatedSessionInput {
     pub owner_client_id: String,
@@ -71,9 +53,7 @@ pub struct AutomatedSessionInput {
 }
 
 /// Open a session, persist the instruction, announce it, and start the turn.
-///
-/// Returns as soon as the turn is spawned; the turn itself is fire-and-forget,
-/// exactly as `automated-session.ts:60-69` is.
+/// Returns as soon as the turn is spawned; the turn is fire-and-forget.
 pub async fn run_automated_session(chat: &Chat, input: AutomatedSessionInput) -> Result<Session> {
     let now = now_ms();
     // `{datetime}` is stamped with the CREATION time, so a title of
@@ -123,11 +103,9 @@ pub async fn run_automated_session(chat: &Chat, input: AutomatedSessionInput) ->
     Ok(session)
 }
 
-/// The `chat.start` frame an automated turn runs on.
-///
-/// `route: default` and no `systemPrompt`: the turn resolves its own system
-/// prompt from settings, which is what makes an automated turn identical to a
-/// user-typed one from the model's point of view.
+/// The `chat.start` frame an automated turn runs on. `route: default` and no
+/// `systemPrompt`, so the turn resolves its own prompt from settings and is
+/// identical to a user-typed one from the model's point of view.
 fn automated_start_frame(session_id: &str) -> Result<crate::contract::inbound::ChatStartWs> {
     use crate::contract::inbound::{ChatStartWs, ChatStartWsKind, ChatStartWsRoute};
     let stream_id = ulid::Ulid::new().to_string();
@@ -135,9 +113,8 @@ fn automated_start_frame(session_id: &str) -> Result<crate::contract::inbound::C
         anchor_message_id: None,
         kind: ChatStartWsKind::ChatStart,
         route: Some(ChatStartWsRoute::Default),
-        // Both are `minLength: 1` newtypes. A freshly minted ulid and a session
-        // id the store just returned both satisfy that, so a failure here is a
-        // broken invariant rather than bad input, and it is reported as one.
+        // Both are `minLength: 1` newtypes that a fresh ulid and a store-issued
+        // session id satisfy, so a failure here is a broken invariant.
         session_id: session_id
             .parse()
             .map_err(|_| internal("an automated session's own id is not a valid session id"))?,
@@ -150,12 +127,9 @@ fn automated_start_frame(session_id: &str) -> Result<crate::contract::inbound::C
     })
 }
 
-/// Replace every `{datetime}` with the LOCAL `YYYY-MM-DD HH:MM` for `ms`.
-///
-/// Local, not UTC. `domain/prompts.ts:157-163` builds this from `Date`'s local
-/// getters, and the string is a session title a user reads next to their own
-/// clock. `Utc` here would compile, pass every test written in London, and be
-/// wrong everywhere else.
+/// Replace every `{datetime}` with the LOCAL `YYYY-MM-DD HH:MM` for `ms`. Local
+/// and not UTC, because the string is a session title a user reads next to
+/// their own clock.
 pub fn apply_title_datetime(title: &str, ms: i64) -> String {
     if !title.contains(TITLE_DATETIME_PLACEHOLDER) {
         return title.to_string();
@@ -172,28 +146,18 @@ pub fn apply_title_datetime(title: &str, ms: i64) -> String {
 
 // --- readiness ---------------------------------------------------------------
 
-/// Whether an automated turn may start yet.
-///
-/// The seam, so a caller's call sites do not move as the implementation lands
-/// and so a test can drive the defer path without a model. D10 declared this
-/// shape (`docs/rust-port/packages/D10/plan.md`) and it lives here with its
-/// implementation, per D-094.
+/// Whether an automated turn may start yet. A seam, so a test can drive the
+/// defer path without a model.
 #[async_trait]
 pub trait LoadingProbe: Send + Sync {
     async fn still_loading(&self) -> bool;
 }
 
 /// The production probe: true only while the LOCAL language model is mid-load.
-///
-/// Ports `llmStillLoading` (`services/prompt-scheduler.ts:426-431`). An
-/// automated turn fired during the load would race it and error, so both
-/// callers hold until this goes false.
-///
-/// **A core with no in-process engine answers false**, because nothing publishes
-/// [`SidecarKind::Llama`] and an unpublished kind reads as `Disabled`
-/// (`sidecars/registry.rs:109`). That is the honest answer rather than a stub:
-/// there is no load to wait for, so the turn starts immediately and fails or
-/// succeeds on its own merits. It starts deferring the moment N2 publishes.
+/// An automated turn fired during the load would race it and error, so both
+/// callers hold until this goes false. A core with no in-process engine answers
+/// false, because nothing publishes [`SidecarKind::Llama`] and an unpublished
+/// kind reads as `Disabled`: there is no load to wait for.
 pub struct LlmLoading {
     settings: Settings,
     sidecars: Arc<Manager>,
@@ -208,14 +172,12 @@ impl LlmLoading {
 #[async_trait]
 impl LoadingProbe for LlmLoading {
     async fn still_loading(&self) -> bool {
-        // `load`, not `load_resolved`: the oracle reads the raw store
-        // (`loadCoreSettings`) and treats a provider that is absent as local,
-        // which the `!= "external"` test below already does.
+        // `load`, not `load_resolved`: an absent provider is local, which the
+        // test below already does.
         let settings = match self.settings.load().await {
             Ok(settings) => settings,
             // A settings read that fails must not hold an automated turn
-            // forever. Reporting "not loading" starts the turn, which then
-            // succeeds or reports its own error in the session where the user
+            // forever: starting it puts any error in the session where the user
             // can see it.
             Err(err) => {
                 tracing::warn!(
@@ -225,10 +187,8 @@ impl LoadingProbe for LlmLoading {
                 return false;
             }
         };
-        // Absent, or set to something that is not a string, defaults to local
-        // and falls through to the sidecar check. That is the oracle's
-        // `typeof provider === "string" && provider !== "local"` exactly: only a
-        // STRING naming a non-local provider short-circuits.
+        // Absent, or not a string, defaults to local and falls through to the
+        // sidecar check: only a STRING naming another provider short-circuits.
         if str_setting(&settings, "llm.provider", "local") != "local" {
             return false;
         }
@@ -253,8 +213,8 @@ mod tests {
         );
     }
 
-    /// Both halves, because a stamper that returned the empty string would pass
-    /// a "does not contain {datetime}" assertion on its own.
+    /// Both halves: a stamper returning the empty string would pass a "does not
+    /// contain {datetime}" assertion on its own.
     #[test]
     fn every_placeholder_is_replaced_with_a_local_minute_stamp() {
         let out = apply_title_datetime("{datetime} / {datetime}", 1_781_000_000_000);
@@ -276,17 +236,10 @@ mod tests {
         );
     }
 
-    /// The stamp follows the LOCAL clock, which is the whole reason this is not
-    /// `Utc::now`. Asserted by comparing against `chrono::Local` for the same
-    /// instant rather than against a hardcoded string, which would only be right
-    /// in one zone.
-    ///
-    /// **Known limit, recorded rather than hidden**: on a host whose zone IS
-    /// UTC (most CI) `Local` and `Utc` agree, so this cannot discriminate there
-    /// and a green run proves only the format. It was watched catching a staged
-    /// `Utc` on a non-UTC developer host. `chrono::Local` reads a process-global
-    /// zone that a parallel test binary must not mutate, so forcing a zone here
-    /// would be worse than the gap.
+    /// The stamp follows the LOCAL clock, asserted against `chrono::Local` for
+    /// the same instant rather than a hardcoded string. Known limit: on a host
+    /// whose zone IS UTC the two agree, and forcing a zone would mutate a
+    /// process-global a parallel test binary shares.
     #[test]
     fn the_stamp_is_local_time_rather_than_utc() {
         let ms = 1_781_000_000_000;
@@ -300,10 +253,8 @@ mod tests {
 
     // --- the readiness predicate ---------------------------------------------
     //
-    // D-094's shared backend. Both callers hold an automated turn on this
-    // answer, so every arm of it is exercised: a wrong `false` fires a turn into
-    // a loading model and errors, and a wrong `true` holds a greeting for three
-    // minutes on a core with no local model at all.
+    // A wrong `false` fires a turn into a loading model and errors; a wrong
+    // `true` holds a greeting for three minutes on a core with no local model.
 
     use crate::contract::api::SidecarSnapshot;
     use crate::sidecars::Manager;
@@ -389,12 +340,8 @@ mod tests {
     }
 
     /// A settings store that cannot be read must not hold an automated turn
-    /// forever. Answering "not loading" starts the turn, which then succeeds or
-    /// reports its own error in the session, where the user can see it; the
-    /// alternative is a greeting that silently never arrives.
-    ///
-    /// The unreadable store is a DIRECTORY where the file should be, which is
-    /// the one failure a test can stage without a filesystem fault injector.
+    /// forever; the alternative is a greeting that silently never arrives. The
+    /// unreadable store is a directory where the file should be.
     #[tokio::test]
     async fn an_unreadable_settings_store_does_not_hold_the_turn() {
         let manager = Arc::new(Manager::new());

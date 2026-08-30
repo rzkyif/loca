@@ -20,8 +20,8 @@
 // `JSON.stringify`. `serde_json` renders the f64 4.0 as `4.0` where JavaScript
 // renders it as `4`, so a naive Rust re-serialisation produces a different
 // message and fails every signature. That path runs only on the stable and
-// latest channels, so neither the dev channel nor the conformance suite would
-// ever reach it. This fixture is what makes the two implementations comparable:
+// latest channels, so the dev channel never reaches it. This fixture is what
+// makes the two implementations comparable:
 // the canonical form is pinned by digest, and a real signature over it is
 // verified from Rust.
 

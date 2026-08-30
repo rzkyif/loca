@@ -1,25 +1,16 @@
 //! Stop strings, and the suffix that must not be streamed yet.
 //!
 //! A turn ends on an end-of-generation token, on the token cap, or on a stop
-//! STRING. The last one is the awkward member: a stop string is text, tokens do
-//! not align to it, and the model can emit the first half of one and then
-//! continue with something else entirely.
+//! STRING. The last is the awkward member: a stop string is text, tokens do not
+//! align to it, and the model can emit the first half of one and then continue
+//! with something else. Most turns have at least one, from
+//! `AppliedChat::additional_stops`.
 //!
-//! `common_chat_templates_apply` returns the stops the template itself declares
-//! (`AppliedChat::additional_stops`), so most turns have at least one.
-//!
-//! # The half-emitted stop string
-//!
-//! If the accumulated text ends with a PREFIX of a stop string, that suffix
-//! cannot be streamed: it is either about to become a stop (and must never be
-//! shown) or about to become ordinary text (and must be shown, once we know).
-//! [`safe_len`] is where the line is drawn, and holding that suffix back is what
-//! makes the "erased partial stop word" case in [`super::diff`] reachable, which
-//! is why upstream's `string_diff` tolerates the text getting shorter.
-//!
-//! Getting this wrong is not subtle in either direction: emit too eagerly and a
-//! stop marker like `<|im_end|>` appears in the answer; hold too much back and
-//! the last few characters of every reply never arrive.
+//! If the accumulated text ends with a PREFIX of a stop string that suffix
+//! cannot be streamed yet, and [`safe_len`] is where the line is drawn. Holding
+//! it back is what makes the "erased partial stop word" case in [`super::diff`]
+//! reachable. Emit too eagerly and `<|im_end|>` appears in the answer; hold too
+//! much back and the last few characters of every reply never arrive.
 
 /// What the accumulated text means for the loop.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,12 +45,10 @@ pub fn scan(text: &str, stops: &[String]) -> StopScan {
 }
 
 /// How much of `text` is safe to stream, given that a stop string may be half
-/// emitted at the end.
-///
-/// Returns the length of `text` minus the longest suffix that is a proper prefix
-/// of some stop string. Suffixes are tested longest-first, and only at character
-/// boundaries: slicing a multi-byte character in half to compare it would panic,
-/// and this runs on every token of every generation.
+/// emitted at the end: the length minus the longest suffix that is a proper
+/// prefix of some stop string. Suffixes are tested longest-first and only at
+/// character boundaries, since slicing a multi-byte character to compare it
+/// would panic.
 fn safe_len(text: &str, stops: &[String]) -> usize {
     let mut longest = 0;
     for stop in stops.iter().filter(|s| !s.is_empty()) {

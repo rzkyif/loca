@@ -7,26 +7,9 @@
 import { platform } from "../platform/index.ts";
 import { getLogger } from "$lib/util/log";
 import { Subscribers } from "../util/subscribers.ts";
-import { BinariesApi } from "./binaries";
-import { ChatApi } from "./chat";
+import { buildApi, type CoreApi } from "./api";
 import { type ConnectionListener, CoreClient, type TrustMode, type WsListener } from "./client";
-import { GreetingsApi } from "./greetings";
-import { LlmApi } from "./llm";
-import { MemoriesApi } from "./memories";
-import { ScheduledPromptsApi } from "./scheduled-prompts";
-import { ModelsApi } from "./models";
-import { RequirementsApi } from "./requirements";
-import { SidecarsApi } from "./sidecars";
-import { StorageApi } from "./storage";
 import { localTransport } from "./local-transport";
-import { PairingApi } from "./pairing";
-import { CoreSettingsApi } from "./settings";
-import { SessionsApi } from "./sessions";
-import { SttApi } from "./stt";
-import { ExtensionsApi } from "./extensions";
-import { McpApi } from "./mcp";
-import { TtsApi } from "./tts";
-import { UpdateApi } from "./update";
 
 const log = getLogger("cores");
 
@@ -40,24 +23,15 @@ export interface PairedCoreEntry {
 }
 
 /** The id of the Core inside this app, reserved so it can never collide with a
- *  pairing-issued ULID.
- *
- *  It is a PERSISTED KEY: `cores.json` names the entry by it, so changing the
- *  string orphans every entry already on disk. It is NOT coupled to the Core's
- *  own reserved client id, which happens to read the same. The two live in
- *  different namespaces (this is a registry key, that is a paired-client row id)
- *  and the client never sends this value to the embedded Core at all, since the
- *  identity is injected below the command boundary. */
+ *  pairing-issued ULID. A PERSISTED KEY: `cores.json` names the entry by it, so
+ *  changing the string orphans every entry already on disk. */
 export const LOCAL_CORE_ID = "local";
 
-/** The reserved entry's base URL. There is no origin behind it: the Core is in
- *  process and the local transport strips this off again before dispatching.
- *
- *  It is a parseable absolute URL so every consumer that concatenates
- *  `baseUrl + path`, parses it, or rewrites its scheme keeps working untouched.
- *  `.invalid` is the IANA-reserved TLD that is guaranteed never to resolve, so
- *  a request that somehow escaped the local transport into the network layer
- *  fails immediately and locally instead of reaching a host somebody owns. */
+/** The reserved entry's base URL. Nothing is behind it: the Core is in process
+ *  and the local transport strips this off before dispatching. It stays a
+ *  parseable absolute URL so consumers that concatenate or parse it keep
+ *  working, and `.invalid` never resolves, so a request that escaped the local
+ *  transport fails locally rather than reaching a host somebody owns. */
 const LOCAL_CORE_BASE_URL = "https://local.loca.invalid";
 
 /** The canonical reserved entry. Every field except the two the user owns is
@@ -96,18 +70,12 @@ function coerceCoreEntry(raw: unknown): PairedCoreEntry | null {
   ) {
     return null;
   }
-  // The reserved entry keeps only the two fields the user owns and takes the
-  // rest from constants. Trusting the file here would let a hand-edited (or
-  // restored-from-elsewhere) cores.json point the reserved id at a network host
-  // and inherit its no-token, no-pin selection path.
-  //
-  // Whether this build embeds a Core at all is the one fact that decides
-  // whether the entry can serve anything, and it is not in the file to rebuild
-  // from, so it is asked here. Dropping it at the READ is what puts the rule
-  // where the recovery paths look: `select` would still leave it listed in
-  // Settings, left on disk, and skipped by all three sweeps that exist to clear
-  // a persisted core that cannot work (it is not loopback, and the tokenless
-  // sweep passes over it by design).
+  // The reserved entry keeps only the two fields the user owns and rebuilds the
+  // rest from constants: trusting the file would let a hand-edited cores.json
+  // point the reserved id at a network host and inherit its no-token, no-pin
+  // selection path. Whether this build embeds a Core is asked here, at the READ,
+  // so a build with none never lists the entry: dropping it later would leave it
+  // in Settings and skipped by all three sweeps that clear an unusable core.
   if (r.id === LOCAL_CORE_ID) {
     return platform().localCore ? localCoreEntry(r.name, r.addedAtMs) : null;
   }
@@ -146,26 +114,7 @@ class CoresRegistry {
   private wsBindings = new Map<WsListener, () => void>();
   private connListeners = new Set<ConnectionListener>();
   private connBindings = new Map<ConnectionListener, () => void>();
-  private apis: {
-    sessions: SessionsApi;
-    chat: ChatApi;
-    models: ModelsApi;
-    binaries: BinariesApi;
-    requirements: RequirementsApi;
-    sidecars: SidecarsApi;
-    storage: StorageApi;
-    extensions: ExtensionsApi;
-    memories: MemoriesApi;
-    mcp: McpApi;
-    scheduledPrompts: ScheduledPromptsApi;
-    greetings: GreetingsApi;
-    stt: SttApi;
-    tts: TtsApi;
-    llm: LlmApi;
-    settings: CoreSettingsApi;
-    pairing: PairingApi;
-    update: UpdateApi;
-  } | null = null;
+  private apis: CoreApi | null = null;
 
   // --- list / select -----------------------------------------------------
 
@@ -217,10 +166,8 @@ class CoresRegistry {
   }
 
   async removePaired(id: string): Promise<void> {
-    // The reserved entry has no keychain token to delete. Removal is allowed
-    // (forgetting a registry entry takes nothing away: adoptLocalCore puts it
-    // back and the Core's own data is untouched in its root), it just has one
-    // fewer step.
+    // The reserved entry has no keychain token to delete. Removal is still
+    // allowed: adoptLocalCore puts it back and the Core's own data is untouched.
     if (id !== LOCAL_CORE_ID) await platform().keychain.delete(id);
     const cores = await this.list();
     const remaining = cores.filter((c) => c.id !== id);
@@ -285,26 +232,7 @@ class CoresRegistry {
       local ? localTransport() : undefined,
     );
     this.current = { entry, client };
-    this.apis = {
-      sessions: new SessionsApi(client),
-      chat: new ChatApi(client),
-      models: new ModelsApi(client),
-      binaries: new BinariesApi(client),
-      requirements: new RequirementsApi(client),
-      sidecars: new SidecarsApi(client),
-      storage: new StorageApi(client),
-      extensions: new ExtensionsApi(client),
-      memories: new MemoriesApi(client),
-      mcp: new McpApi(client),
-      scheduledPrompts: new ScheduledPromptsApi(client),
-      greetings: new GreetingsApi(client),
-      stt: new SttApi(client),
-      tts: new TtsApi(client),
-      llm: new LlmApi(client),
-      settings: new CoreSettingsApi(client),
-      pairing: new PairingApi(client),
-      update: new UpdateApi(client),
-    };
+    this.apis = buildApi(client);
     this.rebindListeners(client);
     await this.writeCurrent(id);
     this.notify();
@@ -366,26 +294,7 @@ class CoresRegistry {
     return this.current?.client ?? null;
   }
 
-  api(): {
-    sessions: SessionsApi;
-    chat: ChatApi;
-    models: ModelsApi;
-    binaries: BinariesApi;
-    requirements: RequirementsApi;
-    sidecars: SidecarsApi;
-    storage: StorageApi;
-    extensions: ExtensionsApi;
-    memories: MemoriesApi;
-    mcp: McpApi;
-    scheduledPrompts: ScheduledPromptsApi;
-    greetings: GreetingsApi;
-    stt: SttApi;
-    tts: TtsApi;
-    llm: LlmApi;
-    settings: CoreSettingsApi;
-    pairing: PairingApi;
-    update: UpdateApi;
-  } {
+  api(): CoreApi {
     if (!this.apis) throw new Error("no core selected; call select() first");
     return this.apis;
   }
@@ -507,19 +416,14 @@ export async function isThisDevicesCoreStopped(coreBaseUrl: string): Promise<boo
   return !(await platform().pairing.isLocalCoreRunning());
 }
 
-// On-demand mode: when the selected core is this device's own, start it
-// ourselves if nothing has it running yet. Idempotent on both shapes:
-// start_local_core probes the port first and exits cleanly if the core is
-// already up, and core_start returns the running core if there is one.
-// Failures are non-fatal: the user sees a normal "could not reach core" error
-// from the regular call paths.
+// On-demand mode: start this device's own core when nothing has it running.
+// Idempotent (both shapes probe first) and non-fatal on failure: the user sees
+// the ordinary "could not reach core" error.
 //
-// The reserved entry has to be recognized EXPLICITLY, not through
-// `isLoopbackUrl`: its base URL is a sentinel with no host, so a loopback test
-// reads it as remote and this would silently skip the one core it is most sure
-// about. The cost of skipping is not an error but a delay, which is worse to
-// diagnose: the Core would boot lazily on the first request instead, moving a
-// multi-second start onto whatever call happened to be first.
+// The reserved entry is recognized EXPLICITLY rather than via `isLoopbackUrl`:
+// its base URL is a sentinel with no host, so a loopback test reads it as
+// remote. Skipping it costs a multi-second lazy boot on whatever request
+// happens to be first, which is harder to diagnose than an error.
 export async function ensureLocalCoreUpIfNeeded(): Promise<void> {
   const current = cores().currentEntry();
   if (!current) return;

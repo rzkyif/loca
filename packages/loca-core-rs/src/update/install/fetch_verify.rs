@@ -1,31 +1,19 @@
 //! Fresh-install fetch of the core binary set from the signed manifest.
 //!
-//! Ports `install/fetch-verify.ts`. Reuses the SAME
+//! Reuses the SAME
 //! [`fetch_core_manifest`](crate::update::manifest::fetch_core_manifest) and
 //! [`download_and_verify`](crate::update::artifact::download_and_verify) as
 //! self-update, so a first install and an update share **one** audited trust
-//! path rather than two that can drift apart.
+//! path. It differs only by absence: no rollback marker, no supervisor handoff,
+//! and the running core binary is left alone, since this IS the binary running
+//! the verb.
 //!
-//! Three differences from self-update, and each is an absence rather than a
-//! variation: no rollback marker, no supervisor handoff, and the currently
-//! running core binary is left where it is. That last one is not caution: a
-//! process cannot rewrite its own executable on Windows, and on any platform
-//! this IS the binary running the verb.
-//!
-//! # Why this verb still exists with no caller
-//!
-//! Nothing in the repo invokes `self-install` today: the native installers all
-//! use `install-service`, and the binary set is placed by the installer
-//! payload. It is kept because it is the only consumer of `download_and_verify`
-//! outside apply, so deleting it would leave the fresh-install path with no
-//! audited implementation the day someone needs one, and because removing a
-//! verb from a published CLI surface is not a port's decision to make (Q3).
-//!
-//! # Consent
+//! Nothing in the repo invokes `self-install` today, but it is the only
+//! consumer of `download_and_verify` outside apply, so deleting it would leave
+//! the fresh-install path with no audited implementation.
 //!
 //! Reachable only from the `self-install` CLI verb, which is the install phase
-//! `AGENTS.md` names as the one sanctioned exception. Not reachable from a
-//! booted core, and every request goes through [`crate::update::net`].
+//! `AGENTS.md` sanctions, and every request goes through [`crate::update::net`].
 
 use crate::config::{host_triple, platform_exe, Config};
 use crate::error::{AppError, ErrorCode, Result};
@@ -41,9 +29,8 @@ pub async fn self_install(config: &Config, paths: &Paths, net: &Net, io: &dyn Io
     let manifest = fetch_core_manifest(net, &config.core_manifest_url()).await?;
     let triple = host_triple();
     let Some(entry) = manifest.binary_for(triple) else {
-        // Before any directory is created and before anything is written: a
-        // manifest that does not cover this machine is a clean refusal, not a
-        // half-placed binary set.
+        // Before anything is written: a manifest that does not cover this
+        // machine is a clean refusal, not a half-placed binary set.
         return Err(AppError::new(
             ErrorCode::UpdateFailed,
             format!("no core binary for triple {triple} in the manifest"),
@@ -61,10 +48,8 @@ pub async fn self_install(config: &Config, paths: &Paths, net: &Net, io: &dyn Io
         io.progress(&format!("installed core binary v{}", manifest.version));
     }
 
-    // `workers()` and `helpers()` collapse an ABSENT key to an empty slice,
-    // which is what all three of the oracle's readers do
-    // (`fetch-verify.ts:37,44`). The absent-versus-empty distinction the
-    // manifest keeps matters to a publisher, not to a consumer placing files.
+    // `workers()` and `helpers()` collapse an ABSENT key to an empty slice:
+    // absent versus empty matters to a publisher, not to a file placer.
     let workers = manifest.workers();
     for worker in workers {
         let dest = paths.workers_dir().join(&worker.name);
@@ -75,10 +60,8 @@ pub async fn self_install(config: &Config, paths: &Paths, net: &Net, io: &dyn Io
     }
 
     let exe = platform_exe();
-    // `helpers_for` is the filter, and it is shared with apply rather than
-    // rewritten here (D-049): every triple's helpers are in ONE document, so
-    // without it a mac downloads the Windows `.exe` set and places it under the
-    // same names.
+    // `helpers_for` is the filter, shared with apply: every triple's helpers
+    // are in ONE document, so without it a mac places the Windows `.exe` set.
     let helpers = manifest.helpers_for(triple);
     for helper in &helpers {
         let dest = paths.bin_path(&format!("{}{exe}", helper.name));
@@ -135,8 +118,7 @@ mod tests {
     }
 
     /// A manifest covering this host, plus a worker and two helpers of which
-    /// only one matches. Built from the release script's shape, not from the
-    /// Rust structs (D-060).
+    /// only one matches. Built from the published shape, not the Rust structs.
     fn manifest_for(base: &str, core: &[u8], worker: &[u8], helper: &[u8]) -> Value {
         json!({
             "schemaVersion": 1,
@@ -160,10 +142,8 @@ mod tests {
                 },
                 {
                     "name": "loca-core-updater",
-                    // A triple this host is not, so its URL is never served:
-                    // the mock 404s anything undeclared, which turns "the
-                    // filter was deleted" into a failure rather than a silent
-                    // extra download.
+                    // A triple this host is not, so its URL is never served
+                    // and a deleted filter fails rather than downloading.
                     "triple": "some-other-triple",
                     "url": format!("{base}/foreign.gz"),
                     "sha256": sha256_hex(helper),
@@ -223,9 +203,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_helper_for_another_triple_is_not_downloaded() {
-        // The mock 404s anything it was not given, so deleting the triple
-        // filter makes this fail rather than quietly place a foreign binary
-        // over the matching one under the same name.
+        // The mock 404s anything undeclared, so deleting the triple filter
+        // fails rather than placing a foreign binary under the same name.
         let trust = Trusted::new();
         let e = env();
         let (core, worker, helper) = (b"core".as_ref(), b"worker".as_ref(), b"updater");
@@ -256,8 +235,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_running_core_binary_is_left_in_place() {
-        // A process cannot rewrite its own executable on Windows, and on every
-        // platform this IS the binary running the verb.
+        // This IS the binary running the verb, and Windows will not let a
+        // process rewrite its own executable.
         let trust = Trusted::new();
         let e = env();
         let core_bin = e
@@ -274,9 +253,8 @@ mod tests {
                 "/manifests/core.json",
                 Serve::Body(doc.to_string().into_bytes()),
             ),
-            // `/core.gz` deliberately undeclared, so a download of it 404s and
-            // the test fails rather than passing because the bytes happened to
-            // match.
+            // `/core.gz` undeclared, so a download of it 404s rather than
+            // passing because the bytes happened to match.
             ("/worker.gz", Serve::Body(gzipped(worker))),
             ("/updater.gz", Serve::Body(gzipped(helper))),
         ]);
@@ -332,10 +310,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_manifest_with_neither_optional_key_installs_the_core_and_nothing_else() {
-        // The reader tolerance the declaration does not have: `workers` and
-        // `helpers` are declared required in @loca/shared and read as optional
-        // by all three readers. A port matching the DECLARATION would 422 a
-        // document the oracle installs from.
+        // `workers` and `helpers` are declared required in @loca/shared and
+        // read as optional everywhere; matching the declaration would 422.
         let trust = Trusted::new();
         let e = env();
         let core = b"core".as_ref();
@@ -377,9 +353,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_unsigned_manifest_places_nothing() {
-        // The whole point of the verb: one audited trust path shared with
-        // self-update. An install that placed files from an unverified document
-        // would be a fresh-install bypass of the update path's signature check.
+        // One audited trust path shared with self-update: placing files from
+        // an unverified document would be a fresh-install signature bypass.
         let trust = Trusted::new();
         let e = env();
         let core = b"core".as_ref();

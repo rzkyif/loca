@@ -4,16 +4,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, CoreClient } from "./client";
-import {
-  type NetRequest,
-  type NetResponse,
-  type NetSocket,
-  type Platform,
-  setPlatform,
-} from "../platform/index";
+import { type NetRequest, type NetResponse, type NetSocket, setPlatform } from "../platform/index";
 import type { ServerToClientFrame } from "@loca/shared";
 import { fakeLocalCore, type FakeLocalCore } from "../../test/local-core-fake";
+import { platformStub } from "../../test/platform-stub";
 import { localTransport } from "./local-transport";
+
+type NetFetch = (req: NetRequest) => Promise<NetResponse>;
 
 const ENDPOINT = { baseUrl: "https://core", token: "T", trustMode: "pin", tlsPin: "PIN" } as const;
 
@@ -75,12 +72,13 @@ describe("ApiError", () => {
 });
 
 describe("CoreClient HTTP", () => {
-  let netFetch: ReturnType<typeof vi.fn>;
+  let netFetch: ReturnType<typeof vi.fn<NetFetch>>;
   beforeEach(() => {
-    netFetch = vi.fn();
+    netFetch = vi.fn<NetFetch>();
     setPlatform({
-      net: { fetch: netFetch, connectWebSocket: vi.fn() },
-    } as unknown as Platform);
+      ...platformStub(),
+      net: { ...platformStub().net, fetch: netFetch, connectWebSocket: vi.fn() },
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -153,8 +151,8 @@ describe("CoreClient HTTP", () => {
 
 // Serve the WS-ticket mint the client now calls before opening a socket; any
 // other request 404s (these tests only drive the WS path).
-function ticketFetch(status = 200): ReturnType<typeof vi.fn> {
-  return vi.fn((req: NetRequest): Promise<NetResponse> => {
+function ticketFetch(status = 200): ReturnType<typeof vi.fn<NetFetch>> {
+  return vi.fn<NetFetch>((req) => {
     if (req.url.endsWith("/api/v1/ws/ticket")) {
       return Promise.resolve(
         status === 200
@@ -171,14 +169,16 @@ describe("CoreClient WebSocket dispatch", () => {
   beforeEach(() => {
     last = null;
     setPlatform({
+      ...platformStub(),
       net: {
+        ...platformStub().net,
         fetch: ticketFetch(),
         connectWebSocket: (_url: string) => {
           last = new FakeNetSocket();
           return Promise.resolve(last);
         },
       },
-    } as unknown as Platform);
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -242,12 +242,14 @@ describe("CoreClient WebSocket dispatch", () => {
 
 describe("CoreClient reconnect", () => {
   let sockets: FakeNetSocket[] = [];
-  let netFetch: ReturnType<typeof vi.fn>;
+  let netFetch: ReturnType<typeof vi.fn<NetFetch>>;
   beforeEach(() => {
     sockets = [];
     netFetch = ticketFetch();
     setPlatform({
+      ...platformStub(),
       net: {
+        ...platformStub().net,
         fetch: netFetch,
         connectWebSocket: (_url: string) => {
           const s = new FakeNetSocket();
@@ -255,7 +257,7 @@ describe("CoreClient reconnect", () => {
           return Promise.resolve(s);
         },
       },
-    } as unknown as Platform);
+    });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -279,11 +281,9 @@ describe("CoreClient reconnect", () => {
     expect(sockets.length).toBe(2);
   });
 
-  // Post-M4 the bearer is checked only at the ticket MINT. A 401 at the UPGRADE
-  // layer therefore means a stale/spent ticket, not a dead bearer, so it must be
-  // transient: re-mint a fresh ticket and reconnect, never park in "unauthorized".
-  // (Regression guard: the old code funnelled any "HTTP 401" reason - including
-  // this upgrade-layer one - into the terminal path.)
+  // The bearer is checked only at the ticket MINT, so a 401 at the UPGRADE layer
+  // means a stale/spent ticket, not a dead bearer: re-mint and reconnect rather
+  // than parking in "unauthorized".
   it("treats an upgrade-layer 401 as transient (re-mints and reconnects)", async () => {
     vi.useFakeTimers();
     const c = new CoreClient(ENDPOINT);
@@ -490,15 +490,16 @@ describe("CoreClient over the in-process transport", () => {
   beforeEach(() => {
     core = fakeLocalCore();
     setPlatform({
+      ...platformStub(),
       localCore: core,
-      // Deliberately absent: reaching the network from a local client is the
-      // failure this transport exists to prevent, so it must throw rather than
-      // quietly succeed.
+      // Reaching the network from a local client is the failure this transport
+      // exists to prevent, so both arms must throw rather than quietly succeed.
       net: {
+        ...platformStub().net,
         fetch: () => Promise.reject(new Error("the network must not be reached")),
         connectWebSocket: () => Promise.reject(new Error("the network must not be reached")),
       },
-    } as unknown as Platform);
+    });
   });
   afterEach(() => {
     vi.useRealTimers();

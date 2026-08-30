@@ -1,10 +1,9 @@
 // Hardware introspection + per-device model recommendations.
 //
-// HardwareInfo is produced by the `loca-core-hwinfo` helper binary and consumed
-// by core's fit engine. BucketRecommendation/RecommendationSet are the wire shape
-// of GET /api/v1/models/recommend; CatalogModelView is one row of
-// GET /api/v1/models/catalog (the model browser). The fit math itself lives in
-// core (packages/loca-core/src/models/fit.ts); these are just the shared shapes.
+// HardwareInfo is produced by the core's hardware probe and consumed by its fit
+// engine. BucketRecommendation/RecommendationSet are the wire shape of
+// GET /api/v1/models/recommend; CatalogModelView is one row of
+// GET /api/v1/models/catalog (the model browser). These are just the shapes.
 
 import type { SttFamily, TtsFamily } from "./catalog.ts";
 
@@ -81,15 +80,10 @@ export const LOOP_RESISTANT_SAMPLER_ORDER: readonly string[] = [
  *  a small instruct model.
  *
  *  `topP` and `repeatPenalty` match every family in the catalog (Qwen 3.5,
- *  Qwen 3.6, Gemma 4), which is not a coincidence: both vendors publish these
- *  same two numbers as their recommendation. They previously read 0.8 and 1.05,
- *  which matched no catalog model and no vendor, and disagreed with the schema
- *  defaults the settings panel displays. That disagreement was invisible while
- *  the core read settings sparsely, because the hardcoded fallback here won and
- *  the schema value never arrived; resolving defaults (D-037) is what made the
- *  two sources meet. Keep them in step with the catalog families, and if a
- *  future family needs different numbers, give that family its own `sampling`
- *  rather than moving these. See D-072. */
+ *  Qwen 3.6, Gemma 4), which both vendors publish as their recommendation, and
+ *  match the schema defaults the settings panel displays. Keep them in step
+ *  with the catalog families; a family needing different numbers gets its own
+ *  `sampling` rather than moving these. */
 export const DEFAULT_SAMPLING: Sampling = {
   temperature: 0.7,
   topP: 0.95,

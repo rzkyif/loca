@@ -3,18 +3,14 @@
 // from the root `deno.json` `workspace` array (the single source of truth for
 // packages).
 //
-// Each member is run in isolation via its own `deno task`, so the root's
-// same-named aggregate is never re-entered (a `deno task -r <verb>` / glob
-// `--filter` would also run the root task and recurse). Per-package tasks live
-// in each package's `deno.json`; this script is only the fan-out.
+// Each member runs in isolation via its own `deno task`, so the root's
+// same-named aggregate is never re-entered (`deno task -r` would recurse).
 //
-// Packages run concurrently (bounded pool); each package's output is buffered
-// while it runs and always written in full to `.gate-logs/<verb>-<pkg>.log`
-// (gitignored, overwritten per run). The console stays concise: a passing
-// package prints one `ok` line; a failing one prints the last 20 output lines
-// plus the log path and a rerun command. When the CI env var is set the full
-// output is printed instead (the log file is unreadable in CI). Cap the pool
-// with LOCA_PKG_CONCURRENCY (defaults to the host's logical core count).
+// Packages run concurrently (bounded pool, capped by LOCA_PKG_CONCURRENCY);
+// each one's output is buffered and always written in full to
+// `.gate-logs/<verb>-<pkg>.log`. The console stays concise: `ok` on a pass, the
+// last 20 lines plus log path and rerun command on a failure, or the full output
+// when CI is set (the log file is unreadable there).
 //
 // Usage: deno run -A scripts/pkg.ts <verb>
 
@@ -61,8 +57,7 @@ const concurrency = Math.max(
   Number(Deno.env.get("LOCA_PKG_CONCURRENCY")) || navigator.hardwareConcurrency || 4,
 );
 
-// Color only when stdout is a real terminal and NO_COLOR is unset, so piping the
-// gate output to a file (or NO_COLOR=1) yields clean, escape-free text.
+// Color only on a real terminal with NO_COLOR unset, so piped output is clean.
 const useColor = !Deno.env.get("NO_COLOR") && Deno.stdout.isTerminal();
 
 function color(code: string, s: string): string {
@@ -76,9 +71,8 @@ const EXCERPT_LINES = 20;
 const LOG_DIR = ".gate-logs";
 await Deno.mkdir(join(ROOT, LOG_DIR), { recursive: true });
 
-// Dot reporters (deno test, vitest) emit one marker per line when piped (deno:
-// "." pass, "," ignored, "!" fail); pack consecutive marker-only lines into
-// 80-column rows so logs and CI output stay readable.
+// Dot reporters emit one marker per line when piped; pack consecutive
+// marker-only lines into 80-column rows so the output stays readable.
 function packDotLines(out: string): string {
   const packed: string[] = [];
   let dots = "";
@@ -116,8 +110,7 @@ async function worker() {
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     const decoder = new TextDecoder();
     const out = packDotLines((decoder.decode(stdout) + decoder.decode(stderr)).trimEnd());
-    // Full output is always preserved, pass or fail, so a concise console never
-    // hides anything (e.g. warnings emitted on a passing run).
+    // Preserved pass or fail, so the concise console never hides a warning.
     const logRel = `${LOG_DIR}/${verb.replaceAll(":", "-")}-${target.rel.split("/").pop()}.log`;
     await Deno.writeTextFile(join(ROOT, logRel), out + "\n");
     if (code === 0) {

@@ -1,33 +1,19 @@
-//! The seam onto the download manager, which is D7's.
+//! The seam onto the download manager.
 //!
-//! Six of this package's seventeen routes are D7-backed but mounted here, the
-//! way the TypeScript mounts them under `/api/v1/models`. Rather than wait for
-//! D7, each `downloadManager()` call becomes one method on a narrow trait, with
-//! a stub here and the real implementation in `downloads/`. That is the pattern
-//! D9 established in `storage/deps.rs`.
+//! Six of this module's seventeen routes are download-backed but mounted here,
+//! so each call becomes one method on a narrow trait with a stub here and the
+//! real implementation in `downloads/`.
 //!
-//! # What the stub answers, and why each one
+//! The unwired stub answers what is TRUE on a core that has downloaded nothing
+//! (an empty snapshot, a successful reconcile, no-op cancel/retry/remove) and
+//! refuses with `server_unavailable` where an answer would be a lie: a wrong
+//! "already have" from `probe` is a model that silently never downloads, and
+//! `enqueue_models` is the same one step later.
 //!
-//! The split is between an answer that is TRUE on a core that has downloaded
-//! nothing, and an answer that would be a lie:
-//!
-//! | method                | unwired              | reasoning                                                          |
-//! | --------------------- | -------------------- | ------------------------------------------------------------------ |
-//! | `models_snapshot`     | empty                | nothing was enqueued, so an empty queue is the correct answer      |
-//! | `reconcile_completed` | success              | there is nothing to reconcile                                      |
-//! | `cancel`/`retry`/`remove` | no-op            | already a no-op for an unknown id in the TypeScript                |
-//! | `probe`               | `server_unavailable` | a wrong "already have" is a model that silently never downloads    |
-//! | `enqueue_models`      | `server_unavailable` | same, one step later                                               |
-//!
-//! That split is what lets thirteen of the seventeen routes carry real
-//! conformance coverage before D7 exists.
-//!
-//! `probe` is on the seam rather than implemented here even though half of it
-//! is a local presence check. The other half is `parseSource`'s URL derivation
-//! and the `x-linked-size` HEAD, both in `downloads/sources.ts`. Splitting it
-//! would put the `@spec` to relative-path mapping in two places, which the
-//! TypeScript already does once too often (`resolveHfPath` and `parseSource`
-//! derive the same path by different code).
+//! `probe` is on the seam rather than implemented here even though half of it is
+//! a local presence check: the other half is the source URL derivation and the
+//! size HEAD, and splitting it would put the `@spec` to relative-path mapping in
+//! two places.
 
 use std::sync::Arc;
 
@@ -49,10 +35,8 @@ pub trait Downloads: Send + Sync {
     /// Enqueue `(source, group)` pairs into the models destination. Returns one
     /// queue-row id per file, which is what cancel, retry and remove accept.
     ///
-    /// Fallible where the TypeScript's is not. There it is fire-and-forget,
-    /// with failures surfacing on the `downloads.snapshot` broadcast the caller
-    /// is already subscribed to. Here the stub has to be able to refuse, because
-    /// returning an empty `jobIds` would report that nothing needed downloading.
+    /// Fallible so the unwired stub can refuse: returning an empty `jobIds`
+    /// would report that nothing needed downloading.
     fn enqueue_models(&self, items: &[(String, String)]) -> Result<Vec<String>>;
 
     /// Every queue row whose destination is `models`.
@@ -69,10 +53,9 @@ pub trait Downloads: Send + Sync {
 
 /// Everything the model routes need from the rest of the core.
 ///
-/// Built by `boot` and handed to the route slice, following `StorageDeps`. The
-/// requirements notifier is D9's trait rather than a second one of this
-/// package's own: two traits for one notification is how two subsystems end up
-/// disagreeing about whether a requirement changed.
+/// Built by `boot` and handed to the route slice. The requirements notifier is
+/// `storage`'s trait rather than a second one of this module's own: two traits
+/// for one notification is how two subsystems end up disagreeing.
 #[derive(Clone)]
 pub struct ModelsDeps {
     pub downloads: Arc<dyn Downloads>,
@@ -104,7 +87,7 @@ impl Default for ModelsDeps {
     }
 }
 
-/// The stub behind the download seam until D7 lands.
+/// The stub behind the download seam.
 pub struct Unwired;
 
 fn unavailable<T>() -> Result<T> {

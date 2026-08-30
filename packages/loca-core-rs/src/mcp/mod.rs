@@ -1,41 +1,11 @@
 //! MCP server connections: stdio, remote HTTP, and OAuth token resolution.
 //!
-//! Work package **D11** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
-//! An MCP server is the second kind of tool provider, alongside an extension.
-//! It supplies tools (run on the server, surfaced next to extension tools),
-//! prompts (`/`-triggered commands) and resources (`@`-referenceable). Servers
-//! are configured by the user and their capabilities are fetched live on
-//! connect.
-//!
-//! # One module, not two
-//!
-//! The TypeScript put the routes in the engine and the subsystem in the Deno
-//! shell, bridged by a `McpAdminHost` with eighteen methods. That split was the
-//! `Host` abstraction and nothing else, so it is gone: [`Mcp`] is the whole
-//! subsystem and `routes.rs` calls it directly.
-//!
-//! # Trust and consent
-//!
-//! An stdio server runs an arbitrary local command OUTSIDE the tool sandbox and
-//! a remote server is an arbitrary endpoint, so **enabling a server is the
-//! consent gate**. Servers are created disabled, the client confirms before
-//! flipping one on, and the whole server is the trust boundary: MCP tools carry
-//! no per-permission grants, only an enable toggle. Per-tool and per-prompt
-//! toggles default off so a freshly enabled server cannot flood tool selection
-//! or the `/` menu.
-
-//! # Outbound network
-//!
-//! Every request this module makes is one the user asked for: a sign-in, a
-//! connect to a server they enabled, or a tool call inside a turn they sent.
-//! There is no timer, no poll, and no discovery at boot. The two paths not
-//! triggered by an action in the current session are [`Mcp::start`], which
-//! connects the servers already enabled, and the backoff reconnect after a
-//! dropped connection. Both re-establish a connection the user explicitly
-//! enabled and neither can reach an endpoint they did not name; D-032 records
-//! that decision, and `start` is the single call site if it is ever revisited.
+//! Enabling a server is the consent gate: an stdio server runs an arbitrary
+//! local command outside the tool sandbox and a remote server is an arbitrary
+//! endpoint, so servers are created disabled and per-tool/per-prompt toggles
+//! default off. Every request here is user-initiated; the only non-interactive
+//! paths ([`Mcp::start`] and the reconnect backoff) re-establish a connection
+//! the user already enabled and never reach an endpoint they did not name.
 
 pub mod connector;
 pub mod manager;
@@ -73,14 +43,9 @@ use session::Connector;
 use stdio::StdioSupport;
 use tokens::{ResolvableResource, ResourceReader, TokenResult};
 
-/// The MCP subsystem: the configured servers, their live connections, and the
-/// sign-in flows that authorize the remote ones.
-///
-/// **Exactly one per process.** It owns the live connection map, the in-flight
-/// sync, the reconnect timers and the pending OAuth listeners. A second
-/// instance would spawn a second child for a server the first already runs, and
-/// a sign-in started through one would complete into a vault the other never
-/// re-reads.
+/// The MCP subsystem: configured servers, live connections, and sign-in flows.
+/// Exactly one per process: it owns the connection map, reconnect timers and
+/// pending OAuth listeners.
 #[derive(Clone)]
 pub struct Mcp {
     inner: Arc<Inner>,
@@ -107,8 +72,8 @@ impl Mcp {
         Self::with_connector(db, vault, frames, connector)
     }
 
-    /// The seam a test uses: everything else, with connections opened by
-    /// something other than a subprocess or a URL.
+    /// The test seam: connections opened by something other than a subprocess
+    /// or a URL.
     pub fn with_connector(
         db: Db,
         vault: Vault,
@@ -126,18 +91,12 @@ impl Mcp {
         }
     }
 
-    /// Whether this device can run a local MCP server, which is what M3's
-    /// `capabilities.stdioMcp` reports.
+    /// Whether this device can run a local MCP server (`capabilities.stdioMcp`).
     pub fn stdio_supported(&self) -> bool {
         self.inner.manager.stdio_supported()
     }
 
-    /// Connect to the servers the user has already enabled.
-    ///
-    /// Runs in the background: each server's tools, prompts and resources
-    /// become available as its connection settles, a failure is captured as
-    /// that server's `error` status, and neither blocks boot. See the module
-    /// header and D-032 for why a connection here is inside the network rule.
+    /// Connect to the servers the user has already enabled, in the background.
     pub fn start(&self) {
         let mcp = self.clone();
         tokio::spawn(async move {
@@ -147,21 +106,11 @@ impl Mcp {
         });
     }
 
-    /// Cancel every pending reconnect and sign-in, and close every connection,
-    /// so a spawned stdio child is terminated rather than orphaned on exit.
+    /// Cancel every pending reconnect and sign-in, and close every connection.
     ///
-    /// Called on the way down, before the sidecar manager stops its children,
-    /// so that a server is asked to exit on its own before it is reaped.
-    ///
-    /// **This does not WAIT for the children.** Closing a session cancels the
-    /// protocol and hands its child to `stdio::terminate`, which spawns the
-    /// SIGTERM-then-SIGKILL sequence and returns, so `shutdown` returns while
-    /// those tasks are still running. That is deliberate rather than
-    /// overlooked: making it wait would mean an unresponsive server holds up
-    /// the whole shutdown for its grace period, and nothing is leaked either
-    /// way, because the sidecar manager stops the same children immediately
-    /// afterwards and D14's `kill_on_drop` backstops both. What the ordering
-    /// buys is the polite exit in the common case, not a guarantee.
+    /// Does not wait for stdio children: closing a session hands the child to
+    /// `stdio::terminate`, which runs SIGTERM-then-SIGKILL in its own task. The
+    /// sidecar manager stops the same children right after, so nothing leaks.
     pub async fn shutdown(&self) {
         self.inner.flows.cancel_all();
         self.inner.manager.shutdown().await;
@@ -216,9 +165,7 @@ impl Mcp {
         }
     }
 
-    /// Every tool from every connected server, in the shared `Tool` shape, so
-    /// MCP tools sit next to extension tools in the Tools UI and go through the
-    /// same relevance machinery.
+    /// Every tool from every connected server, in the shared `Tool` shape.
     pub async fn list_all_tools(&self) -> Result<Vec<Tool>> {
         let mut out = Vec::new();
         for server in self.inner.registry.list().await? {
@@ -232,9 +179,8 @@ impl Mcp {
                     parameters: tool.input_schema,
                     triggers: Vec::new(),
                     fn_export: String::new(),
-                    // MCP tools default to always-available, so the stored set
-                    // is an opt-OUT: a name in it folds that tool into the
-                    // relevance filter instead.
+                    // The stored set is an opt-OUT: MCP tools default to
+                    // always-available.
                     always_available: !server.tool_always_available_off.contains(&tool.name),
                     platforms: Vec::new(),
                     enabled: server.tool_enabled.contains(&tool.name),
@@ -249,7 +195,6 @@ impl Mcp {
     }
 
     /// Every prompt from every connected server, with the user's enable flag.
-    /// An enabled prompt becomes a `/`-triggered command.
     pub async fn list_prompts(&self) -> Result<Vec<McpPrompt>> {
         let mut out = Vec::new();
         for server in self.inner.registry.list().await? {
@@ -267,8 +212,7 @@ impl Mcp {
         Ok(out)
     }
 
-    /// Every resource from every connected server. All of them are
-    /// `@`-referenceable; there is no per-resource toggle.
+    /// Every resource from every connected server; there is no per-resource toggle.
     pub async fn list_resources(&self) -> Result<Vec<McpResource>> {
         let mut out = Vec::new();
         for server in self.inner.registry.list().await? {
@@ -298,8 +242,7 @@ impl Mcp {
         Ok(self.project(config))
     }
 
-    /// Delete the row, its bearer token and its OAuth bag, and abandon any
-    /// sign-in that was waiting on a browser for it.
+    /// Delete the row, its secrets, and any sign-in waiting on a browser for it.
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.inner.flows.cancel(id);
         self.inner.registry.delete(id).await?;
@@ -330,8 +273,7 @@ impl Mcp {
         Ok(self.project(config))
     }
 
-    /// Always-available is stored as an opt-out set, so turning it OFF adds the
-    /// name and turning it ON removes it.
+    /// Always-available is stored as an opt-out set, so OFF adds the name.
     pub async fn set_tool_always_available(
         &self,
         id: &str,
@@ -353,11 +295,8 @@ impl Mcp {
 
     // --- secrets -------------------------------------------------------------
 
-    /// Store, clear, or leave alone a server's bearer token.
-    ///
-    /// `None` leaves the stored secret untouched, an empty string clears it,
-    /// and a value replaces it. Returns what to record on the row, or `None`
-    /// when nothing changed.
+    /// `None` leaves the stored bearer token untouched, an empty string clears
+    /// it, a value replaces it. Returns the new `has_auth`, or `None` if unchanged.
     pub async fn apply_auth_token(&self, id: &str, token: Option<&str>) -> Result<Option<bool>> {
         let name = secret_key::auth_secret_name(id);
         match token {
@@ -373,8 +312,7 @@ impl Mcp {
         }
     }
 
-    /// Both vault entries for a server, best effort: a vault that cannot be
-    /// reached must not leave the row behind.
+    /// Best effort: a vault that cannot be reached must not leave the row behind.
     async fn forget_secrets(&self, id: &str) {
         for name in [
             secret_key::auth_secret_name(id),
@@ -396,8 +334,7 @@ impl Mcp {
         Ok(())
     }
 
-    /// Drop a server's live session, so a following resync reconnects it with
-    /// the new configuration.
+    /// Drop a server's live session so a following resync reconnects it.
     pub async fn disconnect(&self, id: &str) {
         self.inner.manager.disconnect(id).await;
     }
@@ -409,9 +346,7 @@ impl Mcp {
             .broadcast_all(&ServerToClientFrame::McpSnapshot);
     }
 
-    /// Fetch a prompt from a connected server and flatten its messages into one
-    /// instruction string. A live round-trip: the client calls this at send
-    /// time to fold a `/prompt` reference into the turn's system prompt.
+    /// Fetch a prompt and flatten its messages into one instruction string.
     pub async fn resolve_prompt(
         &self,
         id: &str,
@@ -422,8 +357,7 @@ impl Mcp {
         Ok(tokens::flatten_prompt_messages(&messages))
     }
 
-    /// Call a tool on a connected server. The turn's abort is the caller's:
-    /// dropping this future cancels the wait.
+    /// Call a tool on a connected server. Dropping the future cancels the wait.
     pub async fn call_tool(
         &self,
         server_id: &str,
@@ -461,8 +395,7 @@ impl Mcp {
     pub async fn start_oauth(&self, id: &str, url: &str) -> Result<Option<String>> {
         let mcp = self.clone();
         let server_id = id.to_string();
-        // Marking the server authorized and reconnecting happens when the
-        // browser comes back, which is long after this request answered.
+        // Runs when the browser comes back, long after this request answered.
         let on_complete: OnComplete = Box::new(move |ok| {
             if !ok {
                 return;
@@ -491,10 +424,6 @@ impl Mcp {
             .await
     }
 
-    /// The vault this subsystem writes its credentials to. Test-only: the
-    /// production callers all go through [`Mcp::apply_auth_token`] and the
-    /// OAuth stores, and widening this would make the D-027 boundary a
-    /// convention rather than a structure.
     #[cfg(test)]
     pub(crate) fn vault_for_test(&self) -> &Vault {
         &self.inner.vault
@@ -504,8 +433,7 @@ impl Mcp {
         self.inner.flows.cancel(id);
     }
 
-    /// Whether a server can start a sign-in at all: it has to be remote and
-    /// have a URL to discover metadata from.
+    /// A sign-in needs a remote server with a URL to discover metadata from.
     pub fn can_sign_in(server: &McpServer) -> bool {
         server.kind == McpTransportKind::Remote
             && server
@@ -532,12 +460,7 @@ impl ResourceReader for Mcp {
     }
 }
 
-/// The other tool provider's catalog, as the merged `/api/v1/tools` route sees
-/// it.
-///
-/// `extensions::McpTools` is declared by the consumer so that nothing under
-/// `extensions/` imports an `mcp::` type; the implementation is this one line,
-/// over the inherent method above.
+/// Declared by the consumer so nothing under `extensions/` imports an `mcp::` type.
 #[async_trait::async_trait]
 impl crate::extensions::McpTools for Mcp {
     async fn list_all_tools(&self) -> Result<Vec<Tool>> {

@@ -1,39 +1,23 @@
 //! Two successive partial parses in, one batch of stream deltas out.
 //!
-//! This is the whole of incremental streaming. The token loop parses the text it
-//! has accumulated so far after every token (`is_partial = true`), and the
-//! difference between that parse and the previous one IS the delta to emit. An
-//! implementation that parsed only at the end would still produce the right
-//! final message and would lose every incremental tool-call and reasoning
-//! delta, which the client renders live.
+//! This is the whole of incremental streaming. The token loop parses the
+//! accumulated text after every token (`is_partial = true`), and the difference
+//! between that parse and the previous one IS the delta to emit; parsing only
+//! at the end would produce the right final message and lose every incremental
+//! tool-call and reasoning delta.
 //!
-//! # A port, not an invention
+//! [`diff_messages`] is a faithful port of llama.cpp's
+//! `common_chat_msg_diff::compute_diffs` over `string_diff`, which is the
+//! specification the tests below are written from. Ported rather than requested
+//! across the shim because it is pure string and vector logic, so it stays in
+//! the DEFAULT CI gate rather than behind an FFI boundary CI never builds.
 //!
-//! [`diff_messages`] is a faithful port of
-//! `common_chat_msg_diff::compute_diffs` (`vendor/llama.cpp/common/chat.cpp:266-332`)
-//! over `string_diff` (`:56-69`). The upstream file is the specification, and
-//! the tests below are written from ITS cases rather than from this
-//! implementation, so a reviewer can check them with the C++ open beside this.
-//!
-//! It is ported rather than requested across the shim on purpose. It is pure
-//! string and vector logic with no llama.cpp type in it, so porting keeps the
-//! highest-consequence logic in the DEFAULT CI gate (where `local-inference` is
-//! off) instead of behind an FFI boundary that CI never builds.
-//!
-//! # Failing rather than resyncing
-//!
-//! Upstream throws in three states a partial parser can genuinely reach: fewer
-//! tool calls than before, a tool name that changed to something that is not an
-//! extension of the old one, and a content string that is not an extension of
-//! the previous one. Those become `Err` here, and the turn fails.
-//!
-//! The alternative was to resync: treat the new parse as authoritative and emit
-//! the whole of it. That keeps the turn alive at the cost of duplicating text
-//! into the message that gets PERSISTED, which would hide exactly the
-//! degradation this stage exists to detect. Ruled: mirror upstream and fail.
-//! Nothing already emitted is lost, because deltas reach the consumer before the
-//! error does (see `super::super::llm::provider`'s partial-drain note, and the
-//! channel ordering in the token loop).
+//! Three states a partial parser can reach are `Err` and fail the turn: fewer
+//! tool calls than before, a tool name that is not an extension of the old one,
+//! and a content string that is not an extension of the previous one. Resyncing
+//! instead would keep the turn alive at the cost of duplicating text into the
+//! PERSISTED message, hiding the degradation this stage exists to detect.
+//! Nothing already emitted is lost: deltas reach the consumer before the error.
 
 use crate::llm::{LlmDelta, ToolCallDelta};
 
@@ -53,15 +37,11 @@ impl std::fmt::Display for DiffError {
 
 type Result<T> = std::result::Result<T, DiffError>;
 
-/// The suffix `current` adds to `last`.
-///
-/// Ported from `string_diff` (`common/chat.cpp:56-69`), including the case that
-/// looks like a bug and is not: when `current` is a PREFIX of `last` the answer
-/// is the empty string, not an error. Upstream's comment explains it, and the
-/// explanation is the reason it cannot be simplified away: the previous
-/// generation ended on a partial stop word that had not been erased yet, and
-/// this one ended on the complete stop word, which was. The text legitimately
-/// got shorter.
+/// The suffix `current` adds to `last`, including the case that looks like a
+/// bug and is not: when `current` is a PREFIX of `last` the answer is the empty
+/// string rather than an error, because the previous generation ended on a
+/// partial stop word that had not been erased yet and this one ended on the
+/// complete stop word, which was.
 fn string_diff(last: &str, current: &str) -> Result<String> {
     if last.is_empty() {
         return Ok(current.to_string());
@@ -77,15 +57,12 @@ fn string_diff(last: &str, current: &str) -> Result<String> {
     )))
 }
 
-/// Every delta between two successive parses of one turn's output.
+/// Every delta between two successive parses of one turn's output. `ids`
+/// assigns and remembers a tool-call id per index, because llama.cpp leaves it
+/// empty for most templates and the consumer replays it by id.
 ///
-/// `ids` assigns and remembers a tool-call id per index, because llama.cpp
-/// leaves it empty for most templates and the consumer replays it by id. See
-/// [`super::ids`].
-///
-/// Returns deltas in upstream's order: reasoning, then content, then tool calls.
-/// The order matters to a consumer that renders as it reads, and it is the order
-/// `llama-server` sends, which is what the parity test pins.
+/// Deltas come back in upstream's order: reasoning, then content, then tool
+/// calls, which is what a consumer rendering as it reads needs.
 pub fn diff_messages(
     previous: &ParsedMessage,
     current: &ParsedMessage,
@@ -137,11 +114,10 @@ pub fn diff_messages(
                 "invalid diff: the tool call being extended vanished".to_string(),
             ));
         };
-        // The name may GROW during incremental parsing: empty to non-empty when
-        // it is first discovered, or a prefix to a longer string as more of it
-        // is parsed. A name that changes to something which is not an extension
-        // means the parse resynchronised onto a different call, and continuing
-        // would attribute one call's arguments to another's name.
+        // The name may GROW during incremental parsing. One that changes to
+        // something which is not an extension means the parse resynchronised
+        // onto a different call, and continuing would attribute one call's
+        // arguments to another's name.
         if before.name != after.name
             && !before.name.is_empty()
             && !after.name.is_empty()
@@ -161,10 +137,8 @@ pub fn diff_messages(
             deltas.push(LlmDelta {
                 tool_calls: vec![ToolCallDelta {
                     index,
-                    // Only on a change, matching upstream: resending the id and
-                    // name with every argument fragment would differ from what
-                    // `llama-server` streams, which the parity test compares
-                    // against.
+                    // Only on a change: resending identity with every argument
+                    // fragment would differ from what `llama-server` streams.
                     id: identity_changed.then(|| ids.id_for(index, &after.id)),
                     name: identity_changed.then(|| after.name.clone()),
                     arguments_delta: (!arguments.is_empty()).then_some(arguments),
@@ -252,10 +226,9 @@ mod tests {
 
     #[test]
     fn a_shrink_yields_empty_rather_than_an_error() {
-        // Upstream's own comment: the previous generation ended on a partial
-        // stop word that was not erased, and this one ended on the stop word,
-        // which was. Treating it as an error would fail a turn that is ending
-        // NORMALLY, which is the worst possible place to be strict.
+        // The previous generation ended on a partial stop word that was not
+        // erased, and this one ended on the stop word, which was. Treating it
+        // as an error would fail a turn that is ending NORMALLY.
         assert_eq!(string_diff("Hello wor", "Hello").unwrap(), "");
     }
 
@@ -314,11 +287,8 @@ mod tests {
 
     #[test]
     fn a_reasoning_shrink_changes_the_string_but_emits_no_delta() {
-        // The reasoning twin of the content case above. Found by mutation: the
-        // content suppression was tested and the reasoning one was not, so
-        // deleting the reasoning guard left every test green. Two channels with
-        // the same rule need the same test, because "the other one is covered"
-        // is not coverage.
+        // The reasoning twin of the content case above: two channels with the
+        // same rule need the same test.
         let deltas = diff(&thinking("I was thin", ""), &thinking("I was", ""));
         assert!(
             deltas.is_empty(),
@@ -328,10 +298,9 @@ mod tests {
 
     #[test]
     fn an_identity_only_change_emits_no_argument_fragment() {
-        // The extend path's version of "an empty fragment is not a fragment".
-        // Reachable exactly when a name finishes parsing on a token that added
-        // no arguments, which is ordinary mid-call parsing. Found by mutation:
-        // the NEW-call path was tested and this one was not.
+        // The extend path's version of "an empty fragment is not a fragment",
+        // reachable when a name finishes parsing on a token that added no
+        // arguments.
         let deltas = diff(
             &with_calls(&[call("get_", "{}")]),
             &with_calls(&[call("get_weather", "{}")]),
@@ -519,15 +488,10 @@ mod tests {
     // --- the parity property: this must match what D3's consumer was built on -
 
     /// One scripted generation through two paths, asserting identical deltas.
-    ///
-    /// **This is the whole SSE obligation.** N2 emits no SSE, so "OpenAI-shaped"
-    /// cannot be checked by looking at bytes. What can be checked, and is what
-    /// actually matters, is that the delta sequence this module produces is
-    /// indistinguishable from the one D3's `SseDecoder` + `ChatChunk::to_delta`
-    /// produce from the equivalent `llama-server` stream. Path B below is D3's
-    /// real production code, not a model of it.
-    ///
-    /// It needs no llama.cpp, so it runs in the default gate.
+    /// The local engine emits no SSE, so what can be checked is that its delta
+    /// sequence is indistinguishable from the one `SseDecoder` +
+    /// `ChatChunk::to_delta` produce from the equivalent `llama-server` stream.
+    /// Path B below is that real production code, not a model of it.
     #[test]
     fn the_emitted_deltas_match_what_the_sse_path_would_have_produced() {
         use crate::llm::sse::{ChatChunk, SseDecoder};
@@ -567,8 +531,8 @@ mod tests {
             }
             let chunk: ChatChunk = serde_json::from_str(&event).expect("a fixture chunk");
             let delta = chunk.to_delta();
-            // D3 drops empty deltas rather than yielding them, and so must this
-            // module: that is the property, not an artefact of the fixture.
+            // The SSE path drops empty deltas rather than yielding them, and so
+            // must this module: that is the property, not the fixture.
             if !delta.is_empty() {
                 theirs.push(delta);
             }
@@ -583,10 +547,9 @@ mod tests {
 
     #[test]
     fn the_parity_property_can_fail() {
-        // D-105: a parity assertion is worthless if both sides can drift
-        // together. This pins that the comparison discriminates, by feeding path
-        // B a stream that differs in exactly the way a regression would (an
-        // extra empty delta surviving the suppression).
+        // A parity assertion is worthless if both sides can drift together, so
+        // this pins that the comparison discriminates: path B gets a stream
+        // differing exactly as a regression would.
         use crate::llm::sse::ChatChunk;
 
         let chunk: ChatChunk =

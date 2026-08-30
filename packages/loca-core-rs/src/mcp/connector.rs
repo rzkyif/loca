@@ -1,9 +1,5 @@
-//! Choosing a transport for a server, which is the only place the two halves
-//! meet.
-//!
-//! Separate from the manager so the manager never learns what a subprocess or
-//! a URL is, and so a test can substitute a connector that returns an
-//! in-process session.
+//! Choosing a transport for a server. Separate from the manager so a test can
+//! substitute a connector that returns an in-process session.
 
 use std::sync::Arc;
 

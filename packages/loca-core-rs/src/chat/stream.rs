@@ -1,30 +1,20 @@
 //! The per-turn record and the registry of in-flight turns.
 //!
-//! Ports `core-engine/src/services/chat-types.ts` and the stream-lifecycle half
-//! of `chat.ts` (`:82-87`, `:104-153`, `:215-264`).
-//!
-//! # The two buffers, and why a turn needs them at all
-//!
-//! A turn keeps running when its client disconnects. That is stated as an
-//! invariant in `chat.ts:15-22` and the Client depends on it: a transport drop
-//! detaches rather than interrupting (`streaming.svelte.ts:105-113`), which is
-//! what makes a core swap transparent. Broadcasting to a client with no live
-//! connection is a no-op and nothing is buffered on the bus, so the turn holds
-//! its own catch-up state:
+//! A turn keeps running when its client disconnects: a transport drop detaches
+//! rather than interrupting, which is what makes a core swap transparent.
+//! Broadcasting to a client with no live connection is a no-op and nothing is
+//! buffered on the bus, so the turn holds its own catch-up state:
 //!
 //! - [`ActiveStream::live_messages`], the born-but-not-yet-finalized messages of
 //!   this turn in birth order, each with the `afterId` it was born at, and
 //! - [`ActiveStream::outstanding_prompts`], the tool prompts awaiting an answer.
 //!
-//! A reconnecting client sends `chat.subscribe` and gets both replayed, after
-//! which live deltas resume on the new socket because the owning client id is
-//! stable across reconnect. A core restart drops both, which is accepted.
+//! A reconnecting client sends `chat.subscribe` and gets both replayed; a core
+//! restart drops both, which is accepted.
 //!
-//! Both are `IndexMap`, not `HashMap`, and that is load-bearing rather than
-//! tidy. The TypeScript replays `Map` values, which iterate in insertion order,
-//! and the client positions each replayed message by the `afterId` of the one
-//! before it. Replaying a reasoning bubble after the assistant bubble it
-//! precedes puts the transcript back in the wrong order.
+//! Both are `IndexMap`, not `HashMap`, and that is load-bearing: the client
+//! positions each replayed message by the `afterId` of the one before it, so
+//! replaying a reasoning bubble after its assistant reorders the transcript.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};

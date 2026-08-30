@@ -1,19 +1,8 @@
-//! Getting one blocking turn onto a stream, and off it again when the consumer
-//! leaves.
-//!
-//! Three constraints decide the shape here and none of them is negotiable:
-//!
-//! - llama.cpp decode is blocking CPU work, so it cannot run on the async
-//!   runtime's worker threads without starving every other task in the core.
-//! - [`shim::Context`] is `Send` and deliberately not `Sync`, so exactly one
-//!   turn may touch it and the guard has to travel to the blocking thread.
-//! - `spawn_blocking` tasks are NOT cancellable by the runtime: they run to
-//!   completion whatever happens to the future awaiting them. So cancellation
-//!   has to be cooperative, and the loop has to notice.
-//!
-//! The channel is what makes all three work at once. It is BOUNDED (D-096): an
-//! unbounded one would let a stalled WebSocket consumer buffer an entire
-//! generation in memory, which is the failure mode the frame bus was swept for.
+//! One blocking turn onto a bounded delta stream. Decode is blocking CPU work
+//! on a `Send`-only `Context`, so it runs on a blocking thread that cannot be
+//! cancelled by the runtime; cancellation is cooperative via the channel, and
+//! the channel is bounded so a stalled consumer applies backpressure instead of
+//! buffering a whole generation.
 
 use std::sync::Arc;
 
@@ -25,11 +14,7 @@ use crate::llm::{DeltaStream, LlmDelta, LlmRequest, ProviderError};
 use super::engine::{ContextState, LocalEngine};
 use super::generate::{self, DeltaSink};
 
-/// How many deltas may be in flight before the token loop waits.
-///
-/// Small on purpose. A slow consumer should apply backpressure to generation
-/// rather than let it run ahead into memory, and a few tokens of slack is enough
-/// to keep the loop from stalling on ordinary scheduling jitter.
+/// Small on purpose: a slow consumer should throttle generation.
 const DELTA_CHANNEL_CAPACITY: usize = 8;
 
 /// Run one turn and stream its deltas.
@@ -38,10 +23,6 @@ pub fn stream_turn(engine: Arc<LocalEngine>, req: LlmRequest) -> DeltaStream {
 
     tokio::spawn(async move {
         let Some(ready) = engine.ready().await else {
-            // The turn arrived with no model resident. `ensure_loaded` has
-            // already decided this is not a failure (the file is missing, or the
-            // provider is external), so the diagnosis belongs here, where there
-            // is a request to attach it to.
             let _ = tx
                 .send(Err(ProviderError::transport(
                     "no local model is loaded. Check the model path in settings, \
@@ -51,10 +32,8 @@ pub fn stream_turn(engine: Arc<LocalEngine>, req: LlmRequest) -> DeltaStream {
             return;
         };
 
-        // Owned, so it can cross onto the blocking thread and be held there for
-        // the whole generation. This is also the serialisation point: a second
-        // local turn waits here, which is what `--parallel 1` bought and what
-        // D3's scheduler already assumes.
+        // Owned so it can cross to the blocking thread; also the serialisation
+        // point for concurrent local turns.
         let guard = engine.context().lock_owned().await;
         let sender = tx.clone();
 
@@ -69,19 +48,13 @@ pub fn stream_turn(engine: Arc<LocalEngine>, req: LlmRequest) -> DeltaStream {
             };
             let mut sink = ChannelSink { tx: sender };
             if let Err(err) = generate::run_turn(&ready, state, &req, &mut sink) {
-                // AFTER every delta the turn already produced, never instead of
-                // them: the channel makes that ordering structural rather than a
-                // code path that can be inverted. Content the model really
-                // generated is never discarded by a later failure.
+                // After every delta already produced, never instead of them.
                 let _ = sink.tx.blocking_send(Err(err));
             }
         })
         .await;
 
         if let Err(err) = joined {
-            // The blocking thread panicked or was aborted at shutdown. Saying so
-            // is better than a stream that simply ends, which a consumer reads
-            // as a complete but empty answer.
             let _ = tx
                 .send(Err(ProviderError::transport(format!(
                     "the local inference thread stopped: {err}"
@@ -96,11 +69,8 @@ pub fn stream_turn(engine: Arc<LocalEngine>, req: LlmRequest) -> DeltaStream {
     .boxed()
 }
 
-/// The context this turn runs in, created or replaced as needed.
-///
-/// A context built for a different [`crate::inference::options::LoadSpec`] is
-/// dropped rather than reused: it holds the KV cache of a model or a window that
-/// is no longer the one being asked for.
+/// The context this turn runs in; one built for a different `LoadSpec` is
+/// dropped since its KV cache belongs to another model or window.
 fn context_for<'a>(
     guard: &'a mut Option<ContextState>,
     ready: &super::engine::Ready,
@@ -127,14 +97,12 @@ struct ChannelSink {
 
 impl DeltaSink for ChannelSink {
     fn emit(&mut self, delta: LlmDelta) -> bool {
-        // Blocking, and that is the backpressure: a consumer that has stopped
-        // reading stops generation instead of being buffered ahead of.
+        // Blocking is the backpressure.
         self.tx.blocking_send(Ok(delta)).is_ok()
     }
 
     fn wanted(&self) -> bool {
-        // Dropping the stream drops the receiver, which closes the channel. That
-        // is the only cancellation signal there is, by design.
+        // A dropped receiver is the only cancellation signal.
         !self.tx.is_closed()
     }
 }

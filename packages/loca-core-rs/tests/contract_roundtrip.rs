@@ -2,13 +2,10 @@
 //! generated wire types: deserialize the JSON the contract says is valid, then
 //! serialize it back and compare against what Zod itself parsed it to.
 //!
-//! This is the guard on the generated bridge. A normalisation pass that silently
-//! degrades a tagged enum to `#[serde(untagged)]` still compiles, still passes
-//! `cargo check`, and only shows up here or in production.
-//!
-//! The fixtures and the types come from the same `deno task contract` run, so
-//! they cannot drift from each other; the staleness check keeps both in step
-//! with `@loca/shared`.
+//! The guard on the generated bridge: a normalisation pass that silently
+//! degrades a tagged enum to `#[serde(untagged)]` still compiles and only shows
+//! up here or in production. Fixtures and types come from the same
+//! `deno task contract` run, so they cannot drift from each other.
 
 // A test's job here is to fail loudly on a bad fixture, so the crate's
 // unwrap/expect/panic restrictions do not apply.
@@ -23,8 +20,8 @@ struct Fixture {
     #[serde(rename = "type")]
     ty: String,
     value: Value,
-    /// Zod's parsed output, which is the oracle. It differs from `value`
-    /// wherever the schema applies a `.default()`.
+    /// Zod's parsed output, which differs from `value` wherever the schema
+    /// applies a `.default()`.
     expected: Value,
 }
 
@@ -67,10 +64,9 @@ fn every_fixture_round_trips() {
     }
 }
 
-/// The point of generating the inbound half from Zod rather than from the
-/// TypeScript: the constraints survive into `Deserialize`. If these start
-/// passing, the bridge has quietly stopped validating and every `.min()` /
-/// `.regex()` in `@loca/shared` is decorative on the Rust side.
+/// The point of generating the inbound half from Zod: the constraints survive
+/// into `Deserialize`. If these start passing, every `.min()` / `.regex()` in
+/// `@loca/shared` is decorative on the Rust side.
 #[test]
 fn inbound_types_enforce_the_zod_constraints() {
     let empty_stream_id = serde_json::json!({
@@ -93,15 +89,11 @@ fn inbound_types_enforce_the_zod_constraints() {
     );
 }
 
-/// The other half of the policy: an inbound body must IGNORE a field it does
-/// not know, because a newer client adding one has to be processed on the
-/// fields the core does know. `ts-json-schema-generator` writes
-/// `additionalProperties: false` for every interface, so the generator strips
-/// `deny_unknown_fields` from `*Request` types; without that strip this body is
-/// a 400 where the TypeScript returned 200.
-///
-/// Domain types keep their strictness, which is what makes the untagged unions
-/// distinguishable by field set, so this is deliberately scoped to bodies.
+/// An inbound body must IGNORE a field it does not know, so a newer client
+/// adding one is still processed on the fields the core does know. The generator
+/// strips `deny_unknown_fields` from `*Request` types for this. Domain types
+/// keep their strictness, which is what makes the untagged unions
+/// distinguishable by field set.
 #[test]
 fn inbound_request_bodies_ignore_unknown_fields() {
     let with_extra = serde_json::json!({
@@ -119,19 +111,14 @@ fn inbound_request_bodies_ignore_unknown_fields() {
     );
 }
 
-/// A credential must not survive a `{:?}`.
+/// A credential must not survive a `{:?}`. `Debug` is derived on everything the
+/// generator emits, so one `tracing::debug!(?x)` writes a plaintext credential
+/// to `core.log`; this asserts the redaction survives a regeneration.
 ///
-/// typify derives `Debug` on everything it emits, so one `tracing::debug!(?x)`
-/// anywhere in the core is enough to write a plaintext credential to
-/// `core.log`. The generator redacts them; this is the assertion that the
-/// redaction is still there after a regeneration, checked by `cargo test`
-/// rather than only by the generator that produced it.
-///
-/// `PakeFinishResponse.token` is the strongest case in the contract: it is the
-/// bearer token the client uses for every subsequent request, and it is a plain
-/// `string` with no Zod constraint, so it gets no newtype wrapper to hang a
-/// redacting `Debug` on. The log scrubber cannot cover for it either, because a
-/// bare token in a struct dump has no surrounding key to match against.
+/// `PakeFinishResponse.token` is the strongest case: a plain `string` with no
+/// Zod constraint, so no newtype wrapper to hang a redacting `Debug` on, and the
+/// log scrubber cannot help because a bare token in a struct dump has no
+/// surrounding key to match.
 #[test]
 fn a_credential_field_is_redacted_in_debug_output() {
     let response = api::PakeFinishResponse {
@@ -149,8 +136,8 @@ fn a_credential_field_is_redacted_in_debug_output() {
         rendered.contains("<REDACTED>"),
         "expected the redaction marker: {rendered}"
     );
-    // The rest of the struct must still be legible, or the redaction has cost
-    // the diagnostic value the Debug exists for.
+    // The rest must stay legible, or the redaction costs the diagnostic value
+    // the Debug exists for.
     assert!(
         rendered.contains("client-1"),
         "non-secret fields must still print: {rendered}"

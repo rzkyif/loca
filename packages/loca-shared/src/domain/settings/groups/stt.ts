@@ -1,9 +1,6 @@
-// Speech-to-Text: one hybrid group spanning client and core. The voice-capture
-// UX (microphone mode, push-to-talk, transcription post-processing) is stored
-// on the client; the enable toggle and the recognition engine (provider, speech
-// sidecar model, external API) are stored on the core. Each section declares its
-// own `destination` so fields route correctly and the header shows a Client/Core
-// badge per section.
+// Speech-to-Text: one hybrid group. The voice-capture UX is stored on the
+// client; the enable toggle and the recognition engine on the core. Each
+// section declares its own `destination`.
 
 import type { SettingGroup } from "../types.ts";
 import { externalModelSection, speechBackendField } from "./factories.ts";
@@ -19,9 +16,8 @@ export const sttGroup: SettingGroup = {
   iconInactive: "i-material-symbols-mic-outline-rounded",
   sections: [
     {
-      // The enable toggle is core-persisted: core gates the speech sidecar
-      // and the required-downloads snapshot on it, so a client-side value
-      // would leave both running off the schema default.
+      // Core-persisted: core gates the speech sidecar and the
+      // required-downloads snapshot on it.
       label: "General",
       destination: "core",
       fields: [
@@ -76,8 +72,8 @@ export const sttGroup: SettingGroup = {
           description: "Turn other audio down while you dictate, so you can hear yourself.",
           type: "boolean",
           defaultValue: false,
-          // System-volume ducking has no mobile equivalent (the app cannot set
-          // the OS output volume), so this and its target are desktop-only.
+          // The app cannot set the OS output volume on mobile, so this and its
+          // target are desktop-only.
           desktopOnly: true,
           visibleWhen: { field: "stt.enabled", eq: true },
           descriptionTier: "ondemand",
@@ -172,12 +168,12 @@ export const sttGroup: SettingGroup = {
           type: "stt_preset",
           defaultValue: "light-multilingual",
           presetConfig: {
-            // Each card's model and threads resolve from the signed model
-            // catalog at runtime (no static `defaults`), so list the keys they
-            // manage here: editing any flips the preset to Custom.
+            // Each card resolves from the signed catalog at runtime (no static
+            // `defaults`), so list the keys it manages: editing one flips the
+            // preset to Custom.
             managedKeys: ["stt.modelType", "stt.modelPath", "stt.modelFiles", "stt.threads"],
-            // The client fills each card's badges (model name, size, language)
-            // from GET /api/v1/models/stt/catalog; selecting a card calls
+            // The client fills each card's badges from
+            // GET /api/v1/models/stt/catalog; selecting one calls
             // POST /api/v1/models/stt/select { presetId }.
             options: [
               {

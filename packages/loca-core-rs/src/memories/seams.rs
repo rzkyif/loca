@@ -1,26 +1,17 @@
 //! What the extension supervisor reaches memories through.
 //!
-//! The three traits implemented here are DECLARED by `extensions::`, because
-//! the consumer declaring them is what keeps the module graph acyclic: nothing
-//! under `extensions/` imports a `memories::` type, so D4 can call into either
-//! side without a cycle. The implementations belong here, next to the store
-//! that owns the rows.
+//! The three traits implemented here are DECLARED by `extensions::`, because the
+//! consumer declaring them keeps the module graph acyclic. The implementations
+//! belong here, next to the store that owns the rows.
 //!
-//! # Disabled means absent, not hidden
+//! Disabled means ABSENT, not hidden: [`ToolMemoriesStore::get`] and
+//! [`ToolMemoriesStore::get_file`] answer `not_found` with the same message a
+//! missing title gets, because an agent told "it exists but is off" has still
+//! been told the memory exists.
 //!
-//! [`ToolMemoriesStore::get`] and [`ToolMemoriesStore::get_file`] answer
-//! `not_found` for a memory the user disabled, with the same message a missing
-//! title gets. Disabling is how a user takes a memory away from the model, so
-//! anything short of absence hands it straight back: an agent that is told "it
-//! exists but is off" has still been told the memory exists, and one that can
-//! read it by title has been given the content the user withdrew.
-//!
-//! `write` and `edit` deliberately do NOT apply that rule, and the asymmetry is
-//! the specification's (`module-broker.ts:191,200` check the flag; `:203` and
-//! `:224` do not). Treating a disabled memory as absent on `write` would send
-//! the call to `create`, which then fails the unique-title check with a
-//! `conflict` a tool cannot act on, so the stricter reading is also the worse
-//! one.
+//! `write` and `edit` deliberately do not apply that rule: treating a disabled
+//! memory as absent there would send the call to `create`, which then fails the
+//! unique-title check with a `conflict` a tool cannot act on.
 
 use std::path::Path;
 use std::sync::Arc;

@@ -15,7 +15,7 @@
   import AgentMessageView from "@loca/shared/ui/components/chat/messages/AgentMessageView.svelte";
   import type { ToolCallStatus } from "@loca/shared";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   // The mobile client: the same shared ChatShellView the Android app renders,
   // under a mobile UiContext (full-width composer, user-right / agent-left
@@ -35,13 +35,7 @@
 
   const noop = (): void => {};
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   const PHONE_W = 360;
   const PHONE_H = 720;

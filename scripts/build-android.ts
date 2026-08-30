@@ -2,26 +2,20 @@
 //
 // Channel handling mirrors build-client.ts:
 //   - The channel is written to the Tauri crate's `channel` file, which build.rs
-//     bakes into the shipped APK via `option_env!("LOCA_CHANNEL")` in channel.rs
-//     (its runtime default -> the channel's app-data dir, loca-client-<channel>
-//     secret store). A file rather than the build env because a persistent Gradle
-//     daemon pins whatever channel it first started with.
-//   - For non-stable channels we pass a `--config` override for a distinct
-//     productName, which names the APK. The on-device app LABEL is not productName:
-//     it is `@string/app_name`, generated per channel by resValue() in
-//     gen/android/app/build.gradle.kts off LOCA_CHANNEL, because Tauri writes
-//     res/values/strings.xml only at `tauri android init`, never on a build.
-//     The distinct applicationId that lets stable + latest install side by side is
-//     likewise applied by gradle via an applicationIdSuffix keyed off LOCA_CHANNEL,
-//     NOT by overriding the Tauri `identifier`: the identifier drives the
-//     MainActivity's java package path, which is fixed at `tauri android init` time,
-//     so overriding it makes Tauri look for a package dir that does not exist.
+//     bakes into the APK via `option_env!("LOCA_CHANNEL")`. A file rather than
+//     the build env because a persistent Gradle daemon pins whatever channel it
+//     first started with.
+//   - Non-stable channels get a `--config` override for a distinct productName,
+//     which names the APK. The on-device LABEL is `@string/app_name`, generated
+//     per channel by resValue() in build.gradle.kts, because Tauri writes
+//     strings.xml only at `tauri android init`. The distinct applicationId is
+//     likewise a gradle applicationIdSuffix, NOT a Tauri `identifier` override:
+//     the identifier drives the MainActivity java package path, fixed at init
+//     time, so overriding it points Tauri at a package dir that does not exist.
 //
-// Distribution is self-hosted: the resulting APK is signed by gradle's
-// signingConfigs (see gen/android/app/build.gradle.kts, fed by
-// keystore.properties at A4) and published with an Ed25519-signed android.json
-// by scripts/release/android.ts. The Tauri updater plugin is desktop-only and
-// is not involved here, so there is no updater-endpoint override.
+// Distribution is self-hosted: gradle's signingConfigs sign the APK, and
+// scripts/release/android.ts publishes it with an Ed25519-signed android.json.
+// The Tauri updater plugin is desktop-only, so there is no endpoint override.
 
 import { parseArgs } from "@std/cli/parse-args";
 import { fromFileUrl, join } from "@std/path";

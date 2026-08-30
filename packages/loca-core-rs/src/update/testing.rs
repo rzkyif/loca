@@ -1,33 +1,12 @@
 //! A local upstream, the published-manifest fixture, and the signing helpers.
 //!
-//! # Why a real socket
+//! A real socket on a real clock with bounds injected: a 404, a black-holed
+//! host, a body that stops mid-transfer are properties of the SERVER, and a
+//! stubbed transport cannot express them (nor can paused time drive real I/O).
 //!
-//! Half of what this package has to survive is a property of the SERVER rather
-//! than of our code: a 404 where a manifest should be, a host that accepts the
-//! connection and never answers, a body that stops mid-transfer. None of those
-//! is expressible against a stubbed transport, and D-038's closing note is that
-//! a test which stubs the transport cannot see a defect in the transport's own
-//! deadline. So these tests drive a real socket on a real clock with the bounds
-//! injected (D-036: paused time and real I/O do not mix).
-//!
-//! # Why the manifest fixture is transcribed rather than built
-//!
-//! [`published_manifest`] is copied field for field from
-//! `scripts/release/core.ts:600-644` (`composeCoreManifest`), **not** built from
-//! [`super::manifest::CoreManifest`]. D7's worst finding was a manifest parser
-//! that modelled neither shipping channel's real shape and survived a
-//! 63-mutation pass, because every fixture had been built from the Rust types:
-//! a fixture derived from the implementation cannot see the implementation
-//! being wrong. See D-060.
-//!
-//! What I checked while writing it, since the absence is as load-bearing as the
-//! content: `core.json` has ONE published shape. There is no resolver variant
-//! and no per-triple asset map, unlike `binaries.json`. The channel affects
-//! only the URL the document is fetched from and the `storagePrefix` inside the
-//! asset URLs. Neither manifest URL serves anything today (no release has
-//! shipped), so the release script is the entire specification.
-//!
-//! Compiled only under `cfg(test)`: none of this reaches a production binary.
+//! [`published_manifest`] is transcribed from what the release script emits,
+//! not built from [`super::manifest::CoreManifest`]: a fixture derived from the
+//! implementation cannot see the implementation being wrong.
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
 use std::io::Write as _;
@@ -38,14 +17,9 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
 use axum::http::{Response, StatusCode};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-/// Bound every awaiting test, so a regression fails rather than hangs.
-///
-/// D-070: in a shared crate a hang is not local. A failing test costs its owner
-/// a fix; a hanging test costs every agent in the crate every run, silently,
-/// because cargo prints nothing while blocked. The message names the package so
-/// a bounded failure is attributable without opening the file.
+/// Bound every awaiting test, so a regression fails rather than hangs. In a
+/// shared crate a hang blocks every run silently; a failure is local.
 pub async fn bounded<T>(fut: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(10), fut)
         .await
@@ -55,10 +29,7 @@ pub async fn bounded<T>(fut: impl std::future::Future<Output = T>) -> T {
 // --- the re-entrancy tripwire over every process-global fixture lock -------
 
 /// Which process-global fixture locks THIS thread is currently holding.
-///
-/// `#[tokio::test]` builds a current-thread runtime, so a test body is one
-/// thread and "this thread already holds it" is exactly "this test already
-/// holds it".
+/// `#[tokio::test]` is current-thread, so this thread is this test.
 #[allow(clippy::missing_const_for_thread_local)]
 mod held {
     use std::cell::RefCell;
@@ -69,23 +40,10 @@ mod held {
 
 /// Claim a process-global fixture lock for this thread, refusing re-entry.
 ///
-/// Both locks below are non-reentrant, and neither FAILS when a test asks for
-/// one it is already holding: it parks forever, still holding it, so every
-/// other test that wants that lock parks too and `cargo test` never returns.
-/// One such test (an apply fixture built twice in one body) wedged the whole
-/// crate's binary and presented as seven unrelated hangs across three modules,
-/// including tests that pass alone in 0.01s and never touch a rollback.
-///
-/// **The wait is deliberately NOT bounded by a timeout.** The rollback suite
-/// serialises by design, so a duration long enough to be safe under load is far
-/// too long to catch anything, and a duration short enough to be useful turns a
-/// loaded machine into a red suite. What is detected instead is the defect
-/// itself: the same thread asking for a lock it already has. That has no timing
-/// component, so it is exact under any load.
-///
-/// D-070's rule is that a hang is a fleet outage rather than a slow test. This
-/// is that rule applied to the fixtures instead of the operations: `bounded`
-/// wraps the call under test and cannot see a fixture that never returns.
+/// The locks below are non-reentrant and do not fail on re-entry: they park
+/// forever, still held, wedging the whole test binary. No timeout is used,
+/// since the rollback suite serialises by design; the defect detected is the
+/// same thread asking for a lock it already holds, which is load-independent.
 pub fn claim_fixture_lock(name: &'static str) -> FixtureClaim {
     held::NAMES.with(|names| {
         let mut names = names.borrow_mut();
@@ -112,35 +70,20 @@ impl Drop for FixtureClaim {
 
 // --- the rollback lock, shared by every test that drives a boot decision ----
 
-/// Serialises every test that drives `rollback::handle_update_marker_on_boot`.
+/// Serialises every test that drives `rollback::handle_update_marker_on_boot`,
+/// because [`install_rename_should_fail`] is process-global: a neighbour
+/// driving a rollback concurrently would inherit the injected failure. Every
+/// rollback fixture takes it whether or not it knows the injector exists.
 ///
-/// It exists because [`install_rename_should_fail`] is process-global: the
-/// injector it drives sits deep inside `perform_rollback` and there is no
-/// argument to thread. The first version of that pairing put the lock beside
-/// the ARMING test, which made it safe for that test and for nothing else, and
-/// a neighbour driving a rollback concurrently inherited the injected failure
-/// and went red for a reason unrelated to what it asserted. It passed alone and
-/// failed in the suite, which is the signature.
-///
-/// So the lock lives HERE, one home for two modules, and every rollback fixture
-/// takes it whether or not it knows the injector exists. D-049's shape: one
-/// control in one place rather than a convention each call site re-implements.
-/// A `tokio::sync::Mutex`, not a `std` one, and that is not a style choice.
-///
-/// Every fixture holding this guard is async and awaits while holding it, and a
-/// `std::sync::MutexGuard` held across an `.await` parks the task with the lock
-/// still taken: anything else on that runtime wanting it blocks a THREAD rather
-/// than yielding, which on a single-threaded test runtime is a hang. This
-/// package has already lost runs to a hanging test (D-070), and a hang never
-/// produces a red. Tokio's guard is designed to be held across await points.
+/// A `tokio::sync::Mutex`: holders await while holding it, and a `std` guard
+/// across an `.await` blocks the thread, which on a current-thread runtime
+/// is a hang rather than a red.
 static ROLLBACK_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static FAIL_INSTALL_RENAME: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Hold for the life of a test that stages a boot decision.
-///
-/// The claim is taken BEFORE the lock, so a test that asks twice panics with a
-/// name instead of parking. See [`claim_fixture_lock`].
+/// Hold for the life of a test that stages a boot decision. The claim is taken
+/// BEFORE the lock, so a test that asks twice panics instead of parking.
 pub async fn rollback_guard() -> RollbackGuard {
     let claim = claim_fixture_lock("rollback");
     RollbackGuard {
@@ -149,8 +92,7 @@ pub async fn rollback_guard() -> RollbackGuard {
     }
 }
 
-/// What [`rollback_guard`] hands back: the lock, plus the claim that makes a
-/// second request from the same test loud rather than fatal.
+/// What [`rollback_guard`] hands back: the lock plus the re-entry claim.
 pub struct RollbackGuard {
     _lock: tokio::sync::MutexGuard<'static, ()>,
     _claim: FixtureClaim,
@@ -163,24 +105,15 @@ mod tripwire_tests {
     #[tokio::test]
     #[should_panic(expected = "already holds the `rollback` fixture lock")]
     async fn asking_twice_for_one_fixture_lock_panics_instead_of_parking() {
-        // The hazard is not hypothetical: one apply test that built two
-        // fixtures in one body parked forever holding both global locks and
-        // took the whole crate's test binary with it.
-        //
-        // The second acquisition is BOUNDED rather than bare, and that is the
-        // load-bearing part. With the tripwire deleted this test would park,
-        // and a parked test is not a red: it is the exact outage being fixed,
-        // reintroduced by the test that claims to cover it. Bounded, the same
-        // deletion fails on the WRONG panic message, so the mutation is red in
-        // seconds instead of silent forever.
+        // The second acquisition is bounded so that deleting the tripwire
+        // fails on the wrong panic message rather than parking forever.
         let _first = rollback_guard().await;
         let _second = bounded(rollback_guard()).await;
     }
 
     #[tokio::test]
     async fn a_claim_released_by_the_first_guard_can_be_taken_again() {
-        // The other half. A tripwire that never lets go would serialise nothing
-        // and fail everything, and a test of the panic alone cannot see that.
+        // A tripwire that never lets go would fail everything.
         {
             let _first = rollback_guard().await;
         }
@@ -199,13 +132,9 @@ pub fn set_install_rename_failure(fail: bool) {
     FAIL_INSTALL_RENAME.store(fail, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Set while a test wants `swap::create_anchor` to take its COPY fallback.
-///
-/// The fallback exists for filesystems without hard links, and every filesystem
-/// a test can create here has them, so the copy path is unreachable from
-/// outside and the branch would be covered only by its failure case. That is
-/// the shape this package keeps meeting: a branch that does nothing on the host
-/// the fleet runs on, under a test whose NAME claims to cover it.
+/// Set while a test wants `swap::create_anchor` to take its COPY fallback. That
+/// fallback is for filesystems without hard links, so it is otherwise
+/// unreachable from a test.
 static NO_HARD_LINKS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn hard_links_disabled() -> bool {
@@ -217,19 +146,10 @@ pub fn set_hard_links_disabled(disabled: bool) {
     NO_HARD_LINKS.store(disabled, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Lowercase-hex sha256. Fixture digests are COMPUTED rather than pasted, so a
-/// test cannot pass by asserting a constant copied out of the code it tests.
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
-}
+pub use crate::files::sha256_hex;
 
-/// Gzip `bytes`, the way the release script ships every core artifact.
-///
-/// The manifest's sha256 is over the DECOMPRESSED file
-/// (`scripts/release/core.ts:608`), so a fixture has to carry both halves: the
-/// compressed bytes the server sends and the digest of what comes out.
+/// Gzip `bytes`, the way the release script ships every core artifact. The
+/// manifest's sha256 is over the DECOMPRESSED file, so both halves are returned.
 pub fn gzipped(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     encoder.write_all(bytes).expect("d13: gzip encode failed");
@@ -238,21 +158,13 @@ pub fn gzipped(bytes: &[u8]) -> Vec<u8> {
 
 // --- the published manifest ------------------------------------------------
 
-/// A `core.json` in the shape `composeCoreManifest` emits.
+/// A `core.json` in its published shape: `binaries` keyed by triple with a
+/// `.gz` URL and the decompressed sha256, `workers` by name, `helpers` by name
+/// AND triple.
 ///
-/// Transcribed from `scripts/release/core.ts:610-644`: `binaries` keyed by
-/// triple with a `.gz` URL and the decompressed sha256; `workers` by name;
-/// `helpers` by name AND triple, because only the entries matching the running
-/// triple apply.
-///
-/// The `signature` is a syntactically valid placeholder rather than absent,
-/// because `composeCoreManifest` returns `{ ...manifest, signature }` and a
-/// published document therefore ALWAYS carries one. Sign with
-/// [`test_trust::Trusted::sign`] to get a document the production verifier
-/// accepts; it strips this field before building the message, so the
-/// placeholder never reaches the signed bytes.
-///
-/// [`test_trust::Trusted::sign`]: super::manifest::test_trust::Trusted::sign
+/// `signature` is a valid placeholder rather than absent, because a published
+/// document always carries one. Sign with `Trusted::sign`, which strips the
+/// field before building the message, so the placeholder is never signed.
 pub fn published_manifest() -> Value {
     json!({
         "schemaVersion": 1,
@@ -303,9 +215,8 @@ pub enum Serve {
     Body(Vec<u8>),
     /// A bare status with an empty body.
     Status(u16),
-    /// Accepts the connection and never answers. A black-holed host, which is
-    /// the only shape a deadline defends against: the socket is up, so nothing
-    /// fails and the caller waits forever.
+    /// Accepts the connection and never answers: the shape a deadline defends
+    /// against, since the socket is up and nothing ever fails.
     Never,
     /// `count` chunks, then the body is held open with no bytes and no close.
     Silent { chunk: Vec<u8>, count: usize },
@@ -335,11 +246,8 @@ impl Upstream {
         Self::spawn(Vec::new(), serve).await
     }
 
-    /// Per-path plans, with a 404 for anything unlisted.
-    ///
-    /// The 404 default is deliberate rather than convenient: a mock that
-    /// helpfully answers a path the test did not declare hides the branch that
-    /// depends on it being absent, which is D-050 case 1.
+    /// Per-path plans, with a 404 for anything unlisted: a mock that answers a
+    /// path the test did not declare hides the branch depending on its absence.
     pub async fn start_routes(routes: Vec<(&str, Serve)>) -> Self {
         let routes = routes
             .into_iter()
@@ -348,13 +256,8 @@ impl Upstream {
         Self::spawn(routes, Serve::Status(404)).await
     }
 
-    /// Bind the port WITHOUT deciding what to serve yet.
-    ///
-    /// A signed manifest names absolute artifact URLs, so a fixture has to know
-    /// the base before it can build the document it is going to serve. Without
-    /// this the manifest carries a relative URL, the download fails at the HTTP
-    /// client, and the test reports a broken apply path rather than a broken
-    /// fixture.
+    /// Bind the port WITHOUT deciding what to serve yet: a signed manifest
+    /// names absolute artifact URLs, so the base must be known before it.
     pub async fn reserve() -> Reserved {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -428,8 +331,7 @@ impl Upstream {
         format!("{}{path}", self.base)
     }
 
-    /// Every path the upstream was asked for, in order. Lets a test assert that
-    /// a path was reached, or was not.
+    /// Every path the upstream was asked for, in order.
     pub fn calls(&self) -> Vec<String> {
         self.shared
             .calls
@@ -478,8 +380,7 @@ async fn answer(serve: Serve) -> Response<Body> {
             let head = futures_util::stream::iter(
                 (0..count).map(move |_| Ok::<Bytes, std::io::Error>(Bytes::from(chunk.clone()))),
             );
-            // Then nothing, forever, with the connection still open: the shape
-            // the stall watchdog is the only defence against.
+            // Then nothing, forever, connection still open: the stall shape.
             let tail = futures_util::stream::pending::<Result<Bytes, std::io::Error>>();
             Response::builder()
                 .status(StatusCode::OK)

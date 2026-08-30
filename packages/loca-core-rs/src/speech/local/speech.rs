@@ -1,30 +1,17 @@
 //! `SherpaSpeech`: the [`LocalSpeech`] implementation the routes and the
 //! extension broker reach through.
 //!
-//! Three things in a line: the fair-share [`queue`](super::queue), the
-//! single [`worker`](super::worker) thread, and the engine behind
-//! [`EngineOps`]. The order matters and is the whole design.
+//! Three things in a line, and the order is the design: the fair-share
+//! [`queue`](super::queue) first, so a saturated engine refuses immediately and
+//! the permit covers the whole call; then the single
+//! [`worker`](super::worker) thread holding that permit, with the decode INSIDE
+//! the job. The decode is the expensive half (a 25 MB upload expands to roughly
+//! 50 MB of `f32`), so doing it before the permit would put it outside the
+//! queue's depth bound. The trade is that a malformed clip waits for a slot
+//! before it is refused; the gain is that an abandoned one is never decoded.
 //!
-//! - **Queue first**, so a saturated engine refuses immediately rather than
-//!   after a wait, and so the permit exists for the whole call and is released
-//!   by dropping it.
-//! - **Then the worker, holding the permit**, with the decode INSIDE the job.
-//!   The decode is the expensive half (a 25 MB upload expands to roughly 50 MB
-//!   of `f32`), so doing it before the permit put it outside the queue's depth
-//!   bound entirely and let N uploads decode at once whatever the bound said.
-//!   The trade is that a malformed clip now waits for a slot before it is
-//!   refused.
-//!
-//! Putting the decode inside the job buys something the ordering argument does
-//! not claim and that is worth stating: the job is skipped when its caller has
-//! already gone, so **an abandoned malformed clip is never decoded at all**. The
-//! containment property is unchanged either way: only samples this code produced
-//! reach sherpa, and a clip it cannot decode never gets there.
-//!
-//! [`EngineOps`] exists so this file has no sherpa in it. That is not
-//! decoration: it means the bounds, the decode, the queueing and the drop
-//! behaviour are all tested in the default build, and only model loading and
-//! inference need the feature.
+//! [`EngineOps`] keeps sherpa out of this file, so the bounds, the decode, the
+//! queueing and the drop behaviour are all tested in the default build.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -75,18 +62,9 @@ impl SherpaSpeech {
 #[async_trait]
 impl LocalSpeech for SherpaSpeech {
     async fn transcribe(&self, audio: AudioClip, client_id: &str) -> Result<String> {
-        // **Decoded on the worker, under the permit.** The decode is the
-        // expensive half: a 25 MB upload expands to roughly 50 MB of `f32`, and
-        // doing that on a runtime thread put it outside the queue's depth bound
-        // entirely, so N simultaneous uploads decoded at once no matter what the
-        // bound said.
-        //
-        // The cost of moving it is that a malformed clip now waits for a slot
-        // before it is refused, where it used to be refused immediately. That is
-        // the right trade: the refusal is cheap and rare, and an unbounded
-        // allocation is neither. The containment property is unchanged, and it
-        // is the one that matters: only samples this code produced ever reach
-        // sherpa, and a clip it cannot decode never gets there at all.
+        // Decoded on the worker, under the permit: on a runtime thread the
+        // expansion to roughly 50 MB of `f32` would sit outside the queue's
+        // depth bound, so N simultaneous uploads would decode at once.
         let permit = self.queue.acquire(client_id).await?;
         let engine = Arc::clone(&self.engine);
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -297,8 +275,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_abandoned_synthesis_releases_the_slot_and_tells_the_engine_to_stop() {
-        // The two halves of the drop obligation, in one test, because a fix for
-        // either alone would still leave the other broken.
+        // Both halves of the drop obligation, since a fix for either alone
+        // leaves the other broken.
         let (speech, fake) = speech();
         let (release, gate) = std::sync::mpsc::channel();
         *fake.gate.lock().unwrap_or_else(|e| e.into_inner()) = Some(gate);

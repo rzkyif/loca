@@ -77,21 +77,17 @@ export type ClientToServerFrame =
 
 // --- Wire enums ------------------------------------------------------------
 //
-// Single source of truth for the literal enums that appear in frames below.
-// The TS unions here derive from these tuples via `(typeof T)[number]`, and
-// the per-frame Zod validators in ../validation/ws.ts reuse the SAME tuples
-// via `z.enum(T)`. That is what keeps the type and the runtime validator from
-// drifting: a value added here flows to both sides at once. `permissionKind`
-// follows the same idea from its own home, `PERMISSION_KINDS` in
-// ../domain/extension.ts.
+// Single source of truth for the literal enums in the frames below. The TS
+// unions derive from these tuples via `(typeof T)[number]` and the Zod
+// validators in ../validation/ws.ts reuse the SAME tuples via `z.enum(T)`, so a
+// value added here flows to both sides at once. `permissionKind` follows the
+// same idea from `PERMISSION_KINDS` in ../domain/extension.ts.
 
-// The frame `kind` sets, one source for all three places that need them: the
-// TS unions in this file (checked at compile time by the assertions at the
-// bottom), the Zod validators in ../validation/, and the Rust wire types
-// generated from both. A kind present in one but not another does not fail
-// anywhere on its own: the client drops the frame silently and the symptom
-// appears somewhere unrelated, which is exactly how `requirements.snapshot`
-// broadcasts went missing and froze the pending-downloads popup.
+// The frame `kind` sets, one source for the TS unions in this file (checked by
+// the assertions at the bottom), the Zod validators in ../validation/, and the
+// generated Rust wire types. A kind present in one but not another fails
+// nowhere on its own: the client drops the frame silently and the symptom
+// surfaces somewhere unrelated.
 
 export const CLIENT_TO_SERVER_KINDS = [
   "ping",
@@ -149,18 +145,11 @@ export const SESSION_CREATED_REASONS = ["schedule", "greeting"] as const;
 export const SESSION_CREATED_FOCUSES = ["show", "show_when_done"] as const;
 
 // Named aliases for the two `reason` sets, and the name is the point.
-//
-// `ts-json-schema-generator` inlines an anonymous union at its use site, and
-// typify then mints a Rust type for it called `<Parent><Field>`. Two different
-// `reason` fields under `ServerToClientFrame` therefore collide, and the FIRST
-// one wins silently: `session.created.reason` generated as
-// `stop | interrupted | hop_limit | length`, so the Rust core could neither
-// emit nor accept a valid `session.created` frame, which is every greeting and
-// every scheduled prompt. Naming them makes the generator emit two
-// `definitions` and the frames `$ref` them, so the two sets stay two types.
-//
-// The same reasoning as D-040: a generated name is a thing to declare, not to
-// leave to whatever the emitter happens to derive from context.
+// `ts-json-schema-generator` inlines an anonymous union at its use site and
+// typify mints a Rust type called `<Parent><Field>`, so two `reason` fields
+// under `ServerToClientFrame` collide and the FIRST wins silently. Naming them
+// makes the generator emit two `definitions` the frames `$ref`, so the two sets
+// stay two types.
 export type ChatDoneReason = (typeof CHAT_DONE_REASONS)[number];
 export type SessionCreatedReason = (typeof SESSION_CREATED_REASONS)[number];
 export type SessionCreatedFocus = (typeof SESSION_CREATED_FOCUSES)[number];
@@ -347,10 +336,9 @@ export type WsFrame = ClientToServerFrame | ServerToClientFrame;
 // --- Kind coverage, checked at compile time --------------------------------
 //
 // Each assertion fails to compile if the union above and its tuple disagree in
-// either direction, so adding a frame variant without adding its kind (or the
-// reverse) is a type error here rather than a frame silently dropped at
-// runtime. The Zod side is checked at test time in ../validation/ws.test.ts;
-// it cannot be checked here because Zod's inferred kinds are values, not types.
+// either direction, so adding a frame variant without its kind (or the reverse)
+// is a type error rather than a silently dropped frame. The Zod side is checked
+// in ../validation/ws.test.ts: its inferred kinds are values, not types.
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

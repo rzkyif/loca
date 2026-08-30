@@ -1,31 +1,16 @@
 //! The one outbound chokepoint for everything this package fetches.
 //!
-//! # Why it is a type rather than a convention
+//! Every request the download engine makes goes through one [`Net`], which owns
+//! the only HTTP clients in `downloads/` and counts every call. Tests assert the
+//! counter reads **zero** across the paths that must never reach the network (a
+//! local-only probe, a file already on disk, boot with an empty queue), and
+//! `no_module_outside_net_reaches_the_network` enforces the other half by
+//! reading the directory, so a new file joins the rule by existing.
 //!
-//! `AGENTS.md`'s rule is absolute: once installed, Core makes NO outbound
-//! request without an explicit user action, and this package is where that rule
-//! lives. "We were careful" is not an implementation strategy, so every request
-//! the download engine makes goes through one [`Net`], which owns the only HTTP
-//! clients in `downloads/` and counts every call it makes.
-//!
-//! The counter is the structural half. Tests assert it reads **zero** across the
-//! paths that must never reach the network (a local-only probe, a file already
-//! on disk, boot with an empty queue), so flipping a local branch to a network
-//! one turns a test red rather than shipping quietly. A counter can be defeated;
-//! that is the point, and it is why the mutation for each of those tests is
-//! staged and watched failing rather than assumed.
-//!
-//! The second half is that no sibling file names `reqwest` at all, which
-//! `no_module_outside_net_reaches_the_network` enforces by reading the directory
-//! rather than a hand-kept list, so a new file joins the rule by existing.
-//!
-//! # Two clients, one chokepoint
-//!
-//! reqwest's redirect policy is per-client, and this package needs both: a
-//! following client for transfers, and a non-following one for HuggingFace's
-//! resolve redirect, whose 302 is what carries `x-linked-etag` (the content
-//! sha256) and `x-linked-size`. Following it loses both to a CDN that publishes
-//! neither. Both clients live here and the counter covers both.
+//! Two clients, because reqwest's redirect policy is per-client: a following one
+//! for transfers, and a non-following one for HuggingFace's resolve redirect,
+//! whose 302 carries `x-linked-etag` (the content sha256) and `x-linked-size`.
+//! Following it loses both to a CDN that publishes neither.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -41,8 +26,8 @@ use crate::error::{AppError, ErrorCode, Result};
 /// `Vec<u8>`, so a chunk crosses this boundary without a copy.
 pub type Chunk = hyper::body::Bytes;
 
-/// Whether a request follows redirects. See the module docs: the HuggingFace
-/// size and hash both live on the redirect itself.
+/// Whether a request follows redirects: the HuggingFace size and hash both live
+/// on the redirect itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Redirect {
     Follow,
@@ -52,22 +37,15 @@ pub enum Redirect {
 /// How long a SMALL request may take in total: a HEAD, a manifest, a GitHub
 /// release lookup.
 ///
-/// Only the streaming GET is exempt (see [`build_client`]'s note), because a
-/// model weight is gigabytes and any deadline that fits one fails another. The
-/// small verbs have no such excuse, and without a bound a black-holed host
-/// wedges whatever called them: the queue's single permit while a hash HEAD
-/// hangs, or an HTTP handler forever, since there is no timeout layer in the
-/// router either.
+/// Only the streaming GET is exempt, since a model weight is gigabytes. Without
+/// a bound here a black-holed host wedges the queue's single permit, or an HTTP
+/// handler forever: there is no timeout layer in the router.
 pub const SMALL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// What every outbound request identifies itself as.
-///
-/// reqwest sends NO `User-Agent` unless one is configured, and the GitHub REST
-/// API answers a request without one with **403 Forbidden**, not 401 or 400, so
-/// the binary resolver failed on `/repos/{repo}/releases/tags/{tag}` in a way
-/// that reads as an auth or rate-limit problem and is neither. Deno's `fetch`
-/// sends `Deno/<version>` on its own, which is why the TypeScript core never
-/// needed this and its absence here was invisible until a real install ran.
+/// What every outbound request identifies itself as. reqwest sends NO
+/// `User-Agent` unless configured, and the GitHub REST API answers a request
+/// without one with **403 Forbidden**, which reads as an auth or rate-limit
+/// problem and is neither.
 fn user_agent() -> String {
     format!("loca-core/{}", crate::config::CORE_VERSION)
 }
@@ -91,9 +69,8 @@ impl Net {
     }
 
     /// Shorten the small-request deadline, so a test can watch it fire without
-    /// waiting the shipping 30 seconds. Injected rather than mocked for the
-    /// reason D-038 gives: the deadline is what is under test, so it has to run
-    /// on a real clock against a real socket.
+    /// waiting the shipping 30 seconds. Injected rather than mocked: the
+    /// deadline needs a real clock and a real socket to be under test.
     pub fn with_small_request_timeout(mut self, timeout: Duration) -> Self {
         self.small_request_timeout = timeout;
         self
@@ -101,12 +78,10 @@ impl Net {
 
     /// A HEAD, for a size hint or a content hash.
     ///
-    /// Cancellable because its caller is a transfer that a user can stop: the
-    /// hash lookup runs before the first byte is requested, so a HEAD to a
-    /// black-holed host would otherwise outlive the cancel that was meant to
-    /// stop the whole transfer. Bounded as well as cancellable, because the
-    /// commonest caller (the etag lookup) runs inside the queue's single permit
-    /// with no user watching, so silence there stalls every queued download.
+    /// Cancellable because the hash lookup runs before the first byte, so a
+    /// HEAD to a black-holed host would outlive the cancel meant to stop the
+    /// transfer. Bounded too, since the etag lookup runs inside the queue's
+    /// single permit, where silence stalls every queued download.
     pub async fn head(
         &self,
         url: &str,
@@ -136,10 +111,8 @@ impl Net {
 
     /// A GET, optionally resuming at `from`, streamed rather than buffered.
     ///
-    /// `from` of `Some(0)` sends no `Range`: a range starting at zero is the
-    /// whole resource, and asking for it explicitly makes a server answer 206
-    /// where a plain GET would answer 200, which is a difference the transfer
-    /// then has to unpick for no gain.
+    /// `from` of `Some(0)` sends no `Range`: asking explicitly for the whole
+    /// resource makes a server answer 206 where a plain GET answers 200.
     pub async fn get_range(
         &self,
         url: &str,
@@ -180,12 +153,10 @@ impl Net {
     }
 
     /// A GET whose body is a small document: the signed manifests and the
-    /// GitHub release lookup. Buffered, because both are small and both are
-    /// consumed as a whole document rather than streamed.
+    /// GitHub release lookup, buffered because both are consumed whole.
     ///
-    /// Returns the TEXT rather than a parsed value because a signature covers
-    /// the bytes; see the manifest module's docs on why re-encoding a parsed
-    /// struct is a second chance to differ.
+    /// Returns the TEXT rather than a parsed value, because a signature covers
+    /// the bytes and re-encoding a parsed struct is a chance to differ.
     pub async fn text(&self, url: &str, cancel: &CancellationToken) -> Result<String> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let deadline = self.small_request_timeout;
@@ -243,10 +214,8 @@ impl Net {
     }
 }
 
-/// The host of `url`, or `None` when it does not parse as one.
-///
-/// Here rather than at the call site so URL parsing stays inside the one module
-/// that is allowed to name the HTTP crate.
+/// The host of `url`, or `None` when it does not parse as one. Here so URL
+/// parsing stays inside the one module allowed to name the HTTP crate.
 pub fn host_of(url: &str) -> Option<String> {
     reqwest::Url::parse(url)
         .ok()?
@@ -316,11 +285,10 @@ impl NetBody {
     }
 }
 
-/// Deliberately no client-level total-request timeout: it would apply to the
-/// streaming GET too, and a model weight is gigabytes, so any deadline that fits
-/// one download fails another. Silence during a transfer is bounded instead by
-/// the transfer's per-chunk stall watchdog, which also covers the wait for its
-/// response headers. The small verbs get [`SMALL_REQUEST_TIMEOUT`] per call.
+/// Deliberately no client-level total-request timeout: it would also cap the
+/// streaming GET, where no fixed deadline fits every weight. Silence during a
+/// transfer is bounded by its per-chunk stall watchdog; the small verbs get
+/// [`SMALL_REQUEST_TIMEOUT`] per call.
 fn build_client(policy: reqwest::redirect::Policy) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .redirect(policy)
@@ -355,17 +323,12 @@ fn unreachable_host(url: &str, err: &reqwest::Error) -> AppError {
     )
 }
 
-/// The message a stopped transfer carries into the queue row, matching the
-/// TypeScript's `throw new Error("cancelled")`.
+/// The message a stopped transfer carries into the queue row.
 pub const CANCELLED_MESSAGE: &str = "cancelled";
 
-/// The error a stopped transfer returns.
-///
-/// The code is nearly inert: this never reaches a client, because the queue
-/// catches it and writes the row. What the queue decides on is the **token**,
-/// not this error (`manager.ts:332` reads the abort signal rather than the
-/// message), so a cancel that races a genuine failure is still classified as a
-/// cancel. The message exists so the row text matches the oracle's.
+/// The error a stopped transfer returns. It never reaches a client: the queue
+/// catches it and writes the row, deciding on the **token** rather than this
+/// error, so a cancel racing a genuine failure is still classified as a cancel.
 pub fn cancelled() -> AppError {
     AppError::new(ErrorCode::Conflict, CANCELLED_MESSAGE)
 }
@@ -414,8 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_verb_identifies_itself_to_the_host() {
-        // The GitHub REST API answers a request with no User-Agent with 403,
-        // and reqwest sends none unless one is configured. See `user_agent`.
+        // The GitHub REST API answers a request with no User-Agent with 403.
         let net = Net::new().unwrap();
         let cancel = CancellationToken::new();
         let server = Upstream::start(Serve::Json("{\"ok\":true}".into())).await;
@@ -484,7 +446,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_manual_redirect_head_stops_at_the_302() {
-        // The whole reason two clients exist: the 302 carries x-linked-etag and
+        // Why two clients exist: the 302 carries x-linked-etag and
         // x-linked-size, and the CDN it points at publishes neither.
         let net = Net::new().unwrap();
         let cancel = CancellationToken::new();
@@ -535,11 +497,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_black_holed_host_bounds_every_small_verb() {
-        // The module's stated bound used to cover ONE of the three verbs. A
-        // host that accepts the connection and never answers is not a failure
-        // anywhere: `head` ran inside the queue's single permit and stalled
-        // every queued download behind it, and `json`/`text` ran inside an HTTP
-        // handler with no timeout layer above it, so the request hung forever.
+        // All three verbs, because a host that accepts and never answers
+        // stalls the queue's single permit from `head` and hangs an HTTP
+        // handler forever from `json`/`text`.
         let server = Upstream::start(Serve::Never).await;
         let net = Net::new()
             .unwrap()
@@ -572,8 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_host_that_answers_inside_the_deadline_is_not_cut_off() {
-        // The other half: a bound that fires on a healthy host is worse than no
-        // bound, so the deadline has to be visible from both sides.
+        // A bound that fires on a healthy host is worse than no bound.
         let server = Upstream::start(Serve::Json("{\"ok\":true}".into())).await;
         let net = Net::new()
             .unwrap()
@@ -589,9 +548,8 @@ mod tests {
 
     #[test]
     fn the_shipping_small_request_timeout_is_generous_but_finite() {
-        // Bounded rather than pinned, so a deliberate retune stays legal while
-        // a deletion or a millisecond typo does not. Every test above injects
-        // its own value, which is what leaves the SHIPPING one unwitnessed.
+        // Bounded rather than pinned, so a retune stays legal while a deletion
+        // or a millisecond typo does not. Every test above injects its own.
         assert!(SMALL_REQUEST_TIMEOUT >= Duration::from_secs(5));
         assert!(SMALL_REQUEST_TIMEOUT <= Duration::from_secs(120));
         assert_eq!(
@@ -633,9 +591,8 @@ mod tests {
         assert_eq!(host_of(""), None);
     }
 
-    /// The structural half of the consent rule: `net.rs` is the only file in
-    /// this package that may name the HTTP crate. Read from the directory rather
-    /// than a hand-kept list, so a file added tomorrow is covered by existing.
+    /// `net.rs` is the only file in this package that may name the HTTP crate.
+    /// Read from the directory, so a new file joins the rule by existing.
     #[test]
     fn no_module_outside_net_reaches_the_network() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/downloads");
@@ -656,8 +613,8 @@ mod tests {
                     .and_then(|n| n.to_str())
                     .unwrap_or_default();
                 if name == "net.rs" || name == "testing.rs" {
-                    // testing.rs is the mock upstream: it SERVES HTTP, it never
-                    // originates a request, and it is compiled out of production.
+                    // testing.rs SERVES HTTP, never originates a request, and
+                    // is compiled out of production.
                     continue;
                 }
                 let body = std::fs::read_to_string(&path).expect("readable file");

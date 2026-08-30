@@ -1,17 +1,6 @@
-//! Extension installation: the two user-triggered phases and the pieces under
-//! them.
-//!
-//! Ports `packages/loca-core/src/extensions/installer*.ts` plus `seeding.ts`.
-//!
-//! | phase      | what it does                                                              |
-//! | ---------- | ------------------------------------------------------------------------- |
-//! | download   | acquire the files, validate `loca.json`, write the rows at `downloaded`   |
-//! | install    | `deno install` the declared deps, pin the content hash, flip to `installed` |
-//!
-//! The split is not organisational. Download runs no code and touches no
-//! network beyond fetching one verified tarball; install spawns `deno`, which
-//! resolves third-party packages. Keeping them apart is what lets the built-in
-//! be seeded offline at boot and installed later, on a user's press.
+//! Extension installation: download (fetch + validate `loca.json`, rows at
+//! `downloaded`) and install (`deno install` deps, pin the hash, `installed`).
+//! Kept apart so the built-in can be seeded offline at boot and installed later.
 
 pub mod deps;
 pub mod download;
@@ -38,13 +27,10 @@ pub enum InstallSource {
         path: String,
         slug: String,
     },
-    /// One of the extensions Loca ships.
-    ///
-    /// `planted` set means first-boot seeding: install OFFLINE from the
-    /// installer-planted tarball and its already-verified signed manifest, with
-    /// no network request at all. `planted` unset means resolve from the
-    /// codebase (dev) or the signed CDN tarball, and that branch fetches, so it
-    /// runs only from a user-triggered download or update.
+    /// One of the extensions Loca ships. `planted` set means first-boot
+    /// seeding, fully offline from the planted tarball + verified manifest;
+    /// unset resolves from the codebase (dev) or the signed CDN tarball, which
+    /// fetches and so runs only on a user action.
     Seeded {
         id: String,
         planted: Option<Box<Planted>>,
@@ -77,16 +63,9 @@ impl InstallSource {
     }
 }
 
-/// Per-extension in-flight guard.
-///
-/// Download, install and update are fire-and-forget and all derive the same
-/// `.new` and `.old` staging paths from the extension id, so two concurrent
-/// jobs for one id race: one job's cleanup of the staging directory wipes the
-/// other's half-written extract, and two swaps interleave and strand the
-/// previous version under `.old` with no install directory at all.
-///
-/// A handle rather than a module-global set (D-010), so two cores in one test
-/// binary do not share it.
+/// Per-extension in-flight guard: concurrent jobs for one id share the `.new`
+/// and `.old` staging paths and would wipe each other's extract. A handle
+/// rather than a global so two cores in one test binary do not share it.
 #[derive(Debug, Default)]
 pub struct InFlight {
     ids: Mutex<HashSet<String>>,
@@ -97,11 +76,7 @@ impl InFlight {
         Self::default()
     }
 
-    /// Claim `extension_id`, or refuse.
-    ///
-    /// The guard releases on drop, including on a panic and on an early return
-    /// from the job, which is what stops a failed install from locking its
-    /// extension out until the next restart.
+    /// Claim `extension_id`, or refuse. Releases on drop, including on panic.
     pub fn claim(&self, extension_id: &str) -> Result<InFlightGuard<'_>> {
         let mut ids = lock(&self.ids);
         if !ids.insert(extension_id.to_string()) {
@@ -113,11 +88,7 @@ impl InFlight {
         })
     }
 
-    /// Claim `extension_id` for a job that outlives its caller's stack frame.
-    ///
-    /// The borrowed [`InFlightGuard`] cannot cross into a spawned task, and
-    /// every install job is fire-and-forget, so the owning form is the one the
-    /// runner uses. Same release-on-drop rule, including on a panic.
+    /// Owning form of [`InFlight::claim`], for guards that cross into a spawned task.
     pub fn claim_owned(self: Arc<Self>, extension_id: &str) -> Result<OwnedInFlightGuard> {
         {
             let mut ids = lock(&self.ids);
@@ -180,17 +151,12 @@ mod tests {
 
     #[test]
     fn a_second_job_for_the_same_extension_is_refused_while_the_first_holds_it() {
-        // Both jobs derive the same `.new` and `.old` paths, so letting the
-        // second start means one wipes the other's half-written extract and the
-        // two swaps interleave, leaving no install directory at all.
         let inflight = InFlight::new();
         let held = inflight.claim("ext").unwrap();
         let err = inflight.claim("ext").unwrap_err();
         assert_eq!(err.code, ErrorCode::Conflict);
         assert!(inflight.is_busy("ext"));
 
-        // A different extension is unaffected: the guard is per id, not global,
-        // or one slow npm install would block every other extension's.
         let other = inflight.claim("other").unwrap();
         drop(other);
 
@@ -201,10 +167,6 @@ mod tests {
 
     #[test]
     fn a_job_that_fails_still_releases_its_claim() {
-        // Released on drop rather than at a success path, so a failed install
-        // does not lock its extension out until the next restart. The failure
-        // mode is invisible: the user presses Install again and gets "already
-        // in progress" for something that finished ten minutes ago.
         let inflight = InFlight::new();
         let failed = |inflight: &InFlight| -> Result<()> {
             let _guard = inflight.claim("ext")?;
@@ -227,8 +189,6 @@ mod tests {
 
     #[test]
     fn an_install_spec_resolves_to_the_id_its_files_land_under() {
-        // The id is the folder name, so getting it wrong installs into somebody
-        // else's directory.
         assert_eq!(
             InstallSource::Npm {
                 name: "@acme/thing".to_string(),

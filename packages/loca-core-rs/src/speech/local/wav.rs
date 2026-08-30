@@ -1,60 +1,30 @@
 //! WAV in and WAV out, both in Rust.
 //!
-//! # Decoding here is containment, and the reasons are narrower than they were
+//! Decoding here rather than through sherpa's `Wave::read` is containment: its
+//! Rust wrapper does `CString::new(filename).unwrap()`, its C++ side can die by
+//! an unhandled exception crossing the FFI boundary, and going through it would
+//! cost a temp-file round trip of up to 25 MB per call. Decoding here keeps
+//! attacker-controlled bytes out of the C++ entirely.
 //!
-//! sherpa exposes `Wave::read`, which takes a PATH and wraps sherpa-onnx's C++
-//! `ReadWave`. Three reasons not to use it, in the order they actually carry
-//! weight:
-//!
-//! 1. The Rust wrapper does `CString::new(filename).unwrap()`, a panic inside a
-//!    dependency, on a path this code constructs.
-//! 2. Decoding here keeps attacker-controlled bytes (a client upload, or an
-//!    extension's `stt.transcribe` op) out of the C++ entirely.
-//! 3. It removes a temp-file round trip of up to 25 MB per call.
-//!
-//! **A fourth reason was asserted, then retracted, and both moves were wrong.**
-//! It was "`ReadWave` terminates the process"; the retraction was "`wave.cc`
-//! imports no `_exit`". There is no `wave.cc.o` in the pinned archive at all:
-//! the members are `wave-reader.cc.o` and `wave-writer.cc.o`, and both import
-//! `std::terminate` and `__cxa_throw` while importing no exit of any kind. So
-//! that path can die by an unhandled exception crossing the FFI boundary rather
-//! than by `exit`, which is a different class and is not "clean". The three
-//! reasons above never depended on it. See [`super::engine`] for the full
-//! 15-archive analysis and the method behind it.
-//!
-//! So the clip is decoded here and only `f32` samples cross into sherpa. **Both
-//! values that cross are validated, and the second one is easy to forget**: the
-//! samples, and the SAMPLE RATE, which is client-controlled on the same call and
-//! is cast to `i32` on the way in. An unbounded rate wraps negative. See
+//! BOTH values that cross are validated, and the second is easy to forget: the
+//! samples, and the SAMPLE RATE, which is client-controlled on the same call
+//! and is cast to `i32` on the way in, so an unbounded one wraps negative. See
 //! [`MIN_SAMPLE_RATE`].
 //!
-//! `hound` does the container parsing. It is the maintained implementation and
-//! it returns `Result` for every malformed input rather than panicking; what is
-//! written here is the part hound deliberately does not do, which is deciding
-//! what this product accepts and downmixing to the mono the models want.
+//! `hound` does the container parsing and returns `Result` for every malformed
+//! input; what is written here is what this product accepts and the downmix to
+//! the mono the models want.
 
 use std::io::Cursor;
 
 use crate::error::{validation, Result};
 
-/// The sample rates a decoded clip may declare.
-///
-/// **This bound is containment, not tidiness, and the upper half is the point.**
-/// The rate is client-controlled on exactly the same call as the samples, and it
-/// crosses into sherpa as an `i32` (`OfflineStream::accept_waveform`). Without a
-/// bound, a 55-byte WAV declaring 4,000,000,000 Hz decodes perfectly cleanly and
-/// arrives on the C++ side as **-294967296**; `u32::MAX` arrives as `-1`. The
-/// feature extractor on the transcription path
-/// (`libkaldi-native-fbank-core.a`) is one of the objects that can terminate the
-/// process, and a negative rate is not an input it is written to survive.
-///
-/// The containment table in [`super::engine`] said "only samples this code
-/// produced ever reach sherpa" and was silent about the rate, which is how this
-/// got through: the sentence was true and incomplete.
-///
-/// The range covers everything real, from 8 kHz telephony to 384 kHz hi-res,
-/// with room either side. Anything outside it is a malformed or hostile header
-/// rather than audio somebody recorded.
+/// The sample rates a decoded clip may declare. Containment, and the upper half
+/// is the point: the rate crosses into sherpa as an `i32`, so a 55-byte WAV
+/// declaring 4,000,000,000 Hz decodes cleanly and arrives as -294967296, into a
+/// feature extractor that can terminate the process. The range covers
+/// everything real, from 8 kHz telephony to 384 kHz hi-res, with room either
+/// side.
 const MIN_SAMPLE_RATE: u32 = 1_000;
 const MAX_SAMPLE_RATE: u32 = 384_000;
 
@@ -71,16 +41,11 @@ pub struct Clip {
     pub sample_rate: u32,
 }
 
-/// Decode an uploaded clip to mono `f32`.
-///
-/// Accepts what the product produces and what a tool is likely to hand it:
-/// PCM at 8, 16, 24 or 32 bits and IEEE float at 32 bits, mono or multi
-/// channel. Anything else is a `validation_error` naming what was wrong, which
-/// is a diagnosis the sidecar's opaque "could not decode WAV input" never gave.
-///
-/// Multi-channel input is averaged rather than left-channel-picked: a clip
-/// recorded on a stereo interface with the microphone on the right channel
-/// would otherwise transcribe as silence.
+/// Decode an uploaded clip to mono `f32`. Accepts PCM at 8, 16, 24 or 32 bits
+/// and IEEE float at 32 bits, mono or multi channel; anything else is a
+/// `validation_error` naming what was wrong. Multi-channel input is AVERAGED
+/// rather than left-channel-picked: a clip recorded with the microphone on the
+/// right channel would otherwise transcribe as silence.
 pub fn decode(bytes: &[u8]) -> Result<Clip> {
     let reader = hound::WavReader::new(Cursor::new(bytes))
         .map_err(|err| validation(format!("could not read the audio: {err}")))?;
@@ -116,12 +81,10 @@ pub fn decode(bytes: &[u8]) -> Result<Clip> {
     })
 }
 
-/// Read every sample as `f32` in [-1, 1].
-///
-/// hound yields the stored representation, so the normalisation is ours. The
-/// divisor is the full-scale magnitude for the stored bit depth, which is what
-/// makes a 24-bit clip and a 16-bit clip of the same sound produce the same
-/// numbers rather than one of them being 256 times louder.
+/// Read every sample as `f32` in [-1, 1]. hound yields the stored
+/// representation, so the normalisation is ours: the divisor is the full-scale
+/// magnitude for the stored bit depth, which is what makes a 24-bit and a
+/// 16-bit clip of the same sound produce the same numbers.
 fn read_samples<R: std::io::Read>(
     mut reader: hound::WavReader<R>,
     spec: hound::WavSpec,
@@ -141,10 +104,8 @@ fn read_samples<R: std::io::Read>(
                 .collect::<Result<Vec<f32>>>()
         }
         hound::SampleFormat::Int => {
-            // 8-bit WAV is stored UNSIGNED with a 128 offset, every wider depth
-            // is signed two's complement. hound reports 8-bit as i8 having
-            // already applied the bias, so one scale per depth is all that is
-            // left.
+            // 8-bit WAV is stored UNSIGNED with a 128 offset that hound has
+            // already applied, so one scale per depth is all that is left.
             let scale = match spec.bits_per_sample {
                 8 => 128.0,
                 16 => 32_768.0,
@@ -164,13 +125,10 @@ fn read_samples<R: std::io::Read>(
     }
 }
 
-/// Encode mono `f32` samples as a 16-bit PCM WAV.
-///
-/// Byte-for-byte the canonical 44-byte RIFF layout the sidecar produced, and
-/// that matters beyond taste: the extension broker reads the sample rate
-/// straight out of byte offset 24 (`extensions::broker::wav_sample_rate`), and
-/// the client's playback queue consumes whole WAV bytes. A different chunk
-/// layout would still be a valid WAV and would still break both.
+/// Encode mono `f32` samples as a 16-bit PCM WAV, byte-for-byte the canonical
+/// 44-byte RIFF layout: the extension broker reads the sample rate straight out
+/// of byte offset 24 and the client's playback queue consumes whole WAV bytes,
+/// so a different chunk layout would still be valid and would break both.
 pub fn encode(samples: &[f32], sample_rate: i32) -> Vec<u8> {
     let data_len = samples.len() * 2;
     let rate = u32::try_from(sample_rate).unwrap_or(FALLBACK_SAMPLE_RATE);
@@ -188,9 +146,8 @@ pub fn encode(samples: &[f32], sample_rate: i32) -> Vec<u8> {
     buf.extend_from_slice(&1u16.to_le_bytes()); // format = PCM
     buf.extend_from_slice(&1u16.to_le_bytes()); // channels = mono
     buf.extend_from_slice(&rate.to_le_bytes());
-    // Saturating: the rate comes from the engine, and the two guards above only
-    // reject zero and negative. A nonsense rate above `u32::MAX / 2` would panic
-    // here in a debug build rather than produce a bad header.
+    // Saturating: a nonsense rate above `u32::MAX / 2` would otherwise panic
+    // here in a debug build.
     buf.extend_from_slice(&rate.saturating_mul(2).to_le_bytes()); // byte rate (mono)
     buf.extend_from_slice(&2u16.to_le_bytes()); // block align
     buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
@@ -209,8 +166,7 @@ mod tests {
     use super::*;
 
     /// A WAV built by hound, so the fixtures are not built by the code under
-    /// test. A fixture written with our own `encode` would make the round trip
-    /// assert that two bugs cancel (D-084's shape at the fixture level).
+    /// test: one written with our own `encode` would let two bugs cancel.
     fn wav(
         spec: hound::WavSpec,
         write: impl FnOnce(&mut hound::WavWriter<Cursor<&mut Vec<u8>>>),
@@ -343,12 +299,8 @@ mod tests {
     }
 
     /// The rate is client-controlled and crosses into sherpa as an `i32`, so an
-    /// unbounded one wraps NEGATIVE on the way in.
-    ///
-    /// These are the exact values that motivated the bound: 4,000,000,000
-    /// arrives at `accept_waveform` as -294967296 and `u32::MAX` as -1, on the
-    /// transcription path, into a feature extractor that can terminate the
-    /// process. A 55-byte file produces either one.
+    /// unbounded one wraps NEGATIVE: 4,000,000,000 arrives at `accept_waveform`
+    /// as -294967296 and `u32::MAX` as -1, from a 55-byte file.
     #[test]
     fn an_out_of_range_sample_rate_is_refused_before_it_can_wrap_negative() {
         for rate in [4_000_000_000u32, u32::MAX, MAX_SAMPLE_RATE + 1, 999, 1] {
@@ -396,10 +348,8 @@ mod tests {
     }
 
     /// A minimal 8-bit mono PCM WAV with one sample, declaring `rate`.
-    ///
-    /// Hand-built because `hound::WavWriter` validates the spec it is given, so
-    /// a hostile header cannot be produced through the writer API at all. That
-    /// refusal is a property of the writer and says nothing about the reader.
+    /// Hand-built because `hound::WavWriter` validates the spec it is given, and
+    /// that refusal is a property of the writer rather than the reader.
     fn hand_built_wav(rate: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(45);
         buf.extend_from_slice(b"RIFF");
@@ -461,9 +411,8 @@ mod tests {
 
     #[test]
     fn encoding_clamps_rather_than_wrapping() {
-        // An engine that overshoots produces samples outside [-1, 1]. Without
-        // the clamp the cast wraps and loud audio becomes noise at the opposite
-        // polarity, which is audible and unmistakable.
+        // An engine that overshoots produces samples outside [-1, 1], and
+        // without the clamp the cast wraps loud audio into inverted noise.
         let bytes = encode(&[2.0, -2.0], 24_000);
         assert_eq!(i16::from_le_bytes([bytes[44], bytes[45]]), 32_767);
         assert_eq!(i16::from_le_bytes([bytes[46], bytes[47]]), -32_767);

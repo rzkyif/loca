@@ -9,29 +9,20 @@
 //!
 //! [`rescan`]: MemoriesStore::rescan
 //!
-//! # Two invariants worth stating before the code
+//! Two invariants.
 //!
-//! **Every mutation that reads before it writes is serialised.** Each one spans
-//! an `await` between the read and the write, so two concurrent callers would
-//! otherwise interleave: two edits to one memory, a create racing a rescan, or
-//! two renames that both see a title free and both take it. One
-//! `tokio::sync::Mutex` covers them all, which is the same guarantee the
-//! TypeScript's promise chain gives. Only the write-only bookkeeping (the
-//! summary, the embedding, `touch`, and the enabled flag, whose one read is an
-//! existence check nothing depends on) skips it, because a single statement is
-//! atomic on its own.
+//! **Every mutation that reads before it writes is serialised** by one
+//! `tokio::sync::Mutex`, because each spans an `await` between the read and the
+//! write. Only write-only bookkeeping (the summary, the embedding, `touch`, the
+//! enabled flag) skips it. "It is one `UPDATE`" is not a reason to skip:
+//! `rename` is one `UPDATE` and still needs the lock, because the constraint it
+//! enforces (`COLLATE NOCASE` uniqueness) is not the one the schema's `UNIQUE`
+//! index enforces (BINARY).
 //!
-//! Do not reason from "it is one `UPDATE`" to "it needs no lock": `rename` is
-//! one `UPDATE` and still needs it, because the constraint it enforces
-//! (`COLLATE NOCASE` uniqueness) is not the constraint the schema's `UNIQUE`
-//! index enforces (BINARY), so SQLite would not catch the pair the check
-//! missed.
-//!
-//! **There is exactly one store per process.** It holds that lock, the map of
-//! extension provider directories, and the gate deciding which providers are
-//! active. A second instance would answer `list` from a registry nobody wired
-//! and would let two writes interleave, neither of which is a compile error.
-//! `boot` builds the one and hands clones out.
+//! **There is exactly one store per process**, holding that lock, the map of
+//! extension provider directories and the provider gate. A second instance would
+//! answer `list` from a registry nobody wired and would let two writes
+//! interleave, neither of which is a compile error.
 //!
 //! # Providers
 //!
@@ -66,9 +57,8 @@ pub fn kind_as_str(kind: MemoryKind) -> &'static str {
     }
 }
 
-/// Anything that is not exactly `skill` reads as knowledge, matching `rowToMeta`
-/// (`memories-store.ts:644`). A row with a corrupt `kind` is still served rather
-/// than failing the whole listing.
+/// Anything that is not exactly `skill` reads as knowledge, so a row with a
+/// corrupt `kind` is still served rather than failing the whole listing.
 pub fn kind_from_row(value: &str) -> MemoryKind {
     if value == "skill" {
         MemoryKind::Skill
@@ -77,10 +67,8 @@ pub fn kind_from_row(value: &str) -> MemoryKind {
     }
 }
 
-/// What `rescan` reports. Counts, so `i64`.
-///
-/// Not a contract type: the TypeScript answers this shape inline from
-/// `http/routes/memories.ts` and it has no declaration in `@loca/shared`.
+/// What `rescan` reports. Counts, so `i64`. Declared here rather than generated:
+/// no schema describes this envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct RescanResponse {
     pub added: i64,
@@ -95,26 +83,12 @@ pub const USER_MEMORY_PROVIDER: &str = "user";
 /// Decides which extension providers' memories are visible: those whose
 /// extension is installed, not merely downloaded, and not drifted.
 ///
-/// D12 wires this to the extension registry. A core without extensions (mobile)
-/// leaves it unset, in which case every provider passes, and `user` is always
-/// active regardless.
+/// The extensions module wires this. A core without extensions (mobile) leaves
+/// it unset, in which case every provider passes; `user` is always active.
 ///
-/// # Why a set rather than `is_active(provider)`
-///
-/// Two per-provider reads can straddle an uninstall, so one listing could answer
-/// from two different worlds: a memory whose extension is gone shown next to one
-/// whose extension is not. One snapshot per listing is coherent, and it is also
-/// one query rather than one per row.
-///
-/// # Why it is async
-///
-/// It was `fn is_active(&self, provider: &str) -> bool` and could not be
-/// implemented: the port's extension registry is a DATABASE, so its lookup is
-/// async, where the TypeScript's is a synchronous read of an in-memory map. The
-/// seam was shaped from the TypeScript and quietly stopped fitting, which left
-/// it unwired and every extension memory permanently active. See D-141. The only
-/// caller is [`MemoriesStore::list`], which is already async, so nothing else
-/// had to change to make this implementable.
+/// A SET rather than `is_active(provider)`, because two per-provider reads can
+/// straddle an uninstall and answer one listing from two different worlds. Async
+/// because the extension registry is a database.
 #[async_trait]
 pub trait ProviderGate: Send + Sync {
     async fn active_providers(&self) -> Result<HashSet<String>>;
@@ -345,10 +319,9 @@ impl MemoriesStore {
             .filter(|d| !d.is_empty());
         let tools = suggested_tools_json(skill.as_ref().map(|s| s.suggested_tools.as_slice()));
 
-        // The file is written BEFORE the row, so a failed write can never leave
-        // a row pointing at missing content. `rescan` tolerates an orphaned
-        // file, so the reverse order is the recoverable one; if the INSERT then
-        // fails, the file is removed best-effort.
+        // The file is written BEFORE the row, so a failed write cannot leave a
+        // row pointing at missing content; `rescan` tolerates an orphaned file,
+        // so this is the recoverable order.
         let base = self.inner.paths.memories_dir();
         content::write_memory_content(&base, kind, &filename, body).await?;
 
@@ -408,12 +381,9 @@ impl MemoriesStore {
         let Some(first) = before.find(find) else {
             return Err(validation("find text not found in memory"));
         };
-        // The second search starts one CHARACTER past the first match, not past
-        // its end, so self-overlapping occurrences still count as ambiguous:
-        // `"\n\n"` in `"a\n\n\nb"` matches at two offsets and must be rejected.
-        // Searching from the end of the first match would silently edit an
-        // anchor made of a repeated character, which is exactly the ambiguity
-        // this guard exists to surface.
+        // One CHARACTER past the first match, not past its end, so
+        // self-overlapping occurrences still count as ambiguous: `"\n\n"` in
+        // `"a\n\n\nb"` matches at two offsets and must be rejected.
         let second_from = before[first..]
             .char_indices()
             .nth(1)
@@ -437,9 +407,8 @@ impl MemoriesStore {
     }
 
     pub async fn rename(&self, id: &str, title: &str) -> Result<MemoryMeta> {
-        // Held for the whole check-then-act. The `UNIQUE` index on `title` is
-        // BINARY, so it does not catch "Notes" beside "notes"; the uniqueness
-        // this API promises is the `COLLATE NOCASE` one below, and without the
+        // Held for the whole check-then-act: the `UNIQUE` index on `title` is
+        // BINARY, so it does not catch "Notes" beside "notes", and without the
         // lock two concurrent renames both pass the check and both commit.
         let _guard = self.inner.write_lock.lock().await;
         let clean_title = title.trim().to_string();
@@ -562,14 +531,10 @@ impl MemoriesStore {
                 };
 
                 for row in existing {
-                    // The entry is consumed only when it still describes the
-                    // same sort of thing. A vanished file drops the row; a name
-                    // whose kind flipped (`notes.md` replaced by a `notes.md/`
-                    // skill folder) drops the row AND deliberately leaves the
-                    // entry behind, so the adoption pass below re-adds it with
-                    // the right kind in this same rescan rather than a later
-                    // one. Consuming it here would report the removal and lose
-                    // the addition until the next pass.
+                    // Consumed only when it still describes the same sort of
+                    // thing. A name whose kind flipped drops the row AND leaves
+                    // the entry, so the adoption pass below re-adds it with the
+                    // right kind in this same rescan rather than a later one.
                     let same_kind =
                         matches!(on_disk.get(&row.filename), Some((kind, _)) if *kind == row.kind);
                     if !same_kind {
@@ -660,10 +625,9 @@ impl MemoriesStore {
         self.register_provider(extension_id, extensions_base_dir.clone());
         let now = now_ms();
 
-        // Defence in depth: the manifest schema already rejects `..` and
-        // absolute paths, but containment is re-checked here before any path
-        // reaches the filesystem, so a declared memory can never resolve outside
-        // the extension's install directory.
+        // Defence in depth: the manifest schema already rejects `..` and absolute
+        // paths, and containment is re-checked before any path reaches the
+        // filesystem.
         let install_dir = extensions_base_dir.join(extension_id);
         let mut want: IndexMap<String, MemoryDecl> = IndexMap::new();
         for decl in decls {
@@ -779,9 +743,8 @@ impl MemoriesStore {
 
     /// Store an embedding as raw little-endian `f32` bytes plus its width.
     ///
-    /// The layout is what an existing install already has on disk: the
-    /// TypeScript writes the `Float32Array`'s own buffer, which is
-    /// native-endian, and every target this ships to is little-endian.
+    /// The layout is what an existing install already has on disk, and every
+    /// target this ships to is little-endian.
     pub async fn set_embedding(&self, id: &str, vector: &[f32], source_hash: &str) -> Result<()> {
         let blob: Vec<u8> = vector.iter().flat_map(|x| x.to_le_bytes()).collect();
         let dim = vector.len() as i64;
@@ -828,14 +791,11 @@ impl MemoriesStore {
     /// for scoring at prompt time.
     ///
     /// A `Vec` rather than a map, because the order is observable: equal scores
-    /// keep this order in the top-K, and this is SQLite's row order for an
-    /// unordered select, exactly as it is in the TypeScript.
+    /// keep SQLite's row order in the top-K.
     ///
-    /// A row whose blob is shorter than its declared width is **skipped with a
-    /// warning**. The TypeScript throws there, which propagates out of the whole
-    /// load and silently disables memory injection for the turn; skipping loses
-    /// one corrupt row instead of all of them, and cannot change the score of
-    /// any well-formed one.
+    /// A row whose blob is shorter than its declared width is skipped with a
+    /// warning rather than failing the load, so one corrupt row does not disable
+    /// memory injection for the turn.
     pub async fn load_all_embeddings(&self) -> Result<Vec<(String, StoredEmbedding)>> {
         self.inner
             .db
@@ -1012,9 +972,9 @@ impl MemoriesStore {
 
     /// Whether some **other** row already holds this title, case-insensitively.
     ///
-    /// The exclusion is applied to the first matching row rather than in SQL,
-    /// which is what the TypeScript does: renaming a memory to the title it
-    /// already has is not a conflict, and renaming it to another row's is.
+    /// The exclusion is applied to the first matching row rather than in SQL:
+    /// renaming a memory to the title it already has is not a conflict, and
+    /// renaming it to another row's is.
     async fn title_exists(&self, title: &str, exclude_id: Option<&str>) -> Result<bool> {
         let title = title.to_string();
         let exclude = exclude_id.map(str::to_string);
@@ -1203,12 +1163,8 @@ fn row_to_meta(row: &Row<'_>) -> MemoryMeta {
         kind,
         title: row.get(2).unwrap_or_default(),
         filename: row.get(3).unwrap_or_default(),
-        // Stale when never indexed, or edited since: the pinned summary source
-        // hash differs from the current content hash.
-        //
-        // The contract types it optional, matching `domain/memory.ts`, but the
-        // oracle computes it on every row and never omits it. Always `Some`, so
-        // the field is on the wire exactly as it is today.
+        // Stale when never indexed, or edited since. The contract types it
+        // optional, but it is computed on every row and is always `Some`.
         summary_stale: Some(summary_source_hash.as_deref() != Some(content_hash.as_str())),
         content_hash,
         summary: row.get(5).unwrap_or_default(),

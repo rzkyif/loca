@@ -33,10 +33,9 @@ use crate::error::{validation, Result};
 /// actually points. That is fine here and nowhere else, because the result is
 /// only ever compared against keys Core produced itself.
 ///
-/// A trailing separator is preserved, so `<dir>/` and `<dir>` are different
-/// keys and the first one matches nothing. That is the TypeScript's behaviour,
-/// and widening it would turn a request the oracle answers with "skipped" into
-/// a delete.
+/// A trailing separator is preserved, so `<dir>/` and `<dir>` are different keys
+/// and the first one matches nothing. Widening that would turn a request
+/// answered with "skipped" into a delete.
 pub fn normalize(path: &str) -> String {
     let resolved = normalize_path(Path::new(path));
     let mut out = resolved.to_string_lossy().into_owned();

@@ -1,22 +1,12 @@
 //! Acquiring an extension's files: verify, extract, and swap into place.
+//! Nothing here runs extension code.
 //!
-//! Ports the byte-handling half of
-//! `packages/loca-core/src/extensions/installer-download.ts`.
-//!
-//! Nothing here runs extension code. The manifest is parsed, the folder is
-//! swapped, and the rows are written; `deno install` is the separate phase in
-//! [`super::deps`], and a worker is later still.
-//!
-//! # The integrity gate runs BEFORE extraction and fails closed
-//!
-//! The whole body is buffered, checked, and only then untarred. The precedence
-//! is plain sha256 (what the signed seeded manifest pins), then npm's SRI
-//! `sha512-`, then npm's legacy `dist.shasum`, then **refuse**. There is no
-//! path that installs an unverified tarball, and the refusal is the point: a
-//! supply-chain check that silently degrades to "no verification" when the
-//! registry metadata omits both fields lets a poisoned mirror serve anything it
-//! likes. npm always ships at least a shasum, so the refusal never blocks a
-//! legitimate install.
+//! The integrity gate runs BEFORE extraction and fails closed: plain sha256
+//! (from the signed seeded manifest), then npm's SRI `sha512-`, then the
+//! legacy `dist.shasum`, then refuse. A check that degraded to "unverified"
+//! when registry metadata omits both fields would let a poisoned mirror serve
+//! anything; npm always ships at least a shasum, so the refusal never blocks
+//! a legitimate install.
 
 use std::path::{Path, PathBuf};
 
@@ -25,11 +15,7 @@ use sha2::Digest as _;
 use crate::contain::is_within;
 use crate::error::{AppError, ErrorCode, Result};
 
-/// What is known about a tarball's expected contents.
-///
-/// All three are `Option` because they come from different publishers: the
-/// signed seeded manifest pins `sha256` directly, and npm supplies the other
-/// two in its (untrusted) package metadata.
+/// What is known about a tarball's expected contents, by publisher.
 #[derive(Debug, Clone, Default)]
 pub struct Integrity {
     /// Plain hex sha256, from inside a signature.
@@ -48,13 +34,11 @@ fn extract_failed(message: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::ExtractFailed, message)
 }
 
-/// Check `bytes` against whatever the publisher pinned, or refuse.
-///
-/// The order is strongest-first and each arm RETURNS, so a present-but-wrong
-/// sha256 is a failure rather than something a weaker hash could rescue.
+/// Check `bytes` against whatever the publisher pinned, or refuse. Strongest
+/// first, and each arm returns: a wrong sha256 is not rescued by a weaker hash.
 pub fn verify_tarball(bytes: &[u8], source: &str, verify: &Integrity) -> Result<()> {
     if let Some(expected) = &verify.sha256 {
-        let got = hex::encode(sha2::Sha256::digest(bytes));
+        let got = crate::files::sha256_hex(bytes);
         if got != expected.to_lowercase() {
             return Err(checksum_mismatch(format!(
                 "tarball failed sha256 check for {source}"
@@ -73,15 +57,8 @@ pub fn verify_tarball(bytes: &[u8], source: &str, verify: &Integrity) -> Result<
         return Ok(());
     }
     if let Some(expected) = verify.shasum.as_deref() {
-        // The legacy arm: an npm package old enough to publish `dist.shasum`
-        // (hex SHA-1) and no `dist.integrity`. It used to REFUSE, because the
-        // `sha1` crate was not declared for this crate and D12 could not edit
-        // `Cargo.toml`; that was fail-closed and correct, and it also meant the
-        // Rust core could not install a package the TypeScript core could.
-        //
-        // SHA-1 is verified here because npm's own metadata is the only
-        // integrity npm offers for these, and checking it is strictly better
-        // than not: this is not a claim that SHA-1 is collision-resistant.
+        // Legacy SHA-1: the only integrity npm offers for old packages, and
+        // checking it is strictly better than not.
         use sha1::Digest as _;
         let got = hex::encode(sha1::Sha1::digest(bytes));
         if !got.eq_ignore_ascii_case(expected) {
@@ -96,11 +73,7 @@ pub fn verify_tarball(bytes: &[u8], source: &str, verify: &Integrity) -> Result<
     )))
 }
 
-/// The `sha512-` entry of an SRI string, if there is one.
-///
-/// An SRI string may carry several hashes separated by whitespace, and only the
-/// sha512 one is strong enough to be worth checking. A parser that took the
-/// first entry would accept a `sha1-` prefix as if it were the strong hash.
+/// The `sha512-` entry of a (possibly multi-hash) SRI string, if there is one.
 fn sri_sha512(integrity: Option<&str>) -> Option<String> {
     integrity?
         .split_whitespace()
@@ -108,19 +81,15 @@ fn sri_sha512(integrity: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// What a tar entry may become on disk.
-///
-/// A malicious tarball could otherwise ship a symlink, a hardlink or a device
-/// node and use it to escape the staging directory on a LATER write, which is
-/// the part that makes an allowlist rather than a denylist the right shape.
+/// What a tar entry may become on disk: an allowlist, since a symlink, hardlink
+/// or device node could escape the staging directory on a later write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
     File,
     Dir,
 }
 
-/// ustar typeflag classification. `None` for anything that is not a plain file
-/// or a directory.
+/// ustar typeflag classification.
 pub fn extractable_entry_type(typeflag: u8) -> Option<EntryKind> {
     match typeflag {
         b'5' => Some(EntryKind::Dir),
@@ -136,11 +105,8 @@ pub fn strip_package_prefix(path: &str) -> Option<&str> {
     (!stripped.is_empty()).then_some(stripped)
 }
 
-/// Gunzip and untar ALREADY-VERIFIED bytes into `target_dir`.
-///
-/// Callers must have run [`verify_tarball`] over the same buffer: this function
-/// trusts its input, and it is the only place the two could drift apart, which
-/// is why every caller in this module does both in one breath.
+/// Gunzip and untar ALREADY-VERIFIED bytes into `target_dir`; callers must have
+/// run [`verify_tarball`] over the same buffer.
 pub fn extract_tarball(bytes: &[u8], target_dir: &Path) -> Result<()> {
     let gz = flate2::read::GzDecoder::new(bytes);
     let mut archive = tar::Archive::new(gz);
@@ -153,9 +119,6 @@ pub fn extract_tarball(bytes: &[u8], target_dir: &Path) -> Result<()> {
             continue;
         };
 
-        // The type allowlist is explicit even though `unpack_in` handles
-        // containment, because `unpack_in` will happily CREATE a symlink: the
-        // containment guard and the type guard defend different attacks.
         let Some(kind) = extractable_entry_type(entry.header().entry_type().as_byte()) else {
             return Err(extract_failed(format!(
                 "tarball entry \"{raw}\" has unsupported type {} \
@@ -165,9 +128,7 @@ pub fn extract_tarball(bytes: &[u8], target_dir: &Path) -> Result<()> {
         };
 
         let out = target_dir.join(stripped);
-        // Zip-slip: without this, `package/../../../bin/loca-core` overwrites
-        // whatever the core can write, which includes its own binary, the
-        // worker scripts and the secrets vault.
+        // Zip-slip guard.
         if !is_within(target_dir, &out) {
             return Err(extract_failed(format!(
                 "tarball entry \"{raw}\" escapes the extension directory"
@@ -187,13 +148,8 @@ pub fn extract_tarball(bytes: &[u8], target_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Move a staged folder into its final place, keeping the previous version
-/// recoverable until the move has succeeded.
-///
-/// `<id>` to `<id>.old`, then `<id>.new` to `<id>`, with the old one restored
-/// if the second rename fails. The failure this guards is a half-installed
-/// extension: without the rollback, a failed swap leaves NO install directory
-/// at all, and the extension's tools vanish with no way back.
+/// Move a staged folder into its final place: `<id>` to `<id>.old`, then
+/// `<id>.new` to `<id>`, restoring the old one if the second rename fails.
 pub fn swap_into_place(staging: &Path, install: &Path, extension_id: &str) -> Result<()> {
     let old = with_suffix(install, ".old");
     rm_rf(&old)?;
@@ -205,9 +161,7 @@ pub fn swap_into_place(staging: &Path, install: &Path, extension_id: &str) -> Re
     if let Err(err) = std::fs::rename(staging, install) {
         if had_old {
             if let Err(rollback) = std::fs::rename(&old, install) {
-                // The previous version is now stranded and there is no install
-                // directory. The outer error carries only the primary failure,
-                // so this is the only record of where the files went.
+                // The only record of where the stranded files went.
                 tracing::error!(
                     target: "loca::extensions",
                     "{extension_id}: rollback rename failed; previous version is at {}: {rollback}",
@@ -221,12 +175,8 @@ pub fn swap_into_place(staging: &Path, install: &Path, extension_id: &str) -> Re
     Ok(())
 }
 
-/// `path` with `suffix` appended to the whole name, not to its extension.
-///
-/// `Path::with_extension` would turn `@scope__name` into `@scope.old`, because
-/// it treats everything after the last dot as an extension. Extension ids
-/// contain dots often enough that this is a real bug rather than a hypothetical
-/// one.
+/// `path` with `suffix` appended to the whole name (`Path::with_extension`
+/// would turn `@scope__pkg.io` into `@scope__pkg.old`).
 pub fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(suffix);
@@ -238,8 +188,7 @@ pub fn rm_rf(path: &Path) -> Result<()> {
     match std::fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        // A file rather than a directory: the staging path is always a
-        // directory, but a user can put anything under the extensions dir.
+        // A user can put a plain file where a directory is expected.
         Err(_) => match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -248,12 +197,8 @@ pub fn rm_rf(path: &Path) -> Result<()> {
     }
 }
 
-/// Copy a source tree, skipping `node_modules` at every depth.
-///
-/// Used by a `local` install, where the developer's folder usually has an
-/// installed `node_modules` that the install phase would rebuild anyway. It is
-/// also excluded from the content hash, so copying it would be bytes on disk
-/// nothing ever looks at.
+/// Copy a source tree for a `local` install, skipping `node_modules` at every
+/// depth (the install phase rebuilds it and the hash excludes it).
 pub fn copy_tree_excluding_node_modules(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -269,9 +214,7 @@ pub fn copy_tree_excluding_node_modules(src: &Path, dst: &Path) -> Result<()> {
         } else if kind.is_file() {
             std::fs::copy(&from, &to)?;
         }
-        // A symlink is neither copied nor followed. The content hash refuses
-        // one outright (see `super::super::hash`), so copying it in would
-        // produce an extension that installs and then cannot be verified.
+        // A symlink is neither copied nor followed: the content hash refuses one.
     }
     Ok(())
 }
@@ -296,13 +239,7 @@ mod tests {
         gzip(&builder.into_inner().unwrap())
     }
 
-    /// A tar built by writing the 512-byte headers directly.
-    ///
-    /// The `tar` crate's builder REFUSES to write a path containing `..`, which
-    /// is a good default and makes it useless for staging the attack: a hostile
-    /// tarball is not built by this crate. Writing the header by hand is what
-    /// lets the zip-slip guard be tested against the thing it guards against
-    /// rather than against a path the builder was willing to produce.
+    /// A tar with a hand-written header: the `tar` builder refuses `..` paths.
     fn hostile_tar(name: &str, body: &[u8]) -> Vec<u8> {
         let mut header = [0u8; 512];
         header[..name.len()].copy_from_slice(name.as_bytes());
@@ -328,6 +265,27 @@ mod tests {
         gzip(&out)
     }
 
+    fn sha256(v: impl Into<String>) -> Integrity {
+        Integrity {
+            sha256: Some(v.into()),
+            ..Integrity::default()
+        }
+    }
+
+    fn sri(v: impl Into<String>) -> Integrity {
+        Integrity {
+            integrity: Some(v.into()),
+            ..Integrity::default()
+        }
+    }
+
+    fn shasum(v: impl Into<String>) -> Integrity {
+        Integrity {
+            shasum: Some(v.into()),
+            ..Integrity::default()
+        }
+    }
+
     fn gzip(bytes: &[u8]) -> Vec<u8> {
         let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         std::io::Write::write_all(&mut gz, bytes).unwrap();
@@ -338,10 +296,6 @@ mod tests {
 
     #[test]
     fn a_tarball_with_no_integrity_metadata_at_all_is_refused() {
-        // The single most important row in this file. A check that degrades to
-        // "no verification" when the untrusted registry metadata omits both
-        // fields lets a poisoned mirror serve arbitrary bytes, and nothing
-        // about the install would look wrong.
         let err = verify_tarball(b"anything", "u", &Integrity::default()).unwrap_err();
         assert_eq!(err.code, ErrorCode::ChecksumMismatch);
         assert!(err.message.contains("refusing to install unverified"));
@@ -350,32 +304,20 @@ mod tests {
     #[test]
     fn the_sha256_pin_is_checked_and_a_wrong_one_is_not_rescued_by_a_weaker_hash() {
         let bytes = b"the tarball bytes";
-        let sha256 = hex::encode(sha2::Sha256::digest(bytes));
+        let digest = crate::files::sha256_hex(bytes);
 
-        verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                sha256: Some(sha256.to_uppercase()),
-                ..Integrity::default()
-            },
-        )
-        .expect("an uppercase hex pin must still match");
+        verify_tarball(bytes, "u", &sha256(digest.to_uppercase()))
+            .expect("an uppercase hex pin must still match");
 
-        // A wrong sha256 alongside npm's own metadata must still fail: the
-        // arms return, so the strongest present hash is the verdict. Falling
-        // through would let untrusted registry metadata override a hash that
-        // came from inside a signature.
         let err = verify_tarball(
             bytes,
             "u",
             &Integrity {
-                sha256: Some("b".repeat(64)),
                 integrity: Some(format!(
                     "sha512-{}",
                     BASE64_STANDARD.encode(sha2::Sha512::digest(bytes))
                 )),
-                ..Integrity::default()
+                ..sha256("b".repeat(64))
             },
         )
         .unwrap_err();
@@ -388,91 +330,31 @@ mod tests {
         let sha512 = BASE64_STANDARD.encode(sha2::Sha512::digest(bytes));
         let sha1 = "0".repeat(40);
 
-        verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                // A multi-entry SRI string with the strong hash second. Taking
-                // the first entry would treat `sha1-...` as the strong hash and
-                // compare a sha512 digest against it, which fails; taking any
-                // entry that parses would accept the weak one as sufficient.
-                integrity: Some(format!("sha1-{sha1} sha512-{sha512}")),
-                ..Integrity::default()
-            },
-        )
-        .expect("the sha512 entry was not found in a multi-entry SRI string");
+        verify_tarball(bytes, "u", &sri(format!("sha1-{sha1} sha512-{sha512}")))
+            .expect("the sha512 entry was not found in a multi-entry SRI string");
 
-        let err = verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                integrity: Some(format!("sha512-{}", BASE64_STANDARD.encode([0u8; 64]))),
-                ..Integrity::default()
-            },
-        )
-        .unwrap_err();
+        let bad = sri(format!("sha512-{}", BASE64_STANDARD.encode([0u8; 64])));
+        let err = verify_tarball(bytes, "u", &bad).unwrap_err();
         assert_eq!(err.code, ErrorCode::ChecksumMismatch);
 
-        // An SRI string carrying only weak hashes is not verification: it falls
-        // through to the shasum arm, and with no shasum it is a refusal.
-        let err = verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                integrity: Some(format!("sha1-{sha1}")),
-                ..Integrity::default()
-            },
-        )
-        .unwrap_err();
+        // Weak-only SRI falls through to the shasum arm, and with none, refuses.
+        let err = verify_tarball(bytes, "u", &sri(format!("sha1-{sha1}"))).unwrap_err();
         assert!(err.message.contains("refusing to install unverified"));
     }
 
     #[test]
     fn a_legacy_sha1_shasum_is_verified_in_both_directions() {
-        // The legacy arm: an npm package old enough to publish `dist.shasum`
-        // (hex SHA-1) with no `dist.integrity`. This USED to refuse outright,
-        // because the `sha1` crate was not declared for this crate; that was
-        // fail-closed and correct, and it also meant the port could not install
-        // a package the TypeScript core could.
-        //
-        // Both directions, because a checksum test that only asserts the happy
-        // path passes just as well against a function that ignores its input.
         let bytes = b"legacy bytes";
         let good = {
             use sha1::Digest as _;
             hex::encode(sha1::Sha1::digest(bytes))
         };
-        verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                shasum: Some(good.clone()),
-                ..Integrity::default()
-            },
-        )
-        .expect("a matching sha1 installs");
+        verify_tarball(bytes, "u", &shasum(good.clone())).expect("a matching sha1 installs");
 
-        // Upper case, since npm metadata is not case-normalised and a
-        // case-sensitive compare would reject a legitimate package.
-        verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                shasum: Some(good.to_uppercase()),
-                ..Integrity::default()
-            },
-        )
-        .expect("sha1 comparison is case-insensitive");
+        verify_tarball(bytes, "u", &shasum(good.to_uppercase()))
+            .expect("sha1 comparison is case-insensitive");
 
-        let err = verify_tarball(
-            bytes,
-            "u",
-            &Integrity {
-                shasum: Some("0".repeat(40)),
-                ..Integrity::default()
-            },
-        )
-        .unwrap_err();
+        let err = verify_tarball(bytes, "u", &shasum("0".repeat(40))).unwrap_err();
         assert_eq!(err.code, ErrorCode::ChecksumMismatch);
         assert!(err.message.contains("sha1"), "{}", err.message);
     }
@@ -484,8 +366,7 @@ mod tests {
         assert_eq!(extractable_entry_type(b'0'), Some(EntryKind::File));
         assert_eq!(extractable_entry_type(0), Some(EntryKind::File));
         assert_eq!(extractable_entry_type(b'5'), Some(EntryKind::Dir));
-        // Symlink, hardlink, char device, block device, fifo, and GNU long
-        // name. Each is a way to write somewhere the archive does not name.
+        // Symlink, hardlink, char/block device, fifo, GNU long name.
         for flag in [b'1', b'2', b'3', b'4', b'6', b'L', b'K'] {
             assert_eq!(extractable_entry_type(flag), None, "typeflag {flag}");
         }
@@ -495,7 +376,6 @@ mod tests {
     fn the_package_prefix_is_stripped_and_a_bare_prefix_entry_is_skipped() {
         assert_eq!(strip_package_prefix("package/main.ts"), Some("main.ts"));
         assert_eq!(strip_package_prefix("package/"), None);
-        // Not every tarball is an npm one; an unprefixed entry passes through.
         assert_eq!(strip_package_prefix("main.ts"), Some("main.ts"));
         assert_eq!(strip_package_prefix(""), None);
     }
@@ -520,21 +400,13 @@ mod tests {
 
     #[test]
     fn an_absolute_tarball_entry_cannot_write_outside_the_install_dir_either() {
-        // A different attack from `..`, taking a different route through the
-        // same guard: `Path::join` REPLACES the base when its argument is
-        // absolute, so `out` becomes the absolute path itself rather than
-        // anything under the staging directory. A guard written as "does the
-        // joined path start with the target" catches both; one written as
-        // "does the ENTRY contain .." catches only the other one.
+        // `Path::join` replaces the base for an absolute argument.
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("staging");
         let outside = dir.path().join("absolute.txt");
         std::fs::write(&outside, b"original").unwrap();
 
-        // The name is absolute and carries NO `package/` prefix. With the
-        // prefix it would strip to a relative path and land harmlessly inside
-        // the staging directory, which is what the first version of this test
-        // built and why it proved nothing.
+        // No `package/` prefix, or it would strip to a harmless relative path.
         let bytes = hostile_tar(&outside.to_string_lossy(), b"overwritten");
         let err = extract_tarball(&bytes, &target).unwrap_err();
         assert_eq!(err.code, ErrorCode::ExtractFailed);
@@ -543,8 +415,6 @@ mod tests {
 
     #[test]
     fn a_symlink_entry_is_refused_rather_than_ignored() {
-        // Ignoring it would install an extension whose archive said it wanted a
-        // symlink, quietly without one. Refusing says so.
         let dir = tempfile::tempdir().unwrap();
         let mut builder = tar::Builder::new(Vec::new());
         let mut header = tar::Header::new_ustar();
@@ -614,9 +484,6 @@ mod tests {
 
     #[test]
     fn a_failed_swap_puts_the_previous_version_back() {
-        // Without the rollback a failed swap leaves NO install directory: the
-        // extension's tools vanish and the files are stranded under a name
-        // nothing looks for.
         let dir = tempfile::tempdir().unwrap();
         let install = dir.path().join("ext");
         let staging = dir.path().join("ext.new");
@@ -634,8 +501,6 @@ mod tests {
 
     #[test]
     fn a_stale_old_folder_from_a_crashed_run_is_cleared_first() {
-        // Without this the rename to `.old` fails on every subsequent install
-        // of an extension whose previous swap was interrupted.
         let dir = tempfile::tempdir().unwrap();
         let install = dir.path().join("ext");
         let staging = dir.path().join("ext.new");
@@ -653,9 +518,6 @@ mod tests {
 
     #[test]
     fn the_staging_suffix_is_appended_to_the_whole_name() {
-        // `Path::with_extension` treats everything after the last dot as an
-        // extension, so a scoped npm id would stage at `@scope.new` and the
-        // swap would move the wrong directory.
         assert_eq!(
             with_suffix(Path::new("/x/@scope__pkg.io"), ".new"),
             PathBuf::from("/x/@scope__pkg.io.new")
@@ -716,8 +578,6 @@ mod tests {
     fn removing_something_that_is_not_there_is_success() {
         let dir = tempfile::tempdir().unwrap();
         rm_rf(&dir.path().join("never-existed")).unwrap();
-        // And a plain file, which the staging path can be if a user put one
-        // there by hand.
         let file = dir.path().join("a-file");
         std::fs::write(&file, b"x").unwrap();
         rm_rf(&file).unwrap();

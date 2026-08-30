@@ -5,7 +5,7 @@
  */
 
 import type { ScheduledPrompt, ScheduledPromptDraft, ScheduleSpec } from "@loca/shared";
-import type { ScheduledPromptPatch } from "$lib/core/scheduled-prompts";
+import type { ScheduledPromptPatch } from "$lib/core";
 import { cores } from "$lib/core";
 import { getLogger } from "$lib/util/log";
 import { Subscriptions } from "$lib/util/subscriptions";

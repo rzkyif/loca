@@ -1,13 +1,6 @@
-//! D15's suite: the seven routes, the two providers behind them, and the four
-//! bounds that are one keystroke from wrong.
-//!
-//! Every test here was watched go red against the mutation named in its doc
-//! comment before being trusted (D-015). Three of them look like they assert a
-//! library default and do not: the UTF-16 length bound agrees with `chars()` and
-//! with `len()` for every ASCII input, the multipart filename rule agrees with
-//! "read whatever arrived" for every well-formed client, and the status routes
-//! agree with "always false" on a core with no engine, which is the state the
-//! whole suite runs in.
+//! The speech suite: the seven routes, the two providers behind them, and the
+//! four bounds that are one keystroke from wrong. Each test's doc names the
+//! change it defends against.
 //!
 //! The external provider is a real loopback HTTP server rather than a mocked
 //! client, so the request that would go to a user's endpoint is asserted as
@@ -60,12 +53,9 @@ impl Seen {
         serde_json::from_slice(&self.body).expect("upstream body was not JSON")
     }
 
-    /// The value of one multipart part, by name.
-    ///
-    /// Parsed rather than substring-matched, and the difference is not
-    /// pedantry: the generated boundary is random hex, so it contains a "de" or
-    /// an "es" often enough that a `contains` assertion passes or fails by
-    /// luck. This one cost a red test to learn.
+    /// The value of one multipart part, by name. Parsed rather than
+    /// substring-matched: the generated boundary is random hex, so a `contains`
+    /// assertion passes or fails by luck.
     fn part(&self, name: &str) -> Option<String> {
         let text = self.text();
         let at = text.find(&format!("name=\"{name}\""))?;
@@ -156,8 +146,7 @@ impl Upstream {
 
 /// A listener that accepts a connection and answers nothing, ever: the wedged
 /// provider the client's deadline exists for. The connections are held rather
-/// than dropped, because a closed socket is a transport error and would not
-/// exercise the timeout at all.
+/// than dropped, since a closed socket is a transport error instead.
 async fn wedged_upstream() -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -234,7 +223,7 @@ async fn upstream_handler(State(state): State<Arc<UpstreamState>>, req: Request<
 
 // --- a local engine that answers -----------------------------------------------
 
-/// Records what it was handed and answers with fixtures. The real one is N3's.
+/// Records what it was handed and answers with fixtures.
 #[derive(Default)]
 struct FakeLocal {
     calls: Mutex<Vec<String>>,
@@ -259,10 +248,9 @@ impl LocalSpeech for FakeLocal {
     }
 }
 
-/// A voice source with one voice, and it is a SEPARATE stub from the engine on
-/// purpose. Voices are a catalog fact (D-039), so the fixture wires this whether
-/// or not it wires an engine, which is exactly what lets
-/// `voices_come_from_the_catalog_not_the_engine` be written at all.
+/// A voice source with one voice, deliberately a SEPARATE stub from the engine:
+/// voices are a catalog fact, so the fixture wires this whether or not it wires
+/// an engine.
 struct StubVoices;
 
 #[async_trait]
@@ -306,9 +294,8 @@ struct Fixture {
     settings: Settings,
 }
 
-/// External providers configured at the loopback upstream, with no API key: a
-/// keyless loopback gateway is the configuration the shared resolver hands a
-/// placeholder to, and it is what the conformance harness runs.
+/// External providers at the loopback upstream, with no API key: a keyless
+/// loopback gateway is what the resolver hands its placeholder to.
 async fn external_fixture(extra: &[(&str, Value)]) -> Fixture {
     let upstream = Upstream::start().await;
     let mut settings = vec![
@@ -324,7 +311,7 @@ async fn external_fixture(extra: &[(&str, Value)]) -> Fixture {
 }
 
 /// The local provider selected, with no engine behind it: the state of a host
-/// without local inference, which the TypeScript already ships on mobile.
+/// built without local speech.
 async fn local_fixture(extra: &[(&str, Value)]) -> Fixture {
     let upstream = Upstream::start().await;
     let mut settings = vec![
@@ -335,13 +322,10 @@ async fn local_fixture(extra: &[(&str, Value)]) -> Fixture {
     fixture(upstream, &settings).await
 }
 
-/// The slice with the router-wide body limit around it, which is not decoration.
-///
-/// axum's `DefaultBodyLimit` is 2 MB unless something raises it, and the real
-/// router raises it to 100 MiB for the whole app. A slice mounted bare would
-/// therefore refuse a legitimate 20 MB upload with a multipart parse error long
-/// before this package's own 25 MB check could produce its message, which is
-/// exactly what the oversized-upload test caught.
+/// The slice with the router-wide body limit around it, which is not
+/// decoration: axum's `DefaultBodyLimit` is 2 MB, and the real router raises it
+/// to 100 MiB, so a bare slice refuses a legitimate 20 MB upload with a
+/// multipart parse error before this package's own 25 MB check is reached.
 fn mounted(ctx: &AppContext, manager: &Arc<Manager>, local: Arc<dyn LocalSpeech>) -> Router {
     super::routes::routes(ctx, Arc::clone(manager), local, Arc::new(StubVoices))
         .layer(crate::transport::middleware::body_limit::limit())
@@ -658,27 +642,16 @@ async fn a_later_audio_file_does_not_rescue_a_non_file_audio_field() {
     );
 }
 
-/// A `language` part that is not valid UTF-8 is decoded lossily, not rejected,
-/// because that is what the other side does.
+/// A `language` part that is not valid UTF-8 is decoded lossily, not rejected.
 ///
-/// Worth pinning precisely because the obvious assumption is the opposite one.
-/// `multer::Field::text` decodes "with malformed sequences replaced with the
-/// REPLACEMENT CHARACTER" rather than failing, so bad bytes here can never
-/// produce a read error and a test asserting a 400 would be asserting something
-/// the library cannot do. The oracle lands in the same place from the other
-/// direction: `form.get("language")` goes through WHATWG UTF-8 decoding, which
-/// substitutes U+FFFD too.
+/// `multer::Field::text` replaces malformed sequences with U+FFFD rather than
+/// failing, so bad bytes can never produce a read error here and a test
+/// asserting a 400 would assert something the library cannot do. The `map_err`
+/// on that branch still catches a part that genuinely cannot be read.
 ///
-/// The `map_err` on that branch is still right and still load-bearing. It
-/// catches a part that genuinely cannot be read (a connection dropped
-/// mid-part), which is a broken request rather than an absent hint, and it is
-/// the same rule the `audio` branch one line up follows.
-/// A second trap sits underneath the first: `text` decodes with BOM SNIFFING,
-/// so a value that opens with a byte-order mark is decoded in the encoding the
-/// mark names rather than as UTF-8. `ff fe` is not merely invalid UTF-8, it is
-/// the UTF-16LE BOM, and it decodes to the empty string rather than to two
-/// replacement characters. Both cases are pinned below so the next reader does
-/// not have to rediscover which one they picked.
+/// A second trap sits underneath: `text` decodes with BOM SNIFFING, so `ff fe`
+/// is the UTF-16LE BOM and decodes to the empty string rather than to two
+/// replacement characters. Both cases are pinned below.
 #[tokio::test]
 async fn a_language_field_that_is_not_utf8_is_decoded_lossily() {
     let fx = external_fixture(&[]).await;
@@ -723,12 +696,10 @@ async fn a_language_field_that_decodes_to_nothing_is_an_absent_hint() {
     );
 }
 
-/// Mutation: take `Multipart` directly in the handler.
-///
-/// axum's own extractor rejects a request that is not `multipart/form-data`
-/// before the handler runs, with a plain-text body. Every other failure in this
-/// slice is the `{error:{code,message}}` envelope, and a client that calls
-/// `res.json()` on the answer gets a parse failure instead of a code.
+/// Taking `Multipart` directly in the handler would let axum's own extractor
+/// reject a non-multipart request with a plain-text body. Every other failure
+/// here is the `{error:{code,message}}` envelope, and a client calling
+/// `res.json()` would get a parse failure instead of a code.
 #[tokio::test]
 async fn a_request_that_is_not_multipart_still_gets_the_error_envelope() {
     let fx = external_fixture(&[]).await;
@@ -759,17 +730,13 @@ async fn a_request_that_is_not_multipart_still_gets_the_error_envelope() {
     assert!(fx.upstream.seen().is_empty());
 }
 
-/// Mutation: `>=` at the comparison, or a different constant.
-///
-/// The bound is exclusive on the other side (`audio.size > STT_MAX_AUDIO_BYTES`)
-/// and the message names the number, so both the value and which side of it is
-/// refused are part of the contract. Driven through the service rather than the
-/// route: the at-limit half would otherwise cost a 25 MB multipart round trip to
-/// say the same thing.
+/// The bound is exclusive and the message names the number, so both the value
+/// and which side of it is refused are part of the contract. Driven through the
+/// service rather than the route: the at-limit half would otherwise cost a
+/// 25 MB multipart round trip.
 #[tokio::test]
 async fn the_audio_bound_is_25_mb_and_the_limit_itself_is_allowed() {
-    // Spelled out, because every other assertion here is written in terms of
-    // the constant and would follow it anywhere.
+    // Spelled out: every other assertion here follows the constant.
     assert_eq!(super::STT_MAX_AUDIO_BYTES, 26_214_400);
 
     let ctx = context(&[
@@ -930,13 +897,10 @@ async fn empty_text_is_refused() {
     assert!(fx.upstream.seen().is_empty());
 }
 
-/// Mutation: count `chars()` or `len()` instead of UTF-16 code units.
-///
-/// This is the test that has to carry an astral case. Every count agrees for
-/// ASCII, so the 2000-character assertions below pass under all three
-/// mutations; only the emoji distinguishes them. 1001 astral characters are
-/// 2002 UTF-16 units (over the bound), 1001 chars (under it), and 4004 bytes
-/// (over it), so the ASCII pair plus this one pins the unit exactly.
+/// The bound is UTF-16 code units, not `chars()` or `len()`. Every count agrees
+/// for ASCII, so only the astral case distinguishes them: 1001 astral
+/// characters are 2002 UTF-16 units (over), 1001 chars (under) and 4004 bytes
+/// (over), so the ASCII pair plus this one pins the unit exactly.
 #[tokio::test]
 async fn the_text_bound_is_measured_in_utf16_code_units() {
     let fx = external_fixture(&[]).await;
@@ -1170,13 +1134,10 @@ async fn a_provider_that_stays_down_is_retried_twice_and_no_more() {
     );
 }
 
-/// Mutation: drop `.timeout(...)` from the client builder.
-///
-/// The deadline is the only bound on a provider that accepts the connection and
-/// then says nothing: without it the axum handler, and the user's request behind
-/// it, wait forever. Time-bounded so a regression fails rather than hangs
-/// (D-038), and driven with a short deadline so the test does not have to wait
-/// out the real one, with the real one pinned separately.
+/// The client's deadline is the only bound on a provider that accepts the
+/// connection and then says nothing. Time-bounded so a regression fails rather
+/// than hangs, and driven with a short deadline; the real one is pinned
+/// separately.
 #[tokio::test]
 async fn a_wedged_provider_is_cut_off_rather_than_waited_on() {
     assert_eq!(
@@ -1200,12 +1161,10 @@ async fn a_wedged_provider_is_cut_off_rather_than_waited_on() {
     assert_eq!(err.message, "external STT failed: Request timed out.");
 }
 
-/// Mutation: fold `reqwest::Error`'s own text into the message.
-///
-/// Its `Display` appends " for url (...)" with no redaction, so a base URL
-/// carrying credentials (`https://user:pw@gateway/v1`) reaches the response
-/// body. The log scrubber does not cover for it either: it masks bearer-shaped
-/// and long values, and a short password is neither.
+/// `reqwest::Error`'s `Display` appends " for url (...)" with no redaction, so
+/// folding it into the message puts a base URL carrying credentials into the
+/// response body. The log scrubber masks bearer-shaped and long values, and a
+/// short password is neither.
 #[tokio::test]
 async fn a_transport_failure_does_not_echo_the_endpoint_url() {
     let port = dead_port().await;
@@ -1369,18 +1328,10 @@ async fn load_and_unload_are_accepted_and_answer_with_no_body() {
 
 // --- voices --------------------------------------------------------------------
 
-/// Voices are a CATALOG fact, so they must resolve with no local engine at all
-/// (D-039). This test previously asserted the opposite, that the list is empty
-/// without an engine, and it passed: the emptiness was the defect, and it would
-/// have shipped an always-empty voice dropdown on every mobile build until N3.
-///
-/// The first half is the regression guard and the reason `Unavailable` is used
-/// explicitly rather than incidentally: `local_fixture` mounts no engine, and
-/// the voices still arrive. The second half stops "the source is consulted only
-/// when an engine exists" from passing.
-///
-/// Mutation: route `voices` back through `inner.local` (the pre-D-039 shape) and
-/// the first assertion goes red.
+/// Voices are a CATALOG fact, so they must resolve with no local engine at all,
+/// or the dropdown is empty on every build without one. `Unavailable` is used
+/// explicitly rather than incidentally in the first half; the second half stops
+/// "the source is consulted only when an engine exists" from passing.
 #[tokio::test]
 async fn voices_come_from_the_catalog_not_the_engine() {
     let fx = local_fixture(&[]).await;

@@ -1,30 +1,8 @@
-//! Requirements snapshot, greetings, and automated sessions.
-//!
-//! Work package **D8** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here, with one carve-out:
-//! `chat/automated.rs` is D8's file living in D4's module, per D-090 and D-094.
-//!
-//! # What this module is for
-//!
-//! One question, asked from several places: **what does the current
-//! configuration need on disk that is not there yet?** The client renders the
-//! answer as a single pending-downloads popup and gates the app on it, so
-//! everything that can change the answer has to converge on one computation.
-//! The things that can change it are a settings write, a model download
-//! finishing or failing, a binary install finishing or failing, and a reclaim
-//! through the storage screen.
-//!
-//! Greetings live here because the greeting route is the other half of "is this
-//! core ready to be used yet": it is the request a client makes on the same edge
-//! that starts the model load.
-//!
-//! # The recompute is coalesced, and the reason is a settings burst
-//!
-//! Applying a preset writes many keys, and each write is a change edge. Without
-//! coalescing that is one full recompute and one broadcast per key. [`Requirements::changed`]
-//! therefore never computes inline: it pokes a one-slot channel, so a burst of N
-//! notifications costs at most two recomputes (the one running and one trailing
-//! rerun), which is the bound `services/requirements.ts:150-172` states.
+//! Requirements snapshot (what the current configuration needs on disk that is
+//! not there yet) and greetings. Every change trigger (settings write, model or
+//! binary download ending, storage reclaim) converges on one coalesced recompute:
+//! [`Requirements::changed`] pokes a one-slot channel, so a burst of N
+//! notifications costs at most two recomputes.
 
 pub mod compute;
 pub mod deps;
@@ -55,8 +33,7 @@ struct Inner {
     models: Models,
     binaries: Arc<dyn deps::Binaries>,
     frames: Arc<FrameBus>,
-    /// One slot. A full buffer means a rerun is already queued, so a dropped
-    /// send IS the coalescing rather than a lost notification.
+    /// One slot: a full buffer means a rerun is already queued.
     wake: mpsc::Sender<()>,
 }
 
@@ -74,12 +51,9 @@ impl std::fmt::Debug for Requirements {
 }
 
 impl Requirements {
-    /// Build the service and start its recompute worker.
-    ///
-    /// The worker holds a `Weak`, and the only `Sender` lives in `Inner`, so
-    /// dropping the last handle closes the channel and the task ends. That
-    /// matters for tests more than for production: a strong reference here would
-    /// leak one live task per test.
+    /// Build the service and start its recompute worker. The worker holds a
+    /// `Weak` and the only `Sender` lives in `Inner`, so dropping the last
+    /// handle ends the task.
     pub fn new(
         settings: Settings,
         models: Models,
@@ -104,11 +78,9 @@ impl Requirements {
         Self { inner }
     }
 
-    /// The snapshot for the current configuration.
-    ///
-    /// `probe_sizes` is the ONLY thing that reaches the network here, and it is
-    /// set only by `?probe=1`, which the client sends only when the user opens
-    /// the download confirmation modal.
+    /// The snapshot for the current configuration. `probe_sizes` is the only
+    /// thing that reaches the network, and only `?probe=1` (the confirm modal)
+    /// sets it.
     pub async fn snapshot(&self, probe_sizes: bool) -> Result<RequirementsSnapshot> {
         snapshot(&self.inner, probe_sizes).await
     }
@@ -122,17 +94,11 @@ impl Requirements {
     }
 }
 
-/// Recompute and broadcast, from any of the change triggers.
-///
-/// Deliberately infallible and non-blocking: every caller is a fire-and-forget
-/// notification on a mutation path that has already succeeded, and making them
-/// wait on a model probe would put a filesystem walk in the middle of a settings
-/// PATCH.
+/// Infallible and non-blocking: callers are fire-and-forget notifications on
+/// mutation paths that already succeeded.
 impl RequirementsNotifier for Requirements {
     fn changed(&self) {
-        // A full channel is the coalescing working, and a closed one means the
-        // worker is gone, which only happens at shutdown. Neither is worth a log
-        // line on a path this hot.
+        // Full = coalesced; closed = shutdown. Neither is worth a log line.
         let _ = self.inner.wake.try_send(());
     }
 }
@@ -150,10 +116,8 @@ async fn snapshot(inner: &Inner, probe_sizes: bool) -> Result<RequirementsSnapsh
     .await
 }
 
-/// One pass of the worker. A failed recompute logs and skips the broadcast
-/// rather than propagating: there is nobody to propagate to, and broadcasting a
-/// partial snapshot would tell every client the requirements changed to
-/// something wrong.
+/// One worker pass. A failed recompute logs and skips the broadcast rather than
+/// pushing a partial snapshot to every client.
 async fn recompute(inner: &Inner) {
     match snapshot(inner, false).await {
         Ok(snap) => inner

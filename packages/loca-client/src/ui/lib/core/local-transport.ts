@@ -17,7 +17,7 @@ import {
   platform,
 } from "../platform/index.ts";
 import { getLogger } from "../util/log.ts";
-import type { CoreTransport } from "./transport.ts";
+import type { CoreTransport } from "./client.ts";
 
 const log = getLogger("local-core");
 

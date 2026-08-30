@@ -37,10 +37,9 @@ struct SettingsState {
 
 /// The settings slice.
 ///
-/// The service is threaded in rather than constructed here for the same reason
-/// the pairing slice takes its `Auth`: it holds the store's cache and the write
-/// lock that serializes read-modify-write, so a second instance would give this
-/// route its own, and two PATCHes could then lose each other's changes.
+/// The service is threaded in rather than constructed here: it holds the store's
+/// cache and the write lock, so a second instance would let two PATCHes lose
+/// each other's changes.
 pub fn routes(ctx: &AppContext, settings: Settings) -> Router {
     settings.spawn_secret_name_relay(&ctx.vault);
     let state = SettingsState {
@@ -77,10 +76,9 @@ async fn patch_settings(
     let Value::Object(patch) = body else {
         return Err(validation("object body required"));
     };
-    // Strict, and the strictness is the point: only known schema keys the core
-    // stores, with well-typed values. Secrets belong in the vault,
-    // `client-on-client` keys in the Client's own file, and a wrong-typed value
-    // would otherwise flow into a sidecar's argv.
+    // Strict on purpose: only known schema keys the core stores, well typed.
+    // Secrets belong in the vault, `client-on-client` keys in the Client's own
+    // file, and a wrong-typed value would flow into a sidecar's argv.
     let errors = validate_settings_patch(&patch, CORE_STORED);
     if !errors.is_empty() {
         return Err(validation(errors.join("; ")));
@@ -121,12 +119,10 @@ struct SecretNames {
 ///   - `tls-key`, the sealed private key of the certificate every paired client
 ///     pinned.
 ///
-/// Without this gate a paired client can DELETE `tls-key`, and the next boot
-/// generates a fresh keypair with a different SPKI pin, locking out every
-/// paired client at once. PUT is worse: a value that is not a valid JWK means
-/// the core does not boot. Revoking one other device is deliberately gated
-/// behind the admin token so one device cannot lock the others out, and an
-/// ungated route reaching the same outcome defeats that.
+/// Without this gate a paired client could DELETE `tls-key`, and the next boot
+/// would generate a fresh keypair with a different SPKI pin, locking out every
+/// paired client at once; a PUT of something that is not a valid JWK is worse,
+/// because then the core does not boot.
 fn assert_settings_secret(name: &str) -> Result<()> {
     if !schema().is_secret_key(name) {
         return Err(not_found(format!("unknown secret setting \"{name}\"")));
@@ -515,7 +511,7 @@ mod tests {
     ///
     /// Without the filter, any paired client can delete `tls-key`, and the next
     /// boot generates a fresh keypair with a different SPKI pin, locking out
-    /// every paired client at once. No admin token required. See D-027.
+    /// every paired client at once. No admin token required.
     #[tokio::test]
     async fn the_tls_key_is_not_reachable_through_the_settings_routes() {
         let env = env();

@@ -12,7 +12,7 @@ import { cores } from "$lib/core";
 import { platform } from "$lib/platform";
 import { getLogger } from "$lib/util/log";
 import { Subscriptions } from "$lib/util/subscriptions";
-import { confirmState } from "./confirm.svelte";
+import { confirmState } from "./overlays.svelte";
 
 const log = getLogger("downloads");
 const reqLog = getLogger("requirements");

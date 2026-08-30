@@ -1,7 +1,5 @@
 //! Reclaim-path tests.
 //!
-//! # How these avoid risking a real tree
-//!
 //! Every fixture is a `tempfile::tempdir` holding two siblings: `root/`, which
 //! the core root is rooted at, and `outside/canary.txt`, which nothing in the
 //! tree may ever reach. Because `Paths::rooted` puts the models directory
@@ -10,12 +8,9 @@
 //! Each destructive test asserts the canary survived, so an escape fails an
 //! assertion instead of passing over an empty tree.
 //!
-//! # Why the guards are tested separately
-//!
 //! The membership guard alone defeats every traversal input, so an end-to-end
-//! escape test passes with `assert_under` deleted. Each guard therefore has a
-//! test that fails when only that guard is removed, and each was watched go red
-//! against a mutated build before being kept (D-015):
+//! escape test would pass with `assert_under` deleted. Each guard therefore has
+//! a test that fails when only that guard is removed:
 //!
 //! - `assert_under` itself, in `safety.rs`, against roots and escapes directly.
 //! - membership, here, with a real file inside the root that no category lists.
@@ -205,8 +200,8 @@ async fn a_category_size_is_the_sum_of_its_rows_and_the_total_is_the_sum_of_thos
     );
 }
 
-/// The wired-and-unwired pair. Conformance cannot catch this: a freshly seeded
-/// home has no models, so both answers look identical over the wire.
+/// The wired-and-unwired pair, which look identical over the wire on a home with
+/// no models.
 #[tokio::test]
 async fn models_are_hidden_until_the_lock_source_is_wired() {
     let unwired = Fixture::new(StorageDeps::unwired());
@@ -296,10 +291,9 @@ async fn sessions_are_newest_first_and_an_active_one_is_locked() {
     );
 }
 
-/// `root_path` is the parent of the models directory, which equals the core
-/// root only when the root was overridden. Every test here and the whole
-/// conformance harness override it, so this is the one assertion that can see
-/// the difference.
+/// `root_path` is the parent of the models directory, which equals the core root
+/// only when the root was overridden. Every test here overrides it, so this is
+/// the one assertion that can see the difference.
 #[test]
 fn root_path_is_the_models_parent_and_not_the_core_root() {
     let Ok(paths) = Paths::from_env(Channel::Stable) else {

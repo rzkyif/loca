@@ -1,13 +1,9 @@
 //! Which model files the current settings require.
 //!
-//! Ported from `@loca/shared/domain/settings/model-files.ts`, which the
-//! TypeScript shares between the core and the client. Three Rust consumers need
-//! it and none of them is a natural owner on its own: this package's `/ensure`
-//! route and its `ModelLocks` seam, D8's requirements snapshot, and through the
-//! seam D9's storage locks, which is already `done` and waiting. D-031 assigned
-//! it here; D8 consumes [`required_model_refs`] rather than porting a second
-//! copy, because two answers to "is this file required" is a delete the user
-//! should not have been offered.
+//! Three consumers read it: this module's `/ensure` route and its `ModelLocks`
+//! seam, the requirements snapshot, and the storage locks. One answer to "is
+//! this file required", because two would be a delete the user should not have
+//! been offered.
 //!
 //! Everything here reads RESOLVED settings, with the schema defaults underneath.
 //! The sparse file omits an unchanged default, so a core whose `llm.modelPath`
@@ -22,8 +18,7 @@ use crate::contract::api::RequirementGroup;
 /// all-MiniLM-L6-v2 GGUF. Its identity is folded into the stored-vector
 /// staleness hash, so changing it forces a re-embed of every cached vector.
 ///
-/// Hosted in process by `inference::embed`, which reads this same constant. The
-/// oracle ran it in a second `llama-server`; there is no sidecar now.
+/// Hosted in process by `inference::embed`, which reads this same constant.
 pub const EMBED_MODEL_FILE: &str =
     "@second-state/All-MiniLM-L6-v2-Embedding-GGUF/main/all-MiniLM-L6-v2-Q8_0.gguf";
 
@@ -34,10 +29,9 @@ pub struct RequiredModelRef {
     pub group: RequirementGroup,
 }
 
-/// JavaScript truthiness, which is what `!!value` and `??` mean at these call
-/// sites. A settings value is normally a real boolean, but the file is
-/// hand-editable and `"false"` is a truthy string in the language being ported,
-/// so guessing here would silently change what a device downloads.
+/// JavaScript truthiness. A settings value is normally a real boolean, but the
+/// file is hand-editable and `"false"` is a truthy string, so guessing here
+/// would silently change what a device downloads.
 fn truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,
@@ -97,22 +91,19 @@ pub fn model_files_map(value: Option<&Value>) -> Option<IndexMap<String, String>
     if raw.trim().is_empty() {
         return None;
     }
-    // Through `OrderedBundle`, NOT through `serde_json::Value`. `Value`'s map
-    // is a `BTreeMap` in this crate, so parsing the bundle that way sorts the
-    // roles and a whisper bundle comes back decoder-first. That order is what
-    // the download queue and the requirements list show, and it is the order
-    // the setting was written in.
+    // Through `OrderedBundle`, NOT `serde_json::Value`, whose map is a
+    // `BTreeMap` here: sorting the roles would show a whisper bundle
+    // decoder-first in the download queue and the requirements list.
     let bundle: OrderedBundle = serde_json::from_str(raw).ok()?;
     Some(bundle.0.into_iter().collect())
 }
 
 /// A JSON object of string values, in the order the document lists them.
 ///
-/// `serde`'s `MapAccess` yields entries in input order, which is the whole
-/// reason this exists rather than a `serde_json::Value`. A non-string value
-/// fails the whole parse, matching the TypeScript's `if (typeof spec !==
-/// "string") return null`: a half-read bundle would download some of a model's
-/// files and leave the engine unable to load any of them.
+/// `serde`'s `MapAccess` yields entries in input order, which is the whole reason
+/// this exists rather than a `serde_json::Value`. A non-string value fails the
+/// whole parse: a half-read bundle would download some of a model's files and
+/// leave the engine unable to load any of them.
 struct OrderedBundle(Vec<(String, String)>);
 
 impl<'de> serde::Deserialize<'de> for OrderedBundle {
@@ -173,10 +164,9 @@ pub fn required_model_refs(settings: &Map<String, Value>) -> Vec<RequiredModelRe
                 group: RequirementGroup::Llm,
             });
         }
-        // The projector is required only when the user turned images ON.
-        // Selecting a vision-capable model writes `llm.mmprojPath` but
-        // deliberately never writes `llm.supportImages`, so picking one does
-        // not silently add a multi-gigabyte download.
+        // Required only when the user turned images ON: selecting a
+        // vision-capable model writes `llm.mmprojPath` and never
+        // `llm.supportImages`, so picking one adds no download.
         if images_on {
             if let Some(spec) = is_hf_spec(settings.get("llm.mmprojPath")) {
                 out.push(RequiredModelRef {
@@ -219,9 +209,8 @@ pub fn required_model_refs(settings: &Map<String, Value>) -> Vec<RequiredModelRe
     out
 }
 
-/// The sources one sidecar kind needs, which is what `/ensure` and D8's
-/// requirements download both start from. Empty when the kind is disabled or on
-/// an external provider.
+/// The sources one sidecar kind needs. Empty when the kind is disabled or on an
+/// external provider.
 pub fn sources_for_kind(settings: &Map<String, Value>, kind: RequirementGroup) -> Vec<String> {
     required_model_refs(settings)
         .into_iter()
@@ -265,9 +254,8 @@ mod tests {
     }
 
     /// The projector is gated on the user's image-support choice, NOT on the
-    /// model shipping one. Selecting a vision model writes `mmprojPath` and
-    /// never writes `supportImages`, so this gate is what stops a preset pick
-    /// from adding a download nobody asked for.
+    /// model shipping one, which is what stops a preset pick from adding a
+    /// download nobody asked for.
     #[test]
     fn the_projector_is_required_only_when_images_are_on() {
         let base = [

@@ -33,24 +33,17 @@
  *
  * ---- What is deliberately NOT here --------------------------------------
  *
- * BOTH of ggml's convenience loaders, for the same reason and in two halves.
- *
- * `ggml_backend_load_all()` searches the process working directory and
- * dlopen()s anything matching libggml-*.so it finds there. For a service that
- * can be started from any directory that is arbitrary code execution.
- *
- * `ggml_backend_load_all_from_path(dir)` confines the DIRECTORY SEARCH to `dir`,
- * which closes that half, but it then reads the GGML_BACKEND_PATH environment
- * variable and dlopen()s whatever it names (ggml-backend-reg.cpp:588-592). For a
- * service whose environment is not always the operator's, that is the same
- * vector through a different door. It was confirmed by observing the dlopen
- * attempt, not inferred.
+ * Both of ggml's convenience loaders. `ggml_backend_load_all()` searches the
+ * process working directory and dlopen()s anything matching libggml-*.so;
+ * `ggml_backend_load_all_from_path(dir)` confines the directory search but then
+ * dlopen()s whatever GGML_BACKEND_PATH names. For a service startable from any
+ * directory, by an environment that is not always the operator's, both are
+ * arbitrary code execution.
  *
  * So loca_backend_load_dir() enumerates the directory itself and loads each
  * module with ggml_backend_load(), which takes a path and reads no environment.
- * The shim poisons BOTH identifiers so a future edit cannot reach either one.
- * No code path in this ABI opens a library whose path did not come from the
- * caller.
+ * The shim poisons both identifiers, so no code path in this ABI opens a
+ * library whose path did not come from the caller.
  */
 
 #ifndef LOCA_LLAMA_H
@@ -150,12 +143,9 @@ int32_t loca_n_embd(const loca_model * m);
 /* ---- vision (libmtmd) --------------------------------------------------- */
 
 /* A loaded multimodal projector, paired with the text model it was loaded for.
- *
- * Vision is a SECOND model file (the "mmproj") beside the language model, and it
- * is what turns pixels into embeddings the language model can attend to. Without
- * it a vision-capable GGUF is a text model: the catalog's `vision` capability
- * and the `llm.supportImages` setting describe the pair, not the language model
- * alone. */
+ * Vision is a SECOND model file (the "mmproj") that turns pixels into
+ * embeddings the language model attends to; without it a vision-capable GGUF is
+ * a text model. */
 typedef struct loca_mtmd loca_mtmd;
 
 /** Loads `mmproj_path` against `m`. Null on failure (see loca_last_error()).
@@ -178,16 +168,12 @@ bool loca_mtmd_supports_vision(const loca_mtmd * h);
 /** Tokenizes `prompt`, encodes `n_images` images, and evaluates the whole
  *  interleaved sequence into `c`. Returns the new n_past, or -1 on failure.
  *
- *  `prompt` must contain exactly `n_images` copies of loca_mtmd_marker(); the
- *  count is checked by mtmd and a mismatch is an error rather than a silent
- *  reordering. Images are ENCODED FILES (png, jpeg, ...), not raw pixels: mtmd
- *  decodes them, which is what keeps stb_image on the C++ side of the boundary
- *  where it already lives.
+ *  `prompt` must contain exactly `n_images` copies of loca_mtmd_marker(), and a
+ *  mismatch is an error rather than a silent reordering. Images are ENCODED
+ *  FILES, not raw pixels: mtmd decodes them, keeping stb_image on the C++ side.
  *
- *  This REPLACES loca_decode for a turn with images. The two cannot be mixed on
- *  one prompt, because the image embeddings have to be interleaved between the
- *  text spans at exactly the marker positions, and a caller that decoded the
- *  text itself would have nowhere to put them. */
+ *  This REPLACES loca_decode for a turn with images: the embeddings have to be
+ *  interleaved between the text spans at exactly the marker positions. */
 int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
                        bool add_special, const unsigned char * const * images,
                        const size_t * image_lens, int32_t n_images,
@@ -198,17 +184,14 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
 /** Embeds ONE sequence of `n` tokens into `out`, writing exactly n_embd floats.
  *  Returns the count written, or -1 on failure (see loca_last_error()).
  *
- *  Separate from loca_decode() rather than a mode of it, because it is a
- *  different llama.cpp call on a differently-configured context: llama_encode()
- *  runs the graph WITHOUT a KV cache, and the context must have been created
- *  with "embeddings": true. Calling this on a generation context fails rather
+ *  Separate from loca_decode() because it is a different call on a
+ *  differently-configured context: the context must have been created with
+ *  "embeddings": true, and calling this on a generation context fails rather
  *  than returning something plausible.
  *
- *  The context is cleared before the batch, so each call is independent and a
- *  caller may embed any number of texts through one context in sequence. The
- *  vector is COPIED into `out` rather than borrowed, because unlike logits there
- *  is no hot path here worth the aliasing hazard: embedding is a handful of
- *  calls per memory, not one per generated token. */
+ *  The context is cleared before the batch, so each call is independent. The
+ *  vector is COPIED into `out` rather than borrowed: unlike logits there is no
+ *  hot path here worth the aliasing hazard. */
 int32_t loca_embed(loca_context * c, const int32_t * tokens, int32_t n,
                    float * out, int32_t out_cap);
 
@@ -217,12 +200,9 @@ int32_t loca_embed(loca_context * c, const int32_t * tokens, int32_t n,
 /** Evaluates `n` tokens, APPENDING them after whatever the context already
  *  holds. 0 on success.
  *
- *  There is deliberately no `n_past` parameter. There used to be one, and it was
- *  `(void)`-cast away in the implementation while this comment claimed it
- *  positioned the batch: llama.cpp derives each position from the memory state
- *  as `seq_pos_max(seq) + 1` (llama-batch.cpp:90-117), so the argument never did
- *  anything. Read the real value with loca_context_n_past(), and use
- *  loca_context_reset() to start a new sequence. */
+ *  There is deliberately no `n_past` parameter: llama.cpp derives each position
+ *  from the memory state as `seq_pos_max(seq) + 1`. Read the real value with
+ *  loca_context_n_past(), and use loca_context_reset() for a new sequence. */
 int32_t loca_decode(loca_context * c, const int32_t * tokens, int32_t n);
 
 /** Logits for the i-th token of the last decode; negative i counts from the
@@ -233,22 +213,16 @@ const float * loca_get_logits(loca_context * c, int32_t i);
 
 typedef struct loca_sampler loca_sampler;
 
-/* This wraps llama.cpp's own `common_sampler`, not a chain assembled here.
+/* This wraps llama.cpp's own `common_sampler`, not a chain assembled here: a
+ * hand-rolled chain over the raw llama_sampler_* API cannot express a LAZY
+ * grammar with triggers, the thinking-token budget, the user-configured sampler
+ * ORDER, or DRY, all of which live in common/sampling.cpp.
  *
- * A hand-rolled chain over the raw llama_sampler_* API cannot express four
- * things the product already ships: a LAZY grammar with triggers, the
- * thinking-token budget, the user-configured sampler ORDER, and DRY. All four
- * live in common/sampling.cpp, in the `common` target already linked, and two
- * work packages arrived at that conclusion independently (D-136).
- *
- * It also removes two defects by construction rather than by patch:
- *   - common_sampler_init THROWS on a grammar it cannot parse. The hand-rolled
- *     version added llama_sampler_init_grammar's unchecked null return to the
- *     chain, so `new` succeeded and the first sample() was a SIGSEGV.
- *   - common_sampler_sample does NOT accept the sampled token; accepting is the
- *     caller's separate, documented step. llama_sampler_sample DOES accept
- *     internally, which made the old shim's accept a silent double-advance of
- *     the grammar stack and the penalty ring.
+ * Two consequences: common_sampler_init THROWS on a grammar it cannot parse,
+ * where an unchecked llama_sampler_init_grammar null makes the first sample() a
+ * SIGSEGV; and common_sampler_sample does NOT accept the sampled token, unlike
+ * llama_sampler_sample, which accepts internally and would make a paired accept
+ * a silent double-advance.
  */
 
 /** spec_json. Every absent key keeps llama.cpp's own default, so "not set" and

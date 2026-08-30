@@ -1,10 +1,8 @@
 //! Every OS branch, on one host, through the runner seam.
 //!
-//! What these cover is the argv and its ORDER, plus what each branch does with
-//! a non-zero exit. What they do not cover, stated rather than implied, is
-//! whether `launchctl`, `systemctl`, `schtasks` and PowerShell behave as the
-//! argv assumes. That is exercised per OS at release time and is out of reach
-//! of `cargo test` on any single machine, exactly as D11's Windows variants are.
+//! These cover the argv, its ORDER, and what each branch does with a non-zero
+//! exit. Whether the OS tools behave as the argv assumes is exercised per OS at
+//! release time and is out of reach of `cargo test` on any single machine.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,11 +14,8 @@ use crate::update::install::proc::testing::RecordingRunner;
 use crate::update::testing::bounded;
 
 /// Records whether the key was deleted, and whether the core directory still
-/// existed at that moment.
-///
-/// The second half is the assertion that matters: "cleared BEFORE the data was
-/// removed" is an ordering, and a double that only records "was called" cannot
-/// see it.
+/// existed at that moment: "cleared BEFORE the data was removed" is an
+/// ordering, and a double recording only "was called" cannot see it.
 struct RecordingKey {
     deleted: AtomicBool,
     core_dir: PathBuf,
@@ -77,9 +72,8 @@ fn env_for(channel: Channel) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let paths = Paths::rooted(dir.path().join("loca").join("stable").join("core"));
     paths.ensure_dirs().unwrap();
-    // A real home, redirected. Service definitions must land in the actual
-    // ~/Library or ~/.config even when core state is a tempdir, which is why
-    // this is separate from `Paths` at all.
+    // Service definitions must land in the actual ~/Library or ~/.config even
+    // when core state is a tempdir, which is why this is separate from `Paths`.
     let home = dir.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
     let (io, out, err) = recording();
@@ -139,10 +133,8 @@ fn background_env() -> InstallEnv {
 
 #[test]
 fn an_unset_arp_variable_still_registers() {
-    // The two polarities are not interchangeable, and an UNSET variable is the
-    // case every installer front-end hits. `_SERVICE` and `_REGISTER_ARP`
-    // default ON and are turned off by exactly "0"; `_BIND_ALL` and
-    // `_BEHIND_PROXY` default OFF and are turned on by exactly "1".
+    // `_SERVICE` and `_REGISTER_ARP` default ON and are turned off by exactly
+    // "0"; `_BIND_ALL` and `_BEHIND_PROXY` default OFF and on by exactly "1".
     let unset = InstallEnv::parse(None, None, None, None);
     assert!(unset.as_service, "unset means install a service");
     assert!(unset.register_arp, "unset means write the ARP entry");
@@ -154,9 +146,7 @@ fn an_unset_arp_variable_still_registers() {
     assert!(InstallEnv::parse(None, Some("1"), None, None).bind_all);
     assert!(InstallEnv::parse(None, None, Some("1"), None).behind_proxy);
 
-    // Anything that is not the magic value leaves the default, in BOTH
-    // directions. This is what a `== "1"` written for `_REGISTER_ARP`, or a
-    // `!= "0"` written for `_BIND_ALL`, would get wrong.
+    // Anything but the magic value leaves the default, in BOTH directions.
     for other in ["", "1", "true", "yes", "00"] {
         assert!(
             InstallEnv::parse(Some(other), None, None, None).as_service || other == "0",
@@ -185,8 +175,8 @@ fn an_unset_arp_variable_still_registers() {
 fn a_shell_that_printed_nothing_reports_no_pid() {
     assert_eq!(parse_pid("12345"), Some(12345));
     assert_eq!(parse_pid("  678 \n"), Some(678));
-    // `0` matters specifically: it is a valid u32 that names no process, and
-    // handing it to the Client as one to kill is worse than handing it nothing.
+    // `0` is a valid u32 naming no process, worse to hand the Client than
+    // nothing.
     assert_eq!(parse_pid("0"), None);
     assert_eq!(parse_pid("-1"), None);
     assert_eq!(parse_pid(""), None);
@@ -197,10 +187,8 @@ fn a_shell_that_printed_nothing_reports_no_pid() {
 
 #[test]
 fn the_shipping_grace_is_one_second() {
-    // The tests run with a 1ms grace so they do not pay it. That seam is
-    // exactly how a shipping constant ends up asserted by nothing, so the
-    // production value is checked here against the oracle's
-    // (`install/service.ts:644`).
+    // The tests run with a 1ms grace, which is how a shipping constant ends up
+    // asserted by nothing.
     #[cfg(not(test))]
     const SHIPPING: u64 = GRACE_MS;
     #[cfg(test)]
@@ -230,8 +218,7 @@ async fn a_launchd_install_unloads_before_it_loads_and_writes_the_plist() {
     let xml = std::fs::read_to_string(&plist).unwrap();
     assert!(xml.contains("<key>KeepAlive</key>"));
     let calls = runner.calls();
-    // Unload FIRST, so a re-install replaces a running agent rather than
-    // failing against it.
+    // Unload FIRST, so a re-install replaces a running agent.
     assert!(calls[0].starts_with("launchctl unload"), "{calls:?}");
     assert!(calls[1].starts_with("launchctl load"), "{calls:?}");
     assert!(e.err.text().contains("registered launchd agent"));
@@ -239,9 +226,8 @@ async fn a_launchd_install_unloads_before_it_loads_and_writes_the_plist() {
 
 #[tokio::test]
 async fn a_failed_launchctl_load_is_an_error_naming_the_plist() {
-    // The unload is best-effort and the load is not, and a port that treated
-    // both the same would report a successful install of a service that is not
-    // running.
+    // The unload is best-effort and the load is not; treating both the same
+    // reports a successful install of a service that is not running.
     let e = env();
     let runner = RecordingRunner::new()
         .on("launchctl unload", RunResult::ok(""))
@@ -300,8 +286,8 @@ async fn a_systemd_install_reloads_before_it_enables() {
 
 #[tokio::test]
 async fn no_systemd_user_falls_back_to_a_background_launch() {
-    // A machine with no user manager still gets a running core. The fallback
-    // is why `resolve_supervisor` checks for the manager as well as the file.
+    // A machine with no user manager still gets a running core, which is why
+    // `resolve_supervisor` checks for the manager as well as the file.
     let e = env();
     let runner = RecordingRunner::new()
         .on("systemctl --user --version", RunResult::failed(127))
@@ -360,9 +346,8 @@ async fn a_windows_install_registers_the_task_then_the_arp_entry() {
 
 #[tokio::test]
 async fn an_arp_optout_skips_the_entry_but_still_installs_the_service() {
-    // The unified Windows installer sets this because its own uninstall.exe
-    // owns the Core's ARP entry, and every later install-service re-run would
-    // otherwise clobber it back to the PowerShell teardown.
+    // The Windows installer sets this because its own uninstall.exe owns the
+    // ARP entry, which a later install-service re-run would clobber.
     let e = env();
     let runner = RecordingRunner::new().on("powershell", RunResult::ok(""));
     let key = RecordingKey::new(e.paths.root().to_path_buf());
@@ -390,9 +375,8 @@ async fn an_arp_optout_skips_the_entry_but_still_installs_the_service() {
 
 #[tokio::test]
 async fn a_background_install_registers_no_service_on_any_os() {
-    // LOCA_INSTALL_SERVICE=0 means the client owns liveness. Asserted on all
-    // three, because the branch is above the OS switch and a port that put it
-    // inside would install a service on two of them.
+    // LOCA_INSTALL_SERVICE=0 means the client owns liveness. All three,
+    // because the branch is above the OS switch.
     for os in [Os::Macos, Os::Linux, Os::Windows] {
         let e = env();
         let runner = RecordingRunner::new()
@@ -420,13 +404,9 @@ async fn a_background_install_registers_no_service_on_any_os() {
             !systemd_unit_path(&e.home, Channel::Stable).exists(),
             "{os:?}"
         );
-        // The Add/Remove Programs entry is WINDOWS-ONLY, and it is written in
-        // background mode too: `LOCA_INSTALL_SERVICE=0` decides whether the
-        // uninstall string self-elevates, not whether the app is listed.
-        //
-        // Asserted here because it was asserted nowhere: a mutation dropping
-        // the `os == Windows` half of that guard survived the whole suite, so
-        // a mac install would have run PowerShell to write a registry key.
+        // WINDOWS-ONLY, and written in background mode too:
+        // `LOCA_INSTALL_SERVICE=0` decides whether the uninstall string
+        // self-elevates, not whether the app is listed.
         assert_eq!(
             calls
                 .iter()
@@ -472,9 +452,7 @@ async fn the_unix_background_launch_carries_its_channel_and_detaches() {
 #[tokio::test]
 async fn only_a_background_launch_reports_a_pid() {
     // The frozen half of the stdout contract: `pid` is non-null ONLY in
-    // background mode, because a supervised core outlives the Client. All four
-    // supervisors, because reporting a pid for any supervised kind makes the
-    // Client stop the service every time the user quits.
+    // background mode, or the Client stops the service on every quit.
     struct Case {
         os: Os,
         stage: fn(&Env),
@@ -556,9 +534,8 @@ async fn only_a_background_launch_reports_a_pid() {
 
 #[tokio::test]
 async fn launchctl_load_failing_is_benign_but_start_failing_is_not() {
-    // `load` is non-zero when the agent is already loaded, which is the normal
-    // case for a core that is already running: treating it as an error makes
-    // start-service fail on a healthy machine.
+    // `load` is non-zero when the agent is already loaded, which is normal:
+    // treating it as an error fails start-service on a healthy machine.
     let e = env();
     let plist = plist_path(&e.home, Channel::Stable);
     std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
@@ -606,8 +583,8 @@ async fn launchctl_load_failing_is_benign_but_start_failing_is_not() {
 
 #[tokio::test]
 async fn every_stop_goes_through_the_supervisor_rather_than_killing() {
-    // A plain kill is undone by launchd's KeepAlive and systemd's Restart, so
-    // a stop that killed would present as "stop does nothing".
+    // A plain kill is undone by KeepAlive and Restart, so a stop that killed
+    // would present as "stop does nothing".
     let e = env();
     let plist = plist_path(&e.home, Channel::Stable);
     std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
@@ -626,8 +603,8 @@ async fn every_stop_goes_through_the_supervisor_rather_than_killing() {
     .unwrap();
 
     let calls = runner.calls();
-    // `unload` rather than `stop`: it drops KeepAlive too, so the agent stays
-    // down until start-service loads it again.
+    // `unload` drops KeepAlive too, so the agent stays down until
+    // start-service loads it again.
     assert!(
         calls.iter().any(|c| c.contains("launchctl unload")),
         "{calls:?}"
@@ -664,10 +641,9 @@ async fn a_background_stop_sweeps_the_process_it_started() {
 
 #[tokio::test]
 async fn uninstall_does_not_kill_itself_before_clearing_the_keychain() {
-    // uninstall-service runs FROM the binary it is sweeping, so `pgrep` returns
-    // this process too. Without the exclusion the sweep terminates the
-    // uninstall mid-flight, and it does not fail loudly: it leaves the service
-    // gone with both the data and the master key still there.
+    // uninstall-service runs FROM the binary it is sweeping, so `pgrep`
+    // returns this process. Without the exclusion the sweep silently kills the
+    // uninstall mid-flight, leaving the data and the master key behind.
     let e = env();
     let runner = RecordingRunner::new()
         .on("pgrep", RunResult::ok("111\n4242\n222\n"))
@@ -703,10 +679,8 @@ async fn uninstall_does_not_kill_itself_before_clearing_the_keychain() {
 
 #[tokio::test]
 async fn purge_models_is_independent_of_keep_data() {
-    // Four combinations, because the uninstaller offers "keep my data" and
-    // "remove downloaded models" as SEPARATE choices and the models dir is
-    // shared across channels either way. Gating purge behind !keep_data is a
-    // one-word mutation that three of these four cases cannot see.
+    // Four combinations: the two are SEPARATE choices, and gating purge behind
+    // !keep_data is a one-word mutation three of the four cannot see.
     for (keep_data, purge_models) in [(false, false), (false, true), (true, false), (true, true)] {
         let e = env();
         std::fs::create_dir_all(e.paths.models_dir()).unwrap();
@@ -733,20 +707,12 @@ async fn purge_models_is_independent_of_keep_data() {
             "master key with keep_data={keep_data}"
         );
 
-        // The models assertion is that `remove_models_dir` was REACHED, not
-        // that a directory vanished, and the reason is a fixture limit worth
-        // naming rather than hiding: `Paths::rooted` nests `models/` INSIDE the
-        // root by design ("nothing is shared with any other install",
-        // `paths.rs:66-68`), whereas production puts it at `~/.loca/models`,
-        // OUTSIDE the channel root, precisely so multi-GB weights are shared
+        // The assertion is that `remove_models_dir` was REACHED, not that a
+        // directory vanished: `Paths::rooted` nests `models/` inside the root,
+        // where production puts it at `~/.loca/models` so weights are shared
         // across channels. Under this fixture the core-dir removal takes models
-        // with it, so a filesystem check reports "purged" for a run that never
-        // purged, and even the success line is unreachable because the function
-        // finds nothing left to remove.
-        //
-        // Both of its lines are emitted by `remove_models_dir` and by nothing
-        // else, so "either line appeared" is exactly "the call happened", which
-        // is the property this test is named for.
+        // with it, so a filesystem check would report "purged" either way. Both
+        // lines are emitted only by `remove_models_dir`.
         let reached_models =
             e.err.text().contains("--purge-models") || e.err.text().contains("models directory");
         assert_eq!(
@@ -755,9 +721,9 @@ async fn purge_models_is_independent_of_keep_data() {
             "purge attempt with keep_data={keep_data} purge_models={purge_models}: {}",
             e.err.text()
         );
-        // And where the root SURVIVES, the nesting cannot interfere, so the
-        // filesystem is checked there. That is the case that distinguishes
-        // "purge is gated behind !keep_data" from "purge is independent".
+        // Where the root SURVIVES the nesting cannot interfere, so the
+        // filesystem is checked there: the case that distinguishes a purge
+        // gated behind !keep_data from an independent one.
         if keep_data {
             assert_eq!(
                 e.paths.models_dir().exists(),
@@ -787,9 +753,8 @@ async fn keep_data_says_so_rather_than_silently_leaving_it() {
 
 #[tokio::test]
 async fn a_failed_keychain_delete_falls_back_to_the_native_tool_on_macos() {
-    // A partially removed install can leave the entry with no helper able to
-    // clear it. The fallback is macOS-only because it is the only platform with
-    // a native tool that can.
+    // A partially removed install can leave no helper able to clear the entry.
+    // macOS-only, being the only platform with a native tool that can.
     let e = env();
     let runner = RecordingRunner::new()
         .on("launchctl", RunResult::ok(""))
@@ -842,8 +807,7 @@ async fn the_windows_uninstall_removes_the_arp_entry_it_wrote() {
 #[tokio::test]
 async fn a_surviving_scheduled_task_is_retried_self_elevated() {
     // Unregistering a root-folder task needs admin while every caller runs
-    // unelevated, so a task that survived the plain attempt gets one elevated
-    // retry rather than being left to fire at every logon.
+    // unelevated, so a survivor gets one elevated retry.
     let e = env();
     let runner = RecordingRunner::new()
         .on("powershell", RunResult::ok(""))
@@ -891,18 +855,16 @@ async fn an_absent_service_definition_is_reported_rather_than_failing() {
 
 #[tokio::test]
 async fn a_windows_core_dir_removal_keeps_the_running_executable() {
-    // On Windows this subcommand IS the running exe under <root>/bin, so it
-    // cannot delete its own image. Everything else goes, and the locked binary
-    // is left for the caller that outlives this process.
+    // On Windows this subcommand IS the running exe, so it cannot delete its
+    // own image: the locked binary is left for the caller that outlives it.
     let e = env();
     let running = e.paths.bin_path("loca-core");
     std::fs::create_dir_all(running.parent().unwrap()).unwrap();
     std::fs::write(&running, b"the running image").unwrap();
     std::fs::write(e.paths.root().join("settings.json"), b"{}").unwrap();
 
-    // The removal only takes the Windows branch when the recursive delete
-    // fails, which it cannot be made to do portably; so drive the branch
-    // directly, which is what it exists for.
+    // The Windows branch is only taken when the recursive delete fails, which
+    // cannot be staged portably, so drive it directly.
     super::remove_except(e.paths.root(), &running).await;
 
     assert!(running.exists(), "the locked image must survive");
@@ -914,8 +876,8 @@ async fn a_windows_core_dir_removal_keeps_the_running_executable() {
 
 #[tokio::test]
 async fn a_windows_restart_kills_before_it_re_registers() {
-    // Unregister drops the old task's failure-restart policy, so killing AFTER
-    // re-registering would let the kill be auto-relaunched into a second core.
+    // Unregister drops the old task's failure-restart policy, so killing after
+    // re-registering would let the kill be auto-relaunched.
     let e = env();
     let runner = RecordingRunner::new()
         .on("powershell", RunResult::ok(""))
@@ -971,11 +933,9 @@ async fn a_background_restart_stops_and_relaunches_rather_than_bouncing_a_servic
 
 #[tokio::test]
 async fn every_service_verb_makes_no_outbound_call() {
-    // Service registration is the one path in this package with no HTTP in it
-    // at all, which makes it exactly where someone would later add a "while we
-    // are here, check for an update" call. The counter is per-package and
-    // `net.rs` separately asserts that it goes UP, so this zero means
-    // something.
+    // Service registration has no HTTP in it at all, which is where a "while
+    // we are here, check for an update" call would later be added. `net.rs`
+    // asserts the counter goes up, so this zero means something.
     let net = crate::update::net::Net::new().unwrap();
     let e = env();
     let runner = RecordingRunner::new()

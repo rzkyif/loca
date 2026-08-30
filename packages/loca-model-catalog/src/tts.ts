@@ -1,5 +1,5 @@
 // Text-to-Speech catalog: the sherpa-onnx offline-TTS bundles Loca offers,
-// served by the loca-core-speech sidecar. Mirrors the STT catalog shape.
+// served by the core's in-process speech engine. Mirrors the STT catalog shape.
 //
 // Sources (verified against the HuggingFace API tree on 2026-06-15). A model is
 // a bundle of role-tagged files whose roles depend on the family (kokoro/kitten:

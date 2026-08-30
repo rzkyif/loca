@@ -1,39 +1,19 @@
 //! The sampler, built from a declarative spec.
 //!
-//! # Why this wraps `common_sampler` rather than assembling a chain (D-136)
+//! Wraps `common_sampler` rather than assembling a `llama_sampler_chain` by
+//! hand, because a hand-assembled chain cannot express four things the product
+//! ships: a lazy grammar with triggers, the thinking-token budget, the
+//! user-configured sampler order (`llm.samplers`), and DRY. All four live in
+//! `common/sampling.cpp`, in the `common` target this crate already links.
 //!
-//! The first version of this file hand-assembled a `llama_sampler_chain` from
-//! the raw `llama_sampler_init_*` calls. That cannot express four things the
-//! product already ships:
+//! Two consequences worth knowing: `common_sampler_init` THROWS on a grammar it
+//! cannot parse, where an unchecked `llama_sampler_init_grammar` null makes the
+//! first sample a SIGSEGV reachable from safe Rust; and `common_sampler_sample`
+//! does NOT accept the token it returns, so [`SamplerChain::accept`] is the
+//! single advance.
 //!
-//! - a **lazy grammar with triggers**, so tool-call constraint starts when the
-//!   model actually begins a tool call rather than at the first token,
-//! - the **thinking-token budget**, which forces the closing think tag when a
-//!   reasoning block runs long,
-//! - the user-configured **sampler order** (`llm.samplers`), which is a setting
-//!   and therefore has to be a list rather than a fixed sequence,
-//! - **DRY**.
-//!
-//! All four are in `common/sampling.cpp`, inside the `common` target this crate
-//! already links, which is the same argument that put `common/chat.cpp` here.
-//! Two work packages reached that conclusion independently.
-//!
-//! It also removes two defects by construction rather than by patch:
-//!
-//! - `common_sampler_init` **throws** on a grammar it cannot parse. The
-//!   hand-rolled chain added `llama_sampler_init_grammar`'s unchecked null
-//!   return, so [`SamplerChain::new`] returned `Ok` and the first
-//!   [`SamplerChain::sample`] was a SIGSEGV reachable from safe Rust.
-//! - `common_sampler_sample` does **not** accept the token it returns, so
-//!   [`SamplerChain::accept`] is now the single advance. `llama_sampler_sample`
-//!   accepts internally, which made the old pairing a double-advance of the
-//!   grammar stack and the penalty ring that no test could see.
-//!
-//! # What is still N2's
-//!
-//! Which samplers, in what order, with what parameters. This builds what it is
-//! told to build and takes no position on generation policy; it only refuses
-//! inputs that llama.cpp would `abort()` on.
+//! This builds what it is told to build and takes no position on generation
+//! policy; it only refuses inputs llama.cpp would `abort()` on.
 
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -46,12 +26,9 @@ use super::ffi;
 use super::model::{Context, Model};
 use super::owned::{c_string, last_error, ShimString};
 
-/// One of llama.cpp's samplers, for a chain named in Rust code.
-///
-/// [`SamplerSpec::samplers`] takes plain strings, because that field carries a
-/// user setting and llama.cpp owns the name table it is matched against. This
-/// enum is the other case: a chain this crate writes itself, where naming a
-/// sampler wrongly should be a compile error rather than a rejected turn.
+/// One of llama.cpp's samplers, for a chain named in Rust code. The other case
+/// is [`SamplerSpec::samplers`], which carries a user setting as plain strings;
+/// here a wrong name should be a compile error rather than a rejected turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SamplerKind {
     Penalties,
@@ -69,19 +46,11 @@ pub enum SamplerKind {
 
 impl SamplerKind {
     /// llama.cpp's own canonical name, as `common_sampler_type_to_str` spells
-    /// it (`common/sampling.cpp:812-823`).
-    ///
-    /// **A lookup table, deliberately, and not a derivation.** This was a
-    /// `#[serde(rename_all = "snake_case")]` derive, which agrees with llama.cpp
-    /// everywhere the C++ name is a mechanical snake_case of the concept and
-    /// diverges at the one point where llama.cpp abbreviated: typical-p is
-    /// `typ_p`, never `typical_p`. A rule that is right ten times out of eleven
-    /// reads as a rule; the eleventh name is a fact about someone else's code
-    /// and has to be written down as one.
-    ///
-    /// Whether these strings still MEAN anything to llama.cpp is not decidable
-    /// here, so it is not asserted here either: `every_sampler_name_is_one_llama_cpp_accepts`
-    /// under `local-inference` puts each of them through the real mapper.
+    /// it. A lookup table, deliberately, and not a derivation: a snake_case
+    /// derive agrees everywhere except where llama.cpp abbreviated (typical-p
+    /// is `typ_p`, never `typical_p`), and the eleventh name is a fact about
+    /// someone else's code. `every_sampler_name_is_one_llama_cpp_accepts` puts
+    /// each through the real mapper.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Penalties => "penalties",
@@ -98,8 +67,7 @@ impl SamplerKind {
         }
     }
 
-    /// Every variant, so a test can walk the whole table rather than the subset
-    /// somebody remembered to list.
+    /// Every variant, so a test can walk the whole table.
     pub const ALL: [SamplerKind; 11] = [
         Self::Penalties,
         Self::Dry,
@@ -116,12 +84,9 @@ impl SamplerKind {
 }
 
 /// What a grammar is FOR, which decides whether the generation prompt is
-/// prefilled into the grammar sampler.
-///
-/// Not decoration. Only [`GrammarKind::ToolCalls`] and
-/// [`GrammarKind::OutputFormat`] are prefilled, and without that prefill a
-/// tool-capable template constrains from the very first token, which forces the
-/// model to emit a tool call on every single turn.
+/// prefilled into the grammar sampler. Only [`GrammarKind::ToolCalls`] and
+/// [`GrammarKind::OutputFormat`] are prefilled, and without that a tool-capable
+/// template constrains from the first token and forces a tool call every turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrammarKind {
@@ -134,11 +99,9 @@ pub enum GrammarKind {
     ToolCalls,
 }
 
-/// A grammar trigger carried straight through from `AppliedChat`.
-///
-/// The `kind` is llama.cpp's own enum value. It is validated in the shim rather
-/// than cast, because an unknown value reaches a `GGML_ASSERT`, and a
-/// `GGML_ASSERT` is `abort()`.
+/// A grammar trigger carried straight through from `AppliedChat`. The `kind` is
+/// llama.cpp's own enum value, validated in the shim rather than cast: an
+/// unknown value reaches a `GGML_ASSERT`, which is `abort()`.
 #[derive(Debug, Clone, Serialize)]
 pub struct SamplerTrigger {
     #[serde(rename = "type")]
@@ -183,21 +146,15 @@ pub struct SamplerSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_keep: Option<i32>,
 
-    /// The ORDER. This is a user setting (`llm.samplers`), which is why it is a
-    /// list rather than a set of booleans, and why it is a list of STRINGS.
+    /// The ORDER, a user setting (`llm.samplers`), which is why it is a list of
+    /// STRINGS passed to llama.cpp's own name table rather than to one on this
+    /// side: that table also carries kebab-case, no-dash and misc aliases, and
+    /// anything narrower here would reject spellings `llama-server` accepts.
+    /// Use [`SamplerKind::as_str`] when the chain is named in code.
     ///
-    /// **Passed through to llama.cpp's own name table, not to a table on this
-    /// side.** That table maps eleven canonical names and derives from each of
-    /// them a kebab-case and a no-dash alias, then adds `nucleus`, `temp` and
-    /// `typ` (`common/sampling.cpp:829-874`). Anything narrower here would
-    /// reject spellings `llama-server` accepts today, and the setting is free
-    /// text, so those spellings are reachable by anyone typing rather than
-    /// pasting. Use [`SamplerKind::as_str`] when the chain is named in code.
-    ///
-    /// An unrecognised name is an error from [`SamplerChain::new`], not a
-    /// warning, and the error names the offender: llama.cpp's own mapper
-    /// `LOG_WRN`s and DROPS it, which would turn a typo into a quietly shorter
-    /// chain and a generation that is quietly different.
+    /// An unrecognised name is an error from [`SamplerChain::new`] naming the
+    /// offender: llama.cpp's own mapper `LOG_WRN`s and DROPS it, turning a typo
+    /// into a quietly shorter chain.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub samplers: Option<Vec<String>>,
 
@@ -278,14 +235,9 @@ pub struct SamplerSpec {
 }
 
 impl SamplerSpec {
-    /// A deterministic sampler: argmax, nothing else.
-    ///
-    /// `temperature = 0` is llama.cpp's own spelling of greedy: the temperature
-    /// sampler collapses the distribution to one-hot (`llama-sampler.cpp:270`)
-    /// and the terminating `dist` then has exactly one candidate to pick. The
-    /// sampler list is narrowed to just temperature so nothing else can perturb
-    /// it, which is what makes the linkage test's assertion exact rather than
-    /// probabilistic.
+    /// A deterministic sampler: argmax, nothing else. `temperature = 0` is
+    /// llama.cpp's own spelling of greedy, and the list is narrowed to just
+    /// temperature so nothing else can perturb it.
     pub fn greedy() -> Self {
         Self {
             temperature: Some(0.0),
@@ -321,11 +273,7 @@ impl SamplerChain {
     }
 
     /// Builds from a raw spec string, so a test can send something
-    /// [`SamplerSpec`] cannot express.
-    ///
-    /// Test-only on purpose: the typed spec is the whole point of the safe
-    /// surface, and the only reason to bypass it is to prove that a malformed
-    /// input (a misspelled sampler name, say) is rejected rather than absorbed.
+    /// [`SamplerSpec`] cannot express, such as a misspelled sampler name.
     #[cfg(test)]
     pub(super) fn new_from_json(model: Arc<Model>, spec_json: &str) -> Result<Self> {
         let c_json = c_string(spec_json, "sampler spec")?;
@@ -337,10 +285,8 @@ impl SamplerChain {
     }
 
     /// Samples one token from the logits at `idx` (`-1` is the last position).
-    ///
-    /// Does **not** accept the token. Call [`SamplerChain::accept`] with
-    /// `is_generated = true` next; that split is `common_sampler`'s documented
-    /// contract and is why the two can no longer double-advance each other.
+    /// Does NOT accept the token: call [`SamplerChain::accept`] with
+    /// `is_generated = true` next.
     pub fn sample(&mut self, ctx: &mut Context, idx: i32) -> Result<i32> {
         // SAFETY: `&mut` on both means neither is in use elsewhere; llama.cpp
         // reads the context's logits and advances the sampler's own state.
@@ -351,14 +297,11 @@ impl SamplerChain {
         Ok(token)
     }
 
-    /// Feeds a token back so the grammar, the reasoning budget and the penalties
-    /// all advance by exactly one.
-    ///
-    /// `is_generated` is `true` for a token the model just produced and `false`
-    /// for one that was already in the prompt. Skipping this is how a
-    /// grammar-constrained generation stops being constrained; calling it twice
-    /// for the same token is how it constrains against the wrong position, which
-    /// is what the previous pairing did.
+    /// Feeds a token back so the grammar, the reasoning budget and the
+    /// penalties all advance by exactly one. `is_generated` is `true` for a
+    /// token the model just produced. Skipping this is how a grammar-constrained
+    /// generation stops being constrained; calling it twice constrains against
+    /// the wrong position.
     pub fn accept(&mut self, token: i32, is_generated: bool) {
         // SAFETY: `&mut self` guarantees exclusive use.
         unsafe { ffi::loca_sampler_accept(self.ptr.as_ptr(), token, is_generated) }
@@ -371,10 +314,9 @@ impl SamplerChain {
     }
 
     /// The assembled chain as llama.cpp renders it, e.g.
-    /// `"logits -> penalties -> dry -> top-k -> dist "`.
-    ///
-    /// This is the only way to observe that a configured order actually reached
-    /// llama.cpp without resorting to a statistical test.
+    /// `"logits -> penalties -> dry -> top-k -> dist "`. The only way to
+    /// observe that a configured order reached llama.cpp without a statistical
+    /// test.
     pub fn chain_description(&self) -> Result<String> {
         // SAFETY: `self.ptr` is valid for the life of `self`.
         let raw = unsafe { ffi::loca_sampler_chain_str(self.ptr.as_ptr()) };
@@ -431,17 +373,10 @@ mod tests {
 
     #[test]
     fn a_configured_order_reaches_the_spec_in_the_order_it_was_given() {
-        // The names themselves are NOT asserted here, and that absence is
-        // deliberate. The question "is `typ_p` what llama.cpp calls this" cannot
-        // be answered by a string assertion about a string: the previous test
-        // here asserted `typical_p` and passed for as long as it existed, while
-        // the shim would have rejected every chain containing it. Only the C++
-        // mapper can answer, so it is asked in
-        // `every_sampler_name_is_one_llama_cpp_accepts` under `local-inference`.
-        //
-        // What IS this file's to check is that the ORDER survives, since the
-        // whole reason the field is a list is that it is a user-configured
-        // sequence.
+        // The names themselves are deliberately not asserted here: a string
+        // assertion about a string cannot answer "is `typ_p` what llama.cpp
+        // calls this", so `every_sampler_name_is_one_llama_cpp_accepts` asks
+        // the C++ mapper instead. What is this file's to check is the ORDER.
         let spec = SamplerSpec {
             samplers: Some(vec!["temp".to_owned(), "top-k".to_owned()]),
             ..SamplerSpec::default()
@@ -452,11 +387,9 @@ mod tests {
 
     #[test]
     fn a_user_spelling_llama_cpp_accepts_is_not_narrowed_on_the_way_through() {
-        // `temp`, `topk`, `top-k` and `nucleus` are all names llama-server takes
-        // today, and `llm.samplers` is a free-text setting, so they arrive. The
-        // field is `Vec<String>` precisely so that this side owns no table to
-        // disagree with llama.cpp's; a typed enum here would reject them while
-        // looking stricter and safer.
+        // `temp`, `topk`, `top-k` and `nucleus` are all names llama-server
+        // takes, and `llm.samplers` is free text, so they arrive. The field is
+        // `Vec<String>` so this side owns no table to disagree with llama.cpp's.
         let spec = SamplerSpec {
             samplers: Some(vec![
                 "temp".to_owned(),

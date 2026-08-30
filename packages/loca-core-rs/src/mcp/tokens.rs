@@ -1,13 +1,8 @@
 //! Resolving `@resource` references in a turn's text into reference blocks.
 //!
-//! Runs once per turn over the latest user message rather than per history
-//! message, because each match is a live round-trip to a server. A reference in
-//! an older turn is not re-resolved on a later hop.
-//!
-//! `/prompt` references are NOT resolved here. A prompt is a user-invoked
-//! command that may take arguments and whose expansion the user should see, so
-//! the client resolves it at send time through the resolve route and folds the
-//! result into the turn's system prompt. This module only handles `@`.
+//! Runs once per turn over the latest user message, since each match is a live
+//! round-trip. `/prompt` references are resolved by the client at send time
+//! through the resolve route, not here.
 
 use std::collections::{HashMap, HashSet};
 
@@ -16,20 +11,16 @@ use super::session::PromptMessage;
 /// The cap on one injected block, and on a flattened prompt.
 const MAX_CHARS: usize = 64_000;
 
-/// What a pass over one message produced.
 #[derive(Debug, Default)]
 pub struct TokenResult {
     /// Fenced reference blocks for every resolved resource, or `None`.
     pub block: Option<String>,
-    /// Lowercased resource slugs this pass resolved. Handed to the memory token
-    /// expander so a slug naming both an MCP resource and a memory expands
-    /// once, with MCP winning because the user picked it from the `@` list,
-    /// rather than being injected twice.
+    /// Lowercased slugs this pass resolved, so the memory token expander skips
+    /// them: a slug naming both expands once, with MCP winning.
     pub claimed: HashSet<String>,
 }
 
-/// Flatten an MCP prompt's messages into one instruction string, capped at the
-/// token budget.
+/// Flatten an MCP prompt's messages into one instruction string, capped.
 pub fn flatten_prompt_messages(messages: &[PromptMessage]) -> String {
     let joined = messages
         .iter()
@@ -39,7 +30,6 @@ pub fn flatten_prompt_messages(messages: &[PromptMessage]) -> String {
     truncate(joined, MAX_CHARS)
 }
 
-/// One resource, as the resolver needs it.
 pub struct ResolvableResource {
     pub server_id: String,
     pub server_name: String,
@@ -47,17 +37,14 @@ pub struct ResolvableResource {
     pub name: String,
 }
 
-/// What the resolver reads a resource through. Implemented by the manager;
-/// separate so this module can be tested without a connection.
+/// What the resolver reads a resource through; separate so this module can be
+/// tested without a connection.
 #[async_trait::async_trait]
 pub trait ResourceReader: Send + Sync {
     async fn read(&self, server_id: &str, uri: &str) -> crate::error::Result<String>;
 }
 
 /// Resolve every `@resource` token in `text` into a reference block.
-///
-/// Only `@` is scanned: `#` is a memory and `/` is a prompt, and neither is
-/// ever an MCP resource.
 pub async fn resolve(
     text: &str,
     resources: Vec<ResolvableResource>,
@@ -68,11 +55,8 @@ pub async fn resolve(
         return result;
     }
 
-    // Index by slug, DETECTING cross-server collisions. Two enabled servers
-    // each exposing a resource whose name slugs the same would otherwise let a
-    // plain `@slug` resolve to whichever was listed last, silently shadowing
-    // the other. An ambiguous slug is dropped, and logged when referenced,
-    // rather than resolved to an arbitrary winner.
+    // A slug exposed by two servers is ambiguous: dropped, and logged when
+    // referenced, rather than resolved to whichever was listed last.
     let mut by_slug: HashMap<String, ResolvableResource> = HashMap::new();
     let mut ambiguous: HashSet<String> = HashSet::new();
     for resource in resources {
@@ -84,13 +68,6 @@ pub async fn resolve(
             by_slug.insert(key, resource);
         }
     }
-    // The specification stops at `byResource.size === 0` (`tokens.ts:75`),
-    // which also stops when every slug turned out to be ambiguous. Carrying on
-    // in that case is a deliberate difference and it changes no result: the
-    // scan below can only log, since every token it meets is either ambiguous
-    // or unknown, and the returned `TokenResult` is `default()` either way. The
-    // gain is the "@x is ambiguous" line, which is the only thing that tells a
-    // user why their reference silently did nothing.
     if by_slug.is_empty() && ambiguous.is_empty() {
         return result;
     }
@@ -129,20 +106,10 @@ pub async fn resolve(
     result
 }
 
-/// Every `@token` in the text, lowercased, in order.
-///
-/// The preceding character matters: a token is a mention only at the start of
-/// the text or after something that is not a word character, `@`, `#` or `/`.
-/// That is what keeps an email address, a `##tag` and a path from reading as
-/// resource references.
-///
-/// "Word character" is ASCII here, deliberately. The specification is the
-/// JavaScript regex `/(?:^|[^\w@#/])@([A-Za-z0-9_-]+)/g`
-/// (`packages/loca-core/src/mcp/tokens.ts:81`), and `\w` in a regex without the
-/// `u` flag is `[A-Za-z0-9_]`, so an accented letter is NOT a word character to
-/// the oracle. A Unicode-aware test here would refuse `@notes` in
-/// `"café@notes"` where the oracle resolves it, which is a silently different
-/// prompt for the same message.
+/// Every `@token` in the text, lowercased, in order. A token is a mention only
+/// at the start or after something that is not an ASCII word character, `@`,
+/// `#` or `/`, which keeps emails, `##tag`s and paths from matching. ASCII on
+/// purpose: `café@notes` must still resolve `@notes`.
 fn mentions(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -171,8 +138,7 @@ fn mentions(text: &str) -> Vec<String> {
     out
 }
 
-/// A resource name, lowercased and hyphenated, which is how `@my-notes` finds
-/// "My Notes".
+/// Lowercased and hyphenated: `@my-notes` finds "My Notes".
 pub fn slug(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for ch in value.chars() {
@@ -185,8 +151,7 @@ pub fn slug(value: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Cut to a character budget, not a byte one: slicing a `String` at a byte
-/// index would panic in the middle of a multi-byte character.
+/// A character budget, not a byte one.
 fn truncate(value: String, max: usize) -> String {
     if value.chars().count() <= max {
         return value;

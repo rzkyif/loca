@@ -1,11 +1,10 @@
 // Generates the cross-implementation CPace fixtures the Rust port replays.
 //
-// The CFRG Appendix B.3 vector proves conformance to draft-irtf-cfrg-cpace-21,
-// but it exercises exactly one input and never reaches multi-byte LEB128, the
-// generator-string zero-pad clamp, or the confirmation tag. This script drives
-// the REAL `@loca/shared` implementation through the cases that do, and records
-// every intermediate, so the Rust side is checked against the code the Client
-// actually runs rather than against a second reading of the draft.
+// The CFRG Appendix B.3 vector exercises exactly one input and never reaches
+// multi-byte LEB128, the generator-string zero-pad clamp, or the confirmation
+// tag. This script drives the REAL `@loca/shared` implementation through the
+// cases that do, recording every intermediate, so the Rust side is checked
+// against the code the Client actually runs.
 //
 // Deterministic by construction: the case inputs come from a seeded mulberry32,
 // never from the CSPRNG, so a regeneration reproduces the file byte for byte.

@@ -1,9 +1,8 @@
 //! Short-lived, single-use WebSocket upgrade tickets.
 //!
-//! The property this exists to preserve: the long-lived bearer stays in the
-//! `Authorization` header of the mint call, and only a throwaway ticket travels
-//! in the `ws://` query string. A fronting reverse proxy's access log therefore
-//! captures at most a spent 30-second token, never a full-privilege bearer.
+//! The bearer stays in the `Authorization` header of the mint call and only a
+//! throwaway ticket travels in the `ws://` query string, so a fronting proxy's
+//! access log captures at most a spent 30-second token.
 
 use indexmap::IndexMap;
 
@@ -14,12 +13,9 @@ struct Ticket {
     expires_at_ms: i64,
 }
 
-/// Live tickets, in mint order.
-///
-/// Ordered because over-cap eviction drops the oldest, and a `HashMap` would
-/// drop an arbitrary one. Removal is always `shift_remove`: `swap_remove` is
-/// O(1) but moves the last entry into the hole, which silently destroys the
-/// ordering the eviction rule depends on.
+/// Live tickets, in mint order, because over-cap eviction drops the oldest.
+/// Removal is always `shift_remove`: `swap_remove` would move the last entry
+/// into the hole and destroy that ordering.
 pub(crate) struct TicketTable {
     tickets: IndexMap<String, Ticket>,
 }
@@ -42,11 +38,9 @@ impl TicketTable {
         );
     }
 
-    /// Validate and consume a ticket, returning the owning client id.
-    ///
-    /// The ticket is removed whether or not it was still valid, so a replay and
-    /// a presentation past the TTL are both rejected and neither leaves anything
-    /// behind to retry against.
+    /// Validate and consume a ticket, returning the owning client id. Removed
+    /// whether or not it was valid, so neither a replay nor an expired
+    /// presentation leaves anything to retry against.
     pub(crate) fn consume(&mut self, ticket: &str, now_ms: i64) -> Option<String> {
         let entry = self.tickets.shift_remove(ticket)?;
         if now_ms > entry.expires_at_ms {

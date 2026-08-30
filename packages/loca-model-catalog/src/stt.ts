@@ -1,5 +1,5 @@
 // Speech-to-Text catalog: the sherpa-onnx offline-recognizer bundles Loca
-// offers, served by the loca-core-speech sidecar.
+// offers, served by the core's in-process speech engine.
 //
 // Sources (verified against the HuggingFace API tree on 2026-06-15): each
 // model's files + exact byte sizes come from its csukuangfj mirror. A model is a

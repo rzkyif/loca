@@ -216,15 +216,11 @@ impl SecureStore for LayeredStore {
 /// signature, so a key sealed by this build reads back empty after the next
 /// build and the vault, sealed TLS key included, is silently orphaned.
 ///
-/// Android has no keyring-core backend wired, and it does not get one here.
-/// The KeyStore is reachable only through the JVM, so the sealed store is built
-/// by the FRONTEND (which owns the JNI) and handed in through
-/// `boot::boot_with_store`, which is the seam D-013 asked for. Reaching this
-/// android branch at all therefore means no frontend supplied a store, and the
-/// master key falls back to the app-private directory in plaintext, which is
-/// why the line below is a `warn` rather than the `info` it used to be: per
-/// D-125 the mitigation for a degraded secret store is loudness, not silence.
-/// See [`super::android::SealedStore`].
+/// Android has no keyring-core backend wired: the KeyStore is reachable only
+/// through the JVM, so the sealed store is built by the FRONTEND and handed in
+/// through `boot::boot_with_store`. Reaching this android branch means no
+/// frontend supplied one and the master key falls back to plaintext in the
+/// app-private directory, hence the `warn`. See [`super::android::SealedStore`].
 ///
 /// Reads `LOCA_VAULT_FILE_STORE` the way the rest of the core reads a boolean
 /// env var: set and truthy, rather than merely defined, so `=0` means off.
@@ -272,19 +268,11 @@ pub fn select_with(root: &Path, channel: Channel, force_file_store: bool) -> Arc
             return Arc::new(FileStore::new(root));
         }
         // An explicit opt-out, for a core under test on a channel other than
-        // `dev`. Both cores read it, and that is the point: without it the two
-        // diverge off `dev` in a way that is invisible from outside. The Rust
-        // core seals in the real OS keychain and can HANG on a boot that asks a
-        // human about an item another binary owns; the Deno core's keychain
-        // helper is a stub in a seeded home, so it silently uses the file store
-        // and never hangs. A conformance run comparing them was comparing two
-        // different configurations.
-        //
-        // It introduces no new storage mode: `dev` above already takes this path
-        // unconditionally and Android ships on it today. What it changes is
-        // reachability, so it is deliberately LOUD - `warn`, not `info`, because
-        // a production core that has this set should say so on every boot rather
-        // than downgrade quietly.
+        // `dev`, where sealing in the real OS keychain can HANG on a boot that
+        // asks a human about an item another binary owns. It introduces no new
+        // storage mode (`dev` above already takes this path), only reachability,
+        // so it is deliberately LOUD: a production core with this set should say
+        // so on every boot rather than downgrade quietly.
         if force_file_store {
             tracing::warn!(
                 target: "loca::secure-store",
@@ -501,15 +489,9 @@ mod tests {
         );
     }
 
-    /// The two cores must agree on where the vault lives, or a differential run
-    /// compares two different configurations (D-125).
-    ///
     /// Injected rather than env-driven: `std::env::set_var` is unsound in a
     /// threaded test binary, so a test that set it would assert on whatever the
     /// rest of the suite left behind.
-    ///
-    /// Mutation: ignore `force_file_store` in `select_with`. The first assertion
-    /// goes red, which is the whole point of the switch existing.
     #[cfg(not(target_os = "android"))]
     #[test]
     fn the_file_store_switch_is_honoured_on_a_non_dev_channel() {

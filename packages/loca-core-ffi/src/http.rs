@@ -9,11 +9,10 @@
 //!   had pinned something.
 //! - `capturedPin`: only ever filled by the unpaired capture probe.
 //!
-//! **An HTTP-level failure is not an error here.** A 401, a 404 and a 500 all
-//! come back as an `Ok` carrying that status and the core's standard error
-//! envelope in the body, exactly as they would over a socket. Only a request
-//! that could not be formed at all, or a core that is not running, is an `Err`.
-//! That is what lets the client reuse its existing response handling unchanged.
+//! **An HTTP-level failure is not an error here.** A 401, a 404 and a 500 come
+//! back as an `Ok` carrying that status and the standard error envelope, exactly
+//! as over a socket, so the client reuses its response handling unchanged. Only
+//! a request that could not be formed, or a core that is not running, is `Err`.
 
 use std::collections::HashMap;
 
@@ -52,17 +51,15 @@ pub struct CoreHttpReply {
 /// Dispatch one request in process, as `client`.
 ///
 /// Takes the pieces rather than the whole [`crate::LocalCore`] so a test drives
-/// this exact function against a fixture core. A test that needed its own
-/// construction would be testing a copy (D-084).
+/// this exact function against a fixture core rather than a copy of it.
 pub async fn call(
     core: &Core,
     client: &ClientIdentity,
     req: CoreHttpRequest,
 ) -> Result<CoreHttpReply> {
     let body = match req.body_b64.as_deref() {
-        // An undecodable body fails the call rather than being sent as nothing.
-        // Silently substituting an empty body turns a client bug into a
-        // confusing rejection several layers downstream.
+        // An undecodable body fails the call: substituting an empty one turns
+        // a client bug into a rejection several layers downstream.
         Some(encoded) => B64
             .decode(encoded.as_bytes())
             .map_err(|e| validation(format!("bad request body: {e}")))?,
@@ -74,8 +71,7 @@ pub async fn call(
     inproc.headers = req.headers;
     inproc.body = body;
     // The whole auth story on this path. Only server-side code can put an
-    // extension on a request, so this cannot be forged from the webview: the
-    // command layer supplies the identity, not the caller.
+    // extension on a request, so the webview cannot forge one.
     let inproc = inproc.as_client(client.clone());
 
     let res = core.call(inproc).await?;
@@ -93,12 +89,8 @@ mod tests {
     use loca_core::transport::testing;
 
     /// A fixture core whose database has its schema and the reserved local
-    /// client row, which is what production has after boot.
-    ///
-    /// `testing::core()` opens an in-memory database and does NOT migrate it,
-    /// so any route that touches a table answers 500 rather than doing its job.
-    /// Migrating here rather than working around it keeps the assertions below
-    /// about this crate instead of about the fixture.
+    /// client row, which is what production has after boot. `testing::core()`
+    /// does not migrate, so any route touching a table would answer 500.
     async fn core() -> loca_core::transport::Core {
         let core = bare_core();
         add_local_row(&core).await;
@@ -175,9 +167,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_http_failure_is_a_successful_call_carrying_the_status() {
-        // The property the client's whole error handling rests on: a 404 is a
-        // reply, not an `Err`. If this ever inverts, every core error becomes an
-        // opaque IPC string and the error envelope stops being readable.
+        // A 404 is a reply, not an `Err`: inverted, every core error becomes
+        // an opaque IPC string.
         let core = core().await;
         let reply = call(&core, &client(), get("/api/v1/nope")).await.unwrap();
         assert_eq!(reply.status, 404);
@@ -186,9 +177,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_authenticated_route_succeeds_because_the_identity_was_injected() {
-        // `testing::core()` uses a `StubAuth` that knows no tokens at all, so a
-        // 200 here can only come from the injected identity. That is what makes
-        // this a test of the injection rather than of the route.
+        // `StubAuth` knows no tokens, so a 200 can only come from the injected
+        // identity.
         let core = core().await;
         let reply = call(&core, &client(), get("/api/v1/settings"))
             .await
@@ -198,10 +188,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_same_route_is_401_when_no_identity_is_injected() {
-        // The other half, and the one that gives the test above its teeth: drive
-        // the underlying request WITHOUT `as_client` and watch the same route
-        // refuse. Without this, `call` could be injecting nothing and the test
-        // above would still pass on a route that happened not to be guarded.
+        // The half that gives the test above its teeth: without it, `call`
+        // could inject nothing and pass on an unguarded route.
         let core = core().await;
         let res = core
             .call(InProcRequest::get("/api/v1/settings"))
@@ -214,22 +202,16 @@ mod tests {
     async fn a_body_arrives_as_the_exact_bytes_that_were_encoded() {
         let core = core().await;
         let reply = call(&core, &client(), patch_settings()).await.unwrap();
-        // A 200 proves the bytes arrived and parsed: the same call with a
-        // corrupted or empty body is a 400 from the deserializer.
+        // A 200 proves the bytes arrived and parsed.
         assert_eq!(reply.status, 200, "body: {:?}", body(&reply));
     }
 
     #[tokio::test]
     async fn a_per_client_write_needs_the_reserved_row_to_exist() {
-        // The whole justification for `Auth::ensure_local_client`, staged both
-        // ways rather than asserted once (D-015). `client_settings.client_id`
-        // is `REFERENCES clients(id)`, so the in-process identity cannot be
-        // invented: without the row the write fails on the foreign key, and
-        // every per-client setting on mobile would be unwritable.
-        //
-        // This is not hypothetical. It is what this test did before the row was
-        // added, and the failure was a 500 reading "FOREIGN KEY constraint
-        // failed", which is exactly how it would have reached a user.
+        // The justification for `Auth::ensure_local_client`, staged both ways.
+        // `client_settings.client_id` is `REFERENCES clients(id)`, so without
+        // the row every per-client setting on mobile is unwritable with a 500
+        // reading "FOREIGN KEY constraint failed".
         let bare = bare_core();
         let refused = call(&bare, &client(), patch_settings()).await.unwrap();
         assert_eq!(refused.status, 500);
@@ -243,9 +225,8 @@ mod tests {
     #[tokio::test]
     async fn the_reserved_row_is_unreachable_with_any_bearer() {
         // The row stores the literal `local` as its `token_hash`, and
-        // `authenticate` compares `sha256_hex(bearer)`, which is always 64 hex
-        // characters. So no bearer can ever resolve to this identity, which is
-        // what keeps a row that bypasses auth from being a way in.
+        // `authenticate` compares a 64-character `sha256_hex(bearer)`, so no
+        // bearer can resolve to the identity that bypasses auth.
         let core = bare_core();
         let ctx = core.context();
         let auth = loca_core::auth::Auth::new(ctx.db.clone(), std::sync::Arc::clone(&ctx.paths));

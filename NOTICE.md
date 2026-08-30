@@ -9,19 +9,24 @@ please consult the upstream project for its full license text.
 `loca-core` fetches these compiled binaries from the Loca CDN on first use.
 They are not part of this repository.
 
-| Component                                           | Upstream                                   | License          |
-| --------------------------------------------------- | ------------------------------------------ | ---------------- |
-| llama.cpp (`llama-server`)                          | <https://github.com/ggml-org/llama.cpp>    | MIT              |
-| ggml (shared libraries shipped with `llama-server`) | <https://github.com/ggml-org/ggml>         | MIT              |
-| sherpa-onnx (`loca-core-speech`)                    | <https://github.com/k2-fsa/sherpa-onnx>    | Apache-2.0       |
-| ONNX Runtime (statically linked into the above)     | <https://github.com/microsoft/onnxruntime> | MIT              |
-| espeak-ng + data (bundled with `loca-core-speech`)  | <https://github.com/espeak-ng/espeak-ng>   | GPL-3.0-or-later |
-| Deno runtime (`deno`)                               | <https://github.com/denoland/deno>         | MIT              |
+| Component                                           | Upstream                                | License |
+| --------------------------------------------------- | --------------------------------------- | ------- |
+| llama.cpp (`llama-server`)                          | <https://github.com/ggml-org/llama.cpp> | MIT     |
+| ggml (shared libraries shipped with `llama-server`) | <https://github.com/ggml-org/ggml>      | MIT     |
+| Deno runtime (`deno`)                               | <https://github.com/denoland/deno>      | MIT     |
 
-The `loca-core-speech` binary statically links espeak-ng, which is licensed
-under GPL-3.0-or-later. As required by that license, the corresponding source
-for espeak-ng is available at <https://github.com/espeak-ng/espeak-ng>, at the
-revision bundled by sherpa-onnx 1.13.2 (the version Loca builds against). Loca
+## Linked into the core binary
+
+| Component                                       | Upstream                                   | License          |
+| ----------------------------------------------- | ------------------------------------------ | ---------------- |
+| sherpa-onnx (in-process speech)                 | <https://github.com/k2-fsa/sherpa-onnx>    | Apache-2.0       |
+| ONNX Runtime (statically linked into the above) | <https://github.com/microsoft/onnxruntime> | MIT              |
+| espeak-ng + data (bundled in `loca-core`)       | <https://github.com/espeak-ng/espeak-ng>   | GPL-3.0-or-later |
+
+`loca-core` statically links espeak-ng, which is licensed under
+GPL-3.0-or-later. As required by that license, the corresponding source for
+espeak-ng is available at <https://github.com/espeak-ng/espeak-ng>, at the
+revision bundled by sherpa-onnx 1.13.3 (the version Loca builds against). Loca
 does not modify espeak-ng.
 
 LLM, speech-to-text, and text-to-speech model weights are also downloaded at
@@ -40,16 +45,14 @@ These ship inside the `loca-client` application bundle.
 
 ## Application dependencies
 
-`loca-core` and `loca-client` bundle npm and JSR packages into their compiled
-output; `loca-client` and `loca-core-keychain` additionally link Rust crates.
-All are declared in the per-package `deno.json` and `Cargo.toml` files. The most
-significant are:
+`loca-core` and `loca-client` link Rust crates; `loca-client` additionally
+bundles npm packages. All are declared in the per-package `Cargo.toml` and
+`deno.json` files. The most significant are:
 
 | Component                    | License               |
 | ---------------------------- | --------------------- |
-| Hono                         | MIT                   |
+| axum / tokio / reqwest       | MIT                   |
 | Zod                          | MIT                   |
-| OpenAI SDK (`openai`)        | Apache-2.0            |
 | Svelte / SvelteKit / Vite    | MIT                   |
 | UnoCSS                       | MIT                   |
 | Tauri (and official plugins) | MIT OR Apache-2.0     |

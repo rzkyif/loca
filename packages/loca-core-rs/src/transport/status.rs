@@ -12,12 +12,9 @@
 //! - **Pushed** by the owning subsystem: the chat turn count, the LLM queue,
 //!   the speech queue, boot completion, download activity, and update staging.
 //!
-//! Push rather than pull for the dynamic signals is what keeps this module
+//! Push rather than pull for the dynamic signals keeps this module
 //! dependency-free: it never imports chat or the schedulers, they call a
-//! `note_*` setter on it. That is also why it can live in the transport without
-//! dragging the transport into domain territory (D-014). The `note_*` setters
-//! are a shared surface: a domain package calls them, and adding one is a
-//! request rather than an edit.
+//! `note_*` setter on it.
 //!
 //! Emission is edge-only. A snapshot equal to the last one is not broadcast, so
 //! per-chunk download progress and transient sub-state churn do not spam every
@@ -34,11 +31,8 @@ use crate::contract::api::{
 
 use super::state::StatusProvider;
 
-/// Where sidecar readiness is read from on each recompute.
-///
-/// A seam so the derivation is testable without spawning processes, and so the
-/// sidecar package can supply the live manager without this module importing
-/// it.
+/// Where sidecar readiness is read from on each recompute. A seam so the
+/// derivation is testable without spawning processes.
 pub trait SidecarSource: Send + Sync {
     fn statuses(&self) -> Vec<SidecarSnapshot>;
 }
@@ -268,12 +262,11 @@ impl StatusProvider for CoreStatusService {
     }
 }
 
-/// The precedence order is the whole behaviour of this module, so it is one
-/// function and reads top to bottom.
+/// The precedence order, which is the whole behaviour of this module.
 fn derive(s: &Signals, sidecars: &[SidecarSnapshot]) -> CoreStatusSnapshot {
-    // The per-subsystem breakdown rides every snapshot: it feeds the client's
-    // per-sidecar view and the expanded error card. Order follows the source,
-    // which is stable, so the list is compared positionally.
+    // The per-subsystem breakdown rides every snapshot, feeding the client's
+    // per-sidecar view. Order follows the stable source, so it compares
+    // positionally.
     let subsystems: Vec<SubsystemStatus> = sidecars
         .iter()
         .map(|s| SubsystemStatus {
@@ -370,9 +363,8 @@ fn derive(s: &Signals, sidecars: &[SidecarSnapshot]) -> CoreStatusSnapshot {
     }
 }
 
-/// Field-by-field equality. The generated contract types derive neither
-/// `PartialEq` nor `Eq`, and comparing serialized forms would allocate on every
-/// signal change.
+/// Field-by-field equality: the generated contract types derive neither
+/// `PartialEq` nor `Eq`, and comparing serialized forms would allocate.
 fn same(a: &CoreStatusSnapshot, b: &CoreStatusSnapshot) -> bool {
     a.status == b.status
         && a.detail == b.detail

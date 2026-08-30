@@ -1,17 +1,13 @@
-//! The seam between the session routes and the chat orchestrator (D4).
+//! The seam between the session routes and the chat orchestrator.
 //!
-//! Declared here and implemented in `chat`, following `ClientAuth`,
-//! `StatusProvider` and `SidecarSource`: the consumer declares the seam so its
-//! routes compile and are testable before the producer exists, and a test
-//! injects a scripted engine instead of a language model.
+//! Declared here and implemented in `chat`, so these routes compile and are
+//! testable with a scripted engine instead of a language model.
 //!
-//! The split is deliberate and narrow. The session routes own the HTTP envelope
-//! and every store mutation, in an order that is itself the invariant (claim the
-//! stream slot, persist the user message, read the history, generate, persist
-//! the assistant message). The engine owns text in, deltas out, and touches the
-//! store on this path not at all. Everything the generation needs beyond the
-//! transcript (the system prompt, the endpoint, the scheduler) depends on D1 and
-//! D3, which is why it lives on the engine's side.
+//! The split is narrow: the session routes own the HTTP envelope and every store
+//! mutation, in an order that is itself the invariant (claim the stream slot,
+//! persist the user message, read the history, generate, persist the assistant
+//! message). The engine owns text in, deltas out, and touches the store not at
+//! all.
 
 use futures_util::stream::{self, BoxStream};
 
@@ -53,9 +49,8 @@ pub trait ChatEngine: Send + Sync {
 
 /// The engine before there is one.
 ///
-/// Installed by `boot` until D4 lands, and what a store-only test uses. It fails
-/// rather than returning an empty completion, because an empty completion is
-/// indistinguishable from a model that had nothing to say.
+/// What a store-only test uses. It fails rather than returning an empty
+/// completion, which would be indistinguishable from a model with nothing to say.
 pub struct UnavailableChat;
 
 impl ChatEngine for UnavailableChat {

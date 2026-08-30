@@ -5,9 +5,7 @@
 //! describe.
 //!
 //! Inbound bodies deserialise through `contract::api` and nothing revalidates
-//! after them. A missing or wrong-typed field is a `validation_error` from
-//! serde, which is the same code and status the TypeScript's hand-written
-//! `Array.isArray` and `typeof` checks produce.
+//! after them: a missing or wrong-typed field is serde's `validation_error`.
 
 use axum::response::Response;
 use axum::routing::{get, post};

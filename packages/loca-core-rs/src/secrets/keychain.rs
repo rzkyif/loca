@@ -25,7 +25,7 @@ use crate::error::{internal, Result};
 /// resolving; dev and latest are suffixed. The suffix comes from
 /// [`Channel::suffix`] and is not re-derived here.
 ///
-/// This string is a byte-exact parity surface (D-012). Change it and the ported
+/// This string is a byte-exact parity surface. Change it and the ported
 /// core finds no key, generates a fresh one, re-encrypts the vault over the old
 /// one, and loses the sealed TLS key with it, which breaks every paired client's
 /// pin with nothing in the logs pointing at the keychain.
@@ -157,14 +157,10 @@ fn register_platform_store() -> bool {
 }
 
 fn classify(op: &str, err: KeyringError) -> crate::error::AppError {
-    // `{err}`, never `{err:?}`. Two variants carry the raw credential blob:
-    // `BadEncoding(Vec<u8>)` (the stored bytes were not UTF-8) and
-    // `BadDataFormat(Vec<u8>, _)` (a store that encrypts or otherwise transforms
-    // secrets handed back something it could not undo, which makes it the
-    // likelier of the two on Windows and iOS). Both drop the blob in `Display`
-    // and print it in the derived `Debug`, and `scrub_secrets` cannot save that
-    // case: a byte-vector Debug rendering matches none of its patterns. See
-    // D-017.
+    // `{err}`, never `{err:?}`: `BadEncoding` and `BadDataFormat` carry the raw
+    // credential blob, dropping it in `Display` and printing it in the derived
+    // `Debug`, and `scrub_secrets` cannot save that case because a byte-vector
+    // Debug rendering matches none of its patterns.
     tracing::debug!(target: "loca::secure-store", "keychain {op} failed: {err}");
     internal(format!("keychain {op} failed: {}", reason(&err)))
 }
@@ -191,8 +187,7 @@ fn reason(err: &KeyringError) -> &'static str {
 mod tests {
     use super::*;
 
-    // Pinned, not asserted loosely: an existing install's entry lives under
-    // exactly these strings. See D-012.
+    // Pinned: an existing install's entry lives under exactly these strings.
     #[test]
     fn the_service_name_is_channel_namespaced_and_stable_stays_bare() {
         assert_eq!(service_name(Channel::Stable), "com.rzkyif.loca.core");

@@ -1,15 +1,14 @@
 //! Server-sent events, and the OpenAI chunk shapes they carry.
 //!
-//! Hand-written rather than taken from a crate, because what an OpenAI-compatible
-//! completion sends is one narrow profile of the spec: `data:` lines, a blank
-//! line ending each event, and a `[DONE]` sentinel. No `event:` names, no `id:`,
-//! no reconnection and no retry backoff. A framing bug here surfaces as a model
+//! Hand-written rather than taken from a crate: an OpenAI-compatible completion
+//! sends one narrow profile of the spec, `data:` lines with a blank line ending
+//! each event and a `[DONE]` sentinel, with no `event:` names, no `id:`, no
+//! reconnection and no retry backoff. A framing bug here surfaces as a model
 //! that skips words, so the decoder is small, owned, and tested against a
 //! deliberately fragmented feed.
 //!
-//! Stage 3 deletes none of this: it is the EXTERNAL path's business. The
-//! in-process engine emits [`super::LlmDelta`] directly and never sees a byte of
-//! SSE.
+//! This is the EXTERNAL path's business: the in-process engine emits
+//! [`super::LlmDelta`] directly and never sees a byte of SSE.
 
 use serde::Deserialize;
 

@@ -1,22 +1,17 @@
 //! One turn's message announcements and persistence.
 //!
-//! Ports `core-engine/src/services/chat-turn-writer.ts` in full.
-//!
 //! The server owns message identity and order. [`TurnWriter::born`] announces a
 //! message at its live position before any delta touches it;
 //! [`TurnWriter::finalize`] persists it at the durable insertion cursor and
 //! emits the terminal snapshot. The client never mints an id for a chat-born
 //! message, so live order and persisted order converge by construction.
 //!
-//! # Why there are two cursors
-//!
-//! `cursor` is the last PERSISTED id and decides where the next `finalize`
-//! inserts. `live_cursor` is the last ANNOUNCED id and decides what `after_id` a
-//! birth carries. They differ only while two messages of one hop are live at
-//! once, which is the reasoning-plus-assistant case: the assistant is born while
-//! the reasoning bubble is still open, so its birth has to point at the
-//! reasoning even though nothing is persisted yet. They reconverge because
-//! finalization happens in birth order.
+//! Two cursors: `cursor` is the last PERSISTED id and decides where the next
+//! `finalize`
+//! inserts; `live_cursor` is the last ANNOUNCED id and decides what `after_id`
+//! a birth carries. They differ only while two messages of one hop are live at
+//! once (reasoning plus assistant), and reconverge because finalization happens
+//! in birth order.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -74,13 +69,9 @@ impl TurnWriter {
     }
 
     /// Persist a message at the durable cursor and emit its terminal snapshot.
-    ///
-    /// A message finalized with no prior birth (a tool-call-only assistant that
-    /// never streamed content) is POSITIONED by this frame, so it carries the
-    /// live cursor as its `after_id` and advances it. One that was born is
-    /// already positioned, so it carries `None` and leaves the live cursor
-    /// alone: re-positioning it here would move a bubble the client has already
-    /// placed.
+    /// A message finalized with no prior birth is POSITIONED by this frame, so
+    /// it carries the live cursor and advances it; one that was born carries
+    /// `None`, since re-positioning would move a bubble the client has placed.
     pub async fn finalize(&mut self, message: &LiveRef) -> Result<()> {
         let id = message_id(message);
         let first_emission = !self.born_ids.contains(&id);
@@ -128,12 +119,10 @@ impl TurnWriter {
                     stream_id: self.stream.stream_id.clone(),
                 },
             ),
-            // A message this module built that the contract will not accept is a
-            // bug here, not bad input, and there is no client-visible recovery:
-            // the frame is typed, so there is nothing truthful to send. Persist
-            // still happened, so the message appears on the next reload rather
-            // than being lost. Logged loudly because the symptom otherwise is a
-            // bubble that only shows up after a refresh.
+            // A message the contract will not accept is a bug here rather than
+            // bad input, and the frame is typed, so there is nothing truthful
+            // to send. The persist already happened, so it appears on the next
+            // reload; logged loudly because that is the only symptom.
             Err(err) => tracing::error!(
                 target: "loca::chat",
                 "stream {}: a chat-born message does not satisfy the wire contract, \

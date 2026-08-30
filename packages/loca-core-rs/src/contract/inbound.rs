@@ -38,47 +38,13 @@ pub mod error {
 }
 ///`AdminPasswordSetRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "password"
-///  ],
-///  "properties": {
-///    "password": {
-///      "type": "string",
-///      "maxLength": 256,
-///      "minLength": 8
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AdminPasswordSetRequest {
     pub password: AdminPasswordSetRequestPassword,
 }
-impl ::std::convert::From<&AdminPasswordSetRequest> for AdminPasswordSetRequest {
-    fn from(value: &AdminPasswordSetRequest) -> Self {
-        value.clone()
-    }
-}
 ///`AdminPasswordSetRequestPassword`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 256,
-///  "minLength": 8
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct AdminPasswordSetRequestPassword(::std::string::String);
@@ -91,11 +57,6 @@ impl ::std::ops::Deref for AdminPasswordSetRequestPassword {
 impl ::std::convert::From<AdminPasswordSetRequestPassword> for ::std::string::String {
     fn from(value: AdminPasswordSetRequestPassword) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&AdminPasswordSetRequestPassword> for AdminPasswordSetRequestPassword {
-    fn from(value: &AdminPasswordSetRequestPassword) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for AdminPasswordSetRequestPassword {
@@ -116,22 +77,6 @@ impl ::std::convert::TryFrom<&str> for AdminPasswordSetRequestPassword {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AdminPasswordSetRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AdminPasswordSetRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for AdminPasswordSetRequestPassword {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -146,128 +91,6 @@ impl<'de> ::serde::Deserialize<'de> for AdminPasswordSetRequestPassword {
 }
 ///`AssistantMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "interrupted": {
-///      "type": "boolean"
-///    },
-///    "modelUsed": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "assistant"
-///      ]
-///    },
-///    "toolCalls": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "arguments",
-///          "callId",
-///          "extensionId",
-///          "status",
-///          "toolName"
-///        ],
-///        "properties": {
-///          "arguments": {
-///            "type": "string"
-///          },
-///          "callId": {
-///            "type": "string"
-///          },
-///          "error": {
-///            "type": "string"
-///          },
-///          "extensionId": {
-///            "type": "string"
-///          },
-///          "logLines": {
-///            "type": "array",
-///            "items": {
-///              "type": "object",
-///              "required": [
-///                "atMs",
-///                "level",
-///                "message"
-///              ],
-///              "properties": {
-///                "atMs": {
-///                  "type": "integer"
-///                },
-///                "level": {
-///                  "type": "string",
-///                  "enum": [
-///                    "debug",
-///                    "info",
-///                    "warn",
-///                    "error"
-///                  ]
-///                },
-///                "message": {
-///                  "type": "string"
-///                }
-///              },
-///              "additionalProperties": false
-///            }
-///          },
-///          "progress": {
-///            "type": "number"
-///          },
-///          "result": {},
-///          "status": {
-///            "type": "string",
-///            "enum": [
-///              "pending",
-///              "running",
-///              "awaiting_user",
-///              "awaiting_permission",
-///              "completed",
-///              "failed",
-///              "cancelled"
-///            ]
-///          },
-///          "toolName": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "truncated": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AssistantMessageInput {
@@ -319,25 +142,8 @@ pub struct AssistantMessageInput {
     )]
     pub truncated: ::std::option::Option<bool>,
 }
-impl ::std::convert::From<&AssistantMessageInput> for AssistantMessageInput {
-    fn from(value: &AssistantMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`AssistantMessageInputModelUsed`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -355,11 +161,6 @@ pub enum AssistantMessageInputModelUsed {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for AssistantMessageInputModelUsed {
-    fn from(value: &AssistantMessageInputModelUsed) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageInputModelUsed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -385,35 +186,8 @@ impl ::std::convert::TryFrom<&str> for AssistantMessageInputModelUsed {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AssistantMessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AssistantMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "assistant"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -429,11 +203,6 @@ impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageInputMod
 pub enum AssistantMessageInputRole {
     #[serde(rename = "assistant")]
     Assistant,
-}
-impl ::std::convert::From<&Self> for AssistantMessageInputRole {
-    fn from(value: &AssistantMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -457,102 +226,8 @@ impl ::std::convert::TryFrom<&str> for AssistantMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AssistantMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AssistantMessageInputToolCallsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "callId",
-///    "extensionId",
-///    "status",
-///    "toolName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "type": "string"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "logLines": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "atMs",
-///          "level",
-///          "message"
-///        ],
-///        "properties": {
-///          "atMs": {
-///            "type": "integer"
-///          },
-///          "level": {
-///            "type": "string",
-///            "enum": [
-///              "debug",
-///              "info",
-///              "warn",
-///              "error"
-///            ]
-///          },
-///          "message": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "progress": {
-///      "type": "number"
-///    },
-///    "result": {},
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "pending",
-///        "running",
-///        "awaiting_user",
-///        "awaiting_permission",
-///        "completed",
-///        "failed",
-///        "cancelled"
-///      ]
-///    },
-///    "toolName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AssistantMessageInputToolCallsItem {
@@ -600,37 +275,6 @@ impl ::std::convert::From<&AssistantMessageInputToolCallsItem>
 }
 ///`AssistantMessageInputToolCallsItemLogLinesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "atMs",
-///    "level",
-///    "message"
-///  ],
-///  "properties": {
-///    "atMs": {
-///      "type": "integer"
-///    },
-///    "level": {
-///      "type": "string",
-///      "enum": [
-///        "debug",
-///        "info",
-///        "warn",
-///        "error"
-///      ]
-///    },
-///    "message": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AssistantMessageInputToolCallsItemLogLinesItem {
@@ -648,20 +292,6 @@ impl ::std::convert::From<&AssistantMessageInputToolCallsItemLogLinesItem>
 }
 ///`AssistantMessageInputToolCallsItemLogLinesItemLevel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "debug",
-///    "info",
-///    "warn",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -683,11 +313,6 @@ pub enum AssistantMessageInputToolCallsItemLogLinesItemLevel {
     Warn,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for AssistantMessageInputToolCallsItemLogLinesItemLevel {
-    fn from(value: &AssistantMessageInputToolCallsItemLogLinesItemLevel) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageInputToolCallsItemLogLinesItemLevel {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -739,23 +364,6 @@ impl ::std::convert::TryFrom<::std::string::String>
 }
 ///`AssistantMessageInputToolCallsItemStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -783,11 +391,6 @@ pub enum AssistantMessageInputToolCallsItemStatus {
     Failed,
     #[serde(rename = "cancelled")]
     Cancelled,
-}
-impl ::std::convert::From<&Self> for AssistantMessageInputToolCallsItemStatus {
-    fn from(value: &AssistantMessageInputToolCallsItemStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageInputToolCallsItemStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -823,55 +426,8 @@ impl ::std::convert::TryFrom<&str> for AssistantMessageInputToolCallsItemStatus 
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AssistantMessageInputToolCallsItemStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageInputToolCallsItemStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`CatalogFileRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "fileSizeBytes",
-///    "modelSpec",
-///    "role"
-///  ],
-///  "properties": {
-///    "fileSizeBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    },
-///    "role": {
-///      "type": "string"
-///    },
-///    "sha256": {
-///      "type": "string",
-///      "pattern": "^[0-9a-f]{64}$"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogFileRole {
@@ -887,22 +443,8 @@ pub struct CatalogFileRole {
     )]
     pub sha256: ::std::option::Option<CatalogFileRoleSha256>,
 }
-impl ::std::convert::From<&CatalogFileRole> for CatalogFileRole {
-    fn from(value: &CatalogFileRole) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogFileRoleSha256`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "pattern": "^[0-9a-f]{64}$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct CatalogFileRoleSha256(::std::string::String);
@@ -915,11 +457,6 @@ impl ::std::ops::Deref for CatalogFileRoleSha256 {
 impl ::std::convert::From<CatalogFileRoleSha256> for ::std::string::String {
     fn from(value: CatalogFileRoleSha256) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&CatalogFileRoleSha256> for CatalogFileRoleSha256 {
-    fn from(value: &CatalogFileRoleSha256) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for CatalogFileRoleSha256 {
@@ -939,22 +476,6 @@ impl ::std::convert::TryFrom<&str> for CatalogFileRoleSha256 {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for CatalogFileRoleSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for CatalogFileRoleSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for CatalogFileRoleSha256 {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -969,81 +490,6 @@ impl<'de> ::serde::Deserialize<'de> for CatalogFileRoleSha256 {
 }
 ///`CatalogModel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arch",
-///    "capabilities",
-///    "contextMax",
-///    "id",
-///    "name",
-///    "paramsB",
-///    "variants"
-///  ],
-///  "properties": {
-///    "arch": {
-///      "$ref": "#/$defs/ModelArch"
-///    },
-///    "capabilities": {
-///      "type": "object",
-///      "required": [
-///        "reasoning",
-///        "tools",
-///        "vision"
-///      ],
-///      "properties": {
-///        "reasoning": {
-///          "type": "boolean"
-///        },
-///        "tools": {
-///          "type": "boolean"
-///        },
-///        "vision": {
-///          "type": "boolean"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "contextMax": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "paramsB": {
-///      "type": "number",
-///      "exclusiveMinimum": 0.0
-///    },
-///    "sampling": {
-///      "$ref": "#/$defs/Sampling"
-///    },
-///    "scores": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/ModelScore"
-///      }
-///    },
-///    "variants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/CatalogVariant"
-///      },
-///      "minItems": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogModel {
@@ -1069,38 +515,8 @@ pub struct CatalogModel {
     pub scores: ::std::option::Option<::std::vec::Vec<ModelScore>>,
     pub variants: ::std::vec::Vec<CatalogVariant>,
 }
-impl ::std::convert::From<&CatalogModel> for CatalogModel {
-    fn from(value: &CatalogModel) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogModelCapabilities`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "reasoning",
-///    "tools",
-///    "vision"
-///  ],
-///  "properties": {
-///    "reasoning": {
-///      "type": "boolean"
-///    },
-///    "tools": {
-///      "type": "boolean"
-///    },
-///    "vision": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogModelCapabilities {
@@ -1108,57 +524,8 @@ pub struct CatalogModelCapabilities {
     pub tools: bool,
     pub vision: bool,
 }
-impl ::std::convert::From<&CatalogModelCapabilities> for CatalogModelCapabilities {
-    fn from(value: &CatalogModelCapabilities) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogPayload`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "families",
-///    "fit",
-///    "generatedAt",
-///    "schemaVersion",
-///    "stt",
-///    "tts"
-///  ],
-///  "properties": {
-///    "families": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/ModelFamily"
-///      },
-///      "minItems": 1
-///    },
-///    "fit": {
-///      "$ref": "#/$defs/FitConfig"
-///    },
-///    "generatedAt": {
-///      "type": "string"
-///    },
-///    "schemaVersion": {
-///      "type": "number",
-///      "enum": [
-///        1
-///      ]
-///    },
-///    "stt": {
-///      "$ref": "#/$defs/SttCatalog"
-///    },
-///    "tts": {
-///      "$ref": "#/$defs/TtsCatalog"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogPayload {
@@ -1171,24 +538,8 @@ pub struct CatalogPayload {
     pub stt: SttCatalog,
     pub tts: TtsCatalog,
 }
-impl ::std::convert::From<&CatalogPayload> for CatalogPayload {
-    fn from(value: &CatalogPayload) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogPayloadSchemaVersion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "number",
-///  "enum": [
-///    1
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct CatalogPayloadSchemaVersion(f64);
@@ -1201,11 +552,6 @@ impl ::std::ops::Deref for CatalogPayloadSchemaVersion {
 impl ::std::convert::From<CatalogPayloadSchemaVersion> for f64 {
     fn from(value: CatalogPayloadSchemaVersion) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&CatalogPayloadSchemaVersion> for CatalogPayloadSchemaVersion {
-    fn from(value: &CatalogPayloadSchemaVersion) -> Self {
-        value.clone()
     }
 }
 impl ::std::convert::TryFrom<f64> for CatalogPayloadSchemaVersion {
@@ -1229,37 +575,6 @@ impl<'de> ::serde::Deserialize<'de> for CatalogPayloadSchemaVersion {
 }
 ///`CatalogQuant`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "fileSizeBytes",
-///    "modelSpec",
-///    "quant"
-///  ],
-///  "properties": {
-///    "fileSizeBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    },
-///    "sha256": {
-///      "type": "string",
-///      "pattern": "^[0-9a-f]{64}$"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogQuant {
@@ -1275,22 +590,8 @@ pub struct CatalogQuant {
     )]
     pub sha256: ::std::option::Option<CatalogQuantSha256>,
 }
-impl ::std::convert::From<&CatalogQuant> for CatalogQuant {
-    fn from(value: &CatalogQuant) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogQuantSha256`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "pattern": "^[0-9a-f]{64}$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct CatalogQuantSha256(::std::string::String);
@@ -1303,11 +604,6 @@ impl ::std::ops::Deref for CatalogQuantSha256 {
 impl ::std::convert::From<CatalogQuantSha256> for ::std::string::String {
     fn from(value: CatalogQuantSha256) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&CatalogQuantSha256> for CatalogQuantSha256 {
-    fn from(value: &CatalogQuantSha256) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for CatalogQuantSha256 {
@@ -1327,22 +623,6 @@ impl ::std::convert::TryFrom<&str> for CatalogQuantSha256 {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for CatalogQuantSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for CatalogQuantSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for CatalogQuantSha256 {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -1357,54 +637,6 @@ impl<'de> ::serde::Deserialize<'de> for CatalogQuantSha256 {
 }
 ///`CatalogVariant`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "label",
-///    "provider",
-///    "quants"
-///  ],
-///  "properties": {
-///    "label": {
-///      "type": "string"
-///    },
-///    "mmprojSha256": {
-///      "type": "string",
-///      "pattern": "^[0-9a-f]{64}$"
-///    },
-///    "mmprojSizeBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "mmprojSpec": {
-///      "type": "string"
-///    },
-///    "provider": {
-///      "type": "string"
-///    },
-///    "quants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/CatalogQuant"
-///      },
-///      "minItems": 1
-///    },
-///    "tags": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogVariant {
@@ -1439,22 +671,8 @@ pub struct CatalogVariant {
     )]
     pub tags: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
 }
-impl ::std::convert::From<&CatalogVariant> for CatalogVariant {
-    fn from(value: &CatalogVariant) -> Self {
-        value.clone()
-    }
-}
 ///`CatalogVariantMmprojSha256`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "pattern": "^[0-9a-f]{64}$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct CatalogVariantMmprojSha256(::std::string::String);
@@ -1467,11 +685,6 @@ impl ::std::ops::Deref for CatalogVariantMmprojSha256 {
 impl ::std::convert::From<CatalogVariantMmprojSha256> for ::std::string::String {
     fn from(value: CatalogVariantMmprojSha256) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&CatalogVariantMmprojSha256> for CatalogVariantMmprojSha256 {
-    fn from(value: &CatalogVariantMmprojSha256) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for CatalogVariantMmprojSha256 {
@@ -1491,22 +704,6 @@ impl ::std::convert::TryFrom<&str> for CatalogVariantMmprojSha256 {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for CatalogVariantMmprojSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for CatalogVariantMmprojSha256 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for CatalogVariantMmprojSha256 {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -1521,31 +718,6 @@ impl<'de> ::serde::Deserialize<'de> for CatalogVariantMmprojSha256 {
 }
 ///`ChatInterruptWs`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "streamId"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "chat.interrupt"
-///      ]
-///    },
-///    "streamId": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ChatInterruptWs {
     pub kind: ChatInterruptWsKind,
@@ -1554,24 +726,8 @@ pub struct ChatInterruptWs {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ChatInterruptWs> for ChatInterruptWs {
-    fn from(value: &ChatInterruptWs) -> Self {
-        value.clone()
-    }
-}
 ///`ChatInterruptWsKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "chat.interrupt"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1587,11 +743,6 @@ impl ::std::convert::From<&ChatInterruptWs> for ChatInterruptWs {
 pub enum ChatInterruptWsKind {
     #[serde(rename = "chat.interrupt")]
     ChatInterrupt,
-}
-impl ::std::convert::From<&Self> for ChatInterruptWsKind {
-    fn from(value: &ChatInterruptWsKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ChatInterruptWsKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1615,33 +766,8 @@ impl ::std::convert::TryFrom<&str> for ChatInterruptWsKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatInterruptWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatInterruptWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ChatInterruptWsStreamId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ChatInterruptWsStreamId(::std::string::String);
@@ -1654,11 +780,6 @@ impl ::std::ops::Deref for ChatInterruptWsStreamId {
 impl ::std::convert::From<ChatInterruptWsStreamId> for ::std::string::String {
     fn from(value: ChatInterruptWsStreamId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ChatInterruptWsStreamId> for ChatInterruptWsStreamId {
-    fn from(value: &ChatInterruptWsStreamId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ChatInterruptWsStreamId {
@@ -1676,22 +797,6 @@ impl ::std::convert::TryFrom<&str> for ChatInterruptWsStreamId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatInterruptWsStreamId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatInterruptWsStreamId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ChatInterruptWsStreamId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -1706,53 +811,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatInterruptWsStreamId {
 }
 ///`ChatStartWs`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "sessionId",
-///    "streamId"
-///  ],
-///  "properties": {
-///    "anchorMessageId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "chat.start"
-///      ]
-///    },
-///    "route": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "sessionId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "streamId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "systemPrompt": {
-///      "type": "string"
-///    },
-///    "toolsHint": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ChatStartWs {
     #[serde(
@@ -1790,22 +848,8 @@ pub struct ChatStartWs {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ChatStartWs> for ChatStartWs {
-    fn from(value: &ChatStartWs) -> Self {
-        value.clone()
-    }
-}
 ///`ChatStartWsAnchorMessageId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ChatStartWsAnchorMessageId(::std::string::String);
@@ -1818,11 +862,6 @@ impl ::std::ops::Deref for ChatStartWsAnchorMessageId {
 impl ::std::convert::From<ChatStartWsAnchorMessageId> for ::std::string::String {
     fn from(value: ChatStartWsAnchorMessageId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ChatStartWsAnchorMessageId> for ChatStartWsAnchorMessageId {
-    fn from(value: &ChatStartWsAnchorMessageId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ChatStartWsAnchorMessageId {
@@ -1840,22 +879,6 @@ impl ::std::convert::TryFrom<&str> for ChatStartWsAnchorMessageId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatStartWsAnchorMessageId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatStartWsAnchorMessageId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ChatStartWsAnchorMessageId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -1870,17 +893,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatStartWsAnchorMessageId {
 }
 ///`ChatStartWsKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "chat.start"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1896,11 +908,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatStartWsAnchorMessageId {
 pub enum ChatStartWsKind {
     #[serde(rename = "chat.start")]
     ChatStart,
-}
-impl ::std::convert::From<&Self> for ChatStartWsKind {
-    fn from(value: &ChatStartWsKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ChatStartWsKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1924,36 +931,8 @@ impl ::std::convert::TryFrom<&str> for ChatStartWsKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatStartWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatStartWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ChatStartWsRoute`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1971,11 +950,6 @@ pub enum ChatStartWsRoute {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for ChatStartWsRoute {
-    fn from(value: &ChatStartWsRoute) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ChatStartWsRoute {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2001,33 +975,8 @@ impl ::std::convert::TryFrom<&str> for ChatStartWsRoute {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatStartWsRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatStartWsRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ChatStartWsSessionId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ChatStartWsSessionId(::std::string::String);
@@ -2040,11 +989,6 @@ impl ::std::ops::Deref for ChatStartWsSessionId {
 impl ::std::convert::From<ChatStartWsSessionId> for ::std::string::String {
     fn from(value: ChatStartWsSessionId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ChatStartWsSessionId> for ChatStartWsSessionId {
-    fn from(value: &ChatStartWsSessionId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ChatStartWsSessionId {
@@ -2062,22 +1006,6 @@ impl ::std::convert::TryFrom<&str> for ChatStartWsSessionId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatStartWsSessionId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatStartWsSessionId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ChatStartWsSessionId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -2092,15 +1020,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatStartWsSessionId {
 }
 ///`ChatStartWsStreamId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ChatStartWsStreamId(::std::string::String);
@@ -2113,11 +1032,6 @@ impl ::std::ops::Deref for ChatStartWsStreamId {
 impl ::std::convert::From<ChatStartWsStreamId> for ::std::string::String {
     fn from(value: ChatStartWsStreamId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ChatStartWsStreamId> for ChatStartWsStreamId {
-    fn from(value: &ChatStartWsStreamId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ChatStartWsStreamId {
@@ -2135,22 +1049,6 @@ impl ::std::convert::TryFrom<&str> for ChatStartWsStreamId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatStartWsStreamId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatStartWsStreamId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ChatStartWsStreamId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -2165,31 +1063,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatStartWsStreamId {
 }
 ///`ChatSubscribeWs`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "sessionId"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "chat.subscribe"
-///      ]
-///    },
-///    "sessionId": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ChatSubscribeWs {
     pub kind: ChatSubscribeWsKind,
@@ -2198,24 +1071,8 @@ pub struct ChatSubscribeWs {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ChatSubscribeWs> for ChatSubscribeWs {
-    fn from(value: &ChatSubscribeWs) -> Self {
-        value.clone()
-    }
-}
 ///`ChatSubscribeWsKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "chat.subscribe"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2231,11 +1088,6 @@ impl ::std::convert::From<&ChatSubscribeWs> for ChatSubscribeWs {
 pub enum ChatSubscribeWsKind {
     #[serde(rename = "chat.subscribe")]
     ChatSubscribe,
-}
-impl ::std::convert::From<&Self> for ChatSubscribeWsKind {
-    fn from(value: &ChatSubscribeWsKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ChatSubscribeWsKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2259,33 +1111,8 @@ impl ::std::convert::TryFrom<&str> for ChatSubscribeWsKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatSubscribeWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatSubscribeWsKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ChatSubscribeWsSessionId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ChatSubscribeWsSessionId(::std::string::String);
@@ -2298,11 +1125,6 @@ impl ::std::ops::Deref for ChatSubscribeWsSessionId {
 impl ::std::convert::From<ChatSubscribeWsSessionId> for ::std::string::String {
     fn from(value: ChatSubscribeWsSessionId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ChatSubscribeWsSessionId> for ChatSubscribeWsSessionId {
-    fn from(value: &ChatSubscribeWsSessionId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ChatSubscribeWsSessionId {
@@ -2320,22 +1142,6 @@ impl ::std::convert::TryFrom<&str> for ChatSubscribeWsSessionId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatSubscribeWsSessionId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatSubscribeWsSessionId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ChatSubscribeWsSessionId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -2350,22 +1156,6 @@ impl<'de> ::serde::Deserialize<'de> for ChatSubscribeWsSessionId {
 }
 ///`ClientRevokeRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "password": {
-///      "type": "string",
-///      "maxLength": 256,
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ClientRevokeRequest {
@@ -2376,11 +1166,6 @@ pub struct ClientRevokeRequest {
     )]
     pub password: ::std::option::Option<ClientRevokeRequestPassword>,
 }
-impl ::std::convert::From<&ClientRevokeRequest> for ClientRevokeRequest {
-    fn from(value: &ClientRevokeRequest) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for ClientRevokeRequest {
     fn default() -> Self {
         Self {
@@ -2390,16 +1175,6 @@ impl ::std::default::Default for ClientRevokeRequest {
 }
 ///`ClientRevokeRequestPassword`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 256,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ClientRevokeRequestPassword(::std::string::String);
@@ -2412,11 +1187,6 @@ impl ::std::ops::Deref for ClientRevokeRequestPassword {
 impl ::std::convert::From<ClientRevokeRequestPassword> for ::std::string::String {
     fn from(value: ClientRevokeRequestPassword) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ClientRevokeRequestPassword> for ClientRevokeRequestPassword {
-    fn from(value: &ClientRevokeRequestPassword) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ClientRevokeRequestPassword {
@@ -2437,22 +1207,6 @@ impl ::std::convert::TryFrom<&str> for ClientRevokeRequestPassword {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ClientRevokeRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ClientRevokeRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ClientRevokeRequestPassword {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -2467,146 +1221,6 @@ impl<'de> ::serde::Deserialize<'de> for ClientRevokeRequestPassword {
 }
 ///`DisplayMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "callId": {
-///      "type": "string"
-///    },
-///    "content": {
-///      "oneOf": [
-///        {
-///          "type": "object",
-///          "required": [
-///            "markdown",
-///            "type"
-///          ],
-///          "properties": {
-///            "markdown": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "markdown"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "dataB64",
-///            "mime",
-///            "type"
-///          ],
-///          "properties": {
-///            "alt": {
-///              "type": "string"
-///            },
-///            "dataB64": {
-///              "type": "string"
-///            },
-///            "mime": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "image"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "columns",
-///            "rows",
-///            "type"
-///          ],
-///          "properties": {
-///            "columns": {
-///              "type": "array",
-///              "items": {
-///                "type": "string"
-///              }
-///            },
-///            "rows": {
-///              "type": "array",
-///              "items": {
-///                "type": "array",
-///                "items": {
-///                  "type": "string"
-///                }
-///              }
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "table"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "after",
-///            "before",
-///            "type"
-///          ],
-///          "properties": {
-///            "after": {
-///              "type": "string"
-///            },
-///            "before": {
-///              "type": "string"
-///            },
-///            "title": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "diff"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        }
-///      ]
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "display"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DisplayMessageInput {
@@ -2639,125 +1253,8 @@ pub struct DisplayMessageInput {
     pub ord: ::std::option::Option<i64>,
     pub role: DisplayMessageInputRole,
 }
-impl ::std::convert::From<&DisplayMessageInput> for DisplayMessageInput {
-    fn from(value: &DisplayMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`DisplayMessageInputContent`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "oneOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "markdown"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "dataB64",
-///        "mime",
-///        "type"
-///      ],
-///      "properties": {
-///        "alt": {
-///          "type": "string"
-///        },
-///        "dataB64": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "columns",
-///        "rows",
-///        "type"
-///      ],
-///      "properties": {
-///        "columns": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "rows": {
-///          "type": "array",
-///          "items": {
-///            "type": "array",
-///            "items": {
-///              "type": "string"
-///            }
-///          }
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "table"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "after",
-///        "before",
-///        "type"
-///      ],
-///      "properties": {
-///        "after": {
-///          "type": "string"
-///        },
-///        "before": {
-///          "type": "string"
-///        },
-///        "title": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "diff"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum DisplayMessageInputContent {
@@ -2792,24 +1289,8 @@ pub enum DisplayMessageInputContent {
         title: ::std::option::Option<::std::string::String>,
     },
 }
-impl ::std::convert::From<&Self> for DisplayMessageInputContent {
-    fn from(value: &DisplayMessageInputContent) -> Self {
-        value.clone()
-    }
-}
 ///`DisplayMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "display"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2825,11 +1306,6 @@ impl ::std::convert::From<&Self> for DisplayMessageInputContent {
 pub enum DisplayMessageInputRole {
     #[serde(rename = "display")]
     Display,
-}
-impl ::std::convert::From<&Self> for DisplayMessageInputRole {
-    fn from(value: &DisplayMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for DisplayMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2853,67 +1329,8 @@ impl ::std::convert::TryFrom<&str> for DisplayMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for DisplayMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for DisplayMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ErrorMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "code": {
-///      "type": "string"
-///    },
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "details": {
-///      "type": "object",
-///      "additionalProperties": {},
-///      "propertyNames": {
-///        "type": "string"
-///      }
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "error"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorMessageInput {
@@ -2952,24 +1369,8 @@ pub struct ErrorMessageInput {
     pub ord: ::std::option::Option<i64>,
     pub role: ErrorMessageInputRole,
 }
-impl ::std::convert::From<&ErrorMessageInput> for ErrorMessageInput {
-    fn from(value: &ErrorMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`ErrorMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2985,11 +1386,6 @@ impl ::std::convert::From<&ErrorMessageInput> for ErrorMessageInput {
 pub enum ErrorMessageInputRole {
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for ErrorMessageInputRole {
-    fn from(value: &ErrorMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ErrorMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -3013,81 +1409,8 @@ impl ::std::convert::TryFrom<&str> for ErrorMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ErrorMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ErrorMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ExtensionManifest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "displayName",
-///    "name"
-///  ],
-///  "properties": {
-///    "$schema": {
-///      "type": "string",
-///      "format": "uri"
-///    },
-///    "database": {
-///      "default": false,
-///      "type": "boolean"
-///    },
-///    "description": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "displayName": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "homepage": {
-///      "type": "string",
-///      "format": "uri"
-///    },
-///    "license": {
-///      "type": "string"
-///    },
-///    "memories": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/MemoryDecl"
-///      }
-///    },
-///    "name": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "tools": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/Tool"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionManifest {
@@ -3129,22 +1452,8 @@ pub struct ExtensionManifest {
     )]
     pub tools: ::std::option::Option<::std::vec::Vec<Tool>>,
 }
-impl ::std::convert::From<&ExtensionManifest> for ExtensionManifest {
-    fn from(value: &ExtensionManifest) -> Self {
-        value.clone()
-    }
-}
 ///`ExtensionManifestDescription`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ExtensionManifestDescription(::std::string::String);
@@ -3157,11 +1466,6 @@ impl ::std::ops::Deref for ExtensionManifestDescription {
 impl ::std::convert::From<ExtensionManifestDescription> for ::std::string::String {
     fn from(value: ExtensionManifestDescription) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ExtensionManifestDescription> for ExtensionManifestDescription {
-    fn from(value: &ExtensionManifestDescription) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ExtensionManifestDescription {
@@ -3179,22 +1483,6 @@ impl ::std::convert::TryFrom<&str> for ExtensionManifestDescription {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionManifestDescription {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionManifestDescription {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ExtensionManifestDescription {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -3209,15 +1497,6 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionManifestDescription {
 }
 ///`ExtensionManifestDisplayName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ExtensionManifestDisplayName(::std::string::String);
@@ -3230,11 +1509,6 @@ impl ::std::ops::Deref for ExtensionManifestDisplayName {
 impl ::std::convert::From<ExtensionManifestDisplayName> for ::std::string::String {
     fn from(value: ExtensionManifestDisplayName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ExtensionManifestDisplayName> for ExtensionManifestDisplayName {
-    fn from(value: &ExtensionManifestDisplayName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ExtensionManifestDisplayName {
@@ -3252,22 +1526,6 @@ impl ::std::convert::TryFrom<&str> for ExtensionManifestDisplayName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionManifestDisplayName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionManifestDisplayName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ExtensionManifestDisplayName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -3282,15 +1540,6 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionManifestDisplayName {
 }
 ///`ExtensionManifestName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ExtensionManifestName(::std::string::String);
@@ -3303,11 +1552,6 @@ impl ::std::ops::Deref for ExtensionManifestName {
 impl ::std::convert::From<ExtensionManifestName> for ::std::string::String {
     fn from(value: ExtensionManifestName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ExtensionManifestName> for ExtensionManifestName {
-    fn from(value: &ExtensionManifestName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ExtensionManifestName {
@@ -3325,22 +1569,6 @@ impl ::std::convert::TryFrom<&str> for ExtensionManifestName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionManifestName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionManifestName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ExtensionManifestName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -3355,129 +1583,6 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionManifestName {
 }
 ///`FitConfig`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "budgetFraction",
-///    "primaryScore",
-///    "safetyMarginBytes",
-///    "smallestQualityFloorRef"
-///  ],
-///  "properties": {
-///    "budgetFraction": {
-///      "type": "object",
-///      "required": [
-///        "full",
-///        "half"
-///      ],
-///      "properties": {
-///        "full": {
-///          "type": "number",
-///          "maximum": 1.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "half": {
-///          "type": "number",
-///          "maximum": 1.0,
-///          "exclusiveMinimum": 0.0
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "computeOverheadBytes": {
-///      "default": 600000000,
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    },
-///    "ctxCeiling": {
-///      "default": {
-///        "full": 32768,
-///        "half": 16384,
-///        "smallest": 8192
-///      },
-///      "type": "object",
-///      "required": [
-///        "full",
-///        "half",
-///        "smallest"
-///      ],
-///      "properties": {
-///        "full": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "half": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "smallest": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "ctxLadder": {
-///      "default": [
-///        32768,
-///        16384,
-///        8192,
-///        4096
-///      ],
-///      "type": "array",
-///      "items": {
-///        "type": "integer",
-///        "maximum": 9007199254740991.0,
-///        "exclusiveMinimum": 0.0
-///      },
-///      "minItems": 1
-///    },
-///    "primaryScore": {
-///      "$ref": "#/$defs/ScoreSelector"
-///    },
-///    "profiles": {
-///      "type": "object",
-///      "required": [
-///        "mobile"
-///      ],
-///      "properties": {
-///        "mobile": {
-///          "$ref": "#/$defs/FitProfileOverrides"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "safetyMarginBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    },
-///    "smallestQualityFloorRef": {
-///      "type": "string"
-///    },
-///    "tieBreakers": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "vision": {
-///      "default": true,
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitConfig {
@@ -3519,98 +1624,22 @@ pub struct FitConfig {
     #[serde(default = "defaults::default_bool::<true>")]
     pub vision: bool,
 }
-impl ::std::convert::From<&FitConfig> for FitConfig {
-    fn from(value: &FitConfig) -> Self {
-        value.clone()
-    }
-}
 ///`FitConfigBudgetFraction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "full",
-///    "half"
-///  ],
-///  "properties": {
-///    "full": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "half": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "exclusiveMinimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitConfigBudgetFraction {
     pub full: f64,
     pub half: f64,
 }
-impl ::std::convert::From<&FitConfigBudgetFraction> for FitConfigBudgetFraction {
-    fn from(value: &FitConfigBudgetFraction) -> Self {
-        value.clone()
-    }
-}
 ///`FitConfigCtxCeiling`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "default": {
-///    "full": 32768,
-///    "half": 16384,
-///    "smallest": 8192
-///  },
-///  "type": "object",
-///  "required": [
-///    "full",
-///    "half",
-///    "smallest"
-///  ],
-///  "properties": {
-///    "full": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "half": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "smallest": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitConfigCtxCeiling {
     pub full: ::std::num::NonZeroU64,
     pub half: ::std::num::NonZeroU64,
     pub smallest: ::std::num::NonZeroU64,
-}
-impl ::std::convert::From<&FitConfigCtxCeiling> for FitConfigCtxCeiling {
-    fn from(value: &FitConfigCtxCeiling) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for FitConfigCtxCeiling {
     fn default() -> Self {
@@ -3623,117 +1652,13 @@ impl ::std::default::Default for FitConfigCtxCeiling {
 }
 ///`FitConfigProfiles`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "mobile"
-///  ],
-///  "properties": {
-///    "mobile": {
-///      "$ref": "#/$defs/FitProfileOverrides"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitConfigProfiles {
     pub mobile: FitProfileOverrides,
 }
-impl ::std::convert::From<&FitConfigProfiles> for FitConfigProfiles {
-    fn from(value: &FitConfigProfiles) -> Self {
-        value.clone()
-    }
-}
 ///`FitProfileOverrides`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "budgetFraction": {
-///      "type": "object",
-///      "required": [
-///        "full",
-///        "half"
-///      ],
-///      "properties": {
-///        "full": {
-///          "type": "number",
-///          "maximum": 1.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "half": {
-///          "type": "number",
-///          "maximum": 1.0,
-///          "exclusiveMinimum": 0.0
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "computeOverheadBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    },
-///    "ctxCeiling": {
-///      "type": "object",
-///      "required": [
-///        "full",
-///        "half",
-///        "smallest"
-///      ],
-///      "properties": {
-///        "full": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "half": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "smallest": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "ctxLadder": {
-///      "type": "array",
-///      "items": {
-///        "type": "integer",
-///        "maximum": 9007199254740991.0,
-///        "exclusiveMinimum": 0.0
-///      },
-///      "minItems": 1
-///    },
-///    "safetyMarginBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    },
-///    "smallestQualityFloorRef": {
-///      "type": "string"
-///    },
-///    "vision": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitProfileOverrides {
@@ -3786,11 +1711,6 @@ pub struct FitProfileOverrides {
     )]
     pub vision: ::std::option::Option<bool>,
 }
-impl ::std::convert::From<&FitProfileOverrides> for FitProfileOverrides {
-    fn from(value: &FitProfileOverrides) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for FitProfileOverrides {
     fn default() -> Self {
         Self {
@@ -3806,31 +1726,6 @@ impl ::std::default::Default for FitProfileOverrides {
 }
 ///`FitProfileOverridesBudgetFraction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "full",
-///    "half"
-///  ],
-///  "properties": {
-///    "full": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "half": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "exclusiveMinimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitProfileOverridesBudgetFraction {
@@ -3846,37 +1741,6 @@ impl ::std::convert::From<&FitProfileOverridesBudgetFraction>
 }
 ///`FitProfileOverridesCtxCeiling`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "full",
-///    "half",
-///    "smallest"
-///  ],
-///  "properties": {
-///    "full": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "half": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "smallest": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct FitProfileOverridesCtxCeiling {
@@ -3884,33 +1748,8 @@ pub struct FitProfileOverridesCtxCeiling {
     pub half: ::std::num::NonZeroU64,
     pub smallest: ::std::num::NonZeroU64,
 }
-impl ::std::convert::From<&FitProfileOverridesCtxCeiling> for FitProfileOverridesCtxCeiling {
-    fn from(value: &FitProfileOverridesCtxCeiling) -> Self {
-        value.clone()
-    }
-}
 ///`GreetingRunBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "cooldownMs": {
-///      "type": "number"
-///    },
-///    "instruction": {
-///      "type": "string"
-///    },
-///    "sessionTitle": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GreetingRunBody {
@@ -3935,11 +1774,6 @@ pub struct GreetingRunBody {
     )]
     pub session_title: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&GreetingRunBody> for GreetingRunBody {
-    fn from(value: &GreetingRunBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for GreetingRunBody {
     fn default() -> Self {
         Self {
@@ -3951,296 +1785,6 @@ impl ::std::default::Default for GreetingRunBody {
 }
 ///`LocaJsonToolPermissions`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "env": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "key",
-///          "reason"
-///        ],
-///        "properties": {
-///          "key": {
-///            "type": "string",
-///            "minLength": 1,
-///            "pattern": "^[A-Z_][A-Z0-9_]*$"
-///          },
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "ffi": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "llm": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "memories": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "access",
-///          "reason"
-///        ],
-///        "properties": {
-///          "access": {
-///            "type": "string",
-///            "enum": [
-///              "read",
-///              "write"
-///            ]
-///          },
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "net": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "host",
-///          "ports",
-///          "reason"
-///        ],
-///        "properties": {
-///          "host": {
-///            "type": "string",
-///            "minLength": 1
-///          },
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "ports": {
-///            "type": "array",
-///            "items": {
-///              "anyOf": [
-///                {
-///                  "type": "integer",
-///                  "maximum": 65535.0,
-///                  "minimum": 1.0
-///                },
-///                {
-///                  "type": "string",
-///                  "enum": [
-///                    "*"
-///                  ]
-///                }
-///              ]
-///            },
-///            "minItems": 1
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "read": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "path",
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "path": {
-///            "type": "string",
-///            "minLength": 1
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "run": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "binary",
-///          "reason"
-///        ],
-///        "properties": {
-///          "binary": {
-///            "type": "string",
-///            "minLength": 1
-///          },
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "stt": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "sys": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "flag",
-///          "reason"
-///        ],
-///        "properties": {
-///          "flag": {
-///            "type": "string",
-///            "minLength": 1
-///          },
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "tts": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    },
-///    "write": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "path",
-///          "reason"
-///        ],
-///        "properties": {
-///          "optional": {
-///            "type": "boolean"
-///          },
-///          "path": {
-///            "type": "string",
-///            "minLength": 1
-///          },
-///          "reason": {
-///            "type": "string",
-///            "maxLength": 500,
-///            "minLength": 1
-///          }
-///        }
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct LocaJsonToolPermissions {
@@ -4311,11 +1855,6 @@ pub struct LocaJsonToolPermissions {
     )]
     pub write: ::std::option::Option<::std::vec::Vec<LocaJsonToolPermissionsWriteItem>>,
 }
-impl ::std::convert::From<&LocaJsonToolPermissions> for LocaJsonToolPermissions {
-    fn from(value: &LocaJsonToolPermissions) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for LocaJsonToolPermissions {
     fn default() -> Self {
         Self {
@@ -4335,33 +1874,6 @@ impl ::std::default::Default for LocaJsonToolPermissions {
 }
 ///`LocaJsonToolPermissionsEnvItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "key",
-///    "reason"
-///  ],
-///  "properties": {
-///    "key": {
-///      "type": "string",
-///      "minLength": 1,
-///      "pattern": "^[A-Z_][A-Z0-9_]*$"
-///    },
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsEnvItem {
     pub key: LocaJsonToolPermissionsEnvItemKey,
@@ -4373,23 +1885,8 @@ pub struct LocaJsonToolPermissionsEnvItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsEnvItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsEnvItem> for LocaJsonToolPermissionsEnvItem {
-    fn from(value: &LocaJsonToolPermissionsEnvItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsEnvItemKey`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1,
-///  "pattern": "^[A-Z_][A-Z0-9_]*$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsEnvItemKey(::std::string::String);
@@ -4431,22 +1928,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsEnvItemKey {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsEnvItemKey {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsEnvItemKey {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsEnvItemKey {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -4461,16 +1942,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsEnvItemKey {
 }
 ///`LocaJsonToolPermissionsEnvItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsEnvItemReason(::std::string::String);
@@ -4510,22 +1981,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsEnvItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsEnvItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsEnvItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsEnvItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -4540,27 +1995,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsEnvItemReason {
 }
 ///`LocaJsonToolPermissionsFfiItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsFfiItem {
     #[serde(
@@ -4571,23 +2005,8 @@ pub struct LocaJsonToolPermissionsFfiItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsFfiItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsFfiItem> for LocaJsonToolPermissionsFfiItem {
-    fn from(value: &LocaJsonToolPermissionsFfiItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsFfiItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsFfiItemReason(::std::string::String);
@@ -4627,22 +2046,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsFfiItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsFfiItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsFfiItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsFfiItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -4657,27 +2060,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsFfiItemReason {
 }
 ///`LocaJsonToolPermissionsLlmItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsLlmItem {
     #[serde(
@@ -4688,23 +2070,8 @@ pub struct LocaJsonToolPermissionsLlmItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsLlmItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsLlmItem> for LocaJsonToolPermissionsLlmItem {
-    fn from(value: &LocaJsonToolPermissionsLlmItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsLlmItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsLlmItemReason(::std::string::String);
@@ -4744,22 +2111,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsLlmItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsLlmItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsLlmItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsLlmItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -4774,35 +2125,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsLlmItemReason {
 }
 ///`LocaJsonToolPermissionsMemoriesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "access",
-///    "reason"
-///  ],
-///  "properties": {
-///    "access": {
-///      "type": "string",
-///      "enum": [
-///        "read",
-///        "write"
-///      ]
-///    },
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsMemoriesItem {
     pub access: LocaJsonToolPermissionsMemoriesItemAccess,
@@ -4823,18 +2145,6 @@ impl ::std::convert::From<&LocaJsonToolPermissionsMemoriesItem>
 }
 ///`LocaJsonToolPermissionsMemoriesItemAccess`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "read",
-///    "write"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -4852,11 +2162,6 @@ pub enum LocaJsonToolPermissionsMemoriesItemAccess {
     Read,
     #[serde(rename = "write")]
     Write,
-}
-impl ::std::convert::From<&Self> for LocaJsonToolPermissionsMemoriesItemAccess {
-    fn from(value: &LocaJsonToolPermissionsMemoriesItemAccess) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for LocaJsonToolPermissionsMemoriesItemAccess {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -4882,34 +2187,8 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsMemoriesItemAccess
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsMemoriesItemAccess {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsMemoriesItemAccess {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`LocaJsonToolPermissionsMemoriesItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsMemoriesItemReason(::std::string::String);
@@ -4949,22 +2228,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsMemoriesItemReason
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsMemoriesItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsMemoriesItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsMemoriesItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -4979,52 +2242,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsMemoriesItemReaso
 }
 ///`LocaJsonToolPermissionsNetItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "host",
-///    "ports",
-///    "reason"
-///  ],
-///  "properties": {
-///    "host": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "ports": {
-///      "type": "array",
-///      "items": {
-///        "anyOf": [
-///          {
-///            "type": "integer",
-///            "maximum": 65535.0,
-///            "minimum": 1.0
-///          },
-///          {
-///            "type": "string",
-///            "enum": [
-///              "*"
-///            ]
-///          }
-///        ]
-///      },
-///      "minItems": 1
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsNetItem {
     pub host: LocaJsonToolPermissionsNetItemHost,
@@ -5037,22 +2254,8 @@ pub struct LocaJsonToolPermissionsNetItem {
     pub ports: ::std::vec::Vec<LocaJsonToolPermissionsNetItemPortsItem>,
     pub reason: LocaJsonToolPermissionsNetItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsNetItem> for LocaJsonToolPermissionsNetItem {
-    fn from(value: &LocaJsonToolPermissionsNetItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsNetItemHost`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsNetItemHost(::std::string::String);
@@ -5089,22 +2292,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsNetItemHost {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsNetItemHost {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsNetItemHost {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsNetItemHost {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5119,36 +2306,11 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsNetItemHost {
 }
 ///`LocaJsonToolPermissionsNetItemPortsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "integer",
-///      "maximum": 65535.0,
-///      "minimum": 1.0
-///    },
-///    {
-///      "type": "string",
-///      "enum": [
-///        "*"
-///      ]
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum LocaJsonToolPermissionsNetItemPortsItem {
     Variant0(::std::num::NonZeroU64),
     Variant1(LocaJsonToolPermissionsNetItemPortsItemVariant1),
-}
-impl ::std::convert::From<&Self> for LocaJsonToolPermissionsNetItemPortsItem {
-    fn from(value: &LocaJsonToolPermissionsNetItemPortsItem) -> Self {
-        value.clone()
-    }
 }
 impl ::std::str::FromStr for LocaJsonToolPermissionsNetItemPortsItem {
     type Err = self::error::ConversionError;
@@ -5165,22 +2327,6 @@ impl ::std::str::FromStr for LocaJsonToolPermissionsNetItemPortsItem {
 impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsNetItemPortsItem {
     type Error = self::error::ConversionError;
     fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsNetItemPortsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsNetItemPortsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
         value.parse()
     }
 }
@@ -5206,17 +2352,6 @@ impl ::std::convert::From<LocaJsonToolPermissionsNetItemPortsItemVariant1>
 }
 ///`LocaJsonToolPermissionsNetItemPortsItemVariant1`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "*"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -5232,11 +2367,6 @@ impl ::std::convert::From<LocaJsonToolPermissionsNetItemPortsItemVariant1>
 pub enum LocaJsonToolPermissionsNetItemPortsItemVariant1 {
     #[serde(rename = "*")]
     X,
-}
-impl ::std::convert::From<&Self> for LocaJsonToolPermissionsNetItemPortsItemVariant1 {
-    fn from(value: &LocaJsonToolPermissionsNetItemPortsItemVariant1) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for LocaJsonToolPermissionsNetItemPortsItemVariant1 {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5282,16 +2412,6 @@ impl ::std::convert::TryFrom<::std::string::String>
 }
 ///`LocaJsonToolPermissionsNetItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsNetItemReason(::std::string::String);
@@ -5331,22 +2451,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsNetItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsNetItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsNetItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsNetItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5361,32 +2465,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsNetItemReason {
 }
 ///`LocaJsonToolPermissionsReadItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "path",
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "path": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsReadItem {
     #[serde(
@@ -5398,22 +2476,8 @@ pub struct LocaJsonToolPermissionsReadItem {
     pub path: LocaJsonToolPermissionsReadItemPath,
     pub reason: LocaJsonToolPermissionsReadItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsReadItem> for LocaJsonToolPermissionsReadItem {
-    fn from(value: &LocaJsonToolPermissionsReadItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsReadItemPath`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsReadItemPath(::std::string::String);
@@ -5450,22 +2514,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsReadItemPath {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsReadItemPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsReadItemPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsReadItemPath {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5480,16 +2528,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsReadItemPath {
 }
 ///`LocaJsonToolPermissionsReadItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsReadItemReason(::std::string::String);
@@ -5529,22 +2567,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsReadItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsReadItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsReadItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsReadItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5559,32 +2581,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsReadItemReason {
 }
 ///`LocaJsonToolPermissionsRunItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "binary",
-///    "reason"
-///  ],
-///  "properties": {
-///    "binary": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsRunItem {
     pub binary: LocaJsonToolPermissionsRunItemBinary,
@@ -5596,22 +2592,8 @@ pub struct LocaJsonToolPermissionsRunItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsRunItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsRunItem> for LocaJsonToolPermissionsRunItem {
-    fn from(value: &LocaJsonToolPermissionsRunItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsRunItemBinary`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsRunItemBinary(::std::string::String);
@@ -5648,22 +2630,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsRunItemBinary {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsRunItemBinary {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsRunItemBinary {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsRunItemBinary {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5678,16 +2644,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsRunItemBinary {
 }
 ///`LocaJsonToolPermissionsRunItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsRunItemReason(::std::string::String);
@@ -5727,22 +2683,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsRunItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsRunItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsRunItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsRunItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5757,27 +2697,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsRunItemReason {
 }
 ///`LocaJsonToolPermissionsSttItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsSttItem {
     #[serde(
@@ -5788,23 +2707,8 @@ pub struct LocaJsonToolPermissionsSttItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsSttItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsSttItem> for LocaJsonToolPermissionsSttItem {
-    fn from(value: &LocaJsonToolPermissionsSttItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsSttItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsSttItemReason(::std::string::String);
@@ -5844,22 +2748,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsSttItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsSttItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsSttItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSttItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5874,32 +2762,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSttItemReason {
 }
 ///`LocaJsonToolPermissionsSysItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "flag",
-///    "reason"
-///  ],
-///  "properties": {
-///    "flag": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsSysItem {
     pub flag: LocaJsonToolPermissionsSysItemFlag,
@@ -5911,22 +2773,8 @@ pub struct LocaJsonToolPermissionsSysItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsSysItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsSysItem> for LocaJsonToolPermissionsSysItem {
-    fn from(value: &LocaJsonToolPermissionsSysItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsSysItemFlag`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsSysItemFlag(::std::string::String);
@@ -5963,22 +2811,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsSysItemFlag {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsSysItemFlag {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsSysItemFlag {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSysItemFlag {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -5993,16 +2825,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSysItemFlag {
 }
 ///`LocaJsonToolPermissionsSysItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsSysItemReason(::std::string::String);
@@ -6042,22 +2864,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsSysItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsSysItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsSysItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSysItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -6072,27 +2878,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsSysItemReason {
 }
 ///`LocaJsonToolPermissionsTtsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsTtsItem {
     #[serde(
@@ -6103,23 +2888,8 @@ pub struct LocaJsonToolPermissionsTtsItem {
     pub optional: ::std::option::Option<bool>,
     pub reason: LocaJsonToolPermissionsTtsItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsTtsItem> for LocaJsonToolPermissionsTtsItem {
-    fn from(value: &LocaJsonToolPermissionsTtsItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsTtsItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsTtsItemReason(::std::string::String);
@@ -6159,22 +2929,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsTtsItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsTtsItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsTtsItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsTtsItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -6189,32 +2943,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsTtsItemReason {
 }
 ///`LocaJsonToolPermissionsWriteItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "path",
-///    "reason"
-///  ],
-///  "properties": {
-///    "optional": {
-///      "type": "boolean"
-///    },
-///    "path": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "reason": {
-///      "type": "string",
-///      "maxLength": 500,
-///      "minLength": 1
-///    }
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct LocaJsonToolPermissionsWriteItem {
     #[serde(
@@ -6226,22 +2954,8 @@ pub struct LocaJsonToolPermissionsWriteItem {
     pub path: LocaJsonToolPermissionsWriteItemPath,
     pub reason: LocaJsonToolPermissionsWriteItemReason,
 }
-impl ::std::convert::From<&LocaJsonToolPermissionsWriteItem> for LocaJsonToolPermissionsWriteItem {
-    fn from(value: &LocaJsonToolPermissionsWriteItem) -> Self {
-        value.clone()
-    }
-}
 ///`LocaJsonToolPermissionsWriteItemPath`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsWriteItemPath(::std::string::String);
@@ -6278,22 +2992,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsWriteItemPath {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsWriteItemPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsWriteItemPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsWriteItemPath {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -6308,16 +3006,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsWriteItemPath {
 }
 ///`LocaJsonToolPermissionsWriteItemReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 500,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct LocaJsonToolPermissionsWriteItemReason(::std::string::String);
@@ -6357,22 +3045,6 @@ impl ::std::convert::TryFrom<&str> for LocaJsonToolPermissionsWriteItemReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for LocaJsonToolPermissionsWriteItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for LocaJsonToolPermissionsWriteItemReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsWriteItemReason {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -6387,26 +3059,6 @@ impl<'de> ::serde::Deserialize<'de> for LocaJsonToolPermissionsWriteItemReason {
 }
 ///`McpPromptResolveBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "arguments": {
-///      "type": "object",
-///      "additionalProperties": {
-///        "type": "string"
-///      },
-///      "propertyNames": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpPromptResolveBody {
@@ -6415,11 +3067,6 @@ pub struct McpPromptResolveBody {
         skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
     )]
     pub arguments: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-}
-impl ::std::convert::From<&McpPromptResolveBody> for McpPromptResolveBody {
-    fn from(value: &McpPromptResolveBody) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for McpPromptResolveBody {
     fn default() -> Self {
@@ -6430,74 +3077,6 @@ impl ::std::default::Default for McpPromptResolveBody {
 }
 ///`McpServerBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "name"
-///  ],
-///  "properties": {
-///    "args": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "authToken": {
-///      "type": "string"
-///    },
-///    "command": {
-///      "type": "string"
-///    },
-///    "denoAllowAll": {
-///      "type": "boolean"
-///    },
-///    "denoPermissions": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "stdio",
-///        "remote"
-///      ]
-///    },
-///    "name": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "remoteAuth": {
-///      "type": "string",
-///      "enum": [
-///        "none",
-///        "bearer",
-///        "oauth"
-///      ]
-///    },
-///    "runtime": {
-///      "type": "string",
-///      "enum": [
-///        "custom",
-///        "deno"
-///      ]
-///    },
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerBody {
@@ -6562,25 +3141,8 @@ pub struct McpServerBody {
     )]
     pub url: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&McpServerBody> for McpServerBody {
-    fn from(value: &McpServerBody) -> Self {
-        value.clone()
-    }
-}
 ///`McpServerBodyKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stdio",
-///    "remote"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6598,11 +3160,6 @@ pub enum McpServerBodyKind {
     Stdio,
     #[serde(rename = "remote")]
     Remote,
-}
-impl ::std::convert::From<&Self> for McpServerBodyKind {
-    fn from(value: &McpServerBodyKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerBodyKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6628,33 +3185,8 @@ impl ::std::convert::TryFrom<&str> for McpServerBodyKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpServerBodyName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct McpServerBodyName(::std::string::String);
@@ -6667,11 +3199,6 @@ impl ::std::ops::Deref for McpServerBodyName {
 impl ::std::convert::From<McpServerBodyName> for ::std::string::String {
     fn from(value: McpServerBodyName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&McpServerBodyName> for McpServerBodyName {
-    fn from(value: &McpServerBodyName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for McpServerBodyName {
@@ -6689,22 +3216,6 @@ impl ::std::convert::TryFrom<&str> for McpServerBodyName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerBodyName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerBodyName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for McpServerBodyName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -6719,19 +3230,6 @@ impl<'de> ::serde::Deserialize<'de> for McpServerBodyName {
 }
 ///`McpServerBodyRemoteAuth`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "none",
-///    "bearer",
-///    "oauth"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6751,11 +3249,6 @@ pub enum McpServerBodyRemoteAuth {
     Bearer,
     #[serde(rename = "oauth")]
     Oauth,
-}
-impl ::std::convert::From<&Self> for McpServerBodyRemoteAuth {
-    fn from(value: &McpServerBodyRemoteAuth) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerBodyRemoteAuth {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6783,36 +3276,8 @@ impl ::std::convert::TryFrom<&str> for McpServerBodyRemoteAuth {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerBodyRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerBodyRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpServerBodyRuntime`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "custom",
-///    "deno"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6830,11 +3295,6 @@ pub enum McpServerBodyRuntime {
     Custom,
     #[serde(rename = "deno")]
     Deno,
-}
-impl ::std::convert::From<&Self> for McpServerBodyRuntime {
-    fn from(value: &McpServerBodyRuntime) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerBodyRuntime {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6860,88 +3320,8 @@ impl ::std::convert::TryFrom<&str> for McpServerBodyRuntime {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerBodyRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerBodyRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpServerPatchBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "args": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "authToken": {
-///      "type": "string"
-///    },
-///    "command": {
-///      "type": "string"
-///    },
-///    "denoAllowAll": {
-///      "type": "boolean"
-///    },
-///    "denoPermissions": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "stdio",
-///        "remote"
-///      ]
-///    },
-///    "name": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "remoteAuth": {
-///      "type": "string",
-///      "enum": [
-///        "none",
-///        "bearer",
-///        "oauth"
-///      ]
-///    },
-///    "runtime": {
-///      "type": "string",
-///      "enum": [
-///        "custom",
-///        "deno"
-///      ]
-///    },
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerPatchBody {
@@ -7016,11 +3396,6 @@ pub struct McpServerPatchBody {
     )]
     pub url: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&McpServerPatchBody> for McpServerPatchBody {
-    fn from(value: &McpServerPatchBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for McpServerPatchBody {
     fn default() -> Self {
         Self {
@@ -7040,18 +3415,6 @@ impl ::std::default::Default for McpServerPatchBody {
 }
 ///`McpServerPatchBodyKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stdio",
-///    "remote"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7069,11 +3432,6 @@ pub enum McpServerPatchBodyKind {
     Stdio,
     #[serde(rename = "remote")]
     Remote,
-}
-impl ::std::convert::From<&Self> for McpServerPatchBodyKind {
-    fn from(value: &McpServerPatchBodyKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerPatchBodyKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7099,33 +3457,8 @@ impl ::std::convert::TryFrom<&str> for McpServerPatchBodyKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerPatchBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerPatchBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpServerPatchBodyName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct McpServerPatchBodyName(::std::string::String);
@@ -7138,11 +3471,6 @@ impl ::std::ops::Deref for McpServerPatchBodyName {
 impl ::std::convert::From<McpServerPatchBodyName> for ::std::string::String {
     fn from(value: McpServerPatchBodyName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&McpServerPatchBodyName> for McpServerPatchBodyName {
-    fn from(value: &McpServerPatchBodyName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for McpServerPatchBodyName {
@@ -7160,22 +3488,6 @@ impl ::std::convert::TryFrom<&str> for McpServerPatchBodyName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerPatchBodyName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerPatchBodyName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for McpServerPatchBodyName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -7190,19 +3502,6 @@ impl<'de> ::serde::Deserialize<'de> for McpServerPatchBodyName {
 }
 ///`McpServerPatchBodyRemoteAuth`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "none",
-///    "bearer",
-///    "oauth"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7222,11 +3521,6 @@ pub enum McpServerPatchBodyRemoteAuth {
     Bearer,
     #[serde(rename = "oauth")]
     Oauth,
-}
-impl ::std::convert::From<&Self> for McpServerPatchBodyRemoteAuth {
-    fn from(value: &McpServerPatchBodyRemoteAuth) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerPatchBodyRemoteAuth {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7254,36 +3548,8 @@ impl ::std::convert::TryFrom<&str> for McpServerPatchBodyRemoteAuth {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerPatchBodyRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerPatchBodyRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpServerPatchBodyRuntime`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "custom",
-///    "deno"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7301,11 +3567,6 @@ pub enum McpServerPatchBodyRuntime {
     Custom,
     #[serde(rename = "deno")]
     Deno,
-}
-impl ::std::convert::From<&Self> for McpServerPatchBodyRuntime {
-    fn from(value: &McpServerPatchBodyRuntime) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpServerPatchBodyRuntime {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7331,54 +3592,8 @@ impl ::std::convert::TryFrom<&str> for McpServerPatchBodyRuntime {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpServerPatchBodyRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpServerPatchBodyRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryCreateBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "title"
-///  ],
-///  "properties": {
-///    "content": {
-///      "default": "",
-///      "type": "string"
-///    },
-///    "kind": {
-///      "default": "knowledge",
-///      "type": "string",
-///      "enum": [
-///        "knowledge",
-///        "skill"
-///      ]
-///    },
-///    "title": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryCreateBody {
@@ -7388,26 +3603,8 @@ pub struct MemoryCreateBody {
     pub kind: MemoryCreateBodyKind,
     pub title: MemoryCreateBodyTitle,
 }
-impl ::std::convert::From<&MemoryCreateBody> for MemoryCreateBody {
-    fn from(value: &MemoryCreateBody) -> Self {
-        value.clone()
-    }
-}
 ///`MemoryCreateBodyKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "default": "knowledge",
-///  "type": "string",
-///  "enum": [
-///    "knowledge",
-///    "skill"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7425,11 +3622,6 @@ pub enum MemoryCreateBodyKind {
     Knowledge,
     #[serde(rename = "skill")]
     Skill,
-}
-impl ::std::convert::From<&Self> for MemoryCreateBodyKind {
-    fn from(value: &MemoryCreateBodyKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryCreateBodyKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7455,22 +3647,6 @@ impl ::std::convert::TryFrom<&str> for MemoryCreateBodyKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryCreateBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryCreateBodyKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl ::std::default::Default for MemoryCreateBodyKind {
     fn default() -> Self {
         MemoryCreateBodyKind::Knowledge
@@ -7478,15 +3654,6 @@ impl ::std::default::Default for MemoryCreateBodyKind {
 }
 ///`MemoryCreateBodyTitle`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct MemoryCreateBodyTitle(::std::string::String);
@@ -7499,11 +3666,6 @@ impl ::std::ops::Deref for MemoryCreateBodyTitle {
 impl ::std::convert::From<MemoryCreateBodyTitle> for ::std::string::String {
     fn from(value: MemoryCreateBodyTitle) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&MemoryCreateBodyTitle> for MemoryCreateBodyTitle {
-    fn from(value: &MemoryCreateBodyTitle) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for MemoryCreateBodyTitle {
@@ -7521,22 +3683,6 @@ impl ::std::convert::TryFrom<&str> for MemoryCreateBodyTitle {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryCreateBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryCreateBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for MemoryCreateBodyTitle {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -7551,57 +3697,14 @@ impl<'de> ::serde::Deserialize<'de> for MemoryCreateBodyTitle {
 }
 ///`MemoryDecl`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "path"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "knowledge",
-///        "skill"
-///      ]
-///    },
-///    "path": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryDecl {
     pub kind: MemoryDeclKind,
     pub path: MemoryDeclPath,
 }
-impl ::std::convert::From<&MemoryDecl> for MemoryDecl {
-    fn from(value: &MemoryDecl) -> Self {
-        value.clone()
-    }
-}
 ///`MemoryDeclKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "knowledge",
-///    "skill"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7619,11 +3722,6 @@ pub enum MemoryDeclKind {
     Knowledge,
     #[serde(rename = "skill")]
     Skill,
-}
-impl ::std::convert::From<&Self> for MemoryDeclKind {
-    fn from(value: &MemoryDeclKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryDeclKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7649,33 +3747,8 @@ impl ::std::convert::TryFrom<&str> for MemoryDeclKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryDeclKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryDeclKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryDeclPath`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct MemoryDeclPath(::std::string::String);
@@ -7688,11 +3761,6 @@ impl ::std::ops::Deref for MemoryDeclPath {
 impl ::std::convert::From<MemoryDeclPath> for ::std::string::String {
     fn from(value: MemoryDeclPath) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&MemoryDeclPath> for MemoryDeclPath {
-    fn from(value: &MemoryDeclPath) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for MemoryDeclPath {
@@ -7710,22 +3778,6 @@ impl ::std::convert::TryFrom<&str> for MemoryDeclPath {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryDeclPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryDeclPath {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for MemoryDeclPath {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -7740,31 +3792,11 @@ impl<'de> ::serde::Deserialize<'de> for MemoryDeclPath {
 }
 ///`MemoryFileBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "content": {
-///      "default": "",
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryFileBody {
     #[serde(default)]
     pub content: ::std::string::String,
-}
-impl ::std::convert::From<&MemoryFileBody> for MemoryFileBody {
-    fn from(value: &MemoryFileBody) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for MemoryFileBody {
     fn default() -> Self {
@@ -7775,73 +3807,6 @@ impl ::std::default::Default for MemoryFileBody {
 }
 ///`MemoryFilterMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "role",
-///    "status"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "errorMessage": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "relevant": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "memoryId",
-///          "score",
-///          "summary",
-///          "title"
-///        ],
-///        "properties": {
-///          "memoryId": {
-///            "type": "string"
-///          },
-///          "score": {
-///            "type": "number"
-///          },
-///          "summary": {
-///            "type": "string"
-///          },
-///          "title": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "memory_filter"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "complete",
-///        "error"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryFilterMessageInput {
@@ -7880,42 +3845,8 @@ pub struct MemoryFilterMessageInput {
     pub role: MemoryFilterMessageInputRole,
     pub status: MemoryFilterMessageInputStatus,
 }
-impl ::std::convert::From<&MemoryFilterMessageInput> for MemoryFilterMessageInput {
-    fn from(value: &MemoryFilterMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`MemoryFilterMessageInputRelevantItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "memoryId",
-///    "score",
-///    "summary",
-///    "title"
-///  ],
-///  "properties": {
-///    "memoryId": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "summary": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryFilterMessageInputRelevantItem {
@@ -7934,17 +3865,6 @@ impl ::std::convert::From<&MemoryFilterMessageInputRelevantItem>
 }
 ///`MemoryFilterMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "memory_filter"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7960,11 +3880,6 @@ impl ::std::convert::From<&MemoryFilterMessageInputRelevantItem>
 pub enum MemoryFilterMessageInputRole {
     #[serde(rename = "memory_filter")]
     MemoryFilter,
-}
-impl ::std::convert::From<&Self> for MemoryFilterMessageInputRole {
-    fn from(value: &MemoryFilterMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryFilterMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7988,36 +3903,8 @@ impl ::std::convert::TryFrom<&str> for MemoryFilterMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryFilterMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryFilterMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryFilterMessageInputStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -8035,11 +3922,6 @@ pub enum MemoryFilterMessageInputStatus {
     Complete,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for MemoryFilterMessageInputStatus {
-    fn from(value: &MemoryFilterMessageInputStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryFilterMessageInputStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -8065,45 +3947,8 @@ impl ::std::convert::TryFrom<&str> for MemoryFilterMessageInputStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryFilterMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryFilterMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryPatchBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryPatchBody {
@@ -8126,11 +3971,6 @@ pub struct MemoryPatchBody {
     )]
     pub title: ::std::option::Option<MemoryPatchBodyTitle>,
 }
-impl ::std::convert::From<&MemoryPatchBody> for MemoryPatchBody {
-    fn from(value: &MemoryPatchBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for MemoryPatchBody {
     fn default() -> Self {
         Self {
@@ -8142,15 +3982,6 @@ impl ::std::default::Default for MemoryPatchBody {
 }
 ///`MemoryPatchBodyTitle`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct MemoryPatchBodyTitle(::std::string::String);
@@ -8163,11 +3994,6 @@ impl ::std::ops::Deref for MemoryPatchBodyTitle {
 impl ::std::convert::From<MemoryPatchBodyTitle> for ::std::string::String {
     fn from(value: MemoryPatchBodyTitle) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&MemoryPatchBodyTitle> for MemoryPatchBodyTitle {
-    fn from(value: &MemoryPatchBodyTitle) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for MemoryPatchBodyTitle {
@@ -8185,22 +4011,6 @@ impl ::std::convert::TryFrom<&str> for MemoryPatchBodyTitle {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryPatchBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryPatchBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for MemoryPatchBodyTitle {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -8215,829 +4025,6 @@ impl<'de> ::serde::Deserialize<'de> for MemoryPatchBodyTitle {
 }
 ///`MessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "oneOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "automated": {
-///          "type": "boolean"
-///        },
-///        "content": {
-///          "anyOf": [
-///            {
-///              "type": "string"
-///            },
-///            {
-///              "type": "array",
-///              "items": {
-///                "oneOf": [
-///                  {
-///                    "type": "object",
-///                    "required": [
-///                      "text",
-///                      "type"
-///                    ],
-///                    "properties": {
-///                      "text": {
-///                        "type": "string"
-///                      },
-///                      "type": {
-///                        "type": "string",
-///                        "enum": [
-///                          "text"
-///                        ]
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  },
-///                  {
-///                    "type": "object",
-///                    "required": [
-///                      "image_url",
-///                      "type"
-///                    ],
-///                    "properties": {
-///                      "image_url": {
-///                        "type": "object",
-///                        "required": [
-///                          "url"
-///                        ],
-///                        "properties": {
-///                          "url": {
-///                            "type": "string"
-///                          }
-///                        },
-///                        "additionalProperties": false
-///                      },
-///                      "type": {
-///                        "type": "string",
-///                        "enum": [
-///                          "image_url"
-///                        ]
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  },
-///                  {
-///                    "type": "object",
-///                    "required": [
-///                      "filename",
-///                      "mime",
-///                      "path",
-///                      "type"
-///                    ],
-///                    "properties": {
-///                      "filename": {
-///                        "type": "string"
-///                      },
-///                      "mime": {
-///                        "type": "string"
-///                      },
-///                      "path": {
-///                        "type": "string"
-///                      },
-///                      "type": {
-///                        "type": "string",
-///                        "enum": [
-///                          "image_file"
-///                        ]
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  },
-///                  {
-///                    "type": "object",
-///                    "required": [
-///                      "filename",
-///                      "markdown",
-///                      "type"
-///                    ],
-///                    "properties": {
-///                      "filename": {
-///                        "type": "string"
-///                      },
-///                      "markdown": {
-///                        "type": "string"
-///                      },
-///                      "type": {
-///                        "type": "string",
-///                        "enum": [
-///                          "document"
-///                        ]
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  },
-///                  {
-///                    "type": "object",
-///                    "required": [
-///                      "filename",
-///                      "path",
-///                      "type"
-///                    ],
-///                    "properties": {
-///                      "filename": {
-///                        "type": "string"
-///                      },
-///                      "path": {
-///                        "type": "string"
-///                      },
-///                      "type": {
-///                        "type": "string",
-///                        "enum": [
-///                          "document_file"
-///                        ]
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  }
-///                ]
-///              }
-///            }
-///          ]
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "user"
-///          ]
-///        },
-///        "systemPromptOverride": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "interrupted": {
-///          "type": "boolean"
-///        },
-///        "modelUsed": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "assistant"
-///          ]
-///        },
-///        "toolCalls": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "arguments",
-///              "callId",
-///              "extensionId",
-///              "status",
-///              "toolName"
-///            ],
-///            "properties": {
-///              "arguments": {
-///                "type": "string"
-///              },
-///              "callId": {
-///                "type": "string"
-///              },
-///              "error": {
-///                "type": "string"
-///              },
-///              "extensionId": {
-///                "type": "string"
-///              },
-///              "logLines": {
-///                "type": "array",
-///                "items": {
-///                  "type": "object",
-///                  "required": [
-///                    "atMs",
-///                    "level",
-///                    "message"
-///                  ],
-///                  "properties": {
-///                    "atMs": {
-///                      "type": "integer"
-///                    },
-///                    "level": {
-///                      "type": "string",
-///                      "enum": [
-///                        "debug",
-///                        "info",
-///                        "warn",
-///                        "error"
-///                      ]
-///                    },
-///                    "message": {
-///                      "type": "string"
-///                    }
-///                  },
-///                  "additionalProperties": false
-///                }
-///              },
-///              "progress": {
-///                "type": "number"
-///              },
-///              "result": {},
-///              "status": {
-///                "type": "string",
-///                "enum": [
-///                  "pending",
-///                  "running",
-///                  "awaiting_user",
-///                  "awaiting_permission",
-///                  "completed",
-///                  "failed",
-///                  "cancelled"
-///                ]
-///              },
-///              "toolName": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "truncated": {
-///          "type": "boolean"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "system"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "arguments",
-///        "callId",
-///        "extensionId",
-///        "role",
-///        "status",
-///        "toolName"
-///      ],
-///      "properties": {
-///        "arguments": {
-///          "type": "string"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "description": {
-///          "type": "string"
-///        },
-///        "error": {
-///          "type": "string"
-///        },
-///        "extensionId": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "label": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "progress": {
-///          "type": "number"
-///        },
-///        "result": {},
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "tool"
-///          ]
-///        },
-///        "status": {
-///          "type": "string",
-///          "enum": [
-///            "pending",
-///            "running",
-///            "awaiting_user",
-///            "awaiting_permission",
-///            "completed",
-///            "failed",
-///            "cancelled"
-///          ]
-///        },
-///        "toolName": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "interrupted": {
-///          "type": "boolean"
-///        },
-///        "modelUsed": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "pairedAssistantId": {
-///          "type": "string"
-///        },
-///        "reasoningDurationMs": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "reasoning"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "role",
-///        "status"
-///      ],
-///      "properties": {
-///        "alwaysAvailable": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "description",
-///              "name",
-///              "toolId"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "name": {
-///                "type": "string"
-///              },
-///              "toolId": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "errorMessage": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "mcp": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "description",
-///              "name",
-///              "toolId"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "name": {
-///                "type": "string"
-///              },
-///              "toolId": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "nameMatched": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "description",
-///              "name",
-///              "toolId"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "name": {
-///                "type": "string"
-///              },
-///              "toolId": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "phase1": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "description",
-///              "name",
-///              "score",
-///              "toolId"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "name": {
-///                "type": "string"
-///              },
-///              "score": {
-///                "type": "number"
-///              },
-///              "toolId": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "phase2": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "description",
-///              "name",
-///              "toolId"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "name": {
-///                "type": "string"
-///              },
-///              "toolId": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "tool_filter"
-///          ]
-///        },
-///        "status": {
-///          "type": "string",
-///          "enum": [
-///            "complete",
-///            "error"
-///          ]
-///        },
-///        "toolsSent": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "minimum": 0.0
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "role",
-///        "status"
-///      ],
-///      "properties": {
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "errorMessage": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "relevant": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "memoryId",
-///              "score",
-///              "summary",
-///              "title"
-///            ],
-///            "properties": {
-///              "memoryId": {
-///                "type": "string"
-///              },
-///              "score": {
-///                "type": "number"
-///              },
-///              "summary": {
-///                "type": "string"
-///              },
-///              "title": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "memory_filter"
-///          ]
-///        },
-///        "status": {
-///          "type": "string",
-///          "enum": [
-///            "complete",
-///            "error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "content": {
-///          "oneOf": [
-///            {
-///              "type": "object",
-///              "required": [
-///                "markdown",
-///                "type"
-///              ],
-///              "properties": {
-///                "markdown": {
-///                  "type": "string"
-///                },
-///                "type": {
-///                  "type": "string",
-///                  "enum": [
-///                    "markdown"
-///                  ]
-///                }
-///              },
-///              "additionalProperties": false
-///            },
-///            {
-///              "type": "object",
-///              "required": [
-///                "dataB64",
-///                "mime",
-///                "type"
-///              ],
-///              "properties": {
-///                "alt": {
-///                  "type": "string"
-///                },
-///                "dataB64": {
-///                  "type": "string"
-///                },
-///                "mime": {
-///                  "type": "string"
-///                },
-///                "type": {
-///                  "type": "string",
-///                  "enum": [
-///                    "image"
-///                  ]
-///                }
-///              },
-///              "additionalProperties": false
-///            },
-///            {
-///              "type": "object",
-///              "required": [
-///                "columns",
-///                "rows",
-///                "type"
-///              ],
-///              "properties": {
-///                "columns": {
-///                  "type": "array",
-///                  "items": {
-///                    "type": "string"
-///                  }
-///                },
-///                "rows": {
-///                  "type": "array",
-///                  "items": {
-///                    "type": "array",
-///                    "items": {
-///                      "type": "string"
-///                    }
-///                  }
-///                },
-///                "type": {
-///                  "type": "string",
-///                  "enum": [
-///                    "table"
-///                  ]
-///                }
-///              },
-///              "additionalProperties": false
-///            },
-///            {
-///              "type": "object",
-///              "required": [
-///                "after",
-///                "before",
-///                "type"
-///              ],
-///              "properties": {
-///                "after": {
-///                  "type": "string"
-///                },
-///                "before": {
-///                  "type": "string"
-///                },
-///                "title": {
-///                  "type": "string"
-///                },
-///                "type": {
-///                  "type": "string",
-///                  "enum": [
-///                    "diff"
-///                  ]
-///                }
-///              },
-///              "additionalProperties": false
-///            }
-///          ]
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "display"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "role"
-///      ],
-///      "properties": {
-///        "code": {
-///          "type": "string"
-///        },
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "details": {
-///          "type": "object",
-///          "additionalProperties": {},
-///          "propertyNames": {
-///            "type": "string"
-///          }
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "role", deny_unknown_fields)]
 pub enum MessageInput {
@@ -9431,38 +4418,8 @@ pub enum MessageInput {
         ord: ::std::option::Option<i64>,
     },
 }
-impl ::std::convert::From<&Self> for MessageInput {
-    fn from(value: &MessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputAlwaysAvailableItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputAlwaysAvailableItem {
@@ -9471,162 +4428,13 @@ pub struct MessageInputAlwaysAvailableItem {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputAlwaysAvailableItem> for MessageInputAlwaysAvailableItem {
-    fn from(value: &MessageInputAlwaysAvailableItem) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputContent`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "oneOf": [
-///          {
-///            "type": "object",
-///            "required": [
-///              "text",
-///              "type"
-///            ],
-///            "properties": {
-///              "text": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "text"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "image_url",
-///              "type"
-///            ],
-///            "properties": {
-///              "image_url": {
-///                "type": "object",
-///                "required": [
-///                  "url"
-///                ],
-///                "properties": {
-///                  "url": {
-///                    "type": "string"
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "image_url"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "mime",
-///              "path",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "mime": {
-///                "type": "string"
-///              },
-///              "path": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "image_file"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "markdown",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "markdown": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "document"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "path",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "path": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "document_file"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        ]
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MessageInputContent {
     Variant0(::std::string::String),
     Variant1(::std::vec::Vec<MessageInputContentVariant1Item>),
-}
-impl ::std::convert::From<&Self> for MessageInputContent {
-    fn from(value: &MessageInputContent) -> Self {
-        value.clone()
-    }
 }
 impl ::std::convert::From<::std::vec::Vec<MessageInputContentVariant1Item>>
     for MessageInputContent
@@ -9637,135 +4445,6 @@ impl ::std::convert::From<::std::vec::Vec<MessageInputContentVariant1Item>>
 }
 ///`MessageInputContentVariant1Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "oneOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "text",
-///        "type"
-///      ],
-///      "properties": {
-///        "text": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "text"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "image_url",
-///        "type"
-///      ],
-///      "properties": {
-///        "image_url": {
-///          "type": "object",
-///          "required": [
-///            "url"
-///          ],
-///          "properties": {
-///            "url": {
-///              "type": "string"
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_url"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "mime",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum MessageInputContentVariant1Item {
@@ -9792,30 +4471,8 @@ pub enum MessageInputContentVariant1Item {
         path: ::std::string::String,
     },
 }
-impl ::std::convert::From<&Self> for MessageInputContentVariant1Item {
-    fn from(value: &MessageInputContentVariant1Item) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputContentVariant1ItemImageUrl`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "url"
-///  ],
-///  "properties": {
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputContentVariant1ItemImageUrl {
@@ -9830,31 +4487,6 @@ impl ::std::convert::From<&MessageInputContentVariant1ItemImageUrl>
 }
 ///`MessageInputMcpItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputMcpItem {
@@ -9863,25 +4495,8 @@ pub struct MessageInputMcpItem {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputMcpItem> for MessageInputMcpItem {
-    fn from(value: &MessageInputMcpItem) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputModelUsed`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -9899,11 +4514,6 @@ pub enum MessageInputModelUsed {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for MessageInputModelUsed {
-    fn from(value: &MessageInputModelUsed) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageInputModelUsed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -9929,49 +4539,8 @@ impl ::std::convert::TryFrom<&str> for MessageInputModelUsed {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MessageInputNameMatchedItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputNameMatchedItem {
@@ -9980,42 +4549,8 @@ pub struct MessageInputNameMatchedItem {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputNameMatchedItem> for MessageInputNameMatchedItem {
-    fn from(value: &MessageInputNameMatchedItem) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputPhase1Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "score",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputPhase1Item {
@@ -10025,38 +4560,8 @@ pub struct MessageInputPhase1Item {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputPhase1Item> for MessageInputPhase1Item {
-    fn from(value: &MessageInputPhase1Item) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputPhase2Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputPhase2Item {
@@ -10065,42 +4570,8 @@ pub struct MessageInputPhase2Item {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputPhase2Item> for MessageInputPhase2Item {
-    fn from(value: &MessageInputPhase2Item) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputRelevantItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "memoryId",
-///    "score",
-///    "summary",
-///    "title"
-///  ],
-///  "properties": {
-///    "memoryId": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "summary": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputRelevantItem {
@@ -10110,30 +4581,8 @@ pub struct MessageInputRelevantItem {
     pub summary: ::std::string::String,
     pub title: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputRelevantItem> for MessageInputRelevantItem {
-    fn from(value: &MessageInputRelevantItem) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -10161,11 +4610,6 @@ pub enum MessageInputStatus {
     Failed,
     #[serde(rename = "cancelled")]
     Cancelled,
-}
-impl ::std::convert::From<&Self> for MessageInputStatus {
-    fn from(value: &MessageInputStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageInputStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -10201,102 +4645,8 @@ impl ::std::convert::TryFrom<&str> for MessageInputStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MessageInputToolCallsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "callId",
-///    "extensionId",
-///    "status",
-///    "toolName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "type": "string"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "logLines": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "atMs",
-///          "level",
-///          "message"
-///        ],
-///        "properties": {
-///          "atMs": {
-///            "type": "integer"
-///          },
-///          "level": {
-///            "type": "string",
-///            "enum": [
-///              "debug",
-///              "info",
-///              "warn",
-///              "error"
-///            ]
-///          },
-///          "message": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "progress": {
-///      "type": "number"
-///    },
-///    "result": {},
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "pending",
-///        "running",
-///        "awaiting_user",
-///        "awaiting_permission",
-///        "completed",
-///        "failed",
-///        "cancelled"
-///      ]
-///    },
-///    "toolName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputToolCallsItem {
@@ -10334,44 +4684,8 @@ pub struct MessageInputToolCallsItem {
     #[serde(rename = "toolName")]
     pub tool_name: ::std::string::String,
 }
-impl ::std::convert::From<&MessageInputToolCallsItem> for MessageInputToolCallsItem {
-    fn from(value: &MessageInputToolCallsItem) -> Self {
-        value.clone()
-    }
-}
 ///`MessageInputToolCallsItemLogLinesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "atMs",
-///    "level",
-///    "message"
-///  ],
-///  "properties": {
-///    "atMs": {
-///      "type": "integer"
-///    },
-///    "level": {
-///      "type": "string",
-///      "enum": [
-///        "debug",
-///        "info",
-///        "warn",
-///        "error"
-///      ]
-///    },
-///    "message": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessageInputToolCallsItemLogLinesItem {
@@ -10389,20 +4703,6 @@ impl ::std::convert::From<&MessageInputToolCallsItemLogLinesItem>
 }
 ///`MessageInputToolCallsItemLogLinesItemLevel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "debug",
-///    "info",
-///    "warn",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -10424,11 +4724,6 @@ pub enum MessageInputToolCallsItemLogLinesItemLevel {
     Warn,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for MessageInputToolCallsItemLogLinesItemLevel {
-    fn from(value: &MessageInputToolCallsItemLogLinesItemLevel) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageInputToolCallsItemLogLinesItemLevel {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -10468,33 +4763,8 @@ impl ::std::convert::TryFrom<&::std::string::String>
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<::std::string::String> for MessageInputToolCallsItemLogLinesItemLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MessageInputToolCallsItemStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -10522,11 +4792,6 @@ pub enum MessageInputToolCallsItemStatus {
     Failed,
     #[serde(rename = "cancelled")]
     Cancelled,
-}
-impl ::std::convert::From<&Self> for MessageInputToolCallsItemStatus {
-    fn from(value: &MessageInputToolCallsItemStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageInputToolCallsItemStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -10562,67 +4827,8 @@ impl ::std::convert::TryFrom<&str> for MessageInputToolCallsItemStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MessageInputToolCallsItemStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MessageInputToolCallsItemStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ModelArch`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "blockCount",
-///    "embeddingLength",
-///    "headCount",
-///    "headCountKv",
-///    "headDim"
-///  ],
-///  "properties": {
-///    "blockCount": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "embeddingLength": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "headCount": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "headCountKv": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "headDim": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelArch {
@@ -10637,61 +4843,8 @@ pub struct ModelArch {
     #[serde(rename = "headDim")]
     pub head_dim: ::std::num::NonZeroU64,
 }
-impl ::std::convert::From<&ModelArch> for ModelArch {
-    fn from(value: &ModelArch) -> Self {
-        value.clone()
-    }
-}
 ///`ModelCatalog`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "families",
-///    "fit",
-///    "generatedAt",
-///    "schemaVersion",
-///    "signature",
-///    "stt",
-///    "tts"
-///  ],
-///  "properties": {
-///    "families": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/ModelFamily"
-///      },
-///      "minItems": 1
-///    },
-///    "fit": {
-///      "$ref": "#/$defs/FitConfig"
-///    },
-///    "generatedAt": {
-///      "type": "string"
-///    },
-///    "schemaVersion": {
-///      "type": "number",
-///      "enum": [
-///        1
-///      ]
-///    },
-///    "signature": {
-///      "type": "string"
-///    },
-///    "stt": {
-///      "$ref": "#/$defs/SttCatalog"
-///    },
-///    "tts": {
-///      "$ref": "#/$defs/TtsCatalog"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelCatalog {
@@ -10705,24 +4858,8 @@ pub struct ModelCatalog {
     pub stt: SttCatalog,
     pub tts: TtsCatalog,
 }
-impl ::std::convert::From<&ModelCatalog> for ModelCatalog {
-    fn from(value: &ModelCatalog) -> Self {
-        value.clone()
-    }
-}
 ///`ModelCatalogSchemaVersion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "number",
-///  "enum": [
-///    1
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct ModelCatalogSchemaVersion(f64);
@@ -10735,11 +4872,6 @@ impl ::std::ops::Deref for ModelCatalogSchemaVersion {
 impl ::std::convert::From<ModelCatalogSchemaVersion> for f64 {
     fn from(value: ModelCatalogSchemaVersion) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ModelCatalogSchemaVersion> for ModelCatalogSchemaVersion {
-    fn from(value: &ModelCatalogSchemaVersion) -> Self {
-        value.clone()
     }
 }
 impl ::std::convert::TryFrom<f64> for ModelCatalogSchemaVersion {
@@ -10763,85 +4895,13 @@ impl<'de> ::serde::Deserialize<'de> for ModelCatalogSchemaVersion {
 }
 ///`ModelDownloadBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "items"
-///  ],
-///  "properties": {
-///    "items": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "source"
-///        ],
-///        "properties": {
-///          "group": {
-///            "type": "string",
-///            "enum": [
-///              "llm",
-///              "stt",
-///              "tts",
-///              "embed"
-///            ]
-///          },
-///          "source": {
-///            "type": "string",
-///            "minLength": 1
-///          }
-///        },
-///        "additionalProperties": false
-///      },
-///      "maxItems": 256
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelDownloadBody {
     pub items: ::std::vec::Vec<ModelDownloadBodyItemsItem>,
 }
-impl ::std::convert::From<&ModelDownloadBody> for ModelDownloadBody {
-    fn from(value: &ModelDownloadBody) -> Self {
-        value.clone()
-    }
-}
 ///`ModelDownloadBodyItemsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "source"
-///  ],
-///  "properties": {
-///    "group": {
-///      "type": "string",
-///      "enum": [
-///        "llm",
-///        "stt",
-///        "tts",
-///        "embed"
-///      ]
-///    },
-///    "source": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelDownloadBodyItemsItem {
@@ -10853,27 +4913,8 @@ pub struct ModelDownloadBodyItemsItem {
     pub group: ::std::option::Option<ModelDownloadBodyItemsItemGroup>,
     pub source: ModelDownloadBodyItemsItemSource,
 }
-impl ::std::convert::From<&ModelDownloadBodyItemsItem> for ModelDownloadBodyItemsItem {
-    fn from(value: &ModelDownloadBodyItemsItem) -> Self {
-        value.clone()
-    }
-}
 ///`ModelDownloadBodyItemsItemGroup`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llm",
-///    "stt",
-///    "tts",
-///    "embed"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -10895,11 +4936,6 @@ pub enum ModelDownloadBodyItemsItemGroup {
     Tts,
     #[serde(rename = "embed")]
     Embed,
-}
-impl ::std::convert::From<&Self> for ModelDownloadBodyItemsItemGroup {
-    fn from(value: &ModelDownloadBodyItemsItemGroup) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ModelDownloadBodyItemsItemGroup {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -10929,33 +4965,8 @@ impl ::std::convert::TryFrom<&str> for ModelDownloadBodyItemsItemGroup {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ModelDownloadBodyItemsItemGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ModelDownloadBodyItemsItemGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ModelDownloadBodyItemsItemSource`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ModelDownloadBodyItemsItemSource(::std::string::String);
@@ -10968,11 +4979,6 @@ impl ::std::ops::Deref for ModelDownloadBodyItemsItemSource {
 impl ::std::convert::From<ModelDownloadBodyItemsItemSource> for ::std::string::String {
     fn from(value: ModelDownloadBodyItemsItemSource) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ModelDownloadBodyItemsItemSource> for ModelDownloadBodyItemsItemSource {
-    fn from(value: &ModelDownloadBodyItemsItemSource) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ModelDownloadBodyItemsItemSource {
@@ -10990,22 +4996,6 @@ impl ::std::convert::TryFrom<&str> for ModelDownloadBodyItemsItemSource {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ModelDownloadBodyItemsItemSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ModelDownloadBodyItemsItemSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ModelDownloadBodyItemsItemSource {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11020,35 +5010,6 @@ impl<'de> ::serde::Deserialize<'de> for ModelDownloadBodyItemsItemSource {
 }
 ///`ModelFamily`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "family",
-///    "models",
-///    "publisher"
-///  ],
-///  "properties": {
-///    "family": {
-///      "type": "string"
-///    },
-///    "models": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/CatalogModel"
-///      },
-///      "minItems": 1
-///    },
-///    "publisher": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelFamily {
@@ -11056,56 +5017,15 @@ pub struct ModelFamily {
     pub models: ::std::vec::Vec<CatalogModel>,
     pub publisher: ::std::string::String,
 }
-impl ::std::convert::From<&ModelFamily> for ModelFamily {
-    fn from(value: &ModelFamily) -> Self {
-        value.clone()
-    }
-}
 ///`ModelProbeBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "sources"
-///  ],
-///  "properties": {
-///    "sources": {
-///      "type": "array",
-///      "items": {
-///        "type": "string",
-///        "minLength": 1
-///      },
-///      "maxItems": 256
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelProbeBody {
     pub sources: ::std::vec::Vec<ModelProbeBodySourcesItem>,
 }
-impl ::std::convert::From<&ModelProbeBody> for ModelProbeBody {
-    fn from(value: &ModelProbeBody) -> Self {
-        value.clone()
-    }
-}
 ///`ModelProbeBodySourcesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ModelProbeBodySourcesItem(::std::string::String);
@@ -11118,11 +5038,6 @@ impl ::std::ops::Deref for ModelProbeBodySourcesItem {
 impl ::std::convert::From<ModelProbeBodySourcesItem> for ::std::string::String {
     fn from(value: ModelProbeBodySourcesItem) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ModelProbeBodySourcesItem> for ModelProbeBodySourcesItem {
-    fn from(value: &ModelProbeBodySourcesItem) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ModelProbeBodySourcesItem {
@@ -11140,22 +5055,6 @@ impl ::std::convert::TryFrom<&str> for ModelProbeBodySourcesItem {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ModelProbeBodySourcesItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ModelProbeBodySourcesItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ModelProbeBodySourcesItem {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11170,31 +5069,6 @@ impl<'de> ::serde::Deserialize<'de> for ModelProbeBodySourcesItem {
 }
 ///`ModelScore`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "metric",
-///    "source",
-///    "value"
-///  ],
-///  "properties": {
-///    "metric": {
-///      "type": "string"
-///    },
-///    "source": {
-///      "type": "string"
-///    },
-///    "value": {
-///      "type": "number"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelScore {
@@ -11202,33 +5076,8 @@ pub struct ModelScore {
     pub source: ::std::string::String,
     pub value: f64,
 }
-impl ::std::convert::From<&ModelScore> for ModelScore {
-    fn from(value: &ModelScore) -> Self {
-        value.clone()
-    }
-}
 ///`ModelSelectBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "bucket": {
-///      "type": "string"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSelectBody {
@@ -11253,11 +5102,6 @@ pub struct ModelSelectBody {
     )]
     pub model_spec: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&ModelSelectBody> for ModelSelectBody {
-    fn from(value: &ModelSelectBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for ModelSelectBody {
     fn default() -> Self {
         Self {
@@ -11269,27 +5113,6 @@ impl ::std::default::Default for ModelSelectBody {
 }
 ///`PairingCodeRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "password": {
-///      "type": "string",
-///      "maxLength": 256,
-///      "minLength": 1
-///    },
-///    "ttlSec": {
-///      "type": "integer",
-///      "maximum": 3600.0,
-///      "minimum": 60.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PairingCodeRequest {
@@ -11307,11 +5130,6 @@ pub struct PairingCodeRequest {
     )]
     pub ttl_sec: ::std::option::Option<i64>,
 }
-impl ::std::convert::From<&PairingCodeRequest> for PairingCodeRequest {
-    fn from(value: &PairingCodeRequest) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for PairingCodeRequest {
     fn default() -> Self {
         Self {
@@ -11322,16 +5140,6 @@ impl ::std::default::Default for PairingCodeRequest {
 }
 ///`PairingCodeRequestPassword`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 256,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PairingCodeRequestPassword(::std::string::String);
@@ -11344,11 +5152,6 @@ impl ::std::ops::Deref for PairingCodeRequestPassword {
 impl ::std::convert::From<PairingCodeRequestPassword> for ::std::string::String {
     fn from(value: PairingCodeRequestPassword) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PairingCodeRequestPassword> for PairingCodeRequestPassword {
-    fn from(value: &PairingCodeRequestPassword) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PairingCodeRequestPassword {
@@ -11369,22 +5172,6 @@ impl ::std::convert::TryFrom<&str> for PairingCodeRequestPassword {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PairingCodeRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PairingCodeRequestPassword {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PairingCodeRequestPassword {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11399,32 +5186,6 @@ impl<'de> ::serde::Deserialize<'de> for PairingCodeRequestPassword {
 }
 ///`PakeFinishRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "confirmC",
-///    "pakeId"
-///  ],
-///  "properties": {
-///    "confirmC": {
-///      "type": "string",
-///      "maxLength": 512,
-///      "minLength": 1,
-///      "pattern": "^[A-Za-z0-9+/]+=*$"
-///    },
-///    "pakeId": {
-///      "type": "string",
-///      "maxLength": 64,
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PakeFinishRequest {
@@ -11433,24 +5194,8 @@ pub struct PakeFinishRequest {
     #[serde(rename = "pakeId")]
     pub pake_id: PakeFinishRequestPakeId,
 }
-impl ::std::convert::From<&PakeFinishRequest> for PakeFinishRequest {
-    fn from(value: &PakeFinishRequest) -> Self {
-        value.clone()
-    }
-}
 ///`PakeFinishRequestConfirmC`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 512,
-///  "minLength": 1,
-///  "pattern": "^[A-Za-z0-9+/]+=*$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PakeFinishRequestConfirmC(::std::string::String);
@@ -11463,11 +5208,6 @@ impl ::std::ops::Deref for PakeFinishRequestConfirmC {
 impl ::std::convert::From<PakeFinishRequestConfirmC> for ::std::string::String {
     fn from(value: PakeFinishRequestConfirmC) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PakeFinishRequestConfirmC> for PakeFinishRequestConfirmC {
-    fn from(value: &PakeFinishRequestConfirmC) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PakeFinishRequestConfirmC {
@@ -11493,22 +5233,6 @@ impl ::std::convert::TryFrom<&str> for PakeFinishRequestConfirmC {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PakeFinishRequestConfirmC {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PakeFinishRequestConfirmC {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PakeFinishRequestConfirmC {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11523,16 +5247,6 @@ impl<'de> ::serde::Deserialize<'de> for PakeFinishRequestConfirmC {
 }
 ///`PakeFinishRequestPakeId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 64,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PakeFinishRequestPakeId(::std::string::String);
@@ -11545,11 +5259,6 @@ impl ::std::ops::Deref for PakeFinishRequestPakeId {
 impl ::std::convert::From<PakeFinishRequestPakeId> for ::std::string::String {
     fn from(value: PakeFinishRequestPakeId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PakeFinishRequestPakeId> for PakeFinishRequestPakeId {
-    fn from(value: &PakeFinishRequestPakeId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PakeFinishRequestPakeId {
@@ -11570,22 +5279,6 @@ impl ::std::convert::TryFrom<&str> for PakeFinishRequestPakeId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PakeFinishRequestPakeId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PakeFinishRequestPakeId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PakeFinishRequestPakeId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11600,39 +5293,6 @@ impl<'de> ::serde::Deserialize<'de> for PakeFinishRequestPakeId {
 }
 ///`PakeStartRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "clientName",
-///    "msgA",
-///    "sid"
-///  ],
-///  "properties": {
-///    "clientName": {
-///      "type": "string",
-///      "maxLength": 64,
-///      "minLength": 1
-///    },
-///    "msgA": {
-///      "type": "string",
-///      "maxLength": 512,
-///      "minLength": 1,
-///      "pattern": "^[A-Za-z0-9+/]+=*$"
-///    },
-///    "sid": {
-///      "type": "string",
-///      "maxLength": 512,
-///      "minLength": 1,
-///      "pattern": "^[A-Za-z0-9+/]+=*$"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PakeStartRequest {
@@ -11642,23 +5302,8 @@ pub struct PakeStartRequest {
     pub msg_a: PakeStartRequestMsgA,
     pub sid: PakeStartRequestSid,
 }
-impl ::std::convert::From<&PakeStartRequest> for PakeStartRequest {
-    fn from(value: &PakeStartRequest) -> Self {
-        value.clone()
-    }
-}
 ///`PakeStartRequestClientName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 64,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PakeStartRequestClientName(::std::string::String);
@@ -11671,11 +5316,6 @@ impl ::std::ops::Deref for PakeStartRequestClientName {
 impl ::std::convert::From<PakeStartRequestClientName> for ::std::string::String {
     fn from(value: PakeStartRequestClientName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PakeStartRequestClientName> for PakeStartRequestClientName {
-    fn from(value: &PakeStartRequestClientName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PakeStartRequestClientName {
@@ -11696,22 +5336,6 @@ impl ::std::convert::TryFrom<&str> for PakeStartRequestClientName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PakeStartRequestClientName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PakeStartRequestClientName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PakeStartRequestClientName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11726,17 +5350,6 @@ impl<'de> ::serde::Deserialize<'de> for PakeStartRequestClientName {
 }
 ///`PakeStartRequestMsgA`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 512,
-///  "minLength": 1,
-///  "pattern": "^[A-Za-z0-9+/]+=*$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PakeStartRequestMsgA(::std::string::String);
@@ -11749,11 +5362,6 @@ impl ::std::ops::Deref for PakeStartRequestMsgA {
 impl ::std::convert::From<PakeStartRequestMsgA> for ::std::string::String {
     fn from(value: PakeStartRequestMsgA) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PakeStartRequestMsgA> for PakeStartRequestMsgA {
-    fn from(value: &PakeStartRequestMsgA) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PakeStartRequestMsgA {
@@ -11779,22 +5387,6 @@ impl ::std::convert::TryFrom<&str> for PakeStartRequestMsgA {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PakeStartRequestMsgA {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PakeStartRequestMsgA {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PakeStartRequestMsgA {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11809,17 +5401,6 @@ impl<'de> ::serde::Deserialize<'de> for PakeStartRequestMsgA {
 }
 ///`PakeStartRequestSid`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 512,
-///  "minLength": 1,
-///  "pattern": "^[A-Za-z0-9+/]+=*$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct PakeStartRequestSid(::std::string::String);
@@ -11832,11 +5413,6 @@ impl ::std::ops::Deref for PakeStartRequestSid {
 impl ::std::convert::From<PakeStartRequestSid> for ::std::string::String {
     fn from(value: PakeStartRequestSid) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&PakeStartRequestSid> for PakeStartRequestSid {
-    fn from(value: &PakeStartRequestSid) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for PakeStartRequestSid {
@@ -11862,22 +5438,6 @@ impl ::std::convert::TryFrom<&str> for PakeStartRequestSid {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PakeStartRequestSid {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PakeStartRequestSid {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for PakeStartRequestSid {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -11892,55 +5452,6 @@ impl<'de> ::serde::Deserialize<'de> for PakeStartRequestSid {
 }
 ///`ReasoningMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "interrupted": {
-///      "type": "boolean"
-///    },
-///    "modelUsed": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "pairedAssistantId": {
-///      "type": "string"
-///    },
-///    "reasoningDurationMs": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "reasoning"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ReasoningMessageInput {
@@ -11993,25 +5504,8 @@ pub struct ReasoningMessageInput {
     pub reasoning_duration_ms: ::std::option::Option<i64>,
     pub role: ReasoningMessageInputRole,
 }
-impl ::std::convert::From<&ReasoningMessageInput> for ReasoningMessageInput {
-    fn from(value: &ReasoningMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`ReasoningMessageInputModelUsed`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12029,11 +5523,6 @@ pub enum ReasoningMessageInputModelUsed {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for ReasoningMessageInputModelUsed {
-    fn from(value: &ReasoningMessageInputModelUsed) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ReasoningMessageInputModelUsed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12059,35 +5548,8 @@ impl ::std::convert::TryFrom<&str> for ReasoningMessageInputModelUsed {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ReasoningMessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ReasoningMessageInputModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ReasoningMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "reasoning"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12103,11 +5565,6 @@ impl ::std::convert::TryFrom<::std::string::String> for ReasoningMessageInputMod
 pub enum ReasoningMessageInputRole {
     #[serde(rename = "reasoning")]
     Reasoning,
-}
-impl ::std::convert::From<&Self> for ReasoningMessageInputRole {
-    fn from(value: &ReasoningMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ReasoningMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12131,78 +5588,8 @@ impl ::std::convert::TryFrom<&str> for ReasoningMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ReasoningMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ReasoningMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`Sampling`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "minP",
-///    "repeatPenalty",
-///    "temperature",
-///    "topK",
-///    "topP"
-///  ],
-///  "properties": {
-///    "dryMultiplier": {
-///      "type": "number",
-///      "minimum": 0.0
-///    },
-///    "minP": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "minimum": 0.0
-///    },
-///    "presencePenalty": {
-///      "type": "number"
-///    },
-///    "repeatPenalty": {
-///      "type": "number",
-///      "exclusiveMinimum": 0.0
-///    },
-///    "samplers": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "temperature": {
-///      "type": "number",
-///      "minimum": 0.0
-///    },
-///    "topK": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    },
-///    "topP": {
-///      "type": "number",
-///      "maximum": 1.0,
-///      "minimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Sampling {
@@ -12236,50 +5623,8 @@ pub struct Sampling {
     #[serde(rename = "topP")]
     pub top_p: f64,
 }
-impl ::std::convert::From<&Sampling> for Sampling {
-    fn from(value: &Sampling) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduleConfirmResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "accepted",
-///    "callId",
-///    "kind",
-///    "requestId"
-///  ],
-///  "properties": {
-///    "accepted": {
-///      "type": "boolean"
-///    },
-///    "callId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "draft": {
-///      "$ref": "#/$defs/ScheduledPromptDraft"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "schedule.confirm_response"
-///      ]
-///    },
-///    "requestId": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ScheduleConfirmResponse {
     pub accepted: bool,
@@ -12297,22 +5642,8 @@ pub struct ScheduleConfirmResponse {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ScheduleConfirmResponse> for ScheduleConfirmResponse {
-    fn from(value: &ScheduleConfirmResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduleConfirmResponseCallId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduleConfirmResponseCallId(::std::string::String);
@@ -12325,11 +5656,6 @@ impl ::std::ops::Deref for ScheduleConfirmResponseCallId {
 impl ::std::convert::From<ScheduleConfirmResponseCallId> for ::std::string::String {
     fn from(value: ScheduleConfirmResponseCallId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ScheduleConfirmResponseCallId> for ScheduleConfirmResponseCallId {
-    fn from(value: &ScheduleConfirmResponseCallId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ScheduleConfirmResponseCallId {
@@ -12347,22 +5673,6 @@ impl ::std::convert::TryFrom<&str> for ScheduleConfirmResponseCallId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduleConfirmResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduleConfirmResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduleConfirmResponseCallId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -12377,17 +5687,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduleConfirmResponseCallId {
 }
 ///`ScheduleConfirmResponseKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "schedule.confirm_response"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12403,11 +5702,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduleConfirmResponseCallId {
 pub enum ScheduleConfirmResponseKind {
     #[serde(rename = "schedule.confirm_response")]
     ScheduleConfirmResponse,
-}
-impl ::std::convert::From<&Self> for ScheduleConfirmResponseKind {
-    fn from(value: &ScheduleConfirmResponseKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ScheduleConfirmResponseKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12431,33 +5725,8 @@ impl ::std::convert::TryFrom<&str> for ScheduleConfirmResponseKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduleConfirmResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduleConfirmResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ScheduleConfirmResponseRequestId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduleConfirmResponseRequestId(::std::string::String);
@@ -12470,11 +5739,6 @@ impl ::std::ops::Deref for ScheduleConfirmResponseRequestId {
 impl ::std::convert::From<ScheduleConfirmResponseRequestId> for ::std::string::String {
     fn from(value: ScheduleConfirmResponseRequestId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ScheduleConfirmResponseRequestId> for ScheduleConfirmResponseRequestId {
-    fn from(value: &ScheduleConfirmResponseRequestId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ScheduleConfirmResponseRequestId {
@@ -12492,22 +5756,6 @@ impl ::std::convert::TryFrom<&str> for ScheduleConfirmResponseRequestId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduleConfirmResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduleConfirmResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduleConfirmResponseRequestId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -12522,161 +5770,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduleConfirmResponseRequestId {
 }
 ///`ScheduleSpec`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "oneOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "atMs",
-///        "kind"
-///      ],
-///      "properties": {
-///        "atMs": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "exclusiveMinimum": 0.0
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "once"
-///          ]
-///        }
-///      }
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "everyMinutes",
-///        "kind"
-///      ],
-///      "properties": {
-///        "everyMinutes": {
-///          "type": "integer",
-///          "maximum": 9007199254740991.0,
-///          "minimum": 1.0
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "interval"
-///          ]
-///        }
-///      }
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "hour",
-///        "kind",
-///        "minute",
-///        "weekdays"
-///      ],
-///      "properties": {
-///        "hour": {
-///          "type": "integer",
-///          "maximum": 23.0,
-///          "minimum": 0.0
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "weekly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer",
-///          "maximum": 59.0,
-///          "minimum": 0.0
-///        },
-///        "weekdays": {
-///          "type": "array",
-///          "items": {
-///            "type": "integer",
-///            "maximum": 6.0,
-///            "minimum": 0.0
-///          },
-///          "minItems": 1
-///        }
-///      }
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "day",
-///        "hour",
-///        "kind",
-///        "minute"
-///      ],
-///      "properties": {
-///        "day": {
-///          "type": "integer",
-///          "maximum": 31.0,
-///          "minimum": 1.0
-///        },
-///        "hour": {
-///          "type": "integer",
-///          "maximum": 23.0,
-///          "minimum": 0.0
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "monthly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer",
-///          "maximum": 59.0,
-///          "minimum": 0.0
-///        }
-///      }
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "day",
-///        "hour",
-///        "kind",
-///        "minute",
-///        "month"
-///      ],
-///      "properties": {
-///        "day": {
-///          "type": "integer",
-///          "maximum": 31.0,
-///          "minimum": 1.0
-///        },
-///        "hour": {
-///          "type": "integer",
-///          "maximum": 23.0,
-///          "minimum": 0.0
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "yearly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer",
-///          "maximum": 59.0,
-///          "minimum": 0.0
-///        },
-///        "month": {
-///          "type": "integer",
-///          "maximum": 12.0,
-///          "minimum": 1.0
-///        }
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "kind")]
 pub enum ScheduleSpec {
@@ -12710,46 +5803,8 @@ pub enum ScheduleSpec {
         month: ::std::num::NonZeroU64,
     },
 }
-impl ::std::convert::From<&Self> for ScheduleSpec {
-    fn from(value: &ScheduleSpec) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduledPromptDraft`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "instruction",
-///    "runMissed",
-///    "schedule",
-///    "title"
-///  ],
-///  "properties": {
-///    "instruction": {
-///      "type": "string",
-///      "maxLength": 10000,
-///      "minLength": 1
-///    },
-///    "runMissed": {
-///      "type": "boolean"
-///    },
-///    "schedule": {
-///      "$ref": "#/$defs/ScheduleSpec"
-///    },
-///    "title": {
-///      "type": "string",
-///      "maxLength": 200,
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ScheduledPromptDraft {
     pub instruction: ScheduledPromptDraftInstruction,
@@ -12760,23 +5815,8 @@ pub struct ScheduledPromptDraft {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ScheduledPromptDraft> for ScheduledPromptDraft {
-    fn from(value: &ScheduledPromptDraft) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduledPromptDraftInstruction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 10000,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduledPromptDraftInstruction(::std::string::String);
@@ -12789,11 +5829,6 @@ impl ::std::ops::Deref for ScheduledPromptDraftInstruction {
 impl ::std::convert::From<ScheduledPromptDraftInstruction> for ::std::string::String {
     fn from(value: ScheduledPromptDraftInstruction) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ScheduledPromptDraftInstruction> for ScheduledPromptDraftInstruction {
-    fn from(value: &ScheduledPromptDraftInstruction) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ScheduledPromptDraftInstruction {
@@ -12814,22 +5849,6 @@ impl ::std::convert::TryFrom<&str> for ScheduledPromptDraftInstruction {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduledPromptDraftInstruction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduledPromptDraftInstruction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduledPromptDraftInstruction {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -12844,16 +5863,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledPromptDraftInstruction {
 }
 ///`ScheduledPromptDraftTitle`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 200,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduledPromptDraftTitle(::std::string::String);
@@ -12866,11 +5875,6 @@ impl ::std::ops::Deref for ScheduledPromptDraftTitle {
 impl ::std::convert::From<ScheduledPromptDraftTitle> for ::std::string::String {
     fn from(value: ScheduledPromptDraftTitle) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ScheduledPromptDraftTitle> for ScheduledPromptDraftTitle {
-    fn from(value: &ScheduledPromptDraftTitle) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ScheduledPromptDraftTitle {
@@ -12891,22 +5895,6 @@ impl ::std::convert::TryFrom<&str> for ScheduledPromptDraftTitle {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduledPromptDraftTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduledPromptDraftTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduledPromptDraftTitle {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -12921,36 +5909,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledPromptDraftTitle {
 }
 ///`ScheduledPromptPatchBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "instruction": {
-///      "type": "string",
-///      "maxLength": 10000,
-///      "minLength": 1
-///    },
-///    "runMissed": {
-///      "type": "boolean"
-///    },
-///    "schedule": {
-///      "$ref": "#/$defs/ScheduleSpec"
-///    },
-///    "title": {
-///      "type": "string",
-///      "maxLength": 200,
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduledPromptPatchBody {
@@ -12986,11 +5944,6 @@ pub struct ScheduledPromptPatchBody {
     )]
     pub title: ::std::option::Option<ScheduledPromptPatchBodyTitle>,
 }
-impl ::std::convert::From<&ScheduledPromptPatchBody> for ScheduledPromptPatchBody {
-    fn from(value: &ScheduledPromptPatchBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for ScheduledPromptPatchBody {
     fn default() -> Self {
         Self {
@@ -13004,16 +5957,6 @@ impl ::std::default::Default for ScheduledPromptPatchBody {
 }
 ///`ScheduledPromptPatchBodyInstruction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 10000,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduledPromptPatchBodyInstruction(::std::string::String);
@@ -13053,22 +5996,6 @@ impl ::std::convert::TryFrom<&str> for ScheduledPromptPatchBodyInstruction {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduledPromptPatchBodyInstruction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduledPromptPatchBodyInstruction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduledPromptPatchBodyInstruction {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -13083,16 +6010,6 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledPromptPatchBodyInstruction {
 }
 ///`ScheduledPromptPatchBodyTitle`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "maxLength": 200,
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ScheduledPromptPatchBodyTitle(::std::string::String);
@@ -13105,11 +6022,6 @@ impl ::std::ops::Deref for ScheduledPromptPatchBodyTitle {
 impl ::std::convert::From<ScheduledPromptPatchBodyTitle> for ::std::string::String {
     fn from(value: ScheduledPromptPatchBodyTitle) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ScheduledPromptPatchBodyTitle> for ScheduledPromptPatchBodyTitle {
-    fn from(value: &ScheduledPromptPatchBodyTitle) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ScheduledPromptPatchBodyTitle {
@@ -13130,22 +6042,6 @@ impl ::std::convert::TryFrom<&str> for ScheduledPromptPatchBodyTitle {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ScheduledPromptPatchBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ScheduledPromptPatchBodyTitle {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ScheduledPromptPatchBodyTitle {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -13160,71 +6056,14 @@ impl<'de> ::serde::Deserialize<'de> for ScheduledPromptPatchBodyTitle {
 }
 ///`ScoreSelector`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "metric",
-///    "source"
-///  ],
-///  "properties": {
-///    "metric": {
-///      "type": "string"
-///    },
-///    "source": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ScoreSelector {
     pub metric: ::std::string::String,
     pub source: ::std::string::String,
 }
-impl ::std::convert::From<&ScoreSelector> for ScoreSelector {
-    fn from(value: &ScoreSelector) -> Self {
-        value.clone()
-    }
-}
 ///`SpeechQuant`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "fileSizeBytes",
-///    "files",
-///    "quant"
-///  ],
-///  "properties": {
-///    "fileSizeBytes": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "exclusiveMinimum": 0.0
-///    },
-///    "files": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/CatalogFileRole"
-///      },
-///      "minItems": 1
-///    },
-///    "quant": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SpeechQuant {
@@ -13233,33 +6072,8 @@ pub struct SpeechQuant {
     pub files: ::std::vec::Vec<CatalogFileRole>,
     pub quant: ::std::string::String,
 }
-impl ::std::convert::From<&SpeechQuant> for SpeechQuant {
-    fn from(value: &SpeechQuant) -> Self {
-        value.clone()
-    }
-}
 ///`SpeechSelectBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    },
-///    "presetId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SpeechSelectBody {
@@ -13285,11 +6099,6 @@ pub struct SpeechSelectBody {
     )]
     pub preset_id: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&SpeechSelectBody> for SpeechSelectBody {
-    fn from(value: &SpeechSelectBody) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for SpeechSelectBody {
     fn default() -> Self {
         Self {
@@ -13301,85 +6110,14 @@ impl ::std::default::Default for SpeechSelectBody {
 }
 ///`SttCatalog`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "models",
-///    "presets"
-///  ],
-///  "properties": {
-///    "models": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/SttCatalogModel"
-///      },
-///      "minItems": 1
-///    },
-///    "presets": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/SttPreset"
-///      },
-///      "minItems": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttCatalog {
     pub models: ::std::vec::Vec<SttCatalogModel>,
     pub presets: ::std::vec::Vec<SttPreset>,
 }
-impl ::std::convert::From<&SttCatalog> for SttCatalog {
-    fn from(value: &SttCatalog) -> Self {
-        value.clone()
-    }
-}
 ///`SttCatalogModel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "english",
-///    "family",
-///    "id",
-///    "name",
-///    "quants"
-///  ],
-///  "properties": {
-///    "english": {
-///      "type": "boolean"
-///    },
-///    "family": {
-///      "$ref": "#/$defs/SttFamily"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "quants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/SpeechQuant"
-///      },
-///      "minItems": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttCatalogModel {
@@ -13389,31 +6127,8 @@ pub struct SttCatalogModel {
     pub name: ::std::string::String,
     pub quants: ::std::vec::Vec<SpeechQuant>,
 }
-impl ::std::convert::From<&SttCatalogModel> for SttCatalogModel {
-    fn from(value: &SttCatalogModel) -> Self {
-        value.clone()
-    }
-}
 ///`SttFamily`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "whisper",
-///    "sense-voice",
-///    "moonshine",
-///    "paraformer",
-///    "transducer",
-///    "nemo-ctc",
-///    "dolphin",
-///    "telespeech-ctc"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -13443,11 +6158,6 @@ pub enum SttFamily {
     Dolphin,
     #[serde(rename = "telespeech-ctc")]
     TelespeechCtc,
-}
-impl ::std::convert::From<&Self> for SttFamily {
-    fn from(value: &SttFamily) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SttFamily {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13485,49 +6195,8 @@ impl ::std::convert::TryFrom<&str> for SttFamily {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SttFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SttFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`SttPreset`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "modelId",
-///    "quant"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttPreset {
@@ -13536,46 +6205,8 @@ pub struct SttPreset {
     pub model_id: ::std::string::String,
     pub quant: ::std::string::String,
 }
-impl ::std::convert::From<&SttPreset> for SttPreset {
-    fn from(value: &SttPreset) -> Self {
-        value.clone()
-    }
-}
 ///`SystemMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "system"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SystemMessageInput {
@@ -13601,24 +6232,8 @@ pub struct SystemMessageInput {
     pub ord: ::std::option::Option<i64>,
     pub role: SystemMessageInputRole,
 }
-impl ::std::convert::From<&SystemMessageInput> for SystemMessageInput {
-    fn from(value: &SystemMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`SystemMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "system"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -13634,11 +6249,6 @@ impl ::std::convert::From<&SystemMessageInput> for SystemMessageInput {
 pub enum SystemMessageInputRole {
     #[serde(rename = "system")]
     System,
-}
-impl ::std::convert::From<&Self> for SystemMessageInputRole {
-    fn from(value: &SystemMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SystemMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13662,101 +6272,8 @@ impl ::std::convert::TryFrom<&str> for SystemMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SystemMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SystemMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`Tool`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "function",
-///    "name",
-///    "parameters"
-///  ],
-///  "properties": {
-///    "alwaysAvailable": {
-///      "default": false,
-///      "type": "boolean"
-///    },
-///    "description": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "function": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "name": {
-///      "type": "string",
-///      "pattern": "^[a-zA-Z0-9_-]{1,64}$"
-///    },
-///    "parameters": {
-///      "type": "object",
-///      "additionalProperties": {},
-///      "propertyNames": {
-///        "type": "string"
-///      }
-///    },
-///    "permissions": {
-///      "default": {
-///        "env": [],
-///        "ffi": [],
-///        "llm": [],
-///        "memories": [],
-///        "net": [],
-///        "read": [],
-///        "run": [],
-///        "stt": [],
-///        "sys": [],
-///        "tts": [],
-///        "write": []
-///      },
-///      "$ref": "#/$defs/LocaJsonToolPermissions"
-///    },
-///    "platforms": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "string",
-///        "enum": [
-///          "darwin",
-///          "windows",
-///          "linux",
-///          "linux_x11",
-///          "linux_wayland"
-///        ]
-///      }
-///    },
-///    "triggers": {
-///      "default": [],
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
@@ -13781,72 +6298,8 @@ pub struct Tool {
     )]
     pub triggers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
 }
-impl ::std::convert::From<&Tool> for Tool {
-    fn from(value: &Tool) -> Self {
-        value.clone()
-    }
-}
 ///`ToolAskUserResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "answers",
-///    "callId",
-///    "kind",
-///    "requestId"
-///  ],
-///  "properties": {
-///    "answers": {
-///      "type": "array",
-///      "items": {
-///        "anyOf": [
-///          {
-///            "type": "string"
-///          },
-///          {
-///            "type": "array",
-///            "items": {
-///              "type": "string"
-///            }
-///          },
-///          {
-///            "type": "array",
-///            "items": {
-///              "type": "object",
-///              "additionalProperties": {
-///                "type": "string"
-///              },
-///              "propertyNames": {
-///                "type": "string"
-///              }
-///            }
-///          }
-///        ]
-///      }
-///    },
-///    "callId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "tool.askuser_response"
-///      ]
-///    },
-///    "requestId": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ToolAskUserResponse {
     pub answers: ::std::vec::Vec<ToolAskUserResponseAnswersItem>,
@@ -13858,43 +6311,8 @@ pub struct ToolAskUserResponse {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ToolAskUserResponse> for ToolAskUserResponse {
-    fn from(value: &ToolAskUserResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ToolAskUserResponseAnswersItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "additionalProperties": {
-///          "type": "string"
-///        },
-///        "propertyNames": {
-///          "type": "string"
-///        }
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum ToolAskUserResponseAnswersItem {
@@ -13903,11 +6321,6 @@ pub enum ToolAskUserResponseAnswersItem {
     Variant2(
         ::std::vec::Vec<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
     ),
-}
-impl ::std::convert::From<&Self> for ToolAskUserResponseAnswersItem {
-    fn from(value: &ToolAskUserResponseAnswersItem) -> Self {
-        value.clone()
-    }
 }
 impl ::std::convert::From<::std::vec::Vec<::std::string::String>>
     for ToolAskUserResponseAnswersItem
@@ -13931,15 +6344,6 @@ impl
 }
 ///`ToolAskUserResponseCallId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolAskUserResponseCallId(::std::string::String);
@@ -13952,11 +6356,6 @@ impl ::std::ops::Deref for ToolAskUserResponseCallId {
 impl ::std::convert::From<ToolAskUserResponseCallId> for ::std::string::String {
     fn from(value: ToolAskUserResponseCallId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolAskUserResponseCallId> for ToolAskUserResponseCallId {
-    fn from(value: &ToolAskUserResponseCallId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolAskUserResponseCallId {
@@ -13974,22 +6373,6 @@ impl ::std::convert::TryFrom<&str> for ToolAskUserResponseCallId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolAskUserResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolAskUserResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolAskUserResponseCallId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -14004,17 +6387,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolAskUserResponseCallId {
 }
 ///`ToolAskUserResponseKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool.askuser_response"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14030,11 +6402,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolAskUserResponseCallId {
 pub enum ToolAskUserResponseKind {
     #[serde(rename = "tool.askuser_response")]
     ToolAskuserResponse,
-}
-impl ::std::convert::From<&Self> for ToolAskUserResponseKind {
-    fn from(value: &ToolAskUserResponseKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolAskUserResponseKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14058,33 +6425,8 @@ impl ::std::convert::TryFrom<&str> for ToolAskUserResponseKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolAskUserResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolAskUserResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolAskUserResponseRequestId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolAskUserResponseRequestId(::std::string::String);
@@ -14097,11 +6439,6 @@ impl ::std::ops::Deref for ToolAskUserResponseRequestId {
 impl ::std::convert::From<ToolAskUserResponseRequestId> for ::std::string::String {
     fn from(value: ToolAskUserResponseRequestId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolAskUserResponseRequestId> for ToolAskUserResponseRequestId {
-    fn from(value: &ToolAskUserResponseRequestId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolAskUserResponseRequestId {
@@ -14119,22 +6456,6 @@ impl ::std::convert::TryFrom<&str> for ToolAskUserResponseRequestId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolAskUserResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolAskUserResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolAskUserResponseRequestId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -14149,31 +6470,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolAskUserResponseRequestId {
 }
 ///`ToolCancel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "callId",
-///    "kind"
-///  ],
-///  "properties": {
-///    "callId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "tool.cancel"
-///      ]
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ToolCancel {
     #[serde(rename = "callId")]
@@ -14182,22 +6478,8 @@ pub struct ToolCancel {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ToolCancel> for ToolCancel {
-    fn from(value: &ToolCancel) -> Self {
-        value.clone()
-    }
-}
 ///`ToolCancelCallId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolCancelCallId(::std::string::String);
@@ -14210,11 +6492,6 @@ impl ::std::ops::Deref for ToolCancelCallId {
 impl ::std::convert::From<ToolCancelCallId> for ::std::string::String {
     fn from(value: ToolCancelCallId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolCancelCallId> for ToolCancelCallId {
-    fn from(value: &ToolCancelCallId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolCancelCallId {
@@ -14232,22 +6509,6 @@ impl ::std::convert::TryFrom<&str> for ToolCancelCallId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolCancelCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolCancelCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolCancelCallId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -14262,17 +6523,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolCancelCallId {
 }
 ///`ToolCancelKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool.cancel"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14288,11 +6538,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolCancelCallId {
 pub enum ToolCancelKind {
     #[serde(rename = "tool.cancel")]
     ToolCancel,
-}
-impl ::std::convert::From<&Self> for ToolCancelKind {
-    fn from(value: &ToolCancelKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolCancelKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14316,33 +6561,8 @@ impl ::std::convert::TryFrom<&str> for ToolCancelKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolCancelKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolCancelKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolDescription`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolDescription(::std::string::String);
@@ -14355,11 +6575,6 @@ impl ::std::ops::Deref for ToolDescription {
 impl ::std::convert::From<ToolDescription> for ::std::string::String {
     fn from(value: ToolDescription) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolDescription> for ToolDescription {
-    fn from(value: &ToolDescription) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolDescription {
@@ -14377,22 +6592,6 @@ impl ::std::convert::TryFrom<&str> for ToolDescription {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolDescription {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolDescription {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolDescription {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -14407,170 +6606,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolDescription {
 }
 ///`ToolFilterMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "role",
-///    "status"
-///  ],
-///  "properties": {
-///    "alwaysAvailable": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "description",
-///          "name",
-///          "toolId"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "name": {
-///            "type": "string"
-///          },
-///          "toolId": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "errorMessage": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "mcp": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "description",
-///          "name",
-///          "toolId"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "name": {
-///            "type": "string"
-///          },
-///          "toolId": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "nameMatched": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "description",
-///          "name",
-///          "toolId"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "name": {
-///            "type": "string"
-///          },
-///          "toolId": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "phase1": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "description",
-///          "name",
-///          "score",
-///          "toolId"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "name": {
-///            "type": "string"
-///          },
-///          "score": {
-///            "type": "number"
-///          },
-///          "toolId": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "phase2": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "description",
-///          "name",
-///          "toolId"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "name": {
-///            "type": "string"
-///          },
-///          "toolId": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "tool_filter"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "complete",
-///        "error"
-///      ]
-///    },
-///    "toolsSent": {
-///      "type": "integer",
-///      "maximum": 9007199254740991.0,
-///      "minimum": 0.0
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInput {
@@ -14643,38 +6678,8 @@ pub struct ToolFilterMessageInput {
     )]
     pub tools_sent: ::std::option::Option<i64>,
 }
-impl ::std::convert::From<&ToolFilterMessageInput> for ToolFilterMessageInput {
-    fn from(value: &ToolFilterMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterMessageInputAlwaysAvailableItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInputAlwaysAvailableItem {
@@ -14692,31 +6697,6 @@ impl ::std::convert::From<&ToolFilterMessageInputAlwaysAvailableItem>
 }
 ///`ToolFilterMessageInputMcpItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInputMcpItem {
@@ -14725,38 +6705,8 @@ pub struct ToolFilterMessageInputMcpItem {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolFilterMessageInputMcpItem> for ToolFilterMessageInputMcpItem {
-    fn from(value: &ToolFilterMessageInputMcpItem) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterMessageInputNameMatchedItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInputNameMatchedItem {
@@ -14774,35 +6724,6 @@ impl ::std::convert::From<&ToolFilterMessageInputNameMatchedItem>
 }
 ///`ToolFilterMessageInputPhase1Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "score",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInputPhase1Item {
@@ -14812,38 +6733,8 @@ pub struct ToolFilterMessageInputPhase1Item {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolFilterMessageInputPhase1Item> for ToolFilterMessageInputPhase1Item {
-    fn from(value: &ToolFilterMessageInputPhase1Item) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterMessageInputPhase2Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterMessageInputPhase2Item {
@@ -14852,24 +6743,8 @@ pub struct ToolFilterMessageInputPhase2Item {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolFilterMessageInputPhase2Item> for ToolFilterMessageInputPhase2Item {
-    fn from(value: &ToolFilterMessageInputPhase2Item) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool_filter"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14885,11 +6760,6 @@ impl ::std::convert::From<&ToolFilterMessageInputPhase2Item> for ToolFilterMessa
 pub enum ToolFilterMessageInputRole {
     #[serde(rename = "tool_filter")]
     ToolFilter,
-}
-impl ::std::convert::From<&Self> for ToolFilterMessageInputRole {
-    fn from(value: &ToolFilterMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolFilterMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14913,36 +6783,8 @@ impl ::std::convert::TryFrom<&str> for ToolFilterMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolFilterMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolFilterMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolFilterMessageInputStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14960,11 +6802,6 @@ pub enum ToolFilterMessageInputStatus {
     Complete,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for ToolFilterMessageInputStatus {
-    fn from(value: &ToolFilterMessageInputStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolFilterMessageInputStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14990,33 +6827,8 @@ impl ::std::convert::TryFrom<&str> for ToolFilterMessageInputStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolFilterMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolFilterMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolFunction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolFunction(::std::string::String);
@@ -15029,11 +6841,6 @@ impl ::std::ops::Deref for ToolFunction {
 impl ::std::convert::From<ToolFunction> for ::std::string::String {
     fn from(value: ToolFunction) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolFunction> for ToolFunction {
-    fn from(value: &ToolFunction) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolFunction {
@@ -15051,22 +6858,6 @@ impl ::std::convert::TryFrom<&str> for ToolFunction {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolFunction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolFunction {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolFunction {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -15081,77 +6872,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolFunction {
 }
 ///`ToolMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "callId",
-///    "extensionId",
-///    "role",
-///    "status",
-///    "toolName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "type": "string"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "progress": {
-///      "type": "number"
-///    },
-///    "result": {},
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "tool"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "pending",
-///        "running",
-///        "awaiting_user",
-///        "awaiting_permission",
-///        "completed",
-///        "failed",
-///        "cancelled"
-///      ]
-///    },
-///    "toolName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolMessageInput {
@@ -15214,24 +6934,8 @@ pub struct ToolMessageInput {
     #[serde(rename = "toolName")]
     pub tool_name: ::std::string::String,
 }
-impl ::std::convert::From<&ToolMessageInput> for ToolMessageInput {
-    fn from(value: &ToolMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`ToolMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15247,11 +6951,6 @@ impl ::std::convert::From<&ToolMessageInput> for ToolMessageInput {
 pub enum ToolMessageInputRole {
     #[serde(rename = "tool")]
     Tool,
-}
-impl ::std::convert::From<&Self> for ToolMessageInputRole {
-    fn from(value: &ToolMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15275,41 +6974,8 @@ impl ::std::convert::TryFrom<&str> for ToolMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolMessageInputStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15337,11 +7003,6 @@ pub enum ToolMessageInputStatus {
     Failed,
     #[serde(rename = "cancelled")]
     Cancelled,
-}
-impl ::std::convert::From<&Self> for ToolMessageInputStatus {
-    fn from(value: &ToolMessageInputStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolMessageInputStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15377,33 +7038,8 @@ impl ::std::convert::TryFrom<&str> for ToolMessageInputStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolMessageInputStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolName`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "pattern": "^[a-zA-Z0-9_-]{1,64}$"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolName(::std::string::String);
@@ -15416,11 +7052,6 @@ impl ::std::ops::Deref for ToolName {
 impl ::std::convert::From<ToolName> for ::std::string::String {
     fn from(value: ToolName) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolName> for ToolName {
-    fn from(value: &ToolName) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolName {
@@ -15440,22 +7071,6 @@ impl ::std::convert::TryFrom<&str> for ToolName {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolName {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolName {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -15470,40 +7085,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolName {
 }
 ///`ToolPermissionResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "allow",
-///    "callId",
-///    "kind",
-///    "requestId"
-///  ],
-///  "properties": {
-///    "allow": {
-///      "type": "boolean"
-///    },
-///    "callId": {
-///      "type": "string",
-///      "minLength": 1
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "tool.permission_response"
-///      ]
-///    },
-///    "requestId": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ToolPermissionResponse {
     pub allow: bool,
@@ -15515,22 +7096,8 @@ pub struct ToolPermissionResponse {
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&ToolPermissionResponse> for ToolPermissionResponse {
-    fn from(value: &ToolPermissionResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ToolPermissionResponseCallId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolPermissionResponseCallId(::std::string::String);
@@ -15543,11 +7110,6 @@ impl ::std::ops::Deref for ToolPermissionResponseCallId {
 impl ::std::convert::From<ToolPermissionResponseCallId> for ::std::string::String {
     fn from(value: ToolPermissionResponseCallId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolPermissionResponseCallId> for ToolPermissionResponseCallId {
-    fn from(value: &ToolPermissionResponseCallId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolPermissionResponseCallId {
@@ -15565,22 +7127,6 @@ impl ::std::convert::TryFrom<&str> for ToolPermissionResponseCallId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolPermissionResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolPermissionResponseCallId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolPermissionResponseCallId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -15595,17 +7141,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolPermissionResponseCallId {
 }
 ///`ToolPermissionResponseKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool.permission_response"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15621,11 +7156,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolPermissionResponseCallId {
 pub enum ToolPermissionResponseKind {
     #[serde(rename = "tool.permission_response")]
     ToolPermissionResponse,
-}
-impl ::std::convert::From<&Self> for ToolPermissionResponseKind {
-    fn from(value: &ToolPermissionResponseKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolPermissionResponseKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15649,33 +7179,8 @@ impl ::std::convert::TryFrom<&str> for ToolPermissionResponseKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolPermissionResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolPermissionResponseKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolPermissionResponseRequestId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolPermissionResponseRequestId(::std::string::String);
@@ -15688,11 +7193,6 @@ impl ::std::ops::Deref for ToolPermissionResponseRequestId {
 impl ::std::convert::From<ToolPermissionResponseRequestId> for ::std::string::String {
     fn from(value: ToolPermissionResponseRequestId) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolPermissionResponseRequestId> for ToolPermissionResponseRequestId {
-    fn from(value: &ToolPermissionResponseRequestId) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolPermissionResponseRequestId {
@@ -15710,22 +7210,6 @@ impl ::std::convert::TryFrom<&str> for ToolPermissionResponseRequestId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolPermissionResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolPermissionResponseRequestId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolPermissionResponseRequestId {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -15740,21 +7224,6 @@ impl<'de> ::serde::Deserialize<'de> for ToolPermissionResponseRequestId {
 }
 ///`ToolPlatformsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "darwin",
-///    "windows",
-///    "linux",
-///    "linux_x11",
-///    "linux_wayland"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15778,11 +7247,6 @@ pub enum ToolPlatformsItem {
     LinuxX11,
     #[serde(rename = "linux_wayland")]
     LinuxWayland,
-}
-impl ::std::convert::From<&Self> for ToolPlatformsItem {
-    fn from(value: &ToolPlatformsItem) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolPlatformsItem {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15814,67 +7278,15 @@ impl ::std::convert::TryFrom<&str> for ToolPlatformsItem {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolPlatformsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolPlatformsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolSchemasBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "ids"
-///  ],
-///  "properties": {
-///    "ids": {
-///      "type": "array",
-///      "items": {
-///        "type": "string",
-///        "minLength": 1
-///      },
-///      "maxItems": 512
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolSchemasBody {
     pub ids: ::std::vec::Vec<ToolSchemasBodyIdsItem>,
 }
-impl ::std::convert::From<&ToolSchemasBody> for ToolSchemasBody {
-    fn from(value: &ToolSchemasBody) -> Self {
-        value.clone()
-    }
-}
 ///`ToolSchemasBodyIdsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct ToolSchemasBodyIdsItem(::std::string::String);
@@ -15887,11 +7299,6 @@ impl ::std::ops::Deref for ToolSchemasBodyIdsItem {
 impl ::std::convert::From<ToolSchemasBodyIdsItem> for ::std::string::String {
     fn from(value: ToolSchemasBodyIdsItem) -> Self {
         value.0
-    }
-}
-impl ::std::convert::From<&ToolSchemasBodyIdsItem> for ToolSchemasBodyIdsItem {
-    fn from(value: &ToolSchemasBodyIdsItem) -> Self {
-        value.clone()
     }
 }
 impl ::std::str::FromStr for ToolSchemasBodyIdsItem {
@@ -15909,22 +7316,6 @@ impl ::std::convert::TryFrom<&str> for ToolSchemasBodyIdsItem {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolSchemasBodyIdsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolSchemasBodyIdsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 impl<'de> ::serde::Deserialize<'de> for ToolSchemasBodyIdsItem {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
@@ -15939,93 +7330,14 @@ impl<'de> ::serde::Deserialize<'de> for ToolSchemasBodyIdsItem {
 }
 ///`TtsCatalog`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "models",
-///    "presets"
-///  ],
-///  "properties": {
-///    "models": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/TtsCatalogModel"
-///      },
-///      "minItems": 1
-///    },
-///    "presets": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/TtsPreset"
-///      },
-///      "minItems": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsCatalog {
     pub models: ::std::vec::Vec<TtsCatalogModel>,
     pub presets: ::std::vec::Vec<TtsPreset>,
 }
-impl ::std::convert::From<&TtsCatalog> for TtsCatalog {
-    fn from(value: &TtsCatalog) -> Self {
-        value.clone()
-    }
-}
 ///`TtsCatalogModel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "defaultVoice",
-///    "family",
-///    "id",
-///    "name",
-///    "quants",
-///    "voices"
-///  ],
-///  "properties": {
-///    "defaultVoice": {
-///      "type": "string"
-///    },
-///    "family": {
-///      "$ref": "#/$defs/TtsFamily"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "quants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/SpeechQuant"
-///      },
-///      "minItems": 1
-///    },
-///    "voices": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/$defs/TtsVoice"
-///      },
-///      "minItems": 1
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsCatalogModel {
@@ -16037,27 +7349,8 @@ pub struct TtsCatalogModel {
     pub quants: ::std::vec::Vec<SpeechQuant>,
     pub voices: ::std::vec::Vec<TtsVoice>,
 }
-impl ::std::convert::From<&TtsCatalogModel> for TtsCatalogModel {
-    fn from(value: &TtsCatalogModel) -> Self {
-        value.clone()
-    }
-}
 ///`TtsFamily`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "kokoro",
-///    "kitten",
-///    "vits",
-///    "matcha"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -16079,11 +7372,6 @@ pub enum TtsFamily {
     Vits,
     #[serde(rename = "matcha")]
     Matcha,
-}
-impl ::std::convert::From<&Self> for TtsFamily {
-    fn from(value: &TtsFamily) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for TtsFamily {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -16113,49 +7401,8 @@ impl ::std::convert::TryFrom<&str> for TtsFamily {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for TtsFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for TtsFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`TtsPreset`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "modelId",
-///    "quant"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsPreset {
@@ -16164,37 +7411,8 @@ pub struct TtsPreset {
     pub model_id: ::std::string::String,
     pub quant: ::std::string::String,
 }
-impl ::std::convert::From<&TtsPreset> for TtsPreset {
-    fn from(value: &TtsPreset) -> Self {
-        value.clone()
-    }
-}
 ///`TtsVoice`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "label"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "lang": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsVoice {
@@ -16207,183 +7425,8 @@ pub struct TtsVoice {
     )]
     pub lang: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&TtsVoice> for TtsVoice {
-    fn from(value: &TtsVoice) -> Self {
-        value.clone()
-    }
-}
 ///`UserMessageInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "role"
-///  ],
-///  "properties": {
-///    "automated": {
-///      "type": "boolean"
-///    },
-///    "content": {
-///      "anyOf": [
-///        {
-///          "type": "string"
-///        },
-///        {
-///          "type": "array",
-///          "items": {
-///            "oneOf": [
-///              {
-///                "type": "object",
-///                "required": [
-///                  "text",
-///                  "type"
-///                ],
-///                "properties": {
-///                  "text": {
-///                    "type": "string"
-///                  },
-///                  "type": {
-///                    "type": "string",
-///                    "enum": [
-///                      "text"
-///                    ]
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              {
-///                "type": "object",
-///                "required": [
-///                  "image_url",
-///                  "type"
-///                ],
-///                "properties": {
-///                  "image_url": {
-///                    "type": "object",
-///                    "required": [
-///                      "url"
-///                    ],
-///                    "properties": {
-///                      "url": {
-///                        "type": "string"
-///                      }
-///                    },
-///                    "additionalProperties": false
-///                  },
-///                  "type": {
-///                    "type": "string",
-///                    "enum": [
-///                      "image_url"
-///                    ]
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              {
-///                "type": "object",
-///                "required": [
-///                  "filename",
-///                  "mime",
-///                  "path",
-///                  "type"
-///                ],
-///                "properties": {
-///                  "filename": {
-///                    "type": "string"
-///                  },
-///                  "mime": {
-///                    "type": "string"
-///                  },
-///                  "path": {
-///                    "type": "string"
-///                  },
-///                  "type": {
-///                    "type": "string",
-///                    "enum": [
-///                      "image_file"
-///                    ]
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              {
-///                "type": "object",
-///                "required": [
-///                  "filename",
-///                  "markdown",
-///                  "type"
-///                ],
-///                "properties": {
-///                  "filename": {
-///                    "type": "string"
-///                  },
-///                  "markdown": {
-///                    "type": "string"
-///                  },
-///                  "type": {
-///                    "type": "string",
-///                    "enum": [
-///                      "document"
-///                    ]
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              {
-///                "type": "object",
-///                "required": [
-///                  "filename",
-///                  "path",
-///                  "type"
-///                ],
-///                "properties": {
-///                  "filename": {
-///                    "type": "string"
-///                  },
-///                  "path": {
-///                    "type": "string"
-///                  },
-///                  "type": {
-///                    "type": "string",
-///                    "enum": [
-///                      "document_file"
-///                    ]
-///                  }
-///                },
-///                "additionalProperties": false
-///              }
-///            ]
-///          }
-///        }
-///      ]
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "user"
-///      ]
-///    },
-///    "systemPromptOverride": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct UserMessageInput {
@@ -16422,162 +7465,13 @@ pub struct UserMessageInput {
     )]
     pub system_prompt_override: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&UserMessageInput> for UserMessageInput {
-    fn from(value: &UserMessageInput) -> Self {
-        value.clone()
-    }
-}
 ///`UserMessageInputContent`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "oneOf": [
-///          {
-///            "type": "object",
-///            "required": [
-///              "text",
-///              "type"
-///            ],
-///            "properties": {
-///              "text": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "text"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "image_url",
-///              "type"
-///            ],
-///            "properties": {
-///              "image_url": {
-///                "type": "object",
-///                "required": [
-///                  "url"
-///                ],
-///                "properties": {
-///                  "url": {
-///                    "type": "string"
-///                  }
-///                },
-///                "additionalProperties": false
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "image_url"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "mime",
-///              "path",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "mime": {
-///                "type": "string"
-///              },
-///              "path": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "image_file"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "markdown",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "markdown": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "document"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          },
-///          {
-///            "type": "object",
-///            "required": [
-///              "filename",
-///              "path",
-///              "type"
-///            ],
-///            "properties": {
-///              "filename": {
-///                "type": "string"
-///              },
-///              "path": {
-///                "type": "string"
-///              },
-///              "type": {
-///                "type": "string",
-///                "enum": [
-///                  "document_file"
-///                ]
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        ]
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum UserMessageInputContent {
     Variant0(::std::string::String),
     Variant1(::std::vec::Vec<UserMessageInputContentVariant1Item>),
-}
-impl ::std::convert::From<&Self> for UserMessageInputContent {
-    fn from(value: &UserMessageInputContent) -> Self {
-        value.clone()
-    }
 }
 impl ::std::convert::From<::std::vec::Vec<UserMessageInputContentVariant1Item>>
     for UserMessageInputContent
@@ -16588,135 +7482,6 @@ impl ::std::convert::From<::std::vec::Vec<UserMessageInputContentVariant1Item>>
 }
 ///`UserMessageInputContentVariant1Item`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "oneOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "text",
-///        "type"
-///      ],
-///      "properties": {
-///        "text": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "text"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "image_url",
-///        "type"
-///      ],
-///      "properties": {
-///        "image_url": {
-///          "type": "object",
-///          "required": [
-///            "url"
-///          ],
-///          "properties": {
-///            "url": {
-///              "type": "string"
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_url"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "mime",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum UserMessageInputContentVariant1Item {
@@ -16743,30 +7508,8 @@ pub enum UserMessageInputContentVariant1Item {
         path: ::std::string::String,
     },
 }
-impl ::std::convert::From<&Self> for UserMessageInputContentVariant1Item {
-    fn from(value: &UserMessageInputContentVariant1Item) -> Self {
-        value.clone()
-    }
-}
 ///`UserMessageInputContentVariant1ItemImageUrl`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "url"
-///  ],
-///  "properties": {
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct UserMessageInputContentVariant1ItemImageUrl {
@@ -16781,17 +7524,6 @@ impl ::std::convert::From<&UserMessageInputContentVariant1ItemImageUrl>
 }
 ///`UserMessageInputRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "user"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -16807,11 +7539,6 @@ impl ::std::convert::From<&UserMessageInputContentVariant1ItemImageUrl>
 pub enum UserMessageInputRole {
     #[serde(rename = "user")]
     User,
-}
-impl ::std::convert::From<&Self> for UserMessageInputRole {
-    fn from(value: &UserMessageInputRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for UserMessageInputRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -16835,64 +7562,16 @@ impl ::std::convert::TryFrom<&str> for UserMessageInputRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for UserMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for UserMessageInputRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`WsFrameEnvelope`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "minLength": 1
-///    }
-///  },
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct WsFrameEnvelope {
     pub kind: WsFrameEnvelopeKind,
     #[serde(flatten)]
     pub extra: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&WsFrameEnvelope> for WsFrameEnvelope {
-    fn from(value: &WsFrameEnvelope) -> Self {
-        value.clone()
-    }
-}
 ///`WsFrameEnvelopeKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "minLength": 1
-///}
-/// ```
-/// </details>
 #[derive(::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct WsFrameEnvelopeKind(::std::string::String);
@@ -16907,11 +7586,6 @@ impl ::std::convert::From<WsFrameEnvelopeKind> for ::std::string::String {
         value.0
     }
 }
-impl ::std::convert::From<&WsFrameEnvelopeKind> for WsFrameEnvelopeKind {
-    fn from(value: &WsFrameEnvelopeKind) -> Self {
-        value.clone()
-    }
-}
 impl ::std::str::FromStr for WsFrameEnvelopeKind {
     type Err = self::error::ConversionError;
     fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
@@ -16924,22 +7598,6 @@ impl ::std::str::FromStr for WsFrameEnvelopeKind {
 impl ::std::convert::TryFrom<&str> for WsFrameEnvelopeKind {
     type Error = self::error::ConversionError;
     fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for WsFrameEnvelopeKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for WsFrameEnvelopeKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
         value.parse()
     }
 }

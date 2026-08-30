@@ -1,32 +1,11 @@
 //! Where a (extension, tool) pair becomes a running process.
 //!
-//! Ports `worker-pool.ts:158-219` (the facts lookup and the least-privilege
-//! flag derivation) and `worker-handle.ts:173-281`'s process half. Everything
-//! else in this package decides WHAT a worker may do; this is the one place
-//! that starts one.
-//!
-//! # Least privilege is a property of this file's inputs
-//!
-//! The flags come from the INVOKED TOOL's granted declarations and nothing
-//! else. Not the union over the extension's enabled tools, not the extension's
-//! declarations: one tool, its own grants. The pool's per-(extension, tool)
-//! key is what makes that expressible, and a spawner that looked up the
-//! extension instead would undo it while every pool test still passed.
-//!
-//! # The three launches, and why they are not one
-//!
-//! - **PTY** (unix, the tool was found): stdin and stderr ARE the terminal, so
-//!   Deno prompts; the protocol rides the ordinary stdout pipe.
-//! - **Socket** (Windows, the tool was found): a ConPTY binds all three std
-//!   handles and reflows them, so the protocol rides a loopback socket instead.
-//! - **Pipe** (no tool, so no prompt policy to answer with): plain pipes, and
-//!   [`super::spawn_plan`] adds `--no-prompt` so an ask-state permission fails
-//!   as `NotCapable` rather than blocking on a prompt nobody can see.
-//!
-//! Only the pipe launch can go through `sidecars::Manager::spawn`. The other
-//! two need fds and a `pre_exec` hook that `Spawn` deliberately cannot express,
-//! so they spawn their own child and enrol it for the Windows Job Object
-//! backstop afterwards ([`crate::sidecars::Manager::track_external`]).
+//! The flags come from the INVOKED TOOL's grants alone, never the union over
+//! the extension's tools; the pool's per-(extension, tool) key is what makes
+//! that expressible. Only the pipe launch goes through `sidecars::Manager::spawn`;
+//! the PTY and socket launches need fds and a `pre_exec` hook `Spawn` cannot
+//! express, so they spawn their own child and enrol it for the Windows Job
+//! Object backstop afterwards.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -59,18 +38,13 @@ pub struct DenoSpawner {
 }
 
 /// What a spawn resolved to, before any process exists.
-///
-/// Separate from the launch so the whole decision half (which flags, which
-/// mode, which entry file, whether there is a prompt policy at all) is a
-/// function of registry rows that can be asserted without starting anything.
 #[derive(Debug)]
 struct Recipe {
     spec: SpawnSpec,
     mode: Mode,
     /// `None` when the tool is not in the registry for this host, which is also
-    /// what puts the worker in pipe mode: with no declarations and no grants
-    /// there is nothing to decide a prompt against, and a prompt that cannot be
-    /// decided must not be shown.
+    /// what puts the worker in pipe mode: a prompt that cannot be decided
+    /// against declarations must not be shown.
     policy: Option<PromptPolicy>,
 }
 
@@ -90,11 +64,8 @@ impl DenoSpawner {
         }
     }
 
-    /// The same spawner over a fixed environment.
-    ///
-    /// `$env.VAR` expansion and the worker's own environment both read through
-    /// this, and `std::env::set_var` is unsound in a threaded test binary, so
-    /// injecting is the only way to assert on either.
+    /// The same spawner over a fixed environment; `std::env::set_var` is
+    /// unsound in a threaded test binary, so injecting is the only way to test.
     pub fn with_env(
         paths: Paths,
         registry: Registry,
@@ -113,9 +84,8 @@ impl DenoSpawner {
         let extension = self.registry.get_or_err(&key.extension_id).await?;
         let folder = PathBuf::from(&extension.installed_path);
         // Through `list_tools`, so a tool this OS does not support is ABSENT
-        // rather than present with an empty permission set. Absent means pipe
-        // mode and no grants; present-but-empty would mean an `ask` policy
-        // offering the user a prompt for a tool that cannot run here.
+        // (pipe mode, no grants) rather than present with an empty set, which
+        // would offer an `ask` prompt for a tool that cannot run here.
         let tool = self
             .registry
             .list_tools(&key.extension_id)
@@ -179,8 +149,8 @@ impl DenoSpawner {
         }
     }
 
-    /// No terminal: three pipes, and the child goes through D14's manager so it
-    /// joins the Windows Job Object like every other child this core starts.
+    /// No terminal: three pipes, through the manager so the child joins the
+    /// Windows Job Object.
     async fn launch_piped(
         &self,
         program: &Path,
@@ -194,9 +164,8 @@ impl DenoSpawner {
                 .envs(plan.env)
                 .stdin(Stdin::Piped)
                 .stdout(Output::Piped)
-                // Piped rather than relayed: stderr is where a tool's own log
-                // lines arrive, and they belong to the call rather than to
-                // D14's ten-line debug ring.
+                // Piped, not relayed: stderr carries the tool's own log lines,
+                // which belong to the call.
                 .stderr(Output::Piped),
         )?;
 
@@ -224,18 +193,17 @@ impl DenoSpawner {
             spawn_terminal_pump(stderr, incoming_tx.clone());
         }
 
-        // One task owns the child handle, and it is the only thing that ever
-        // locks it. A reaper task holding the lock across a `wait` would block
-        // the kill that is trying to make that wait return, which is a deadlock
-        // reachable by exactly the wedged worker the kill exists for.
+        // One task owns the child handle and is the only thing that locks it: a
+        // reaper holding the lock across `wait` would block the kill meant to
+        // make that wait return.
         let pump = pump_protocol(stdout, extension_id.to_string(), incoming_tx.clone());
         tokio::spawn(async move {
             tokio::select! {
                 () = pump => {}
                 _ = kill_rx.recv() => {}
             }
-            // Idempotent, and it reaps: a child that has already exited is
-            // simply collected, and a wedged one gets SIGTERM then SIGKILL.
+            // Idempotent and reaping: an exited child is collected, a wedged
+            // one gets SIGTERM then SIGKILL.
             let exit = child.lock().await.terminate().await;
             let _ = incoming_tx.send(Incoming::Exited { code: exit.code });
         });
@@ -265,13 +233,11 @@ impl DenoSpawner {
             program: program.to_path_buf(),
             args: plan.args,
             env: plan.env,
-            // No cwd: the worker resolves everything by absolute path, and
-            // inheriting Core's is what the specification does.
+            // The worker resolves everything by absolute path.
             cwd: None,
         })?;
-        // The Job Object backstop, and the only way this child can reach it: a
-        // PTY spawn cannot go through `Manager::spawn`. Without it a hard core
-        // kill on Windows leaves the worker running.
+        // A PTY spawn cannot go through `Manager::spawn`; without this a hard
+        // core kill on Windows leaves the worker running.
         if let Some(pid) = spawned.pid {
             self.sidecars.track_external(pid, label);
         }
@@ -301,7 +267,7 @@ impl DenoSpawner {
                     incoming: incoming_rx,
                 })
             }
-            // Windows: the pseudoconsole reflows stdout, so the protocol is on
+            // Windows: the pseudoconsole reflows stdout, so the protocol rides
             // the loopback socket and the console carries only the prompt.
             (None, Some(listener)) => {
                 let (frame_tx, frame_rx) = mpsc::unbounded_channel::<String>();
@@ -324,14 +290,12 @@ impl DenoSpawner {
 #[async_trait]
 impl WorkerSpawner for DenoSpawner {
     async fn spawn(&self, key: &WorkerKey) -> Result<WorkerHandle> {
-        // First, so an extension that is installed but whose runtime the user
-        // has not downloaded yet reports `binary_not_found` (which the client
-        // has a path for) rather than a bare spawn failure.
+        // First, so a missing runtime reports `binary_not_found` (which the
+        // client has a path for) rather than a bare spawn failure.
         let program = resolve_worker_deno(&self.paths)?;
         let recipe = self.recipe(key).await?;
 
-        // Bound BEFORE the args are built: the port is granted to the worker
-        // through `--allow-net`, so it has to exist before the flag list does.
+        // Bound BEFORE the args are built: the port is granted via `--allow-net`.
         let listener = match recipe.mode {
             Mode::Socket => Some(ControlListener::bind().await?),
             Mode::Pty | Mode::Pipe => None,
@@ -371,11 +335,8 @@ impl WorkerSpawner for DenoSpawner {
     }
 }
 
-/// A worker with no terminal.
-///
-/// [`Terminal`] is the worker's whole write side, not only its prompt channel,
-/// so pipe mode needs one too: without it no call frame ever reaches the
-/// worker. What it genuinely does not have is an answer path, because
+/// A worker with no terminal. [`Terminal`] is the worker's whole write side,
+/// so pipe mode needs one for call frames; it has no answer path because
 /// `--no-prompt` means nothing will ever ask.
 struct PipeChannel {
     writes: mpsc::UnboundedSender<Vec<u8>>,
@@ -388,9 +349,8 @@ impl Terminal for PipeChannel {
     }
 
     fn answer(&self, _bytes: &[u8]) {
-        // Deliberately nothing. A pipe-mode worker runs with `--no-prompt`, so
-        // there is no prompt to answer; writing the `y`/`n` into stdin would
-        // put a line the worker cannot parse into the protocol stream.
+        // Deliberately nothing: a `y`/`n` on stdin would be an unparseable
+        // line in the protocol stream.
     }
 
     fn kill(&self) {
@@ -407,9 +367,8 @@ struct SocketChannel {
 
 impl Terminal for SocketChannel {
     fn write(&self, bytes: &[u8]) {
-        // Queued rather than written: the worker connects back some
-        // milliseconds after it starts, and a frame written before that would
-        // otherwise be dropped on the floor.
+        // Queued: the worker connects back some milliseconds after it starts,
+        // and a frame written before that would be dropped.
         let _ = self
             .frames
             .send(String::from_utf8_lossy(bytes).into_owned());
@@ -444,12 +403,9 @@ where
     });
 }
 
-/// Accept the worker's control connection, then pump it both ways.
-///
-/// Two tasks rather than one: `read_line` and `write_line` each need `&mut`, so
-/// a single task cannot select over both, and serialising them would mean an
-/// outbound frame waits for the worker's next line, which for a worker that is
-/// thinking is forever.
+/// Accept the worker's control connection, then pump it both ways. Two tasks:
+/// `read_line` and `write_line` each need `&mut`, and serialising them would
+/// make an outbound frame wait for the worker's next line.
 fn spawn_control_pump(
     listener: ControlListener,
     mut outbound: mpsc::UnboundedReceiver<String>,
@@ -463,8 +419,7 @@ fn spawn_control_pump(
             Ok(channel) => channel,
             Err(error) => {
                 // Fail closed: a worker that never connects can never be
-                // spoken to, so kill it rather than leaving a process alive
-                // for the boot timeout to report as a generic failure.
+                // spoken to, so kill it rather than wait for the boot timeout.
                 tracing::warn!(
                     target: "loca::extensions",
                     "{label}: the worker never connected to its control socket: {error}",
@@ -505,8 +460,7 @@ mod tests {
 
     use super::*;
 
-    /// Every test here can hang rather than fail (a process that never starts,
-    /// a frame that never arrives), so every await is bounded.
+    /// Every test here can hang rather than fail, so every await is bounded.
     const BUDGET: Duration = Duration::from_secs(20);
 
     struct Fixture {
@@ -544,8 +498,7 @@ mod tests {
         }
     }
 
-    /// An extension on disk with one tool, and a `deno` that is really the
-    /// script `body`.
+    /// An extension on disk with one tool.
     async fn install(fx: &Fixture, id: &str, tool: ToolInsert, entry: &str) {
         let folder = fx.paths.extension_dir(id);
         std::fs::create_dir_all(&folder).unwrap();
@@ -604,10 +557,15 @@ mod tests {
             .unwrap();
     }
 
-    /// A stand-in for the pinned `deno`, so a spawn is a real process without a
-    /// 100 MB download. It ignores the argument vector, which is exactly what
-    /// makes it useless for asserting on flags: `spawn_plan` owns those, with
-    /// its own tests.
+    async fn recipe(fx: &Fixture, tool: &str) -> Recipe {
+        fx.spawner
+            .recipe(&WorkerKey::new("acme", tool))
+            .await
+            .unwrap()
+    }
+
+    /// A stand-in for the pinned `deno`: a real process without the download.
+    /// It ignores its argument vector; `spawn_plan` owns the flags.
     fn plant_deno(paths: &Paths, script: &str) {
         let path = paths.bin_path(crate::sidecars::deno::binary_name());
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -619,10 +577,37 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    async fn spawn_acme(fx: &Fixture) -> WorkerHandle {
+        tokio::time::timeout(BUDGET, fx.spawner.spawn(&WorkerKey::new("acme", "t")))
+            .await
+            .expect("the spawn hung")
+            .expect("the spawn failed")
+    }
+
+    #[cfg(unix)]
+    async fn launch_piped(fx: &Fixture) -> Launched {
+        tokio::time::timeout(
+            BUDGET,
+            fx.spawner.launch(
+                &fx.paths.bin_path(crate::sidecars::deno::binary_name()),
+                SpawnPlan {
+                    args: Vec::new(),
+                    env: BTreeMap::new(),
+                },
+                Mode::Pipe,
+                None,
+                "test worker",
+                "acme",
+            ),
+        )
+        .await
+        .expect("the launch hung")
+        .expect("the launch failed")
+    }
+
     #[tokio::test]
     async fn a_missing_runtime_is_reported_as_the_download_it_is() {
-        // Before the registry is even consulted: the answer a user can act on
-        // is "download the runtime", not "extension not found".
         let fx = fixture(BTreeMap::new());
         let err = fx
             .spawner
@@ -634,9 +619,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_flags_come_from_the_invoked_tool_alone() {
-        // The property the pool's key exists to make expressible. A spawner
-        // that derived flags per EXTENSION would hand `quiet` the sibling's
-        // read grant, and every pool test would still pass.
         let fx = fixture(BTreeMap::new());
         let folder = fx.paths.extension_dir("acme");
         let noisy = read_decl("/tmp/loud");
@@ -655,20 +637,12 @@ mod tests {
         grant(&fx, "acme::noisy", &noisy).await;
         grant(&fx, "acme::quiet", &quiet).await;
 
-        let noisy = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "noisy"))
-            .await
-            .unwrap();
+        let noisy = recipe(&fx, "noisy").await;
         assert_eq!(noisy.spec.flags, vec!["--allow-read=/tmp/loud".to_string()]);
         assert_eq!(noisy.spec.extension_folder, folder);
         assert_eq!(noisy.spec.entry_path, folder.join("index.ts"));
 
-        let quiet = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "quiet"))
-            .await
-            .unwrap();
+        let quiet = recipe(&fx, "quiet").await;
         assert_eq!(quiet.spec.flags, vec!["--allow-read=/tmp/soft".to_string()]);
     }
 
@@ -678,18 +652,13 @@ mod tests {
         let decl = read_decl("/tmp/loud");
         install(&fx, "acme", tool("t", vec![decl]), "export {}").await;
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert!(
             recipe.spec.flags.is_empty(),
             "a declaration nobody granted reached the flags: {:?}",
             recipe.spec.flags
         );
-        // It still prompts: the declaration is what the prompt is matched
-        // against, so the policy has to carry it.
+        // It still prompts: the declaration is what the prompt is matched against.
         let policy = recipe.policy.expect("a known tool has a prompt policy");
         assert_eq!(policy.required.len(), 1);
         assert_eq!(policy.undeclared_policy, UndeclaredPolicy::Deny);
@@ -697,18 +666,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_tool_this_host_cannot_run_gets_no_policy_and_no_terminal() {
-        // Absent rather than empty, and the difference is what stops an `ask`
-        // policy offering the user a prompt for a tool that cannot run here.
         let fx = fixture(BTreeMap::new());
         let mut only_elsewhere = tool("t", vec![read_decl("/tmp/x")]);
         only_elsewhere.platforms = vec!["definitely-not-this-os".to_string()];
         install(&fx, "acme", only_elsewhere, "export {}").await;
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert!(recipe.policy.is_none());
         assert!(recipe.spec.flags.is_empty());
         assert_eq!(recipe.mode, Mode::Pipe);
@@ -718,11 +681,7 @@ mod tests {
     async fn a_known_tool_gets_the_platform_prompting_mode() {
         let fx = fixture(BTreeMap::new());
         install(&fx, "acme", tool("t", Vec::new()), "export {}").await;
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert_eq!(recipe.mode, Mode::for_platform(true));
         assert_ne!(recipe.mode, Mode::Pipe, "a known tool cannot prompt");
     }
@@ -734,20 +693,14 @@ mod tests {
         let folder = fx.paths.extension_dir("acme");
         std::fs::write(folder.join("deno.json"), r#"{"exports":"./mod.ts"}"#).unwrap();
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert_eq!(recipe.spec.entry_path, folder.join("./mod.ts"));
     }
 
     #[tokio::test]
     async fn the_home_template_resolves_through_the_injected_environment() {
-        // `$home` is expanded at spawn time, so the templates have to be built
-        // from the same environment the worker is given. A spawner that read
-        // the process environment here would expand a different `$home` than
-        // the one it later denies.
+        // The templates must come from the same environment the worker is
+        // given, or `$home` expands to a different path than the one denied.
         let fx = fixture(BTreeMap::from([(
             "HOME".to_string(),
             "/somewhere/else".to_string(),
@@ -756,11 +709,7 @@ mod tests {
         install(&fx, "acme", tool("t", vec![decl.clone()]), "export {}").await;
         grant(&fx, "acme::t", &decl).await;
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert_eq!(
             recipe.spec.flags,
             vec!["--allow-read=/somewhere/else/notes".to_string()]
@@ -775,9 +724,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_grant_into_the_install_directory_is_still_refused_here() {
-        // The refusal lives in `sandbox`, but this is the call site that
-        // supplies `$extension`, and supplying the wrong directory would make
-        // the refusal miss without changing a single sandbox test.
+        // The refusal lives in `sandbox`; this is the call site supplying `$extension`.
         let fx = fixture(BTreeMap::new());
         let decl = PermissionDecl::Write {
             optional: None,
@@ -787,11 +734,7 @@ mod tests {
         install(&fx, "acme", tool("t", vec![decl.clone()]), "export {}").await;
         grant(&fx, "acme::t", &decl).await;
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert!(
             !recipe
                 .spec
@@ -805,21 +748,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_extension_template_is_this_extension_and_not_the_directory_they_share() {
-        // The refusal above holds for the extensions ROOT too (a directory
-        // contains itself), so it CANNOT see this. What it misses is the read
-        // side: `$extension` resolved one level up grants a tool every OTHER
-        // installed extension's files, which is where their author-supplied
-        // code and any bundled credentials live.
+        // `$extension` resolved one level up would grant a read of every OTHER
+        // installed extension's files and bundled credentials.
         let fx = fixture(BTreeMap::new());
         let decl = read_decl("$extension");
         install(&fx, "acme", tool("t", vec![decl.clone()]), "export {}").await;
         grant(&fx, "acme::t", &decl).await;
 
-        let recipe = fx
-            .spawner
-            .recipe(&WorkerKey::new("acme", "t"))
-            .await
-            .unwrap();
+        let recipe = recipe(&fx, "t").await;
         assert_eq!(
             recipe.spec.flags,
             vec![format!(
@@ -845,28 +781,21 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_spawned_worker_boots_and_its_frames_reach_the_handle() {
-        // The whole wiring in one test, against a real process on a real
-        // terminal: the registry rows, the flag derivation, the argument
-        // vector, the PTY, the protocol pump, and the handle's boot latch.
-        // Every layer below has its own unit tests and NONE of them would
-        // notice this path being unwired (D-100).
+        // The whole wiring against a real process on a real terminal; no unit
+        // test below would notice this path being unwired.
         let fx = fixture(BTreeMap::new());
         install(&fx, "acme", tool("t", Vec::new()), "export {}").await;
         plant_deno(
             &fx.paths,
             // Announce, then echo whatever Core sends back as a log frame, so
-            // the write direction is proven too. `read` off a terminal sees
-            // Core's own line.
+            // the write direction is proven too.
             r#"echo '{"kind":"booted","extensionId":"acme"}'
 read line
 echo "{\"kind\":\"log\",\"callId\":\"c\",\"level\":\"info\",\"message\":\"seen\"}"
 sleep 30"#,
         );
 
-        let handle = tokio::time::timeout(BUDGET, fx.spawner.spawn(&WorkerKey::new("acme", "t")))
-            .await
-            .expect("the spawn hung")
-            .expect("the spawn failed");
+        let handle = spawn_acme(&fx).await;
         let mut events = handle.subscribe();
 
         tokio::time::timeout(BUDGET, handle.wait_for_boot(BUDGET))
@@ -894,11 +823,8 @@ sleep 30"#,
     #[cfg(unix)]
     #[tokio::test]
     async fn a_pty_workers_terminal_output_reaches_the_driver() {
-        // The terminal is the ONLY channel a Deno permission prompt arrives on.
-        // Forwarding it is what makes the whole prompt path exist, and the
-        // failure mode of not forwarding it is silent: no prompt is ever
-        // parsed, no prompt is ever answered, and every ask-state permission
-        // hangs its call until the timeout with nothing in the log.
+        // The terminal is the ONLY channel a Deno permission prompt arrives on;
+        // not forwarding it hangs every ask-state permission silently.
         let fx = fixture(BTreeMap::new());
         install(&fx, "acme", tool("t", Vec::new()), "export {}").await;
         plant_deno(
@@ -908,10 +834,7 @@ echo 'the tool said something' >&2
 sleep 30"#,
         );
 
-        let handle = tokio::time::timeout(BUDGET, fx.spawner.spawn(&WorkerKey::new("acme", "t")))
-            .await
-            .expect("the spawn hung")
-            .expect("the spawn failed");
+        let handle = spawn_acme(&fx).await;
         let mut events = handle.subscribe();
         let line = loop {
             match tokio::time::timeout(BUDGET, events.recv())
@@ -934,10 +857,7 @@ sleep 30"#,
         install(&fx, "acme", tool("t", Vec::new()), "export {}").await;
         plant_deno(&fx.paths, "exit 3");
 
-        let handle = tokio::time::timeout(BUDGET, fx.spawner.spawn(&WorkerKey::new("acme", "t")))
-            .await
-            .expect("the spawn hung")
-            .expect("the spawn failed");
+        let handle = spawn_acme(&fx).await;
         let err = tokio::time::timeout(BUDGET, handle.wait_for_boot(BUDGET))
             .await
             .expect("the boot wait hung")
@@ -952,10 +872,8 @@ sleep 30"#,
     #[cfg(unix)]
     #[tokio::test]
     async fn a_pipe_mode_worker_still_reaches_its_worker() {
-        // Pipe mode has no terminal, and a `Terminal` of `None` would mean no
-        // frame ever reaches the worker: the mode would look wired and be
-        // mute. So it gets a channel over the child's stdin instead, and this
-        // is what says so.
+        // Pipe mode has no terminal but still needs a write channel (stdin),
+        // or no frame ever reaches the worker.
         let fx = fixture(BTreeMap::new());
         plant_deno(
             &fx.paths,
@@ -963,24 +881,7 @@ sleep 30"#,
 echo "{\"kind\":\"log\",\"callId\":\"c\",\"level\":\"info\",\"message\":\"heard\"}"
 sleep 30"#,
         );
-        let plan = SpawnPlan {
-            args: Vec::new(),
-            env: BTreeMap::new(),
-        };
-        let launched = tokio::time::timeout(
-            BUDGET,
-            fx.spawner.launch(
-                &fx.paths.bin_path(crate::sidecars::deno::binary_name()),
-                plan,
-                Mode::Pipe,
-                None,
-                "test worker",
-                "acme",
-            ),
-        )
-        .await
-        .expect("the launch hung")
-        .expect("the launch failed");
+        let launched = launch_piped(&fx).await;
 
         let mut incoming = launched.incoming;
         launched.terminal.write(b"{\"kind\":\"ping\"}\n");
@@ -1011,28 +912,9 @@ sleep 30"#,
     #[cfg(unix)]
     #[tokio::test]
     async fn a_pipe_mode_workers_stderr_arrives_as_terminal_text() {
-        // It is the parser that turns terminal text into stderr log lines, so
-        // stderr that never reaches the driver is a tool whose own log output
-        // silently disappears.
         let fx = fixture(BTreeMap::new());
         plant_deno(&fx.paths, "echo 'a word from the tool' >&2\nsleep 30");
-        let launched = tokio::time::timeout(
-            BUDGET,
-            fx.spawner.launch(
-                &fx.paths.bin_path(crate::sidecars::deno::binary_name()),
-                SpawnPlan {
-                    args: Vec::new(),
-                    env: BTreeMap::new(),
-                },
-                Mode::Pipe,
-                None,
-                "test worker",
-                "acme",
-            ),
-        )
-        .await
-        .expect("the launch hung")
-        .expect("the launch failed");
+        let launched = launch_piped(&fx).await;
 
         let mut incoming = launched.incoming;
         let text = loop {

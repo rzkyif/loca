@@ -1,8 +1,6 @@
 {
   "workspace": [
     "./packages/loca-shared",
-    "./packages/loca-core-engine",
-    "./packages/loca-core",
     "./packages/loca-core-rs",
     "./packages/loca-core-ffi",
     "./packages/loca-client",
@@ -10,12 +8,7 @@
     "./packages/loca-extension-builtin",
     "./packages/loca-extension-samples",
     "./packages/loca-model-catalog",
-    "./packages/loca-core-updater",
-    "./packages/loca-core-keychain",
-    "./packages/loca-core-hwinfo",
-    "./packages/loca-core-ptyhost",
-    "./packages/loca-core-speech",
-    "./tests/conformance"
+    "./packages/loca-core-updater"
   ],
   "nodeModulesDir": "auto",
   "unstable": ["raw-imports"],
@@ -55,50 +48,29 @@
 
     "contract": "deno run -A scripts/contract/generate.ts",
     "contract:check": "deno run -A scripts/contract/generate.ts --check",
-    "conformance": "deno task --cwd tests/conformance conformance",
 
     "check:shared": "deno task --cwd packages/loca-shared check",
-    "check:core-engine": "deno task --cwd packages/loca-core-engine check",
-    "check:core": "deno task --cwd packages/loca-core check",
     "check:client": "deno task --cwd packages/loca-client check",
     "check:extension": "deno task --cwd packages/loca-extension-builtin check",
     "check:extension-samples": "deno task --cwd packages/loca-extension-samples check",
     "check:catalog": "deno task --cwd packages/loca-model-catalog check",
 
     "test:shared": "deno task --cwd packages/loca-shared test",
-    "test:core-engine": "deno task --cwd packages/loca-core-engine test",
-    "test:core": "deno task --cwd packages/loca-core test",
     "test:client": "deno task --cwd packages/loca-client test",
     "test:extension": "deno task --cwd packages/loca-extension-builtin test",
     "test:extension-samples": "deno task --cwd packages/loca-extension-samples test",
     "test:core-updater": "deno task --cwd packages/loca-core-updater test",
-    "test:core-keychain": "deno task --cwd packages/loca-core-keychain test",
-    "test:core-hwinfo": "deno task --cwd packages/loca-core-hwinfo test",
-    "test:core-ptyhost": "deno task --cwd packages/loca-core-ptyhost test",
-    "test:core-speech": "deno task --cwd packages/loca-core-speech test",
     "test:core-rs": "deno task --cwd packages/loca-core-rs test",
 
     "fmt:client": "deno task --cwd packages/loca-client fmt",
     "fmt:core-updater": "deno task --cwd packages/loca-core-updater fmt",
-    "fmt:core-keychain": "deno task --cwd packages/loca-core-keychain fmt",
-    "fmt:core-hwinfo": "deno task --cwd packages/loca-core-hwinfo fmt",
-    "fmt:core-ptyhost": "deno task --cwd packages/loca-core-ptyhost fmt",
-    "fmt:core-speech": "deno task --cwd packages/loca-core-speech fmt",
     "fmt:core-rs": "deno task --cwd packages/loca-core-rs fmt",
 
     "lint:client": "deno task --cwd packages/loca-client lint",
     "lint:core-updater": "deno task --cwd packages/loca-core-updater lint",
-    "lint:core-keychain": "deno task --cwd packages/loca-core-keychain lint",
-    "lint:core-hwinfo": "deno task --cwd packages/loca-core-hwinfo lint",
-    "lint:core-ptyhost": "deno task --cwd packages/loca-core-ptyhost lint",
-    "lint:core-speech": "deno task --cwd packages/loca-core-speech lint",
     "lint:core-rs": "deno task --cwd packages/loca-core-rs lint",
 
     "build:core-updater": "deno task --cwd packages/loca-core-updater build",
-    "build:core-keychain": "deno task --cwd packages/loca-core-keychain build",
-    "build:core-hwinfo": "deno task --cwd packages/loca-core-hwinfo build",
-    "build:core-ptyhost": "deno task --cwd packages/loca-core-ptyhost build",
-    "build:core-speech": "deno task --cwd packages/loca-core-speech build",
     "build:core-rs": "deno task --cwd packages/loca-core-rs build",
 
     "build": "deno run -A scripts/build.ts --channel=latest",

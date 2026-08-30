@@ -1,11 +1,6 @@
-// Companion to the `loca/no-tauri-import` rule in
-// scripts/lint-plugins/oxlint-plugin.ts, the oxlint JS plugin that enforces the
-// same rule for .ts files. oxlint doesn't parse .svelte
-// files, so any @tauri-apps import inside a `<script>` block slips through.
-// This grep-based pass closes that gap by walking the same tree the oxlint
-// plugin protects and rejecting any direct import outside lib/platform/.
-//
-// Wired into `deno task lint` alongside the oxlint pass.
+// Companion to the `loca/no-tauri-import` oxlint rule, covering the .svelte
+// files oxlint never parses: walks the same tree and rejects any direct
+// @tauri-apps import outside lib/platform/. Wired into `deno task lint`.
 
 import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";

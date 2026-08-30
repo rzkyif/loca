@@ -8,17 +8,11 @@
   import { bubbleGap, useUiContext } from "@loca/shared/ui/context";
   import Cursor from "./Cursor.svelte";
   import SubtitleBand from "./SubtitleBand.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // No real audio: the subtitle band conveys both halves of the voice loop.
   // Voice Input captures the user's speech and, with Send After Dictation on by

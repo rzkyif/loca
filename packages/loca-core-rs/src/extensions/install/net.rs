@@ -1,32 +1,9 @@
 //! The one outbound path installation has, behind a seam.
 //!
-//! # Why a trait rather than a `reqwest::Client` field
-//!
-//! `AGENTS.md`'s rule is absolute: once installed, Core makes NO outbound
-//! request without an explicit user action. Every request this package can make
-//! is listed below, and every one of them is behind a button:
-//!
-//! | request                                        | authorised by                       |
-//! | ---------------------------------------------- | ----------------------------------- |
-//! | the npm search endpoint                        | typing in the extensions browser    |
-//! | the npm metadata endpoint (latest version)     | the "Check for updates" button      |
-//! | the npm metadata endpoint (a specific version) | the Install or Update button        |
-//! | an npm tarball                                 | the same Install or Update button   |
-//! | the signed seeded manifest + its CDN tarball   | Install, on a seeded extension      |
-//!
-//! **First-boot seeding is not in that table and must never join it.** The
-//! offline chain reads a planted tarball and a planted signed manifest off disk
-//! and installs from those bytes; if either is missing it defers to the user.
-//! That property is what this seam exists to make provable rather than
-//! observable: a test that runs the offline path and sees no error proves
-//! nothing, because the offline path is also what runs when everything works.
-//! The tests inject an [`Http`] that PANICS on any call, so the assertion is
-//! structural.
-//!
-//! A counter would be the weaker form of the same idea and is deliberately not
-//! here: a counter that never counts always reads zero, so deleting its
-//! increment leaves every consent assertion green (D-050 case 3). A double that
-//! panics cannot be defeated that way.
+//! Every request here is behind a user action (npm search/metadata/tarball,
+//! the signed seeded manifest + CDN tarball). First-boot seeding is NOT one of
+//! them: tests drive offline paths with an [`Http`] that PANICS on any call, so
+//! the no-network property is structural rather than observed.
 
 use std::time::Duration;
 
@@ -34,28 +11,18 @@ use async_trait::async_trait;
 
 use crate::error::{AppError, ErrorCode, Result};
 
-/// How long a SMALL request may take in total: npm metadata, npm search, a
-/// signed manifest.
-///
-/// `shared/net.ts:14`'s `FETCH_TIMEOUT_MS`, which D7 and D13 already agree on.
+/// Whole-request cap for small requests: npm metadata, search, a signed manifest.
 pub const SMALL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long a tarball fetch may take in total.
-///
-/// A whole-request cap rather than a stall window, because an extension tarball
-/// is measured in megabytes rather than the hundred a core binary is, and it is
-/// buffered whole before verification anyway (the integrity gate runs over the
-/// same buffer that gets extracted, so there is nothing to stream to).
+/// Whole-request cap for a tarball fetch (small enough to buffer whole before
+/// verification, so no stall window is needed).
 pub const TARBALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The outbound side of extension installation.
 #[async_trait]
 pub trait Http: Send + Sync {
-    /// A GET whose body is a document: npm metadata, or a signed manifest.
-    ///
-    /// Returns the TEXT rather than a parsed value, because a signature covers
-    /// BYTES. Handing back a parsed struct gives the caller a second chance to
-    /// differ from what was signed, which is the defect D-065 records.
+    /// A GET whose body is a document. Returns text, not a parsed value: a
+    /// signature covers bytes.
     async fn get_text(&self, url: &str) -> Result<String>;
 
     /// A GET whose body is a tarball.
@@ -132,12 +99,7 @@ impl Http for HttpClient {
     }
 }
 
-/// Re-label a transport failure with the code its caller reports.
-///
-/// The specification raises `tarball_fetch_failed` for a tarball and
-/// `manifest_fetch_failed` for metadata over the same `fetch`, so the code is
-/// the CALLER's fact rather than the transport's. Keeping the message means a
-/// support log still says which host and why.
+/// Re-label a transport failure with the code its caller reports, keeping the message.
 pub fn as_code(err: AppError, code: ErrorCode) -> AppError {
     AppError::new(code, err.message)
 }
@@ -175,11 +137,6 @@ fn timed_out(url: &str, after: Duration) -> AppError {
 }
 
 /// An [`Http`] that fails the test if anything reaches it.
-///
-/// The structural half of the no-non-consented-network property. Any path that
-/// is supposed to be offline is driven with this in place, so the assertion is
-/// "the network was not reachable" rather than "the offline path returned Ok",
-/// which is what the offline path also does when everything works.
 #[cfg(test)]
 pub struct NoNetwork;
 
@@ -202,9 +159,6 @@ mod tests {
 
     #[test]
     fn the_two_bounds_are_the_shipping_values_and_are_not_transposed() {
-        // Pinned in both directions because both are plausible-looking numbers
-        // and swapping them gives a tarball 30 seconds and a metadata lookup
-        // two minutes, which fails a slow install and hangs a fast one.
         assert_eq!(SMALL_REQUEST_TIMEOUT, Duration::from_secs(30));
         assert_eq!(TARBALL_TIMEOUT, Duration::from_secs(120));
         assert!(TARBALL_TIMEOUT > SMALL_REQUEST_TIMEOUT);
@@ -229,8 +183,6 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "must not reach the network")]
     async fn the_offline_double_panics_rather_than_returning_an_error() {
-        // An Err would be caught by a caller's `?` and reported as an ordinary
-        // install failure, which is exactly how an accidental fetch would hide.
         let _ = NoNetwork.get_text("https://registry.npmjs.org/x").await;
     }
 }

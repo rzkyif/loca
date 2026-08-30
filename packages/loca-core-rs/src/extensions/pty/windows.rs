@@ -1,24 +1,11 @@
-//! The Windows ConPTY backend.
+//! The Windows ConPTY backend. No termios and no echo cancellation: the worker
+//! protocol rides the loopback control socket ([`super::super::socket`]), and
+//! the pseudoconsole carries only the prompt text out and the y/n answer in.
+//! `portable-pty` attaches ALL the child's std handles to the console, which is
+//! fine precisely because the protocol is elsewhere.
 //!
-//! Ports `loca-core-ptyhost/src/main.rs`'s `mod windows` (lines 448-644).
-//!
-//! Unlike the unix path there is no termios and no echo cancellation to do: the
-//! worker protocol rides the loopback control socket ([`super::super::socket`]),
-//! so nothing byte-exact flows through the pseudoconsole. The ConPTY exists only
-//! so Deno sees stdin and stderr as console handles and shows its interactive
-//! permission prompt; that prompt text streams out as [`PtyEvent::Output`] and
-//! the y/n answer goes back in.
-//!
-//! `portable-pty` wraps `CreatePseudoConsole` plus the `STARTUPINFOEX` attribute
-//! dance, which is not something to hand-roll. It attaches ALL of the child's
-//! std handles to the console, which is the documented reliable shape and is
-//! fine here precisely because the protocol is elsewhere.
-//!
-//! **Unverifiable in this repository.** There is no Windows CI, so everything
-//! below is a port of code that ships and works rather than code that has been
-//! run here. The parts that can be tested without Windows were deliberately
-//! lifted into [`super`]: the DSR scan and the console newline translation are
-//! pure functions with tests that run on every platform.
+//! There is no Windows CI; the parts testable elsewhere (the DSR scan, the
+//! console newline translation) live in [`super`].
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -30,11 +17,8 @@ use crate::error::{internal, Result};
 
 use super::{console_newlines, scan_dsr_queries, PtyEvent, PtySpawn, Spawned, DSR_REPLY};
 
-/// A wide console, so Deno's permission-prompt lines are not wrapped: ConPTY
-/// reflows output at the console width, and a wrapped `Allow?` line does not
-/// match the parser's tail pattern, which hangs the prompt until the give-up
-/// kill. Prompt lines and the longest resource strings (URLs, paths) stay well
-/// under this.
+/// Wide, so ConPTY never wraps an `Allow?` line (which would break the parser's
+/// tail pattern and hang the prompt).
 const CONSOLE_COLS: u16 = 8192;
 const CONSOLE_ROWS: u16 = 50;
 
@@ -48,9 +32,8 @@ pub struct PtySession {
 }
 
 impl PtySession {
-    /// On Windows this carries no protocol: the console input takes only the
-    /// prompt answer, so `write` and [`PtySession::answer`] are the same
-    /// operation. Both are kept so the caller stays platform-agnostic.
+    /// Same as [`PtySession::answer`] here: console input takes only the prompt
+    /// answer. Both exist so the caller stays platform-agnostic.
     pub fn write(&self, bytes: &[u8]) {
         self.write_console(bytes);
     }
@@ -82,8 +65,6 @@ pub fn spawn(spec: PtySpawn) -> Result<Spawned> {
         })
         .map_err(|e| internal(format!("openpty (conpty) failed: {e}")))?;
 
-    // The child's environment is exactly `env`, the same contract as the unix
-    // path and as D14's `Spawn`.
     let mut builder = CommandBuilder::new(&spec.program);
     builder.args(&spec.args);
     builder.env_clear();
@@ -110,20 +91,17 @@ pub fn spawn(spec: PtySpawn) -> Result<Spawned> {
             .take_writer()
             .map_err(|e| internal(format!("take writer failed: {e}")))?,
     ));
-    // The master must stay alive while the child runs (dropping it tears down
-    // the pseudoconsole) and must be dropped as soon as the child exits: ConPTY
-    // never EOFs its output pipe on child exit by itself. The host has to close
-    // the pseudoconsole, via this Drop, which ends conhost and lets the reader
-    // drain the tail and hit EOF. The waiter owns it for exactly that lifecycle.
+    // Dropping the master tears down the pseudoconsole, and ConPTY never EOFs
+    // its output pipe on child exit by itself, so the waiter owns it: alive
+    // while the child runs, dropped right after so the reader can hit EOF.
     let master = pair.master;
 
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let (kill_tx, mut kill_rx) = mpsc::unbounded_channel::<()>();
     let (drained_tx, drained_rx) = oneshot::channel();
 
-    // Console output to Core, plus the DSR handshake. conhost blocks the WHOLE
-    // session on its first cursor-position query until it is answered, so the
-    // reply has to happen right here rather than anywhere further up.
+    // conhost blocks the whole session on its first cursor-position query, so
+    // the DSR reply happens right here.
     let reader_tx = event_tx.clone();
     let dsr_writer = Arc::clone(&writer);
     std::thread::Builder::new()
@@ -154,9 +132,7 @@ pub fn spawn(spec: PtySpawn) -> Result<Spawned> {
         })
         .map_err(|e| internal(format!("{}: could not start the reader: {e}", spec.label)))?;
 
-    // `child.wait()` is blocking, and `kill()` needs the killer handle while it
-    // blocks, so the waiter lives on a blocking thread and the kill request
-    // arrives over the channel.
+    // `child.wait()` blocks, so the kill request arrives over a channel.
     let pid = child.process_id();
     let killer = Arc::new(Mutex::new(child.clone_killer()));
     let kill_watcher = Arc::clone(&killer);
@@ -174,7 +150,6 @@ pub fn spawn(spec: PtySpawn) -> Result<Spawned> {
                 Ok(status) => Some(status.exit_code() as i32),
                 Err(_) => None,
             };
-            // Close the pseudoconsole so conhost ends and the reader can EOF.
             drop(master);
             code
         })
@@ -190,8 +165,6 @@ pub fn spawn(spec: PtySpawn) -> Result<Spawned> {
             kill: kill_tx,
         },
         events: event_rx,
-        // Under a ConPTY the child's stdout is bound to the pseudoconsole, so
-        // there is no protocol pipe. The control socket carries it instead.
         stdout: None,
         pid,
     })

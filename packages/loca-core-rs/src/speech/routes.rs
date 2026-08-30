@@ -1,14 +1,10 @@
-//! The speech route slice: `/api/v1/stt` and `/api/v1/tts`.
-//!
-//! Both prefixes in one slice because both are served by one service over one
-//! pair of providers, and splitting them would mean two mounts and two copies
-//! of the same state.
+//! The speech route slice: `/api/v1/stt` and `/api/v1/tts`, in one slice
+//! because both are served by one service over one pair of providers.
 //!
 //! Every route requires a paired client and none has an admin tier. The
-//! handlers do as little as possible: shape the request, hand it to
-//! [`SpeechService`], render the answer. Every bound and every provider choice
-//! is the service's, so the extension broker's speech ops get the same
-//! behaviour without going through HTTP.
+//! handlers shape the request, hand it to [`SpeechService`] and render the
+//! answer; every bound and provider choice is the service's, so the extension
+//! broker's speech ops get the same behaviour without HTTP.
 
 use std::sync::Arc;
 
@@ -31,10 +27,8 @@ use crate::transport::state::AppContext;
 use super::engine::{AudioClip, LocalSpeech, Synthesis};
 use super::SpeechService;
 
-/// `sidecars` and `local` are threaded in rather than built here: the registry
-/// is the core's one subsystem table, and the local engine owns its model
-/// memory and its request queue, so a second instance of either would answer
-/// from state the rest of the core cannot see.
+/// `sidecars` and `local` are threaded in rather than built here: a second
+/// instance of either would answer from state the rest of the core cannot see.
 pub fn routes(
     ctx: &AppContext,
     sidecars: Arc<Manager>,
@@ -96,13 +90,10 @@ async fn transcribe(
         .map_err(|err| validation(format!("malformed multipart body: {err}")))?
     {
         match field.name() {
-            // The FIRST part named `audio` is the upload, whatever it turns out
-            // to be, because that is the one `form.get("audio")` returns on the
-            // other side. A part with no filename is a text field rather than a
-            // file, which is the distinction `audio instanceof File` draws, and
-            // a later file part does not rescue it: without both halves,
-            // `audio=hello` followed by a real clip reads as a valid upload
-            // where the specification calls it a bad request.
+            // The FIRST part named `audio` is the upload, whatever it turns
+            // out to be, and a part with no filename is a text field rather
+            // than a file. Without both halves `audio=hello` followed by a real
+            // clip reads as a valid upload rather than a bad request.
             Some("audio") if !audio_seen => {
                 audio_seen = true;
                 let Some(filename) = field.file_name().map(str::to_string) else {
@@ -119,8 +110,7 @@ async fn transcribe(
                 });
             }
             // A part that cannot be read is a broken request, not an absent
-            // hint: reading the form is one operation on the other side and it
-            // fails whole.
+            // hint: reading the form is one operation and it fails whole.
             Some("language") if language.is_none() => {
                 language = Some(field.text().await.map_err(|err| {
                     validation(format!("could not read the language field: {err}"))
@@ -146,8 +136,7 @@ async fn stt_status(State(service): State<SpeechService>) -> Result<Json<SttStat
 
 /// Synthesis loads and unloads with the engine, which follows `tts.enabled` and
 /// the model files on disk. These two exist for the calls the client already
-/// makes; making them do something would be a product change rather than a
-/// port, and it would take a lifecycle pair on the local engine trait.
+/// makes.
 async fn load() -> Response {
     no_content()
 }

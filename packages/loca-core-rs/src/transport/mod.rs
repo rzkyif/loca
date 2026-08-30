@@ -1,11 +1,6 @@
 //! HTTPS/WSS transport: the router every package mounts into, the per-boot TLS,
 //! the WebSocket hub, the frame bus, and the core-status aggregator.
 //!
-//! Work package **F6** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here, except that
-//! [`router`] is orchestrator-owned because it is where every other package's
-//! route slice is mounted.
-//!
 //! # Two frontends, one service
 //!
 //! ```text
@@ -23,9 +18,8 @@
 //!
 //! [`Core`] is the whole service, reachable with or without a socket.
 //! [`server`] is the only file below it that knows what a socket is, and
-//! [`Core::call`] reaches the same router with none. That is not a convenience:
-//! it is why the mobile client can embed the real Core rather than a
-//! reimplementation, and why the two paths cannot drift.
+//! [`Core::call`] reaches the same router with none: that is what lets the
+//! mobile client embed the real Core, and what stops the two paths drifting.
 
 pub mod frame_bus;
 pub mod health;
@@ -75,8 +69,6 @@ pub struct Core {
 impl Core {
     /// `services` carries the handles a route slice needs by value, including
     /// the concrete `Auth` alongside the `dyn ClientAuth` already in `ctx`.
-    /// `boot` owns every one of them; see [`router::Services`] for why they are
-    /// threaded rather than constructed per slice.
     pub fn new(ctx: AppContext, services: router::Services) -> Self {
         let (shutdown, _) = watch::channel(false);
         Self {

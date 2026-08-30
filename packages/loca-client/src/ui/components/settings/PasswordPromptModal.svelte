@@ -1,6 +1,6 @@
 <script lang="ts">
   import { errMessage } from "@loca/shared";
-  import { passwordPromptState } from "$stores/password-prompt.svelte";
+  import { passwordPromptState } from "$stores/overlays.svelte";
   import PasswordPromptModalView from "@loca/shared/ui/components/settings/PasswordPromptModalView.svelte";
 
   // Local field state, reset whenever a new request arrives so one prompt's

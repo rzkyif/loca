@@ -1,15 +1,5 @@
-//! The npm registry client: three endpoints, none of them reachable from boot.
-//!
-//! Ports `packages/loca-core/src/extensions/npm-registry.ts`.
-//!
-//! | endpoint                    | backs                                     |
-//! | --------------------------- | ----------------------------------------- |
-//! | `/-/v1/search`              | the extensions browser's search field     |
-//! | `/{name}` (dist-tags only)  | `POST /extensions/check-updates`          |
-//! | `/{name}` (a version entry) | a user-triggered download or update       |
-//!
-//! Every one is a user action, which is why they may fetch at all. See
-//! [`super::net`] for the property and how it is held.
+//! The npm registry client: search, `dist-tags.latest` for update checks, and
+//! a version entry for a download. Every call is a user action.
 
 use serde::Deserialize;
 
@@ -20,9 +10,7 @@ use super::net::Http;
 
 pub const REGISTRY_BASE: &str = "https://registry.npmjs.org";
 
-/// Only packages carrying this keyword are offered. An npm-wide search would
-/// surface tens of thousands of packages that cannot be installed as
-/// extensions, and the user would find that out one failed install at a time.
+/// Only packages carrying this keyword are offered; anything else cannot install.
 const SEARCH_KEYWORD: &str = "loca-extension";
 
 /// One resolved version, enough to fetch and verify its tarball.
@@ -32,8 +20,7 @@ pub struct NpmPackageVersion {
     pub tarball_url: String,
     /// npm's legacy `dist.shasum`, which is SHA-1 and weak.
     pub shasum: Option<String>,
-    /// npm's `dist.integrity`, a Subresource-Integrity string
-    /// (`sha512-<base64>`). The strong hash the tarball is verified against.
+    /// npm's `dist.integrity` (`sha512-<base64>`), what the tarball is verified against.
     pub integrity: Option<String>,
     pub description: Option<String>,
     pub homepage: Option<String>,
@@ -70,10 +57,6 @@ pub async fn search(
 }
 
 /// The `dist-tags.latest` of a package, for an update check.
-///
-/// Deliberately lighter than [`resolve_version`]: an update check runs over
-/// every installed extension in turn and needs one string from each, so it does
-/// not resolve a tarball URL or its integrity metadata.
 pub async fn resolve_latest_version(http: &dyn Http, name: &str) -> Result<String> {
     let url = metadata_url(name);
     let body = http.get_text(&url).await?;
@@ -96,10 +79,7 @@ pub async fn resolve_version(
     let body = http.get_text(&url).await?;
     let meta: Metadata = parse(&body, &url)?;
     let latest = meta.dist_tags.get("latest");
-    // A caret range is not resolved here: npm's metadata carries no answer for
-    // one, and the alternative would be a semver range solver over every
-    // published version. `^1.2.3` therefore means "the current latest", which is
-    // what the user pressing Update wants and what the specification does.
+    // A caret range means "the current latest": no semver solver here.
     let requested = match version_spec {
         Some(spec) if !spec.starts_with('^') => Some(spec.to_string()),
         _ => None,
@@ -140,23 +120,14 @@ fn parse<'a, T: Deserialize<'a>>(body: &'a str, url: &str) -> Result<T> {
     })
 }
 
-/// `license` and `homepage` are strings in the npm schema and are not always
-/// strings in the npm registry: packages old enough predate it and publish
-/// `{"type":"MIT","url":"..."}` for a license.
-///
-/// Typing them as `String` makes the whole metadata document unparseable for
-/// those packages, so one badly-published dependency of an unrelated package
-/// would make an extension impossible to install. They are read as JSON and
-/// narrowed here instead, and a non-string is simply absent.
+/// `license` and `homepage` are not always strings in the registry (old packages
+/// publish `{"type":"MIT",...}`); a non-string is simply absent rather than
+/// making the whole document unparseable.
 fn as_text(value: &serde_json::Value) -> Option<String> {
     value.as_str().map(str::to_string)
 }
 
-/// `encodeURIComponent`, for one path segment.
-///
-/// A scoped package name contains `@` and `/`, and the `/` is the one that
-/// matters: unencoded it turns `@scope/pkg` into two path segments, and the
-/// registry answers 404 for a package that exists.
+/// `encodeURIComponent`, so `@scope/pkg` stays one path segment.
 fn uri_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -169,12 +140,7 @@ fn uri_component(value: &str) -> String {
     out
 }
 
-/// The `application/x-www-form-urlencoded` serialiser, for one query value.
-///
-/// Space becomes `+` rather than `%20`, which is what `URLSearchParams`
-/// produces and what the search text needs: the query is
-/// `keywords:loca-extension <terms>` and the space between them is a separator
-/// npm's search parses.
+/// `application/x-www-form-urlencoded` (space is `+`), matching `URLSearchParams`.
 fn form_encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -272,10 +238,6 @@ mod tests {
     use async_trait::async_trait;
 
     /// Answers a canned body and records every URL it was asked for.
-    ///
-    /// The URL is half of what these functions do, so a double that only
-    /// returned a body would leave the encoding, the keyword filter and the
-    /// paging untested while every assertion about the parsed result passed.
     struct Canned {
         body: String,
         urls: Mutex<Vec<String>>,
@@ -333,8 +295,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_search_url_carries_the_keyword_filter_the_query_and_the_page() {
-        // Losing the keyword turns this into an npm-wide search: every result
-        // still renders, and every one of them fails to install.
         let http = Canned::new(r#"{"objects":[]}"#);
         search(&http, "audio tools", 25, 50).await.unwrap();
         let url = http.url();
@@ -397,8 +357,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_scoped_name_is_encoded_into_one_path_segment() {
-        // Unencoded, `@acme/thing` is two path segments and the registry
-        // answers 404 for a package that exists, which reads as "not published".
         let http = Canned::new(metadata_body());
         resolve_latest_version(&http, "@acme/thing").await.unwrap();
         assert_eq!(
@@ -422,9 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_latest_lookup_reads_the_latest_tag_and_not_another_one() {
-        // `next` is 3.0.0-rc.1 and deliberately higher: reading "the largest
-        // version" or "the first tag" would offer a release candidate as an
-        // update to every user.
+        // `next` is deliberately higher than `latest`.
         let http = Canned::new(metadata_body());
         assert_eq!(resolve_latest_version(&http, "x").await.unwrap(), "2.1.0");
     }
@@ -464,9 +420,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_caret_range_resolves_to_latest_rather_than_being_looked_up_verbatim() {
-        // `^1.0.0` is not a key in `versions`, so treating it as an exact
-        // request answers "no metadata for x@^1.0.0" for a package that is
-        // installable.
         let http = Canned::new(metadata_body());
         let resolved = resolve_version(&http, "x", Some("^1.0.0")).await.unwrap();
         assert_eq!(resolved.version, "2.1.0");
@@ -484,9 +437,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_object_shaped_license_leaves_the_package_installable() {
-        // Packages old enough publish `{"type":"MIT"}`. Typing the field as a
-        // String makes the whole document unparseable, so the extension cannot
-        // be installed at all over a field nothing depends on.
         let http = Canned::new(
             serde_json::json!({
                 "dist-tags": { "latest": "1.0.0" },
@@ -506,8 +456,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_registry_response_is_an_error_rather_than_an_empty_list() {
-        // An empty list reads to the user as "no extensions match", which is a
-        // wrong answer where an error is a correct one.
         let http = Canned::new("<!doctype html><html>maintenance</html>");
         let err = search(&http, "x", 50, 0).await.unwrap_err();
         assert_eq!(err.code, ErrorCode::ManifestFetchFailed);

@@ -1,23 +1,12 @@
-//! Hardware detection for the fit engine. Absorbs the `loca-core-hwinfo`
-//! helper binary.
+//! Hardware detection for the fit engine.
 //!
-//! The Deno core shelled out to a helper that printed one JSON object and fell
-//! back to Deno's own memory and concurrency APIs when it was missing, which
-//! covered RAM and cores but guessed the GPU. Both halves collapse into this
-//! module: there is no spawn, no JSON envelope, no presence check, and no
-//! degraded path. What the helper detected is what the core detects.
-//!
-//! Three things differ from a literal transcription of the helper, each on
-//! purpose:
-//!
-//! 1. **The macOS CPU brand no longer shells out to `sysctl`.** `sysinfo` reads
-//!    the same `machdep.cpu.brand_string` (`unix/apple/cpu.rs:412`), so the
-//!    string is identical and one subprocess disappears.
-//! 2. **The Vulkan probe is gated to Linux and Windows**, not to "not macOS".
-//!    `loca-core-ffi` is a staticlib (D-004), so the helper's gate would archive
-//!    a Vulkan loader into the mobile build for a probe it never runs.
-//! 3. **Detection is cached on the `Models` handle, not in a module global**
-//!    (D-010), so a test builds its own and there is nothing to reset.
+//! Three things are deliberate. The Vulkan probe is gated to Linux and Windows
+//! rather than to "not macOS", because `loca-core-ffi` is a staticlib and a
+//! "not macOS" gate would archive a Vulkan loader into the mobile build for a
+//! probe it never runs. Detection is cached on the `Models` handle rather than
+//! in a module global, so a test builds its own and there is nothing to reset.
+//! And the macOS CPU brand comes from `sysinfo` rather than a `sysctl`
+//! subprocess, which reads the same `machdep.cpu.brand_string`.
 //!
 //! Detection never fails. Every probe returns an `Option` and the chain
 //! terminates at a CPU backend with no VRAM, because a wrong-but-conservative
@@ -47,18 +36,17 @@ pub fn detect() -> HardwareInfo {
     }
 }
 
-/// Physical cores, with two fallbacks. The final 4 matters: `threads_for` in
-/// the fit engine clamps with `max(1, ...)`, so a zero here would silently halve
-/// inference throughput rather than crash, which is the kind of defect nobody
-/// reports.
+/// Physical cores, with two fallbacks. The final 4 matters: `threads_for` clamps
+/// with `max(1, ...)`, so a zero here would silently halve inference throughput
+/// rather than crash.
 fn physical_cores() -> i64 {
     System::physical_core_count()
         .or_else(|| std::thread::available_parallelism().ok().map(|n| n.get()))
         .unwrap_or(4) as i64
 }
 
-/// The CPU brand, which is what the helper used as the Apple GPU's name.
-/// Unused on the mobile targets, which report a CPU backend and a fixed name.
+/// The CPU brand, which doubles as the Apple GPU's name. Unused on the mobile
+/// targets, which report a CPU backend and a fixed name.
 #[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
 fn cpu_brand(sys: &System) -> Option<String> {
     let brand = sys.cpus().first()?.brand().trim().to_string();
@@ -69,41 +57,26 @@ fn cpu_brand(sys: &System) -> Option<String> {
     }
 }
 
-/// Mobile. **Both phone targets are CPU-only for v1, and this is the branch
-/// that has to say so**, because the fit engine turns `gpu.backend` straight
-/// into `gpuLayers`: any non-CPU backend resolves to 999, "offload every layer".
+/// Mobile. **Both phone targets are CPU-only, and this is the branch that has to
+/// say so**, because the fit engine turns `gpu.backend` straight into
+/// `gpuLayers`: any non-CPU backend resolves to 999, "offload every layer", and
+/// `build.rs` defines `GGML_METAL=ON` for macOS only.
 ///
-/// iOS previously fell into the Apple branch below and reported `Metal`, which
-/// is wrong at this pin. `build.rs` defines `GGML_METAL=ON` for **macOS only**
-/// and `GGML_ACCELERATE=ON` for the Apple targets, so an iPhone would have been
-/// told to offload every layer to a backend the binary does not contain.
-/// Android reached the correct answer, but by exhaustion: it fell through to
-/// the vendor probes and spawned `nvidia-smi`, then the ROCm probe, then
-/// `vulkaninfo`, on every detect, for binaries that cannot exist on Android.
-///
-/// `unified_memory: true` is not a claim about a GPU. It is what makes
+/// `unified_memory: true` is not a claim about a GPU: it is what makes
 /// `memory_budget_bytes` use total RAM rather than a VRAM figure, which is the
-/// correct model for a phone and the one the mobile fit profile is built on.
+/// correct model for a phone.
 ///
 /// **iOS is excluded from the Apple branches explicitly**, by the
-/// `not(target_os = "ios")` on each of them. Ordering does nothing here: `#[cfg]`
-/// has no "first match wins", and two enabled definitions of `detect_gpu` are a
-/// duplicate-definition compile error rather than a fallthrough. An earlier
-/// version of this comment credited ordering, which would have led a reader who
-/// removed the `not(...)` to expect a fallthrough and get a build failure.
+/// `not(target_os = "ios")` on each of them. `#[cfg]` has no "first match wins",
+/// so two enabled definitions of `detect_gpu` are a duplicate-definition compile
+/// error rather than a fallthrough.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 fn detect_gpu(_sys: &System, _total_ram_bytes: u64) -> (GpuInfo, bool) {
     mobile_gpu()
 }
 
-/// The mobile answer, compiled on EVERY platform so it can be tested.
-///
-/// The `cfg`-gated `detect_gpu` above cannot be run by a host test binary, so
-/// the workstream's only change shipped with compilation as its evidence and an
-/// existing test sixty lines below asserting the opposite of what it returns.
-/// That is D-117, which this package cited when it deliberately compiled
-/// `secrets/android.rs` everywhere and then did not apply the same reasoning one
-/// module over. Splitting the value out of the `cfg` is what makes it checkable.
+/// The mobile answer, compiled on EVERY platform so it can be tested: the
+/// `cfg`-gated `detect_gpu` above cannot be run by a host test binary.
 #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
 fn mobile_gpu() -> (GpuInfo, bool) {
     (
@@ -131,10 +104,9 @@ fn cpu_gpu() -> (GpuInfo, bool) {
     )
 }
 
-/// Apple Silicon on macOS, where the GPU shares system RAM and Metal is
-/// always present AND linked (`build.rs` defines `GGML_METAL=ON` for macOS
-/// only). iOS is excluded here and handled by the mobile branch above: it is an
-/// Apple aarch64 target with no Metal backend in the binary.
+/// Apple Silicon on macOS, where the GPU shares system RAM and Metal is always
+/// present AND linked. iOS is excluded and handled by the mobile branch above:
+/// it is an Apple aarch64 target with no Metal backend in the binary.
 #[cfg(all(
     target_vendor = "apple",
     target_arch = "aarch64",

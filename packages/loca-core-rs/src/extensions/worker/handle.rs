@@ -1,10 +1,7 @@
 //! One running worker: its protocol channel, its terminal, and the permission
 //! prompts that come off it.
 //!
-//! Ports the runtime half of `packages/loca-core/src/extensions/worker-handle.ts`.
 //! The spawn half is [`super::spawn_plan`].
-//!
-//! # What this owns that nothing else can
 //!
 //! A Deno permission prompt arrives as TEXT on a terminal, at an arbitrary
 //! moment, with no call attached to it. Turning that into either an auto-denial
@@ -44,28 +41,19 @@ const ANSWER_RETRY: Duration = Duration::from_millis(600);
 const ANSWER_GIVEUP: Duration = Duration::from_secs(10);
 
 /// An oversized partial frame with no newline is dropped rather than buffered.
-/// Protocol frames are normally tiny; this is headroom for a large tool result.
-///
-/// Bounds a frame on whichever transport carries it: the worker's stdout on
-/// unix, the loopback control socket under a ConPTY. One constant, because the
-/// bound is a property of the protocol rather than of the pipe.
+/// One constant across both transports (stdout on unix, the loopback control
+/// socket under a ConPTY), because the bound belongs to the protocol.
 pub(crate) const MAX_PROTOCOL_FRAME_BYTES: usize = 16_000_000;
 
-/// A runaway stderr line is truncated with a marker. Log lines, so a far smaller
-/// bound than the protocol's. Different failure, different fix, so the two are
-/// separate constants rather than one shared one.
+/// A runaway stderr line is truncated with a marker. Log lines, so a far
+/// smaller bound than the protocol's.
 const MAX_STDERR_LINE_BYTES: usize = 1_000_000;
 
 const TRUNCATION_MARKER: &str = " …[truncated]";
 
-/// The terminal a worker's prompts arrive on.
-///
-/// A trait rather than the concrete [`crate::extensions::pty::PtySession`] for
-/// one reason: the prompt handshake is the most security-critical state machine
-/// in this package and it is driven entirely by timing. Behind this seam it can
-/// be tested against a recording terminal on a paused clock, which is both exact
-/// and instant; against a real `deno` it would be neither, and the live probe
-/// covers that end separately.
+/// The terminal a worker's prompts arrive on. A trait rather than the concrete
+/// [`crate::extensions::pty::PtySession`] so the timing-driven prompt handshake
+/// can be tested on a paused clock; the live probe covers the real end.
 pub trait Terminal: Send + Sync + 'static {
     /// Worker-protocol bytes. Echo-tracked on unix.
     fn write(&self, bytes: &[u8]);
@@ -105,22 +93,14 @@ enum Command {
     Shutdown(oneshot::Sender<()>),
 }
 
-/// The subscriber list, shared between the handle and its driver.
-///
-/// Shared state rather than a `Subscribe` command on purpose: a command would
-/// be processed by the driver's `select!` in a race with the first event, and a
-/// caller that subscribed and then fed the worker could miss the answer to its
-/// own frame. That is a bug that reproduces one run in ten and looks like a
-/// worker hang.
+/// The subscriber list, shared between the handle and its driver. Shared state
+/// rather than a `Subscribe` command, which the driver's `select!` would race
+/// against the first event.
 type Listeners = Arc<Mutex<Vec<mpsc::UnboundedSender<WorkerEvent>>>>;
 
-/// How far a worker has got through starting up.
-///
-/// A LATCH rather than an event, because a warm worker booted minutes ago and
-/// its `booted` frame is long gone. A call arriving on it must not wait ten
-/// seconds for a frame that will never come again, which is what a plain
-/// "await the next boot event" gets wrong and what makes every reused worker
-/// look like a boot timeout.
+/// How far a worker has got through starting up. A LATCH rather than an event:
+/// a warm worker's `booted` frame is long gone, and awaiting the next one makes
+/// every reused worker look like a boot timeout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BootState {
     Waiting,
@@ -131,12 +111,8 @@ pub enum BootState {
     Failed(String),
 }
 
-/// Distinguishes one worker process from the next.
-///
-/// The pool needs it for an identity check: a settle belonging to a worker that
-/// has already been replaced must not tear down its replacement. Comparing
-/// handles by value cannot express that, and comparing by extension id would
-/// make every replacement look like the worker it replaced.
+/// Distinguishes one worker process from the next, so a settle belonging to an
+/// already-replaced worker cannot tear down its replacement.
 static NEXT_WORKER_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A handle to one worker. Cheap to clone; every clone drives the same process.
@@ -166,10 +142,8 @@ impl std::fmt::Debug for WorkerHandle {
 }
 
 impl WorkerHandle {
-    /// Start the driver over an already-spawned worker.
-    ///
-    /// `terminal` is `None` in pipe mode, where there is nothing to prompt on
-    /// and nothing to answer with.
+    /// Start the driver over an already-spawned worker. `terminal` is `None` in
+    /// pipe mode, where there is nothing to prompt on.
     pub fn start(
         extension_id: String,
         incoming: mpsc::UnboundedReceiver<Incoming>,
@@ -212,11 +186,9 @@ impl WorkerHandle {
         }
     }
 
-    /// Resolve once this worker has booted.
-    ///
-    /// Returns immediately for a warm worker, because [`BootState`] is a latch
-    /// rather than an event. `Err` for a worker that reported `boot_failed`,
-    /// died before booting, or has said nothing at all within `budget`.
+    /// Resolve once this worker has booted. Immediate for a warm one, because
+    /// [`BootState`] is a latch. `Err` for a worker that reported
+    /// `boot_failed`, died before booting, or said nothing within `budget`.
     pub async fn wait_for_boot(&self, budget: Duration) -> Result<()> {
         let mut boot = self.boot.clone();
         let settled = async {
@@ -232,14 +204,9 @@ impl WorkerHandle {
                     BootState::Waiting => {}
                 }
                 if boot.changed().await.is_err() {
-                    // The driver stopped without recording a verdict. Distinct
-                    // wording from the exit path below on purpose: this one
-                    // means an internal channel closed, which is a Core bug,
-                    // where "exited before booting" means the extension's
-                    // process died, which is an extension problem. One message
-                    // for both sends every reader to the wrong layer, and it
-                    // also makes the exit path's own latch untestable, because
-                    // deleting it would look identical from out here.
+                    // Worded differently from the exit path on purpose: a
+                    // closed internal channel is a Core bug, where "exited
+                    // before booting" is the extension's process dying.
                     return Err(AppError::new(
                         ErrorCode::InternalError,
                         "worker boot failed: the worker driver stopped without a verdict",
@@ -291,9 +258,8 @@ impl WorkerHandle {
     }
 
     pub fn call_settled(&self) {
-        // Saturating: a settle path that ran twice must not wrap to
-        // `usize::MAX`, which would make the worker look permanently busy and
-        // exempt from eviction forever.
+        // Saturating: a doubled settle must not wrap to `usize::MAX` and leave
+        // the worker permanently busy and un-evictable.
         let _ = self
             .in_flight
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
@@ -302,16 +268,14 @@ impl WorkerHandle {
     }
 
     /// True once a user-forwarded prompt settled during this worker's lifetime.
-    ///
-    /// Deno caches a permission verdict for the PROCESS lifetime while the
-    /// user's answer was scoped to one call, so the pool must retire a worker
-    /// this is true of rather than returning it to the warm set.
+    /// Deno caches the verdict for the PROCESS while the answer was scoped to
+    /// one call, so the pool must retire such a worker rather than reuse it.
     pub fn prompt_answered_by_user(&self) -> bool {
         self.prompt_answered_by_user.load(Ordering::SeqCst)
     }
 
     /// Stand in for a prompt the user answered, so the pool's retirement rule
-    /// can be tested without a terminal and a policy behind it.
+    /// needs no terminal.
     #[cfg(test)]
     pub(crate) fn mark_prompt_answered_for_test(&self) {
         self.prompt_answered_by_user.store(true, Ordering::SeqCst);
@@ -338,8 +302,8 @@ impl WorkerHandle {
 /// A prompt that has been seen and not yet settled.
 struct Pending {
     request_id: String,
-    /// True only when it was actually FORWARDED to the user. An auto-denied
-    /// prompt must not retire the worker: nothing was granted by anyone.
+    /// True only when it was actually FORWARDED: an auto-denied prompt granted
+    /// nothing, so it must not retire the worker.
     forwarded: bool,
     seen_at: Instant,
 }
@@ -359,9 +323,8 @@ struct Driver {
     env: Arc<dyn EnvLookup + Send + Sync>,
     listeners: Listeners,
     parser: PromptParser,
-    /// Frames held while a prompt is pending: Deno's `clear_stdin` would flush
-    /// anything written to the terminal before it reads the answer, so a frame
-    /// sent during that window is destroyed rather than delivered.
+    /// Frames held while a prompt is pending: Deno's `clear_stdin` flushes the
+    /// terminal before reading the answer, destroying anything written into it.
     send_queue: Vec<String>,
     prompt: Option<Pending>,
     answering: Option<Answering>,
@@ -378,18 +341,16 @@ impl Driver {
     ) {
         let mut shutdown_ack: Option<oneshot::Sender<()>> = None;
         loop {
-            // Only armed while an answer is outstanding. `sleep_until` on a
-            // tokio Instant, so a paused clock in a test moves it (D-038).
+            // Only armed while an answer is outstanding.
             let tick = self.answering.as_ref().map(|a| a.next_write);
             tokio::select! {
                 event = incoming.recv() => match event {
                     Some(Incoming::ProtocolLine(line)) => self.on_protocol_line(&line),
                     Some(Incoming::Terminal(bytes)) => self.on_terminal(&bytes),
                     Some(Incoming::Exited { code }) => {
-                        // Fail any waiter BEFORE the exit event. A call still
-                        // waiting on boot has no listener attached yet, so the
-                        // exit event alone would leave it waiting out the full
-                        // boot budget for a process that is already gone.
+                        // BEFORE the exit event: a call still waiting on boot has
+                        // no listener yet, so the event alone would leave it
+                        // waiting out the full budget.
                         self.fail_boot("the worker exited before it booted");
                         self.emit(WorkerEvent::WorkerExited { code });
                         break;
@@ -442,9 +403,8 @@ impl Driver {
     }
 
     fn on_shutdown(&mut self) {
-        // Stop any answer-retry loop first, so it cannot keep firing (and
-        // re-issuing a kill) for up to the give-up budget after the worker is
-        // already gone.
+        // Stop any answer-retry loop first, or it keeps firing (and re-issuing
+        // a kill) for the give-up budget after the worker is gone.
         self.prompt = None;
         self.answering = None;
         self.on_send(PoolToWorker::Shutdown);
@@ -458,9 +418,7 @@ impl Driver {
             return;
         }
         match parse_worker_frame(line) {
-            // The three lifecycle frames are consumed here rather than
-            // emitted: they belong to the worker, not to any call, and a call
-            // that saw them would have to filter them back out.
+            // The three lifecycle frames belong to the worker, not to any call.
             Some(WorkerToPool::Ready) => {}
             Some(WorkerToPool::Booted { .. }) => {
                 let _ = self.boot.send(BootState::Booted);
@@ -525,8 +483,7 @@ impl Driver {
         };
 
         // Fail closed, path one: a prompt kind that cannot be declared, granted
-        // or rendered (Deno also prompts for `import`), or a policy that says
-        // deny.
+        // or rendered (Deno also prompts for `import`), or a deny policy.
         let Some(decision) = decision.filter(|d| d.action == PromptAction::Forward) else {
             self.emit(WorkerEvent::StderrLog {
                 line: format!("auto-denied {permission} access to {shown} (permission policy)"),
@@ -535,12 +492,9 @@ impl Driver {
             return;
         };
 
-        // Fail closed, path two: a Deno prompt blocks the worker's WHOLE
-        // isolate, and the synthesized frame carries no call id, so with more
-        // than one call sharing this worker the prompt cannot be attributed to
-        // either. Forwarding it would show one user a prompt caused by another
-        // user's call. The affected call sees NotCapable, exactly as in pipe
-        // mode.
+        // Fail closed, path two: a Deno prompt blocks the WHOLE isolate and
+        // carries no call id, so with two calls sharing this worker it would
+        // show one user a prompt caused by another's call.
         if self.in_flight.load(Ordering::SeqCst) > 1 {
             self.emit(WorkerEvent::StderrLog {
                 line: format!(
@@ -568,10 +522,9 @@ impl Driver {
     fn on_settled(&mut self) {
         if let Some(pending) = self.prompt.take() {
             if pending.forwarded {
-                // Only a prompt the USER answered retires the worker. Deno
-                // caches the verdict for the process lifetime while the answer
-                // was scoped to one call, so reusing this process would carry
-                // the grant into the next call silently.
+                // Only a USER-answered prompt retires the worker: Deno caches
+                // the verdict for the process, so reuse would carry the grant
+                // silently into the next call.
                 self.prompt_answered_by_user.store(true, Ordering::SeqCst);
             }
         }
@@ -583,8 +536,7 @@ impl Driver {
     }
 
     fn on_answer_command(&mut self, request_id: &str, allow: bool) {
-        // A response for a prompt that has already settled must not answer
-        // whatever prompt is pending now.
+        // A response for an already-settled prompt must not answer this one.
         let matches = self
             .prompt
             .as_ref()
@@ -598,10 +550,8 @@ impl Driver {
     fn start_answer(&mut self, allow: bool) {
         let seen_at = self.prompt.as_ref().map(|p| p.seen_at);
         let now = Instant::now();
-        // The initial delay is measured from when the PROMPT appeared, not from
-        // now: a user who took ten seconds to answer has already waited out
-        // Deno's flush window, and re-imposing it would add 300ms to every
-        // forwarded prompt for nothing.
+        // Measured from when the PROMPT appeared, not from now: a user who took
+        // ten seconds has already waited out Deno's flush window.
         let first = seen_at
             .map(|seen| seen + ANSWER_INITIAL_DELAY)
             .unwrap_or(now + ANSWER_INITIAL_DELAY)
@@ -626,9 +576,9 @@ impl Driver {
             return;
         }
         if Instant::now().duration_since(answering.started) > ANSWER_GIVEUP {
-            // The confirmation never came: a prompt-format change, or a wedged
-            // terminal. Fail closed by killing the worker; the in-flight call
-            // then settles through the exit path rather than hanging.
+            // The confirmation never came (a prompt-format change, a wedged
+            // terminal). Kill, so the in-flight call settles through the exit
+            // path rather than hanging.
             self.answering = None;
             self.emit(WorkerEvent::StderrLog {
                 line: "permission prompt answer was not accepted; killing worker".to_string(),
@@ -648,8 +598,7 @@ impl Driver {
     // --- plumbing -----------------------------------------------------------
 
     /// Latch a boot failure, unless the worker had already booted: a process
-    /// that ran for an hour and then died did not fail to BOOT, and reporting
-    /// it that way would send every later caller looking at the wrong thing.
+    /// that ran for an hour and then died did not fail to BOOT.
     fn fail_boot(&mut self, error: &str) {
         self.boot.send_if_modified(|state| {
             if *state == BootState::Waiting {
@@ -661,8 +610,8 @@ impl Driver {
     }
 
     fn emit(&mut self, event: WorkerEvent) {
-        // A closed receiver is a caller that went away, which is ordinary: the
-        // pool drops its subscription when a call settles.
+        // A closed receiver is ordinary: the pool drops its subscription on
+        // settle.
         lock(&self.listeners).retain(|tx| tx.send(event.clone()).is_ok());
     }
 
@@ -695,11 +644,9 @@ fn truncate(text: &str, max: usize) -> &str {
     &text[..end]
 }
 
-/// Read a worker's protocol stream into [`Incoming::ProtocolLine`] events.
-///
-/// Its own reader rather than D14's generic drain: that one caps a line at 1 MB,
-/// which is right for stderr and wrong for a protocol frame carrying a large
-/// tool result.
+/// Read a worker's protocol stream into [`Incoming::ProtocolLine`] events. Its
+/// own reader rather than the generic line drain, whose 1 MB cap is right for
+/// stderr and wrong for a frame carrying a large tool result.
 pub async fn pump_protocol<R>(reader: R, extension_id: String, tx: mpsc::UnboundedSender<Incoming>)
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -713,8 +660,7 @@ where
             Ok(_) => {}
         }
         if buf.len() > MAX_PROTOCOL_FRAME_BYTES {
-            // An oversized frame with no newline: drop it to bound memory. The
-            // in-flight call fails through the ordinary timeout path.
+            // Dropped to bound memory; the call fails through its timeout.
             tracing::warn!(
                 target: "loca::extensions",
                 "[{extension_id}] dropping an oversized stdout frame ({} bytes)",
@@ -745,10 +691,6 @@ mod tests {
     use super::*;
 
     /// A terminal that records instead of existing.
-    ///
-    /// Every assertion below about what was NOT written depends on this
-    /// recording what WAS, so each test that asserts an absence also asserts a
-    /// presence somewhere in the same terminal (D-050).
     #[derive(Default)]
     struct Recorder {
         writes: Mutex<Vec<Vec<u8>>>,
@@ -864,14 +806,9 @@ mod tests {
         b"\n\xe2\x9c\x85 Granted read access.\n".to_vec()
     }
 
-    /// Drain whatever events are ready, letting the driver run first.
-    ///
-    /// A `sleep` rather than a `yield_now`: under a paused clock the runtime
-    /// auto-advances only when every task is idle, so waiting on one is a
-    /// guarantee that the driver has processed everything queued. A bare yield
-    /// polls the driver once, which is not enough for a message that has to
-    /// traverse two channels, and the tests then fail for a reason that has
-    /// nothing to do with the behaviour under test.
+    /// Drain whatever events are ready, letting the driver run first. A `sleep`
+    /// rather than a `yield_now`, which polls the driver once and is not enough
+    /// for a message crossing two channels.
     async fn drain(events: &mut mpsc::UnboundedReceiver<WorkerEvent>) -> Vec<WorkerEvent> {
         tokio::time::sleep(Duration::from_millis(1)).await;
         let mut out = Vec::new();
@@ -887,12 +824,22 @@ mod tests {
         Incoming::ProtocolLine(frame.to_string())
     }
 
+    /// Feed terminal bytes and drain whatever the driver produced.
+    async fn feed(h: &mut Harness, bytes: Vec<u8>) -> Vec<WorkerEvent> {
+        h.incoming.send(Incoming::Terminal(bytes)).unwrap();
+        drain(&mut h.events).await
+    }
+
+    /// The request id of the one forwarded prompt in `events`.
+    fn request_id_of(events: &[WorkerEvent]) -> String {
+        match prompts(events)[0] {
+            WorkerEvent::PermissionPrompt { request_id, .. } => request_id.clone(),
+            _ => unreachable!(),
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_warm_worker_does_not_wait_for_a_boot_frame_that_already_came() {
-        // The reason boot is a LATCH. A warm worker booted minutes ago and its
-        // `booted` frame is long gone, so a second call awaiting the next boot
-        // event waits out the full ten-second budget and then reports a boot
-        // timeout for a worker that is running perfectly.
         let h = harness(None);
         h.incoming
             .send(line(
@@ -917,9 +864,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_worker_that_dies_before_booting_fails_its_waiter_at_once() {
-        // Without this the call sits out the whole boot budget waiting on a
-        // process that is already gone, which is ten seconds of spinner for a
-        // failure that is already known.
         let h = harness(None);
         h.incoming.send(Incoming::Exited { code: Some(1) }).unwrap();
         let started = Instant::now();
@@ -928,10 +872,8 @@ mod tests {
             .wait_for_boot(Duration::from_secs(10))
             .await
             .unwrap_err();
-        // The EXACT message, not a substring both paths share. The exit
-        // path's own latch is otherwise untestable: dropping the driver's
-        // sender fails the waiter too, so a loose assertion passes with the
-        // latch deleted and the diagnosis quietly moves to the wrong layer.
+        // The EXACT message: dropping the driver's sender fails the waiter too,
+        // so a loose assertion passes with the latch deleted.
         assert_eq!(
             err.message, "worker boot failed: the worker exited before it booted",
             "a dead extension process was reported as a Core bug"
@@ -944,8 +886,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_boot_failure_carries_the_workers_own_reason() {
-        // The user needs to see WHY, and the worker is the only thing that
-        // knows: a generic timeout sends the reader looking at the wrong layer.
         let h = harness(None);
         h.incoming
             .send(line(serde_json::json!({
@@ -967,9 +907,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_exit_long_after_a_successful_boot_is_not_a_boot_failure() {
-        // A worker that ran for an hour and then crashed did not fail to BOOT.
-        // Rewriting the latch on the way out makes every later reader diagnose
-        // a startup problem that never happened.
         let h = harness(None);
         h.incoming
             .send(line(
@@ -999,8 +936,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.message, "worker boot timeout");
         assert_eq!(started.elapsed(), Duration::from_secs(10));
-        // And the budget the pool actually ships is that one, not some other
-        // number this test happened to pass in.
+        // And the budget the pool ships is that one.
         assert_eq!(
             crate::extensions::worker::BOOT_TIMEOUT,
             Duration::from_secs(10)
@@ -1009,9 +945,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_three_lifecycle_frames_never_reach_a_call() {
-        // They belong to the worker, not to any call. A call that saw them
-        // would have to filter them back out, and the one that forgot would
-        // route a `booted` into a call's frame handler.
         let mut h = harness(None);
         for frame in [
             serde_json::json!({ "kind": "ready" }),
@@ -1020,8 +953,7 @@ mod tests {
         ] {
             h.incoming.send(line(frame)).unwrap();
         }
-        // A frame that IS a call's business, so this test also proves the
-        // channel works rather than merely observing silence.
+        // A frame that IS a call's business, so the silence above is real.
         h.incoming
             .send(line(serde_json::json!({
                 "kind": "log", "callId": "c1", "level": "info", "message": "hi",
@@ -1060,15 +992,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_declared_ask_prompt_is_forwarded_to_the_user() {
-        // The positive control for every "was not forwarded" assertion below. If
-        // the parser, the driver or the subscription were broken, all of those
-        // would pass for the wrong reason.
+        // The positive control for every "was not forwarded" assertion below.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
         let forwarded = prompts(&events);
         assert_eq!(forwarded.len(), 1, "no prompt reached the user: {events:?}");
         let WorkerEvent::PermissionPrompt {
@@ -1085,7 +1012,6 @@ mod tests {
         assert!(declared);
         assert_eq!(reason.as_deref(), Some("to read"));
         assert!(request_id.starts_with("perm-"));
-        // And nothing was answered on the user's behalf.
         assert!(h.terminal.answers().is_empty(), "it answered by itself");
     }
 
@@ -1095,10 +1021,7 @@ mod tests {
     async fn an_undeclared_prompt_is_auto_denied_and_never_shown() {
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("write", "/etc/passwd")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("write", "/etc/passwd")).await;
         assert!(
             prompts(&events).is_empty(),
             "an undeclared prompt was shown"
@@ -1112,15 +1035,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_unknown_permission_kind_is_auto_denied() {
-        // Deno also prompts for `import`, which no loca.json can declare. The
-        // matcher returns no decision at all and this is the path that turns
-        // that into an `n`.
+        // Deno also prompts for `import`, which no loca.json can declare.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("import", "npm:evil")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("import", "npm:evil")).await;
         assert!(prompts(&events).is_empty());
         tokio::time::advance(ANSWER_INITIAL_DELAY * 2).await;
         drain(&mut h.events).await;
@@ -1129,14 +1047,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_prompt_with_no_policy_at_all_is_auto_denied() {
-        // Pipe mode spawns with --no-prompt so this cannot happen there, but a
-        // handle built without a policy must not fall open if it ever does.
+        // Pipe mode spawns with --no-prompt, but this must not fall open.
         let mut h = harness(None);
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
         assert!(prompts(&events).is_empty());
         tokio::time::advance(ANSWER_INITIAL_DELAY * 2).await;
         drain(&mut h.events).await;
@@ -1147,31 +1061,21 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_prompt_is_auto_denied_when_two_calls_share_the_worker() {
-        // A Deno prompt blocks the whole isolate and carries no call id, so with
-        // two calls in flight it cannot be attributed. Forwarding it would show
-        // one user a prompt caused by another user's call.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
         assert!(
             prompts(&events).is_empty(),
             "an unattributable prompt was forwarded"
         );
         assert!(logs(&events).iter().any(|l| l.contains("cannot attribute")));
 
-        // The same prompt with one call in flight IS forwarded, which is what
-        // makes the assertion above about concurrency rather than about the
-        // prompt being unforwardable in general.
+        // The same prompt with ONE call in flight IS forwarded, which makes the
+        // assertion above about concurrency.
         h.handle.call_settled();
         h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
         assert_eq!(prompts(&events).len(), 1);
     }
 
@@ -1179,18 +1083,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_answer_waits_out_denos_stdin_flush_before_it_is_written() {
-        // Deno's prompter flushes stdin until it has been quiet for ~100ms
-        // BEFORE reading the answer, so an immediate write is eaten and the
-        // prompt sits there until the give-up kill.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
-        let WorkerEvent::PermissionPrompt { request_id, .. } = prompts(&events)[0] else {
-            unreachable!()
-        };
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
+        let request_id = &request_id_of(&events);
         h.handle.answer_prompt(request_id, true);
 
         tokio::time::advance(ANSWER_INITIAL_DELAY / 2).await;
@@ -1207,24 +1103,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_unconfirmed_answer_is_retried_and_then_kills_the_worker() {
-        // No Granted/Denied confirmation ever arrives. The retry keeps trying,
-        // and the give-up fails CLOSED by killing the worker rather than leaving
-        // the call to hang.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
-        let WorkerEvent::PermissionPrompt { request_id, .. } = prompts(&events)[0] else {
-            unreachable!()
-        };
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
+        let request_id = &request_id_of(&events);
         h.handle.answer_prompt(request_id, true);
 
-        // Stepped, not one jump. `advance` moves the clock in a single hop, and
-        // a timer the driver RE-ARMS during that hop is scheduled from the new
-        // now, so a single `advance(initial + retry * 3)` produces exactly one
-        // write and the retry loop looks broken when it is not.
+        // Stepped, not one jump: `advance` moves the clock in a single hop, so
+        // a timer the driver RE-ARMS during it fires only once.
         tokio::time::advance(ANSWER_INITIAL_DELAY).await;
         drain(&mut h.events).await;
         for _ in 0..3 {
@@ -1240,8 +1126,7 @@ mod tests {
             h.terminal.answers(),
         );
 
-        // Keep ticking until the give-up budget is spent. Bounded so a failure
-        // is a failure rather than a hang.
+        // Bounded, so a failure is a failure rather than a hang.
         let mut events = Vec::new();
         for _ in 0..64 {
             if h.terminal.kills() > 0 {
@@ -1258,21 +1143,15 @@ mod tests {
     async fn a_settled_prompt_stops_the_retry_loop() {
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
-        let WorkerEvent::PermissionPrompt { request_id, .. } = prompts(&events)[0] else {
-            unreachable!()
-        };
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
+        let request_id = &request_id_of(&events);
         h.handle.answer_prompt(request_id, true);
         tokio::time::advance(ANSWER_INITIAL_DELAY * 2).await;
         drain(&mut h.events).await;
         let after_first = h.terminal.answers().len();
         assert_eq!(after_first, 1);
 
-        h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, granted_line()).await;
         tokio::time::advance(ANSWER_RETRY * 10).await;
         drain(&mut h.events).await;
         assert_eq!(
@@ -1286,22 +1165,13 @@ mod tests {
     async fn a_stale_response_cannot_answer_the_next_prompt() {
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        let events = drain(&mut h.events).await;
-        let WorkerEvent::PermissionPrompt { request_id, .. } = prompts(&events)[0] else {
-            unreachable!()
-        };
+        let events = feed(&mut h, prompt_block("read", "/tmp/x")).await;
+        let request_id = &request_id_of(&events);
         let stale = request_id.clone();
-        h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, granted_line()).await;
 
-        // A second prompt, and the user's answer to the FIRST arrives late.
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/y")))
-            .unwrap();
-        drain(&mut h.events).await;
+        // A second prompt, with the answer to the FIRST arriving late.
+        let _ = feed(&mut h, prompt_block("read", "/tmp/y")).await;
         h.handle.answer_prompt(&stale, true);
         tokio::time::advance(ANSWER_INITIAL_DELAY * 2).await;
         drain(&mut h.events).await;
@@ -1316,29 +1186,19 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn only_a_user_answered_prompt_marks_the_worker_for_retirement() {
-        // Deno caches the verdict for the process lifetime; the user's answer
-        // was scoped to one call. An auto-denied prompt granted nothing, so it
-        // must NOT retire a warm worker (that would be a free denial of service
-        // on any tool whose policy denies something).
+        // An auto-denied prompt granted nothing, so retiring on it would be a
+        // free denial of service on any tool whose policy denies something.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("write", "/etc/passwd")))
-            .unwrap();
-        drain(&mut h.events).await;
-        h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, prompt_block("write", "/etc/passwd")).await;
+        let _ = feed(&mut h, granted_line()).await;
         assert!(
             !h.handle.prompt_answered_by_user(),
             "an auto-denied prompt retired the worker",
         );
 
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        drain(&mut h.events).await;
-        h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, prompt_block("read", "/tmp/x")).await;
+        let _ = feed(&mut h, granted_line()).await;
         assert!(
             h.handle.prompt_answered_by_user(),
             "a forwarded prompt did not retire the worker",
@@ -1349,9 +1209,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn frames_are_held_while_a_prompt_is_pending_and_flushed_after_it() {
-        // Deno's clear_stdin flushes the terminal before reading the answer, so
-        // a frame written during the prompt window is destroyed rather than
-        // delivered, and the call it belonged to hangs.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
         h.handle.send(PoolToWorker::Cancel {
@@ -1364,10 +1221,7 @@ mod tests {
             "a frame outside a prompt window"
         );
 
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("read", "/tmp/x")))
-            .unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, prompt_block("read", "/tmp/x")).await;
         h.handle.send(PoolToWorker::Cancel {
             call_id: "during".to_string(),
         });
@@ -1378,8 +1232,7 @@ mod tests {
             "a frame was written into the prompt's flush window",
         );
 
-        h.incoming.send(Incoming::Terminal(granted_line())).unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, granted_line()).await;
         let writes = h.terminal.writes();
         assert_eq!(writes.len(), 2, "the queued frame was never flushed");
         assert!(writes[1].contains("during"));
@@ -1396,9 +1249,7 @@ mod tests {
                     .to_string(),
             ))
             .unwrap();
-        // The positive control in the same stream: a legitimate frame does
-        // arrive, so the absence above is about the forgery and not about the
-        // pump being dead.
+        // The positive control, so the absence above is about the forgery.
         h.incoming
             .send(Incoming::ProtocolLine(
                 r#"{"kind":"tool_result","callId":"c1","result":42}"#.to_string(),
@@ -1448,20 +1299,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn terminate_stops_an_answer_loop_that_would_outlive_the_worker() {
-        // Without this the retry keeps firing for up to the give-up budget after
-        // the worker is already gone, and then issues a kill against a process
-        // that no longer exists.
         let mut h = harness(Some(policy(vec![read_decl("/tmp")], GrantState::Ask)));
         h.handle.call_started();
-        h.incoming
-            .send(Incoming::Terminal(prompt_block("write", "/etc/passwd")))
-            .unwrap();
-        drain(&mut h.events).await;
+        let _ = feed(&mut h, prompt_block("write", "/etc/passwd")).await;
         h.handle.terminate(Duration::from_secs(2)).await;
-        // The shutdown frame must be WRITTEN, not queued. Clearing the pending
-        // prompt is what makes that true: `send` holds frames back while a
-        // prompt is pending, so a terminate that left the prompt in place would
-        // put its own shutdown in the queue and then never flush it.
+        // WRITTEN, not queued: a terminate that left the prompt pending would
+        // put its own shutdown in the send queue and never flush it.
         assert!(
             h.terminal
                 .writes()

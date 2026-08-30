@@ -1,9 +1,9 @@
 // Fetches the pinned llama.cpp source into `vendor/llama.cpp`, which the Rust
 // core's `build.rs` compiles when the `local-inference` feature is on.
 //
-// The pin is a SHA, not a tag: a tag can be moved, and the whole point is that
-// the tree we build is the tree the S0.2 spike was verified against (D-002).
-// The tag is recorded alongside it only so a human can find the release notes.
+// The pin is a SHA, not a tag: a tag can be moved, and the tree we build must
+// be the tree that was verified. The tag is recorded alongside it only so a
+// human can find the release notes.
 //
 // The SHA is written to `vendor/.llama-pin`, which `build.rs` reads and
 // compares against its own constant. The two must agree or the build fails, so

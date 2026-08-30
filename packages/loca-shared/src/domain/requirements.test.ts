@@ -3,7 +3,7 @@
 
 import { assertEquals } from "@std/assert";
 import { TRIPLES } from "./model.ts";
-import { binaryUnavailableOnTriple, requiredBinaryKinds } from "./model.ts";
+import { binaryUnavailableOnTriple } from "./model.ts";
 import { requiredModelRefs } from "./settings/engine.ts";
 
 Deno.test("requiredModelRefs: llm local with image support yields model + mmproj", () => {
@@ -89,53 +89,9 @@ Deno.test("requiredModelRefs: tts bundle files only when tts.enabled; embed alwa
   );
 });
 
-Deno.test("requiredBinaryKinds: deno + llama-server always; speech gated on local STT or TTS", () => {
-  // STT and TTS are off by default, so a fresh install (even with an external
-  // LLM) needs only the always-on pair - voice is opt-in.
-  assertEquals(requiredBinaryKinds({ "llm.provider": "external" }).sort(), [
-    "deno",
-    "llama-server",
-  ]);
-  // Both engines off: just the always-on pair.
-  assertEquals(requiredBinaryKinds({ "stt.enabled": false, "tts.enabled": false }).sort(), [
-    "deno",
-    "llama-server",
-  ]);
-  // Local STT pulls in the combined speech binary.
-  assertEquals(
-    requiredBinaryKinds({
-      "llm.provider": "local",
-      "stt.enabled": true,
-      "stt.provider": "local",
-    }).sort(),
-    ["deno", "llama-server", "loca-core-speech"],
-  );
-  // TTS alone also pulls it in (STT off).
-  assertEquals(requiredBinaryKinds({ "stt.enabled": false, "tts.enabled": true }).sort(), [
-    "deno",
-    "llama-server",
-    "loca-core-speech",
-  ]);
-  // External STT with TTS off needs no local speech binary.
-  assertEquals(
-    requiredBinaryKinds({
-      "stt.enabled": true,
-      "stt.provider": "external",
-      "tts.enabled": false,
-    }).sort(),
-    ["deno", "llama-server"],
-  );
-});
-
 Deno.test("binaryUnavailableOnTriple: resolver-backed binaries available on all triples", () => {
   for (const triple of TRIPLES) {
     assertEquals(binaryUnavailableOnTriple("llama-server", triple), false);
     assertEquals(binaryUnavailableOnTriple("deno", triple), false);
-  }
-});
-
-Deno.test("binaryUnavailableOnTriple: self-hosted speech available on all triples", () => {
-  for (const triple of TRIPLES) {
-    assertEquals(binaryUnavailableOnTriple("loca-core-speech", triple), false);
   }
 });

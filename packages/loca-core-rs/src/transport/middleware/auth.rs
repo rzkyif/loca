@@ -22,20 +22,14 @@ use crate::error::{AppError, ErrorCode, Result};
 
 use super::super::state::{AppContext, ClientAuth, ClientIdentity};
 
-/// The socket peer address, as the listener saw it.
-///
-/// Deliberately NOT `X-Forwarded-For` or `X-Real-IP`, which are client
-/// settable: an attacker would rotate them to hand every pairing guess a fresh,
-/// empty rate-limit bucket. Under a reverse proxy every request arrives from
-/// the proxy's address and the per-IP limiter collapses to one shared bucket,
-/// which is stricter and safe. Honouring `X-Forwarded-For` there would need a
-/// trusted-proxy setting.
+/// The socket peer address, as the listener saw it. Deliberately NOT
+/// `X-Forwarded-For` or `X-Real-IP`, which a client sets: rotating them would
+/// hand every pairing guess a fresh, empty rate-limit bucket. Behind a proxy the
+/// per-IP limiter collapses to one shared bucket, which is stricter and safe.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PeerAddr(pub String);
 
-/// The peer name used when there is no socket at all, which is the in-process
-/// path. Matches the TypeScript's fallback, so a rate-limit bucket keyed on it
-/// is the same bucket.
+/// The peer name used when there is no socket at all: the in-process path.
 pub const LOCAL_PEER: &str = "local";
 
 impl<S: Send + Sync> FromRequestParts<S> for PeerAddr {
@@ -70,9 +64,9 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthedClient {
             .get::<ClientIdentity>()
             .cloned()
             .map(AuthedClient)
-            // Unreachable when the slice applied `require_client`. A 401 rather
-            // than a panic so forgetting the layer is a failing request and a
-            // failing conformance case, not a downed core.
+            // Unreachable when the slice applied `require_client`. A 401
+            // rather than a panic, so forgetting the layer fails the request
+            // rather than the core.
             .ok_or_else(|| {
                 tracing::error!(
                     target: "loca::http",
@@ -90,16 +84,10 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthedClient {
 /// Resolve `Authorization: Bearer <token>` to a [`ClientIdentity`] and put it
 /// in the request extensions.
 ///
-/// **The in-process path.** An identity already present in the extensions is
-/// honoured as-is and no bearer is required. That is how the mobile client,
-/// which talks to the core in-process and is the local client by construction,
-/// is pre-authenticated, and it is the direct analogue of the injected client
-/// resolver the engine used.
-///
-/// This is safe because `http::Extensions` cannot be populated from the wire:
-/// only server-side code can insert one, and the listener inserts nothing but a
-/// [`PeerAddr`]. Anyone adding a second extension insertion in `server.rs`
-/// needs to read this sentence first.
+/// An identity already in the extensions is honoured as-is and no bearer is
+/// required, which is how the in-process mobile client is pre-authenticated.
+/// Safe because `http::Extensions` cannot be populated from the wire: the
+/// listener inserts nothing but a [`PeerAddr`], and it must stay that way.
 pub async fn require_client(
     State(ctx): State<AppContext>,
     mut req: Request,
@@ -180,8 +168,7 @@ mod tests {
 
     #[test]
     fn anything_that_is_not_a_bearer_resolves_to_no_token() {
-        // Each of these is `missing_token`, not `invalid_token`: there is no
-        // credential to reject, and the client shows a different path for each.
+        // Each is `missing_token`, not `invalid_token`: nothing to reject.
         for header in ["", "abc", "Basic abc", "Bearer", "Bearer   ", "Bearerabc"] {
             assert_eq!(bearer(header), None, "wrongly parsed: {header:?}");
         }

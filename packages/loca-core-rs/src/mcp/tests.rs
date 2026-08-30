@@ -1,38 +1,11 @@
 //! MCP tests: the registry, the manager against a real in-process server, the
 //! stdio spawn plan, and the route slice.
 //!
-//! # The fake server is hand-written, and speaks the wire
+//! [`fake`] is a hand-written JSON-RPC server over a `tokio::io::duplex` pair,
+//! driven by the real rmcp client over the same framing the stdio transport
+//! uses. Enabling rmcp's own server half would test that rmcp agrees with
+//! itself; this way a change that broke the wire shape fails here.
 //!
-//! [`fake`] is a JSON-RPC server over a `tokio::io::duplex` pair, driven by the
-//! real rmcp client over the same `transport-async-rw` framing the stdio
-//! transport uses. Enabling rmcp's own server half instead would test that rmcp
-//! agrees with itself, and would drag `schemars` and the proc macros into the
-//! graph; this way a change that broke the wire shape fails here.
-//!
-//! # What was mutation-tested
-//!
-//! Each of these was staged broken and watched go red before being kept
-//! (D-015), because a test that passes with its subject deleted is not a test:
-//!
-//! - the delete-before-close ordering in `Manager::disconnect`: reversing it
-//!   makes an intentional disconnect look like a drop, and
-//!   `an_intentional_disconnect_does_not_schedule_a_reconnect` fails.
-//! - the generation check AFTER the fetch in `Manager::refresh`: dropping it
-//!   lets a refresh that started on a connection which has since been replaced
-//!   write its stale list into the live one, and
-//!   `a_refresh_that_finishes_after_its_connection_was_replaced_is_dropped`
-//!   fails. That test exists because the first attempt at this one did NOT go
-//!   red: the watch loop checks the generation before dispatching, so the
-//!   obvious test was passing on the earlier check rather than on the one being
-//!   removed, and only a refresh held open ACROSS the replacement reaches it.
-//! - the deny list in `stdio::plan`: removing it drops the two `--deny-*` flags
-//!   and `the_deno_runtime_denies_the_core_secrets_even_under_allow_all` fails.
-//! - the enable gate in `Registry::update`: removing the post-update
-//!   `assert_connectable` lets a draft be enabled with no command, and
-//!   `enabling_an_incomplete_draft_is_refused` fails.
-//! - the settings-secrets exclusion: naming an MCP secret after a schema key
-//!   makes `an_mcp_token_is_not_a_settings_secret` fail.
-
 // Test support: a broken fixture is a broken test, and panicking says so at the
 // line that caused it rather than threading a `Result` through every helper.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -130,6 +103,8 @@ mod fake {
     use serde_json::{json, Value};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 
+    use super::lk;
+
     /// What a fake server offers.
     #[derive(Clone, Debug, Default)]
     pub struct Spec {
@@ -174,11 +149,7 @@ mod fake {
     impl Handle {
         /// Add a tool and push the notification a real server would.
         pub fn add_tool_and_notify(&self, name: &str) {
-            self.spec
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .tools
-                .push((name.to_string(), None));
+            lk(&self.spec).tools.push((name.to_string(), None));
             let _ = self.outbound.send(json!({
                 "jsonrpc": "2.0",
                 "method": "notifications/tools/list_changed",
@@ -188,7 +159,7 @@ mod fake {
         /// Vanish, the way a crashed server does: the stream ends and the
         /// client sees EOF.
         pub fn drop_connection(&self) {
-            if let Some(stop) = self.stop.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            if let Some(stop) = lk(&self.stop).take() {
                 let _ = stop.send(());
             }
         }
@@ -245,12 +216,11 @@ mod fake {
         // A notification carries no id and wants no answer.
         let id = request.get("id")?.clone();
         let method = request.get("method")?.as_str()?;
-        let spec = spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let spec = lk(spec).clone();
         let result = match method {
             "initialize" => json!({
-                // Echo the client's version back, which is what a server that
-                // supports it does. Inventing one risks a version the client
-                // refuses, and the failure would look like a transport bug.
+                // Echo the client's version back: inventing one risks a version
+                // the client refuses, which would look like a transport bug.
                 "protocolVersion": request
                     .get("params")
                     .and_then(|p| p.get("protocolVersion"))
@@ -330,8 +300,7 @@ mod fake {
 }
 
 /// A [`Connector`] that links the client to an in-process fake instead of
-/// spawning a process or reaching a URL. The port of the TypeScript's
-/// `setTransportFactory` seam.
+/// spawning a process or reaching a URL.
 #[derive(Default)]
 struct FakeConnector {
     installed: std::sync::Mutex<std::collections::HashMap<String, fake::Spec>>,
@@ -357,16 +326,11 @@ impl FakeConnector {
     }
 
     fn install(&self, id: &str, spec: fake::Spec) {
-        self.installed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.to_string(), spec);
+        lk(&self.installed).insert(id.to_string(), spec);
     }
 
     fn handle(&self, id: &str) -> fake::Handle {
-        self.handles
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        lk(&self.handles)
             .get(id)
             .cloned()
             .expect("the server was never connected")
@@ -377,12 +341,7 @@ impl FakeConnector {
     }
 
     fn attempt_times(&self, id: &str) -> Vec<tokio::time::Instant> {
-        self.attempts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(id)
-            .cloned()
-            .unwrap_or_default()
+        lk(&self.attempts).get(id).cloned().unwrap_or_default()
     }
 
     /// Whole seconds between consecutive connect attempts, which is what the
@@ -396,66 +355,39 @@ impl FakeConnector {
 
     /// Fail every connect for this server from now on.
     fn fail_connects(&self, id: &str) {
-        self.failing
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.to_string());
+        lk(&self.failing).insert(id.to_string());
     }
 
     fn allow_connects(&self, id: &str) {
-        self.failing
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(id);
+        lk(&self.failing).remove(id);
     }
 
     /// Black-hole every connect for this server: the attempt is recorded and
     /// then the future never resolves.
     fn hang_connects(&self, id: &str) {
-        self.hanging
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.to_string());
+        lk(&self.hanging).insert(id.to_string());
     }
 }
 
 #[async_trait]
 impl Connector for FakeConnector {
     async fn connect(&self, server: &ServerConfig) -> crate::error::Result<Connected> {
-        self.attempts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        lk(&self.attempts)
             .entry(server.id.clone())
             .or_default()
             .push(tokio::time::Instant::now());
-        if self
-            .hanging
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&server.id)
-        {
+        if lk(&self.hanging).contains(&server.id) {
             std::future::pending::<()>().await;
         }
-        if self
-            .failing
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&server.id)
-        {
+        if lk(&self.failing).contains(&server.id) {
             return Err(crate::error::internal("the server exited immediately"));
         }
-        let spec = self
-            .installed
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        let spec = lk(&self.installed)
             .get(&server.id)
             .cloned()
             .ok_or_else(|| crate::error::internal("no fake server installed"))?;
         let (client, handle) = fake::start(spec);
-        self.handles
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(server.id.clone(), handle);
+        lk(&self.handles).insert(server.id.clone(), handle);
 
         let (events_handler, events) = super::session::event_channel();
         let tx = super::session::sender(&events_handler);
@@ -502,6 +434,12 @@ fn fixture() -> Fixture {
         paths,
         vault,
     }
+}
+
+/// A lock guard that ignores poisoning, since a panicking test poisons the
+/// fixture's mutexes and the follow-on failure hides the real one.
+fn lk<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Let a spawned watcher task observe what just happened. Every wait here is a
@@ -840,12 +778,9 @@ mod manager_tests {
         );
     }
 
-    /// The backoff has to ADVANCE, and then STOP.
-    ///
-    /// Keeping the attempt count in the entry `cancel_reconnect` removes made
-    /// every step the first one, so a server whose command exits immediately
-    /// was retried once a second for the life of the process and the give-up
-    /// branch was unreachable.
+    /// The backoff has to ADVANCE, and then STOP: an attempt count that resets
+    /// makes every step the first one, so a server whose command exits
+    /// immediately is retried once a second forever.
     #[tokio::test(start_paused = true)]
     async fn a_server_that_keeps_dropping_backs_off_and_then_gives_up() {
         let f = fixture();
@@ -910,13 +845,11 @@ mod manager_tests {
         );
     }
 
-    /// The reason the sync lock is released before the connects.
-    ///
-    /// Every MCP CRUD route resyncs. Held across the connects, one server at an
-    /// endpoint that accepts TCP and never answers takes the lock at boot and
-    /// keeps it for the whole connect timeout, so the user cannot delete or
-    /// disable the very server wedging them, and a restart re-wedges. The bound
-    /// here is real time on purpose: this is the test that must not hang.
+    /// The reason the sync lock is released before the connects: every MCP CRUD
+    /// route resyncs, so a server at an endpoint that accepts TCP and never
+    /// answers would take the lock at boot and keep it for the whole connect
+    /// timeout, leaving the user unable to delete the server wedging them. The
+    /// bound is real time on purpose: this is the test that must not hang.
     #[tokio::test]
     async fn a_black_holed_connect_does_not_wedge_the_crud_routes() {
         let f = fixture();
@@ -948,12 +881,9 @@ mod manager_tests {
         syncing.abort();
     }
 
-    /// And the connect itself is bounded, so the wedged server does eventually
-    /// land in `error` rather than staying `connecting` forever.
-    ///
-    /// Guarded at ten minutes: with no bound in the code there is no timer for
-    /// the paused clock to advance to except this one, so the failure is an
-    /// assertion rather than a suite that never finishes (D-038).
+    /// And the connect itself is bounded, so the wedged server lands in `error`
+    /// rather than staying `connecting` forever. Guarded at ten minutes, so with
+    /// no bound in the code the failure is an assertion rather than a hang.
     #[tokio::test(start_paused = true)]
     async fn a_connect_that_never_answers_is_given_up_on() {
         let f = fixture();
@@ -1008,13 +938,10 @@ mod manager_tests {
         assert_eq!(names, vec!["a".to_string()]);
     }
 
-    /// The generation check that matters is the one AFTER the fetch await.
-    ///
-    /// The watch loop checks before dispatching, but a connection can be
-    /// replaced while a refresh is in flight, and writing that stale list back
-    /// would silently replace a live server's capabilities with a dead one's.
-    /// A fake server cannot stage this: the window is inside the manager, so
-    /// the session itself is the double.
+    /// The generation check that matters is the one AFTER the fetch await: a
+    /// connection can be replaced while a refresh is in flight, and writing that
+    /// stale list back would replace a live server's capabilities with a dead
+    /// one's. The window is inside the manager, so the session is the double.
     #[tokio::test]
     async fn a_refresh_that_finishes_after_its_connection_was_replaced_is_dropped() {
         let f = fixture();
@@ -1083,12 +1010,7 @@ mod manager_tests {
 
     impl GatedConnector {
         fn notify_list_changed(&self) {
-            if let Some(tx) = self
-                .senders()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .first()
-            {
+            if let Some(tx) = lk(self.senders()).first() {
                 let _ = tx.send(crate::mcp::session::SessionEvent::ListChanged(
                     crate::mcp::session::Capability::Tools,
                 ));
@@ -1112,17 +1034,14 @@ mod manager_tests {
     #[async_trait]
     impl Connector for GatedConnector {
         async fn connect(&self, _server: &ServerConfig) -> crate::error::Result<Connected> {
-            let mut connects = self.connects.lock().unwrap_or_else(|e| e.into_inner());
+            let mut connects = lk(&self.connects);
             *connects += 1;
             let first = *connects == 1;
             drop(connects);
 
             let (tx, events) = tokio::sync::mpsc::unbounded_channel();
             if first {
-                self.senders()
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(tx);
+                lk(self.senders()).push(tx);
             }
             Ok(Connected {
                 session: Arc::new(GatedSession {
@@ -1149,7 +1068,7 @@ mod manager_tests {
     impl crate::mcp::session::Session for GatedSession {
         async fn list_tools(&self) -> crate::error::Result<Vec<crate::mcp::session::ToolDef>> {
             let call = {
-                let mut calls = self.calls.lock().unwrap_or_else(|e| e.into_inner());
+                let mut calls = lk(&self.calls);
                 *calls += 1;
                 *calls
             };
@@ -1262,10 +1181,9 @@ mod manager_tests {
         assert_eq!(text, "Write a commit message");
     }
 
-    /// The status is the oracle's, not the one this code would pick on its
-    /// own. See `Manager::session_or_err`.
+    /// See `Manager::session_or_err` for why this status and not another.
     #[tokio::test]
-    async fn a_request_against_a_disconnected_server_matches_the_oracle() {
+    async fn a_request_against_a_disconnected_server_is_an_internal_error() {
         let f = fixture();
         let server = f.mcp.create(stdio_draft("Never connected")).await.unwrap();
         let err = f
@@ -1417,14 +1335,11 @@ mod token_tests {
         assert!(result.claimed.is_empty());
     }
 
-    /// The mention boundary is ASCII, because the specification's is.
-    ///
-    /// `\w` in the oracle's regex (`tokens.ts:81`) has no `u` flag, so it is
-    /// `[A-Za-z0-9_]` and an accented letter does NOT suppress the mention
-    /// after it. A Unicode-aware `is_alphanumeric` here would refuse `@notes`
-    /// in `"café@notes"` and send a different prompt for the same message.
+    /// The mention boundary is ASCII: an accented letter does NOT suppress the
+    /// mention after it, so a Unicode-aware `is_alphanumeric` would refuse
+    /// `@notes` in `"café@notes"` and send a different prompt.
     #[tokio::test]
-    async fn the_mention_boundary_is_ascii_like_the_oracle() {
+    async fn the_mention_boundary_is_ascii() {
         let resolved = |text: &'static str| async move {
             tokens::resolve(text, vec![resource("notes", "file:///n")], &Reader)
                 .await
@@ -1553,9 +1468,7 @@ mod stdio_tests {
             paths.db_file(),
             paths.memories_dir(),
             crate::secrets::master_key_file(paths.root()),
-            // The transient the atomic master-key write creates. D-013 named
-            // it; the TypeScript list has no equivalent because its write was
-            // not atomic.
+            // The transient the atomic master-key write creates.
             crate::secrets::master_key_tmp_file(paths.root()),
         ] {
             let needle = required.to_string_lossy().to_string();
@@ -1667,12 +1580,8 @@ mod oauth_store_tests {
     }
 
     /// Both rmcp traits are one bag under one key, and each half survives the
-    /// other being written.
-    ///
-    /// The halves are written at different times by different code (the flow
-    /// saves the verifier, the callback saves the tokens), so a `save` that
-    /// wrote the bag without reading it first would silently drop whichever
-    /// half it did not own.
+    /// other being written: the flow saves the verifier and the callback saves
+    /// the tokens, so a `save` that did not read first would drop one half.
     #[tokio::test]
     async fn the_two_halves_of_the_bag_do_not_overwrite_each_other() {
         let (_tmp, v) = a_vault();
@@ -1855,7 +1764,7 @@ mod oauth_flow_tests {
                 base,
                 v,
                 Box::new(move |ok| {
-                    *recorded.lock().unwrap_or_else(|e| e.into_inner()) = Some(ok);
+                    *lk(&recorded) = Some(ok);
                 }),
             )
             .await
@@ -1891,7 +1800,7 @@ mod oauth_flow_tests {
         }
 
         fn outcome(&self) -> Option<bool> {
-            *self.outcome.lock().unwrap_or_else(|e| e.into_inner())
+            *lk(&self.outcome)
         }
     }
 
@@ -1985,12 +1894,9 @@ mod oauth_flow_tests {
         auth_server.serving.abort();
     }
 
-    /// A stray hit on the loopback port must not abort a sign-in that is still
-    /// in progress: only `/callback` resolves a flow.
-    ///
-    /// The port is a real one on the user's machine for as long as the flow is
-    /// open, so a favicon probe, a prefetch or a port scan can reach it, and
-    /// resolving on any request would make sign-in fail at random.
+    /// A stray hit on the loopback port must not abort a sign-in in progress:
+    /// only `/callback` resolves a flow. The port is real for as long as the
+    /// flow is open, so a favicon probe or a port scan can reach it.
     #[tokio::test]
     async fn a_stray_request_on_the_loopback_port_does_not_abort_the_sign_in() {
         let auth_server = fake_authorization_server().await;
@@ -2030,12 +1936,9 @@ mod oauth_flow_tests {
             .unwrap_or(0)
     }
 
-    /// Abandoned sign-ins do not accumulate secret material in the vault.
-    ///
-    /// Every sign-in writes a PKCE verifier, the expected issuer and the
-    /// requested scopes under the server's key, and rmcp removes that entry
-    /// only on a successful exchange. Without a reap, every closed browser tab
-    /// leaves one behind permanently.
+    /// Abandoned sign-ins do not accumulate secret material in the vault: rmcp
+    /// removes the PKCE entry only on a successful exchange, so without a reap
+    /// every closed browser tab leaves one behind permanently.
     #[tokio::test]
     async fn an_abandoned_sign_in_does_not_pile_up_in_the_vault() {
         let auth_server = fake_authorization_server().await;
@@ -2069,12 +1972,10 @@ mod oauth_flow_tests {
         auth_server.serving.abort();
     }
 
-    /// Reaping the abandoned states must not take the tokens with it.
-    ///
-    /// The reap runs before `initialize_from_store`, so a reap that wrote a
-    /// fresh bag would discard the registration and the tokens, and the next
-    /// Sign in would open a browser instead of reporting that there is nothing
-    /// to do. Asserting that second `start` returns `None` is what catches it.
+    /// Reaping the abandoned states must not take the tokens with it: the reap
+    /// runs before `initialize_from_store`, so a reap that wrote a fresh bag
+    /// would discard the registration and the tokens. The second `start`
+    /// returning `None` is what catches it.
     #[tokio::test]
     async fn reaping_an_abandoned_sign_in_leaves_the_tokens_alone() {
         let auth_server = fake_authorization_server().await;
@@ -2136,10 +2037,9 @@ mod remote_tests {
     use crate::mcp::remote;
     use std::time::Duration;
 
-    /// A listener that completes the TCP handshake and then says nothing at
-    /// all: what a black-holed endpoint looks like from the client's side. The
-    /// accepted streams are held rather than dropped, because dropping one
-    /// closes it and the client would see a connection reset instead.
+    /// A listener that completes the TCP handshake and then says nothing: a
+    /// black-holed endpoint. The accepted streams are held rather than dropped,
+    /// because dropping one would show the client a connection reset instead.
     async fn black_hole() -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2152,9 +2052,9 @@ mod remote_tests {
         (format!("http://{addr}/mcp"), task)
     }
 
-    /// An endpoint that records the `Authorization` header of every request it
-    /// receives and then refuses. What is under test is what Core SENT, not
-    /// what came back, so the handshake failing afterwards is expected.
+    /// An endpoint that records the `Authorization` header of every request and
+    /// then refuses. What Core SENT is under test, so the handshake failing
+    /// afterwards is expected.
     async fn recording_endpoint() -> (String, Seen, tokio::task::JoinHandle<()>) {
         let seen: Seen = Arc::default();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2168,7 +2068,7 @@ mod remote_tests {
                         .get(axum::http::header::AUTHORIZATION)
                         .and_then(|value| value.to_str().ok())
                         .map(str::to_string);
-                    seen.lock().unwrap_or_else(|e| e.into_inner()).push(sent);
+                    lk(&seen).push(sent);
                     (axum::http::StatusCode::NOT_FOUND, "not found")
                 }
             }
@@ -2184,7 +2084,7 @@ mod remote_tests {
     type Seen = Arc<std::sync::Mutex<Vec<Option<String>>>>;
 
     fn requests(seen: &Seen) -> Vec<Option<String>> {
-        seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        lk(seen).clone()
     }
 
     /// The stored bearer token has to actually reach the wire. Nothing else in
@@ -2242,10 +2142,9 @@ mod remote_tests {
         );
     }
 
-    /// An `oauth` server that has never been signed into is refused, and
-    /// reaches nothing. The assertion that matters is the one about the
-    /// network: the error alone would still pass with the refusal moved
-    /// somewhere that has already reached out.
+    /// An `oauth` server that has never been signed into is refused, and reaches
+    /// nothing. The network assertion is the one that matters: the error alone
+    /// would pass with the refusal moved somewhere that has already reached out.
     #[tokio::test]
     async fn an_unsigned_in_oauth_server_makes_no_request_at_all() {
         let (url, seen, serving) = recording_endpoint().await;
@@ -2268,17 +2167,12 @@ mod remote_tests {
         );
     }
 
-    /// The `oauth_authorized` gate, in the one state that distinguishes it.
-    ///
-    /// With no tokens in the vault the gate is unobservable: rmcp's
-    /// `initialize_from_store` returns `false` without a request, so removing
-    /// the gate changes neither the error nor the network. The state that tells
-    /// them apart is tokens present while the ROW says not authorized, which is
-    /// reachable: `Mcp::start_oauth`'s completion callback stores the tokens
-    /// through the SDK and only then updates the row, and it logs and returns
-    /// if that update fails. Without the gate, that server would resolve
-    /// metadata and connect on every sync using a grant the row does not admit
-    /// to holding, and the Sign in button would never be offered.
+    /// The `oauth_authorized` gate, in the one state that distinguishes it:
+    /// tokens present while the ROW says not authorized. That is reachable,
+    /// because `Mcp::start_oauth`'s callback stores the tokens through the SDK
+    /// and only then updates the row. Without the gate that server would connect
+    /// on every sync using a grant the row does not admit to holding, and the
+    /// Sign in button would never be offered.
     #[tokio::test]
     async fn a_server_the_row_says_is_not_signed_in_is_refused_even_with_tokens_stored() {
         use rmcp::transport::auth::{CredentialStore, OAuthTokenResponse, StoredCredentials};
@@ -2326,14 +2220,10 @@ mod remote_tests {
     }
 
     /// The handshake is bounded, and the bound is what returns rather than the
-    /// connect hanging forever.
-    ///
-    /// Real time, real socket, and a real `reqwest` client, because a stubbed
-    /// transport cannot see that rmcp's `expect_response` has no timeout of its
-    /// own (D-038's last note). The 300ms bound is passed in rather than being
-    /// [`HANDSHAKE_TIMEOUT`](crate::mcp::session::HANDSHAKE_TIMEOUT), which is
-    /// 60s; the outer guard is what turns "never returns" into an assertion
-    /// rather than a suite that stops.
+    /// connect hanging forever. Real time, real socket and a real `reqwest`
+    /// client, because a stubbed transport cannot see that rmcp's
+    /// `expect_response` has no timeout of its own. The 300ms bound is passed in
+    /// rather than the 60s [`HANDSHAKE_TIMEOUT`](crate::mcp::session::HANDSHAKE_TIMEOUT).
     #[tokio::test]
     async fn a_remote_server_that_never_answers_is_not_waited_for_forever() {
         let (url, listening) = black_hole().await;
@@ -2430,8 +2320,28 @@ mod routes_tests {
             (status, value)
         }
 
+        async fn get(&self, path: &str) -> (StatusCode, Value) {
+            self.call("GET", path, None).await
+        }
+
+        async fn del(&self, path: &str) -> (StatusCode, Value) {
+            self.call("DELETE", path, None).await
+        }
+
+        async fn post(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("POST", path, Some(body)).await
+        }
+
+        async fn post_none(&self, path: &str) -> (StatusCode, Value) {
+            self.call("POST", path, None).await
+        }
+
+        async fn patch(&self, path: &str, body: Value) -> (StatusCode, Value) {
+            self.call("PATCH", path, Some(body)).await
+        }
+
         async fn create(&self, body: Value) -> String {
-            let (status, created) = self.call("POST", "/api/v1/mcp", Some(body)).await;
+            let (status, created) = self.post("/api/v1/mcp", body).await;
             assert_eq!(status, StatusCode::CREATED, "{created}");
             created["id"].as_str().unwrap().to_string()
         }
@@ -2448,7 +2358,7 @@ mod routes_tests {
     #[tokio::test]
     async fn the_lifecycle_round_trips_over_http() {
         let h = harness();
-        let (status, empty) = h.call("GET", "/api/v1/mcp", None).await;
+        let (status, empty) = h.get("/api/v1/mcp").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(empty["servers"], json!([]));
 
@@ -2456,10 +2366,10 @@ mod routes_tests {
             .create(json!({ "name": "Weather", "kind": "stdio", "command": "npx" }))
             .await;
 
-        let (_, listed) = h.call("GET", "/api/v1/mcp", None).await;
+        let (_, listed) = h.get("/api/v1/mcp").await;
         assert_eq!(listed["servers"].as_array().unwrap().len(), 1);
 
-        let (status, got) = h.call("GET", &format!("/api/v1/mcp/{id}"), None).await;
+        let (status, got) = h.get(&format!("/api/v1/mcp/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got["name"], "Weather");
         assert_eq!(got["status"], "disconnected");
@@ -2468,20 +2378,16 @@ mod routes_tests {
         assert_eq!(got["hasAuth"], false);
 
         let (status, patched) = h
-            .call(
-                "PATCH",
-                &format!("/api/v1/mcp/{id}"),
-                Some(json!({ "name": "Renamed" })),
-            )
+            .patch(&format!("/api/v1/mcp/{id}"), json!({ "name": "Renamed" }))
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(patched["name"], "Renamed");
         assert_eq!(patched["command"], "npx");
 
-        let (status, deleted) = h.call("DELETE", &format!("/api/v1/mcp/{id}"), None).await;
+        let (status, deleted) = h.del(&format!("/api/v1/mcp/{id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(deleted["ok"], true);
-        let (status, _) = h.call("GET", &format!("/api/v1/mcp/{id}"), None).await;
+        let (status, _) = h.get(&format!("/api/v1/mcp/{id}")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
@@ -2489,14 +2395,12 @@ mod routes_tests {
     async fn an_unknown_field_is_rejected() {
         let h = harness();
         let (status, body) = h
-            .call(
-                "POST",
+            .post(
                 "/api/v1/mcp",
-                Some(json!({ "name": "X", "kind": "stdio", "nope": true })),
+                json!({ "name": "X", "kind": "stdio", "nope": true }),
             )
             .await;
-        // `.strict()` on the TypeScript side, and D-031 settled that Zod's word
-        // is the policy, so an unknown key is a 400 on both cores.
+        // The body schema is strict, so an unknown key is a 400.
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"]["code"], "validation_error");
     }
@@ -2514,7 +2418,7 @@ mod routes_tests {
             }))
             .await;
 
-        let (_, got) = h.call("GET", &format!("/api/v1/mcp/{id}"), None).await;
+        let (_, got) = h.get(&format!("/api/v1/mcp/{id}")).await;
         assert_eq!(got["hasAuth"], true);
         assert!(
             !got.to_string().contains("super-secret"),
@@ -2523,25 +2427,20 @@ mod routes_tests {
 
         // An empty string clears it; an omitted field leaves it alone.
         let (_, patched) = h
-            .call(
-                "PATCH",
+            .patch(
                 &format!("/api/v1/mcp/{id}"),
-                Some(json!({ "name": "Still Remote" })),
+                json!({ "name": "Still Remote" }),
             )
             .await;
         assert_eq!(patched["hasAuth"], true);
         let (_, cleared) = h
-            .call(
-                "PATCH",
-                &format!("/api/v1/mcp/{id}"),
-                Some(json!({ "authToken": "" })),
-            )
+            .patch(&format!("/api/v1/mcp/{id}"), json!({ "authToken": "" }))
             .await;
         assert_eq!(cleared["hasAuth"], false);
     }
 
-    /// D-027: the MCP credentials share the vault with the settings secrets and
-    /// must stay unreachable through `/api/v1/settings/secrets`.
+    /// The MCP credentials share the vault with the settings secrets and must
+    /// stay unreachable through `/api/v1/settings/secrets`.
     #[tokio::test]
     async fn an_mcp_token_is_not_a_settings_secret() {
         let h = harness();
@@ -2581,7 +2480,7 @@ mod routes_tests {
         let key = crate::mcp::secret_key::auth_secret_name(&id);
         assert!(h.mcp.vault_for_test().get(&key).await.unwrap().is_some());
 
-        h.call("DELETE", &format!("/api/v1/mcp/{id}"), None).await;
+        h.del(&format!("/api/v1/mcp/{id}")).await;
         assert!(h.mcp.vault_for_test().get(&key).await.unwrap().is_none());
     }
 
@@ -2589,10 +2488,9 @@ mod routes_tests {
     async fn enabling_without_a_target_is_a_validation_error() {
         let h = harness();
         let (status, body) = h
-            .call(
-                "POST",
+            .post(
                 "/api/v1/mcp",
-                Some(json!({ "name": "Bad", "kind": "stdio", "enabled": true })),
+                json!({ "name": "Bad", "kind": "stdio", "enabled": true }),
             )
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2603,11 +2501,7 @@ mod routes_tests {
     async fn patching_an_unknown_server_is_not_found() {
         let h = harness();
         let (status, _) = h
-            .call(
-                "PATCH",
-                "/api/v1/mcp/nope",
-                Some(json!({ "name": "Renamed" })),
-            )
+            .patch("/api/v1/mcp/nope", json!({ "name": "Renamed" }))
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
@@ -2620,48 +2514,32 @@ mod routes_tests {
             .await;
 
         let (status, on) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/tools/search/enable"),
-                None,
-            )
+            .post_none(&format!("/api/v1/mcp/{id}/tools/search/enable"))
             .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(on["toolEnabled"], json!(["search"]));
 
         let (_, off) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/tools/search/disable"),
-                None,
-            )
+            .post_none(&format!("/api/v1/mcp/{id}/tools/search/disable"))
             .await;
         assert_eq!(off["toolEnabled"], json!([]));
 
         let (_, prompt_on) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/prompts/commit/enable"),
-                None,
-            )
+            .post_none(&format!("/api/v1/mcp/{id}/prompts/commit/enable"))
             .await;
         assert_eq!(prompt_on["promptEnabled"], json!(["commit"]));
 
         // Always-available is an opt-OUT set: turning it off adds the name.
         let (_, opted_out) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/tools/search/always-available/disable"),
-                None,
-            )
+            .post_none(&format!(
+                "/api/v1/mcp/{id}/tools/search/always-available/disable"
+            ))
             .await;
         assert_eq!(opted_out["toolAlwaysAvailableOff"], json!(["search"]));
         let (_, opted_in) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/tools/search/always-available/enable"),
-                None,
-            )
+            .post_none(&format!(
+                "/api/v1/mcp/{id}/tools/search/always-available/enable"
+            ))
             .await;
         assert_eq!(opted_in["toolAlwaysAvailableOff"], json!([]));
     }
@@ -2673,26 +2551,21 @@ mod routes_tests {
             .create(json!({ "name": "S", "kind": "stdio", "command": "npx" }))
             .await;
         let (status, body) = h
-            .call(
-                "POST",
-                &format!("/api/v1/mcp/{id}/tools/search/toggle"),
-                None,
-            )
+            .post_none(&format!("/api/v1/mcp/{id}/tools/search/toggle"))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"]["message"], "bad action");
     }
 
-    /// The two overlaps where a static segment and a parameter compete. Hono
-    /// resolved them by registration order and axum by static-beats-parameter,
-    /// so this pins the answer rather than the mechanism.
+    /// The two overlaps where a static segment and a parameter compete: axum
+    /// resolves by static-beats-parameter, and this pins the answer.
     #[tokio::test]
     async fn a_static_segment_wins_over_the_id_parameter() {
         let h = harness();
-        let (status, body) = h.call("GET", "/api/v1/mcp/prompts", None).await;
+        let (status, body) = h.get("/api/v1/mcp/prompts").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["prompts"], json!([]));
-        let (status, body) = h.call("GET", "/api/v1/mcp/resources", None).await;
+        let (status, body) = h.get("/api/v1/mcp/resources").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["resources"], json!([]));
 
@@ -2703,10 +2576,9 @@ mod routes_tests {
             .create(json!({ "name": "S", "kind": "stdio", "command": "npx" }))
             .await;
         let (status, body) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/mcp/{id}/prompts/commit/resolve"),
-                Some(json!({ "arguments": {} })),
+                json!({ "arguments": {} }),
             )
             .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -2728,10 +2600,9 @@ mod routes_tests {
         h.mcp.resync().await.unwrap();
 
         let (status, body) = h
-            .call(
-                "POST",
+            .post(
                 &format!("/api/v1/mcp/{id}/prompts/commit/resolve"),
-                Some(json!({ "arguments": { "scope": "core" } })),
+                json!({ "arguments": { "scope": "core" } }),
             )
             .await;
         assert_eq!(status, StatusCode::OK);
@@ -2744,9 +2615,7 @@ mod routes_tests {
         let id = h
             .create(json!({ "name": "S", "kind": "stdio", "command": "npx" }))
             .await;
-        let (status, body) = h
-            .call("POST", &format!("/api/v1/mcp/{id}/reconnect"), None)
-            .await;
+        let (status, body) = h.post_none(&format!("/api/v1/mcp/{id}/reconnect")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "disconnected");
     }
@@ -2757,9 +2626,7 @@ mod routes_tests {
         let id = h
             .create(json!({ "name": "S", "kind": "stdio", "command": "npx" }))
             .await;
-        let (status, body) = h
-            .call("POST", &format!("/api/v1/mcp/{id}/oauth/start"), None)
-            .await;
+        let (status, body) = h.post_none(&format!("/api/v1/mcp/{id}/oauth/start")).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(
             body["error"]["message"],
@@ -2783,12 +2650,12 @@ mod routes_tests {
         );
         h.mcp.resync().await.unwrap();
 
-        let (_, prompts) = h.call("GET", "/api/v1/mcp/prompts", None).await;
+        let (_, prompts) = h.get("/api/v1/mcp/prompts").await;
         assert_eq!(prompts["prompts"][0]["name"], "commit");
         assert_eq!(prompts["prompts"][0]["enabled"], false);
         assert_eq!(prompts["prompts"][0]["serverName"], "S");
 
-        let (_, resources) = h.call("GET", "/api/v1/mcp/resources", None).await;
+        let (_, resources) = h.get("/api/v1/mcp/resources").await;
         assert_eq!(resources["resources"][0]["uri"], "file:///readme");
     }
 }

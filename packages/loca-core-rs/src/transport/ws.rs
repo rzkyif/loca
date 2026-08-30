@@ -13,12 +13,8 @@
 //! 10. These are application frames, not protocol pings, because the client's
 //! frame handler is what answers them.
 //!
-//! **Frame policy: warn and drop, never close.** A malformed frame today
-//! leaves the sending client hanging rather than telling it anything, so
-//! tearing the socket down over one would turn a recoverable client bug into a
-//! dead session. Every rejection below logs and continues, and the tests prove
-//! the socket still works afterwards by sending a `ping` and expecting a
-//! `pong`.
+//! **Frame policy: warn and drop, never close.** Tearing the socket down over
+//! one malformed frame turns a recoverable client bug into a dead session.
 
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
@@ -42,38 +38,23 @@ use super::state::AppContext;
 const HEARTBEAT: Duration = Duration::from_secs(25);
 /// How long a client has to answer one.
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
-/// How long one write to a socket may take before the connection is abandoned.
-///
-/// **This is what stops a client that stops reading from wedging its pump.**
-/// Every write below happens inside the same `select!` as the heartbeat timer
-/// and the pong deadline, so a `sink.send(..).await` that parks on a full TCP
-/// window parks the whole loop with it: `conn.next()` stops being polled while
-/// broadcasts keep queueing on an unbounded channel, and neither timer can fire
-/// to end it, because both are arms of the future that is no longer being
-/// polled. The pong timeout cannot rescue this, and reasoning that it would was
-/// the specific mistake: it is downstream of the same blocked write.
-///
-/// Longer than [`PONG_TIMEOUT`] and than one [`HEARTBEAT`] interval, because a
-/// write that has not completed in half a minute is not a slow client, it is a
-/// client that is not reading at all. A live one drains a few-hundred-byte frame
-/// far inside this.
+/// How long one write may take before the connection is abandoned. This is what
+/// stops a client that stops reading from wedging its pump: every write shares
+/// one `select!` with both timers, so a `send` parked on a full TCP window parks
+/// them too and neither can end it. Longer than [`PONG_TIMEOUT`] and one
+/// [`HEARTBEAT`], since a write this slow is a peer that is not reading.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The schedule one socket's heartbeat runs on.
-///
-/// A value rather than the two constants read at their use sites, so a
-/// socket-level test can drive the same loop on a scale it can watch in real
-/// time. Every production path takes [`Heartbeat::default`], which is exactly
-/// the two constants above; the only other way to build one is
-/// `routes_with_heartbeat`, which exists in test builds alone.
+/// The schedule one socket's heartbeat runs on. A value rather than the
+/// constants read at their use sites, so a socket-level test can drive the same
+/// loop on a timescale it can watch. Production always takes
+/// [`Heartbeat::default`].
 #[derive(Clone, Copy)]
 struct Heartbeat {
     interval: Duration,
     timeout: Duration,
-    /// The per-write budget. On the same struct as the other two because a test
-    /// that wants to observe a stalled writer has to compress it for the same
-    /// reason it compresses the interval, and because all three bound the same
-    /// loop.
+    /// The per-write budget. Here with the other two because all three bound
+    /// the same loop and a test compresses them together.
     write_timeout: Duration,
 }
 
@@ -87,13 +68,8 @@ impl Default for Heartbeat {
     }
 }
 
-/// Client frames are small control messages: a chat start, a tool response. A
-/// payload wildly larger than any of them is refused before parsing, so a
-/// hostile or buggy client cannot make the core parse an unbounded document.
-///
-/// Measured in bytes where the TypeScript measures UTF-16 code units. This is a
-/// denial-of-service bound on an unparsed payload, not a wire contract, and one
-/// megabyte is three orders of magnitude above any real frame.
+/// Client frames are small control messages, so a wildly larger payload is
+/// refused before parsing. A denial-of-service bound, not a wire contract.
 const MAX_INBOUND_FRAME_BYTES: usize = 1_000_000;
 
 /// Close codes. 4001 and 4002 are in the private range and the client
@@ -106,9 +82,7 @@ pub fn routes(ctx: &AppContext) -> Router {
 }
 
 /// The same two routes on a compressed heartbeat, so the end-to-end socket
-/// tests can observe a ping and a pong deadline without waiting 25 real
-/// seconds and without a virtual clock. The reason a virtual clock is not an
-/// option is in the header of those tests, in `transport/tests.rs`.
+/// tests can observe a ping and a pong deadline without waiting 25 seconds.
 #[cfg(test)]
 pub(super) fn routes_with_heartbeat(
     ctx: &AppContext,
@@ -168,16 +142,13 @@ async fn upgrade(
     State(ctx): State<AppContext>,
     Query(query): Query<UpgradeQuery>,
     headers: HeaderMap,
-    // Deliberately a `Result`, so a failed upgrade extraction does not
-    // short-circuit the checks below. Authentication runs BEFORE the handshake
-    // is judged, which is what makes a plain `GET /ws/v1` with no ticket answer
-    // 401 rather than "not a websocket request". The shipping behaviour, and
-    // the more useful of the two answers.
+    // A `Result`, so a failed upgrade extraction does not short-circuit the
+    // checks below: authentication runs before the handshake is judged, which
+    // is what makes a plain `GET /ws/v1` answer 401.
     ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
     heartbeat: Heartbeat,
 ) -> Response {
-    // Mirror the HTTP origin allowlist on the upgrade. The ticket already
-    // gates this, so rejecting a cross-origin browser upgrade is defence in
+    // The ticket already gates this, so the origin allowlist is defence in
     // depth. Native clients send no Origin and pass.
     if let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()) {
         if !is_origin_allowed(origin) {
@@ -185,9 +156,8 @@ async fn upgrade(
             return (StatusCode::FORBIDDEN, "forbidden origin").into_response();
         }
     }
-    // These three rejections are plain text, not the error envelope. That is
-    // what ships, the client does not parse them, and the upgrade path is not a
-    // JSON API. The one deliberate exception to the envelope rule.
+    // Plain text, not the error envelope: the upgrade path is not a JSON API
+    // and the client does not parse these. The one exception to that rule.
     let Some(ticket) = query.ticket else {
         return (StatusCode::UNAUTHORIZED, "missing ticket").into_response();
     };
@@ -204,24 +174,18 @@ async fn upgrade(
     ws.on_upgrade(move |socket| serve(socket, conn, heartbeat))
 }
 
-/// Pump one socket until either side closes it.
-///
-/// Everything time-based lives in the one `select!` below rather than in
-/// spawned timers, so there is no way for a timer to fire against a
+/// Pump one socket until either side closes it. Everything time-based lives in
+/// one `select!` rather than spawned timers, so no timer can fire against a
 /// half-closed socket.
 async fn serve(socket: WebSocket, conn: Connection, heartbeat: Heartbeat) {
     let (sink, stream) = socket.split();
     pump(sink, stream, conn, heartbeat).await;
 }
 
-/// The loop itself, generic over the two halves of the socket.
-///
-/// Generic so a test can drive the REAL loop against a sink that never accepts
-/// a write, which is the only way to observe that a stalled peer no longer
-/// wedges the pump. Testing the write helper alone would prove the helper works
-/// and say nothing about the loop it has to be used from, and the property here
-/// is entirely about the loop: the timers and the writes share one future, so
-/// what matters is that the future keeps making progress.
+/// The loop itself, generic over the two halves of the socket so a test can
+/// drive the real loop against a sink that never accepts a write. The property
+/// is about the loop, not the write helper: the timers and the writes share one
+/// future, so what matters is that the future keeps making progress.
 async fn pump<Si, St>(mut sink: Si, mut stream: St, mut conn: Connection, heartbeat: Heartbeat)
 where
     Si: SinkExt<Message> + Unpin,
@@ -235,8 +199,7 @@ where
     let mut pong_deadline: Option<Instant> = None;
 
     loop {
-        // Copied out, not borrowed: the future below outlives the branch that
-        // reassigns `pong_deadline` when a pong arrives.
+        // Copied out: the future below outlives the branch that reassigns it.
         let deadline = pong_deadline;
         let tick = tokio::time::sleep_until(ping_at);
         let pong = async move {
@@ -329,16 +292,10 @@ pub enum Handled {
 /// The inbound frame policy: the size cap, the JSON parse, the envelope check,
 /// the heartbeat split, and the hand-off to the registered handler.
 ///
-/// **Public because it has two callers, and must never have two
-/// implementations.** The socket pump below is one; the in-process pump in
-/// `loca-core-ffi` is the other. This function is what decides whether a
-/// `chat.start` frame reaches its handler at all, so a second copy would drift
-/// with nothing going red, each half green against its own tests.
+/// Public because it has two callers and must never have two implementations:
+/// the socket pump below, and the in-process pump in `loca-core-ffi`.
 ///
-/// Every rejection returns [`Handled::Nothing`], which leaves the connection
-/// open: a malformed frame today already leaves the sending client hanging, and
-/// tearing the connection down over one turns a recoverable client bug into a
-/// dead session.
+/// Every rejection returns [`Handled::Nothing`] and leaves the connection open.
 pub fn handle_client_frame(conn: &Connection, text: &str) -> Handled {
     if text.len() > MAX_INBOUND_FRAME_BYTES {
         tracing::warn!(
@@ -354,11 +311,9 @@ pub fn handle_client_frame(conn: &Connection, text: &str) -> Handled {
             return Handled::Nothing;
         }
     };
-    // The envelope check, and the only parsing the transport does. Its
-    // `Deserialize` carries the schema's constraints, so a `kind` that is
-    // missing, not a string, or empty is rejected here. The per-kind types
-    // belong to the handler that owns them, and deserializing one IS its
-    // validation, so re-parsing here would either duplicate that or weaken it.
+    // The only parsing the transport does. Its `Deserialize` carries the
+    // schema's constraints, so a missing, non-string or empty `kind` is
+    // rejected here; per-kind types belong to the handler that owns them.
     let envelope: WsFrameEnvelope = match serde_json::from_value(raw.clone()) {
         Ok(envelope) => envelope,
         Err(err) => {
@@ -381,11 +336,9 @@ async fn close<S>(sink: &mut S, code: u16, reason: &'static str, budget: Duratio
 where
     S: SinkExt<Message> + Unpin,
 {
-    // Budgeted for the same reason the frame writes are: this is reached from
-    // the pong-timeout arm, so the peer it is trying to tell has already stopped
-    // behaving. An unbounded close would hold the task open forever on exactly
-    // the connection the timeout just decided to end. Dropping the sink after
-    // this closes the socket regardless of whether the courtesy frame landed.
+    // Budgeted: this is reached from the pong-timeout arm, so the peer has
+    // already stopped behaving and an unbounded close would hold the task open
+    // on the very connection the timeout just ended.
     let msg = Message::Close(Some(CloseFrame {
         code,
         reason: Utf8Bytes::from_static(reason),
@@ -393,21 +346,16 @@ where
     let _ = tokio::time::timeout(budget, sink.send(msg)).await;
 }
 
-/// One write, bounded by `budget`. `false` means the connection is finished:
-/// either the peer went away or it stopped reading for longer than the budget.
-///
-/// Every write in `serve` goes through here, and that is the invariant rather
-/// than a convenience: a single unbudgeted `sink.send(..).await` anywhere in
-/// that `select!` reopens the wedge, because it is the same one future the
-/// timers live in.
+/// One write, bounded by `budget`. `false` means the connection is finished.
+/// Every write in `serve` must go through here: one unbudgeted
+/// `sink.send(..).await` in that `select!` reopens the wedge.
 async fn write<S>(sink: &mut S, msg: Message, budget: Duration, client_id: &str) -> bool
 where
     S: SinkExt<Message> + Unpin,
 {
     match tokio::time::timeout(budget, sink.send(msg)).await {
         Ok(Ok(())) => true,
-        // The ordinary end of a socket: the peer closed or the connection
-        // broke. Not worth a warning.
+        // The ordinary end of a socket, not worth a warning.
         Ok(Err(_)) => false,
         Err(_) => {
             tracing::warn!(
@@ -439,11 +387,8 @@ mod tests {
         }
     }
 
-    /// A peer that completed its upgrade and then stopped reading: every write
-    /// parks forever, exactly as a real socket does once the TCP window fills.
-    ///
-    /// `poll_ready` is the pending one because that is where a full window
-    /// actually stops a `SinkExt::send`.
+    /// A peer that stopped reading: every write parks forever, as a real socket
+    /// does once the TCP window fills. `poll_ready` is where that bites.
     struct StalledSink;
 
     impl futures_util::Sink<Message> for StalledSink {
@@ -477,33 +422,21 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_client_that_stops_reading_loses_its_connection_instead_of_wedging_the_pump() {
-        // The failure this closes: the pump's delivery arm awaited
-        // `sink.send(..)` with no deadline, so a peer that stopped draining
-        // parked the entire `select!`. `conn.next()` was then never polled
-        // again while broadcasts kept queueing on an UNBOUNDED channel, and
-        // neither the heartbeat tick nor the pong deadline could end it,
-        // because both are arms of the future that stopped being polled. The
-        // connection survived indefinitely, growing.
-        //
-        // The observable is the pump RETURNING. A returned pump has dropped its
-        // `Connection`, which deregisters it from the bus and releases the whole
-        // queue; a wedged one never gets there. So the outer timeout below is
-        // the assertion: without the per-write budget this test hangs until it
-        // trips, which is the red.
+        // The observable is the pump RETURNING: that drops its `Connection`,
+        // deregistering it and releasing the queue. So the outer timeout is the
+        // assertion, and without the per-write budget it trips.
         let bus = Arc::new(FrameBus::default());
         let conn = bus.register("client-a");
 
-        // Enough queued frames that the pump has work it would happily block
-        // on. One would do; a batch makes the intent obvious.
+        // Enough queued frames that the pump has work to block on.
         for _ in 0..64 {
             bus.broadcast_to_client("client-a", &crate::contract::api::ServerToClientFrame::Pong);
         }
 
         let budget = Duration::from_millis(200);
         let heartbeat = Heartbeat {
-            // Long enough that neither timer can be what ends the loop. If the
-            // pump returns here it is because the WRITE gave up, which is the
-            // property under test and not a heartbeat firing by luck.
+            // Long enough that neither timer can be what ends the loop, so a
+            // returning pump means the write gave up.
             interval: Duration::from_secs(30),
             timeout: Duration::from_secs(30),
             write_timeout: budget,
@@ -564,9 +497,8 @@ mod tests {
         assert_eq!(dispatched(&seen), ["chat.start"]);
     }
 
-    /// An unknown kind is forwarded rather than dropped. The kind set lives
-    /// with the handler that owns it, and a forward-compatible client may send
-    /// something this build does not know about.
+    /// An unknown kind is forwarded rather than dropped: the kind set lives
+    /// with the handler that owns it.
     #[tokio::test]
     async fn an_unknown_kind_is_forwarded_for_the_handler_to_judge() {
         let (conn, seen) = conn_with_recorder();
@@ -584,8 +516,7 @@ mod tests {
             r#"{"streamId":"s"}"#,
             // Kind of the wrong type.
             r#"{"kind":123}"#,
-            // Empty kind: the schema's minLength is enforced by the generated
-            // Deserialize, which is why there is no check for it here.
+            // Empty kind: the generated Deserialize enforces minLength.
             r#"{"kind":""}"#,
             // Not an object.
             r#"[{"kind":"ping"}]"#,

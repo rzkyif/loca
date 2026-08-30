@@ -13,11 +13,9 @@ use crate::error::{validation, AppError, ErrorCode, Result};
 /// insensitive, with lowercase ahead of uppercase on an otherwise equal
 /// comparison.
 ///
-/// A copy of `storage::walk::by_name`, because `storage::walk` is private to
-/// D9's module and this package cannot widen it. The two must agree: they order
-/// two views of the same directory, and a user comparing the model list with
-/// the storage screen would otherwise see the same files in two orders. There
-/// is an open request to hoist it; when that lands this goes away.
+/// A copy of `storage::walk::by_name`, which is private to that module. The two
+/// must agree: they order two views of the same directory, and a user comparing
+/// the model list with the storage screen would otherwise see two orders.
 fn by_name(a: &str, b: &str) -> std::cmp::Ordering {
     a.to_lowercase()
         .cmp(&b.to_lowercase())
@@ -32,8 +30,8 @@ fn by_name(a: &str, b: &str) -> std::cmp::Ordering {
 /// is also returned as-is: this is a resolver, not a validator, and the caller
 /// that tries to open it produces the better error.
 ///
-/// Shared with the sidecars (D14, N2, N3) and with D9's storage locks, so it is
-/// the one place the branch-dropping rule lives.
+/// Shared with the sidecars and with the storage locks, so it is the one place
+/// the branch-dropping rule lives.
 pub fn resolve_hf_path(models_dir: &Path, spec: &str) -> PathBuf {
     let Some(rest) = spec.strip_prefix('@') else {
         return PathBuf::from(spec);
@@ -99,9 +97,8 @@ async fn walk(root: &Path, start: &Path, out: &mut Vec<ModelEntry>) {
     let mut stack = vec![start.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
-            // A directory that vanished or cannot be read is skipped, matching
-            // the TypeScript's NotFound branch. The root not existing is the
-            // common case and is not an error.
+            // A directory that vanished or cannot be read is skipped; the root
+            // not existing is the common case and is not an error.
             continue;
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
@@ -143,8 +140,7 @@ fn source_for(rel_path: &str) -> String {
             format!("@{user}/{repo}/main/{file}")
         }
         // Fewer than three segments is not a repo layout, so there is no branch
-        // to re-insert and the path is passed through as the TypeScript's regex
-        // does when it does not match.
+        // to re-insert and the path passes through.
         _ => format!("@{rel_path}"),
     }
 }

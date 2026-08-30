@@ -1,17 +1,5 @@
-//! The seam: the in-process engine as one more [`ChatProvider`].
-//!
-//! This is the whole of how local inference is wired in. D3 built
-//! `Llm::set_local_provider` for exactly this and nothing calls it yet;
-//! `Llm::provider_for` selects it when the endpoint carries
-//! `is_local_provider`, and falls back to `HttpProvider` when it is not
-//! installed.
-//!
-//! **No SSE.** Server-sent events are the external path's business: the engine
-//! emits [`crate::llm::LlmDelta`] directly, with no encoder and no decoder in
-//! between. The obligation that replaces the wire format is a property rather
-//! than a shape, and `super::diff` tests it: the delta sequence emitted here
-//! must be indistinguishable from what `llm::sse::SseDecoder` plus
-//! `ChatChunk::to_delta` would have produced from `llama-server`'s stream.
+//! The in-process engine as one more [`ChatProvider`]. `Llm::provider_for`
+//! selects it when the endpoint carries `is_local_provider`.
 
 use std::sync::Arc;
 
@@ -20,11 +8,8 @@ use crate::llm::{ChatProvider, DeltaStream, LlmRequest};
 use super::engine::LocalEngine;
 use super::runtime;
 
-/// One turn against the in-process engine.
-///
-/// A thin `Arc` around the engine rather than the engine itself, because the
-/// same engine is also the `ModelIdle` and `EnsureModelLoaded` seam and there is
-/// exactly one of it per core: a second would mean a second model in memory.
+/// `Arc` because the one engine per core is also the `ModelIdle` and
+/// `EnsureModelLoaded` seam.
 pub struct LocalProvider {
     engine: Arc<LocalEngine>,
 }

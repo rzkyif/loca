@@ -1,44 +1,18 @@
 //! The one thread every local speech decode runs on.
 //!
-//! # Why not `spawn_blocking`
+//! Not `spawn_blocking`: a decode cannot be pre-empted, so an abandoned request
+//! keeps a thread busy until it finishes, and on the shared pool a client that
+//! disconnects repeatedly could occupy every blocking thread and damage
+//! unrelated subsystems. One dedicated thread is a containment boundary rather
+//! than a throughput knob; the queue admits one caller at a time anyway.
 //!
-//! A decode cannot be pre-empted, so an abandoned request keeps a thread busy
-//! until it finishes even though its caller has gone. On the shared
-//! `spawn_blocking` pool that is a core-wide problem: a client that disconnects
-//! repeatedly could occupy every blocking thread, and the visible damage would
-//! land on unrelated subsystems (database work, file reads, the extension
-//! supervisor) rather than on speech.
-//!
-//! One dedicated thread bounds the blast radius to the thing that is already
-//! serialised. The queue admits one caller at a time anyway (`PARALLEL_SLOTS`),
-//! so a second worker would have nothing to do: the thread count here is not a
-//! throughput knob, it is a containment boundary.
-//!
-//! # What "cancellation" means here, and what it does NOT mean
-//!
-//! Dropping the returned future releases the queue slot immediately and sets the
-//! job's cancel flag. **Only synthesis acts on that flag**, through sherpa's
-//! generation callback, stopping at the next chunk.
-//!
-//! **An abandoned transcription runs to completion, and the next caller DOES
-//! wait for it.** sherpa's offline recogniser exposes no progress callback, so
-//! there is no point at which a decode can be asked to stop, and this is one
-//! serial thread. The queue slot is released the moment the future drops, so the
-//! next caller is admitted immediately, and then blocks here behind a decode
-//! nobody is listening for, for up to the length of one clip.
-//!
-//! That is a real cost and it is bounded rather than fixed: the 25 MB upload cap
-//! bounds how long one abandoned decode can be, and the queue's depth bound
-//! caps how many can be waiting. Fixing it properly needs either a cancellable
-//! recogniser upstream or chunked decoding, both of which are larger changes
-//! than this package.
-//!
-//! An earlier version of this comment claimed the opposite, that an abandoned
-//! decode never makes the next caller wait. It was wrong, and the abandonment
-//! test below cannot see it because it exercises the synthesis path, which IS
-//! covered. Left explicit here rather than quietly corrected, because a comment
-//! asserting a property the code does not have is worse than no comment: it is
-//! what someone will cite instead of measuring (D-140).
+//! Dropping the returned future releases the queue slot and sets the job's
+//! cancel flag, but ONLY synthesis acts on that flag, through sherpa's
+//! generation callback. An abandoned transcription runs to completion and the
+//! next caller does wait for it: the offline recogniser exposes no progress
+//! callback, so there is no point at which a decode can be asked to stop. The
+//! cost is bounded by the 25 MB upload cap and the queue's depth bound; fixing
+//! it needs a cancellable recogniser upstream or chunked decoding.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -92,12 +66,11 @@ impl Worker {
         let flag = Arc::clone(&cancelled);
         self.sender
             .send(Box::new(move || {
-                // **Checked before the work, not only during it.** The permit is
+                // Checked before the work, not only during it: the permit is
                 // released when the caller's future drops, but the job stays on
-                // this thread's unbounded channel, so a client that connects and
-                // disconnects in a loop could otherwise pile up one full decode
-                // per iteration while the queue depth reads zero. A job whose
-                // caller has already gone is skipped rather than run.
+                // this thread's unbounded channel, so a client connecting and
+                // disconnecting in a loop would pile up one full decode per
+                // iteration while the queue depth reads zero.
                 if flag.load(Ordering::Relaxed) {
                     return;
                 }
@@ -227,13 +200,8 @@ mod tests {
         );
     }
 
-    /// A job whose caller left before it started must not run at all.
-    ///
-    /// The permit is released when the future drops, but the job stays on this
-    /// thread's unbounded channel. Without the pre-check, a client that connects
-    /// and disconnects in a loop enqueues one full decode per iteration while
-    /// the queue depth reads zero, so the bound the queue advertises does not
-    /// bound the work.
+    /// A job whose caller left before it started must not run at all: without
+    /// the pre-check the bound the queue advertises does not bound the work.
     #[tokio::test]
     async fn a_job_abandoned_before_it_starts_never_runs() {
         let worker = Arc::new(Worker::start());

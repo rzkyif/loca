@@ -1,22 +1,16 @@
 // Guards the "every website rendition is in lockstep with the client at default
 // settings" rule for the chat composer specifically.
 //
-// `UserInputView` OWNS the canonical default composition: the quick-model bar is
-// always present and the Voice Input button follows `stt.enabled` from the UI
-// context (both matching a fresh client). A bare `<UserInputView .../>` therefore
-// renders exactly what the client shows by default. The props below RE-DECIDE that
-// composition (which controls appear) and exist as the CLIENT's live-override
-// seams; if the website sets them, its renditions drift from the client (some get
-// the quick bar, some the mic, some neither) - the exact bug this check prevents.
-//
-// Allowed: props that only feed the always-present controls scripted STATE
-// (`value`, `placeholder`, `voiceClass`, `vadEnabled`, `vadListening`,
-// `onVoiceToggle`, ...). Those style/animate the canonical composition; they don't
-// change which controls exist.
+// `UserInputView` OWNS the canonical default composition, so a bare
+// `<UserInputView .../>` renders exactly what the client shows by default. The
+// props below RE-DECIDE which controls appear and exist as the CLIENT's
+// live-override seams; the website setting them is what makes its renditions
+// drift. Props that only feed the always-present controls scripted STATE
+// (`value`, `placeholder`, `voiceClass`, ...) are allowed.
 //
 // Wired into `deno task lint`. If a website demo genuinely needs a control the
-// client hides at default settings, the fix is to change the client default (and
-// thus the View's default), never to hand-configure the shell here.
+// client hides at default settings, change the client default, never
+// hand-configure the shell here.
 
 import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";

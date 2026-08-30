@@ -38,77 +38,13 @@ pub mod error {
 }
 ///`ApiErrorBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "error"
-///  ],
-///  "properties": {
-///    "error": {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "message"
-///      ],
-///      "properties": {
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "details": {
-///          "type": "object",
-///          "additionalProperties": {}
-///        },
-///        "message": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ApiErrorBody {
     pub error: ApiErrorBodyError,
 }
-impl ::std::convert::From<&ApiErrorBody> for ApiErrorBody {
-    fn from(value: &ApiErrorBody) -> Self {
-        value.clone()
-    }
-}
 ///`ApiErrorBodyError`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "code",
-///    "message"
-///  ],
-///  "properties": {
-///    "code": {
-///      "$ref": "#/definitions/ErrorCode"
-///    },
-///    "details": {
-///      "type": "object",
-///      "additionalProperties": {}
-///    },
-///    "message": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ApiErrorBodyError {
@@ -118,169 +54,16 @@ pub struct ApiErrorBodyError {
         ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
     pub message: ::std::string::String,
 }
-impl ::std::convert::From<&ApiErrorBodyError> for ApiErrorBodyError {
-    fn from(value: &ApiErrorBodyError) -> Self {
-        value.clone()
-    }
-}
-///`AppendMessageRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "$ref": "#/definitions/Message"
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct AppendMessageRequest(pub Message);
-impl ::std::ops::Deref for AppendMessageRequest {
-    type Target = Message;
-    fn deref(&self) -> &Message {
-        &self.0
-    }
-}
-impl ::std::convert::From<AppendMessageRequest> for Message {
-    fn from(value: AppendMessageRequest) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&AppendMessageRequest> for AppendMessageRequest {
-    fn from(value: &AppendMessageRequest) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<Message> for AppendMessageRequest {
-    fn from(value: Message) -> Self {
-        Self(value)
-    }
-}
 ///`AppendMessageResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "ord"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AppendMessageResponse {
     pub id: ::std::string::String,
     pub ord: i64,
 }
-impl ::std::convert::From<&AppendMessageResponse> for AppendMessageResponse {
-    fn from(value: &AppendMessageResponse) -> Self {
-        value.clone()
-    }
-}
 ///The concrete `llm.*` values a recommendation or a manual pick applies. Mirrors the LlamaStartArgs-relevant settings the core writes on select.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "The concrete `llm.*` values a recommendation or a manual pick applies. Mirrors the LlamaStartArgs-relevant settings the core writes on select.",
-///  "type": "object",
-///  "required": [
-///    "contextSize",
-///    "flashAttn",
-///    "gpuLayers",
-///    "idleUnloadSeconds",
-///    "minP",
-///    "modelPath",
-///    "reasoningBudget",
-///    "repeatPenalty",
-///    "supportImages",
-///    "temperature",
-///    "threads",
-///    "topK",
-///    "topP"
-///  ],
-///  "properties": {
-///    "contextSize": {
-///      "type": "integer"
-///    },
-///    "dryMultiplier": {
-///      "description": "DRY (Don't Repeat Yourself) multiplier; 0 = disabled. Penalizes repeating whole phrases, catching the semantic loops the token-level repeat penalty misses. Omitted by a model's catalog tuning falls back to DEFAULT_SAMPLING.",
-///      "type": "number"
-///    },
-///    "flashAttn": {
-///      "type": "boolean"
-///    },
-///    "gpuLayers": {
-///      "type": "integer"
-///    },
-///    "idleUnloadSeconds": {
-///      "description": "> 0 only for the Full bucket (aggressive idle-unload).",
-///      "type": "integer"
-///    },
-///    "minP": {
-///      "type": "number"
-///    },
-///    "mmprojPath": {
-///      "type": "string"
-///    },
-///    "modelPath": {
-///      "type": "string"
-///    },
-///    "presencePenalty": {
-///      "description": "OpenAI-style presence penalty; 0 = disabled. Nudges the model toward new words instead of reusing ones it already produced.",
-///      "type": "number"
-///    },
-///    "reasoningBudget": {
-///      "description": "Token budget for the model's thinking, scaled to the context window. Caps the `<think>` block so a turn always leaves room to reach its answer.",
-///      "type": "integer"
-///    },
-///    "repeatPenalty": {
-///      "description": "llama.cpp repetition penalty; 1.0 = disabled.",
-///      "type": "number"
-///    },
-///    "samplers": {
-///      "description": "llama.cpp sampler-chain order (canonical names, applied in this sequence). Omitted = the server's default chain. Set only on catalog models known to benefit; see LOOP_RESISTANT_SAMPLER_ORDER.",
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "supportImages": {
-///      "description": "Side effect of the chosen model: true iff it ships a vision module.",
-///      "type": "boolean"
-///    },
-///    "temperature": {
-///      "type": "number"
-///    },
-///    "threads": {
-///      "type": "integer"
-///    },
-///    "topK": {
-///      "type": "integer"
-///    },
-///    "topP": {
-///      "type": "number"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AppliedModelSettings {
@@ -333,43 +116,8 @@ pub struct AppliedModelSettings {
     #[serde(rename = "topP")]
     pub top_p: f64,
 }
-impl ::std::convert::From<&AppliedModelSettings> for AppliedModelSettings {
-    fn from(value: &AppliedModelSettings) -> Self {
-        value.clone()
-    }
-}
 ///The concrete `stt.*` values a Speech-to-Text selection applies (host/port are never touched). `modelFiles` is the JSON role->spec bundle the sidecar and download flow read; `modelPath` is the primary file's spec (the identity used to match a custom pick and show which model is selected).
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "The concrete `stt.*` values a Speech-to-Text selection applies (host/port are never touched). `modelFiles` is the JSON role->spec bundle the sidecar and download flow read; `modelPath` is the primary file's spec (the identity used to match a custom pick and show which model is selected).",
-///  "type": "object",
-///  "required": [
-///    "modelFiles",
-///    "modelPath",
-///    "modelType",
-///    "threads"
-///  ],
-///  "properties": {
-///    "modelFiles": {
-///      "type": "string"
-///    },
-///    "modelPath": {
-///      "type": "string"
-///    },
-///    "modelType": {
-///      "$ref": "#/definitions/SttFamily"
-///    },
-///    "threads": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AppliedSttSettings {
@@ -381,43 +129,8 @@ pub struct AppliedSttSettings {
     pub model_type: SttFamily,
     pub threads: i64,
 }
-impl ::std::convert::From<&AppliedSttSettings> for AppliedSttSettings {
-    fn from(value: &AppliedSttSettings) -> Self {
-        value.clone()
-    }
-}
 ///The concrete `tts.*` values a Text-to-Speech selection applies. Mirrors AppliedSttSettings; TTS is local-only and single-threaded so no `threads`.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "The concrete `tts.*` values a Text-to-Speech selection applies. Mirrors AppliedSttSettings; TTS is local-only and single-threaded so no `threads`.",
-///  "type": "object",
-///  "required": [
-///    "modelFiles",
-///    "modelPath",
-///    "modelType",
-///    "voice"
-///  ],
-///  "properties": {
-///    "modelFiles": {
-///      "type": "string"
-///    },
-///    "modelPath": {
-///      "type": "string"
-///    },
-///    "modelType": {
-///      "$ref": "#/definitions/TtsFamily"
-///    },
-///    "voice": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AppliedTtsSettings {
@@ -429,40 +142,8 @@ pub struct AppliedTtsSettings {
     pub model_type: TtsFamily,
     pub voice: ::std::string::String,
 }
-impl ::std::convert::From<&AppliedTtsSettings> for AppliedTtsSettings {
-    fn from(value: &AppliedTtsSettings) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserAnswer`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "additionalProperties": {
-///          "type": "string"
-///        }
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum AskUserAnswer {
@@ -471,11 +152,6 @@ pub enum AskUserAnswer {
     Variant2(
         ::std::vec::Vec<::std::collections::HashMap<::std::string::String, ::std::string::String>>,
     ),
-}
-impl ::std::convert::From<&Self> for AskUserAnswer {
-    fn from(value: &AskUserAnswer) -> Self {
-        value.clone()
-    }
 }
 impl ::std::convert::From<::std::vec::Vec<::std::string::String>> for AskUserAnswer {
     fn from(value: ::std::vec::Vec<::std::string::String>) -> Self {
@@ -497,57 +173,6 @@ impl
 }
 ///`AskUserChoiceQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "question"
-///  ],
-///  "properties": {
-///    "allowFreeformInput": {
-///      "type": "boolean"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "choice"
-///      ]
-///    },
-///    "multiselect": {
-///      "type": "boolean"
-///    },
-///    "options": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "label",
-///          "value"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "label": {
-///            "type": "string"
-///          },
-///          "value": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "question": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserChoiceQuestion {
@@ -565,24 +190,8 @@ pub struct AskUserChoiceQuestion {
     pub options: ::std::option::Option<::std::vec::Vec<AskUserChoiceQuestionOptionsItem>>,
     pub question: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserChoiceQuestion> for AskUserChoiceQuestion {
-    fn from(value: &AskUserChoiceQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserChoiceQuestionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "choice"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -598,11 +207,6 @@ impl ::std::convert::From<&AskUserChoiceQuestion> for AskUserChoiceQuestion {
 pub enum AskUserChoiceQuestionKind {
     #[serde(rename = "choice")]
     Choice,
-}
-impl ::std::convert::From<&Self> for AskUserChoiceQuestionKind {
-    fn from(value: &AskUserChoiceQuestionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserChoiceQuestionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -626,48 +230,8 @@ impl ::std::convert::TryFrom<&str> for AskUserChoiceQuestionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserChoiceQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserChoiceQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserChoiceQuestionOptionsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "label",
-///    "value"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "value": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserChoiceQuestionOptionsItem {
@@ -676,48 +240,8 @@ pub struct AskUserChoiceQuestionOptionsItem {
     pub label: ::std::string::String,
     pub value: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserChoiceQuestionOptionsItem> for AskUserChoiceQuestionOptionsItem {
-    fn from(value: &AskUserChoiceQuestionOptionsItem) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserDiffQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "after",
-///    "before",
-///    "kind",
-///    "question"
-///  ],
-///  "properties": {
-///    "after": {
-///      "type": "string"
-///    },
-///    "before": {
-///      "type": "string"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "diff"
-///      ]
-///    },
-///    "question": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserDiffQuestion {
@@ -728,24 +252,8 @@ pub struct AskUserDiffQuestion {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub title: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&AskUserDiffQuestion> for AskUserDiffQuestion {
-    fn from(value: &AskUserDiffQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserDiffQuestionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "diff"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -761,11 +269,6 @@ impl ::std::convert::From<&AskUserDiffQuestion> for AskUserDiffQuestion {
 pub enum AskUserDiffQuestionKind {
     #[serde(rename = "diff")]
     Diff,
-}
-impl ::std::convert::From<&Self> for AskUserDiffQuestionKind {
-    fn from(value: &AskUserDiffQuestionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserDiffQuestionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -789,73 +292,8 @@ impl ::std::convert::TryFrom<&str> for AskUserDiffQuestionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserDiffQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserDiffQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserFilesQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "entries",
-///    "kind",
-///    "question"
-///  ],
-///  "properties": {
-///    "entries": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "path"
-///        ],
-///        "properties": {
-///          "description": {
-///            "type": "string"
-///          },
-///          "label": {
-///            "type": "string"
-///          },
-///          "path": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "files"
-///      ]
-///    },
-///    "multiselect": {
-///      "type": "boolean"
-///    },
-///    "question": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserFilesQuestion {
@@ -865,36 +303,8 @@ pub struct AskUserFilesQuestion {
     pub multiselect: ::std::option::Option<bool>,
     pub question: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserFilesQuestion> for AskUserFilesQuestion {
-    fn from(value: &AskUserFilesQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserFilesQuestionEntriesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "path"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "path": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserFilesQuestionEntriesItem {
@@ -904,24 +314,8 @@ pub struct AskUserFilesQuestionEntriesItem {
     pub label: ::std::option::Option<::std::string::String>,
     pub path: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserFilesQuestionEntriesItem> for AskUserFilesQuestionEntriesItem {
-    fn from(value: &AskUserFilesQuestionEntriesItem) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserFilesQuestionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "files"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -937,11 +331,6 @@ impl ::std::convert::From<&AskUserFilesQuestionEntriesItem> for AskUserFilesQues
 pub enum AskUserFilesQuestionKind {
     #[serde(rename = "files")]
     Files,
-}
-impl ::std::convert::From<&Self> for AskUserFilesQuestionKind {
-    fn from(value: &AskUserFilesQuestionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserFilesQuestionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -965,76 +354,8 @@ impl ::std::convert::TryFrom<&str> for AskUserFilesQuestionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserFilesQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserFilesQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserImageQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "actions",
-///    "dataB64",
-///    "kind",
-///    "mime",
-///    "question"
-///  ],
-///  "properties": {
-///    "actions": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "label",
-///          "value"
-///        ],
-///        "properties": {
-///          "label": {
-///            "type": "string"
-///          },
-///          "value": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "dataB64": {
-///      "type": "string"
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "image"
-///      ]
-///    },
-///    "mime": {
-///      "type": "string"
-///    },
-///    "question": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserImageQuestion {
@@ -1045,58 +366,16 @@ pub struct AskUserImageQuestion {
     pub mime: ::std::string::String,
     pub question: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserImageQuestion> for AskUserImageQuestion {
-    fn from(value: &AskUserImageQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserImageQuestionActionsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "label",
-///    "value"
-///  ],
-///  "properties": {
-///    "label": {
-///      "type": "string"
-///    },
-///    "value": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserImageQuestionActionsItem {
     pub label: ::std::string::String,
     pub value: ::std::string::String,
 }
-impl ::std::convert::From<&AskUserImageQuestionActionsItem> for AskUserImageQuestionActionsItem {
-    fn from(value: &AskUserImageQuestionActionsItem) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserImageQuestionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "image"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1112,11 +391,6 @@ impl ::std::convert::From<&AskUserImageQuestionActionsItem> for AskUserImageQues
 pub enum AskUserImageQuestionKind {
     #[serde(rename = "image")]
     Image,
-}
-impl ::std::convert::From<&Self> for AskUserImageQuestionKind {
-    fn from(value: &AskUserImageQuestionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserImageQuestionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1140,236 +414,8 @@ impl ::std::convert::TryFrom<&str> for AskUserImageQuestionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserImageQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserImageQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "question"
-///      ],
-///      "properties": {
-///        "allowFreeformInput": {
-///          "type": "boolean"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "choice"
-///          ]
-///        },
-///        "multiselect": {
-///          "type": "boolean"
-///        },
-///        "options": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "label",
-///              "value"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "label": {
-///                "type": "string"
-///              },
-///              "value": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "question": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "after",
-///        "before",
-///        "kind",
-///        "question"
-///      ],
-///      "properties": {
-///        "after": {
-///          "type": "string"
-///        },
-///        "before": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "diff"
-///          ]
-///        },
-///        "question": {
-///          "type": "string"
-///        },
-///        "title": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "entries",
-///        "kind",
-///        "question"
-///      ],
-///      "properties": {
-///        "entries": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "path"
-///            ],
-///            "properties": {
-///              "description": {
-///                "type": "string"
-///              },
-///              "label": {
-///                "type": "string"
-///              },
-///              "path": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "files"
-///          ]
-///        },
-///        "multiselect": {
-///          "type": "boolean"
-///        },
-///        "question": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "actions",
-///        "dataB64",
-///        "kind",
-///        "mime",
-///        "question"
-///      ],
-///      "properties": {
-///        "actions": {
-///          "type": "array",
-///          "items": {
-///            "type": "object",
-///            "required": [
-///              "label",
-///              "value"
-///            ],
-///            "properties": {
-///              "label": {
-///                "type": "string"
-///              },
-///              "value": {
-///                "type": "string"
-///              }
-///            },
-///            "additionalProperties": false
-///          }
-///        },
-///        "dataB64": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "image"
-///          ]
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "question": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "columns",
-///        "kind",
-///        "question",
-///        "rows"
-///      ],
-///      "properties": {
-///        "columns": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "table"
-///          ]
-///        },
-///        "question": {
-///          "type": "string"
-///        },
-///        "rows": {
-///          "type": "array",
-///          "items": {
-///            "type": "array",
-///            "items": {
-///              "type": "string"
-///            }
-///          }
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum AskUserQuestion {
@@ -1418,24 +464,8 @@ pub enum AskUserQuestion {
         rows: ::std::vec::Vec<::std::vec::Vec<::std::string::String>>,
     },
 }
-impl ::std::convert::From<&Self> for AskUserQuestion {
-    fn from(value: &AskUserQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserQuestionVariant0Kind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "choice"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1451,11 +481,6 @@ impl ::std::convert::From<&Self> for AskUserQuestion {
 pub enum AskUserQuestionVariant0Kind {
     #[serde(rename = "choice")]
     Choice,
-}
-impl ::std::convert::From<&Self> for AskUserQuestionVariant0Kind {
-    fn from(value: &AskUserQuestionVariant0Kind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserQuestionVariant0Kind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1479,48 +504,8 @@ impl ::std::convert::TryFrom<&str> for AskUserQuestionVariant0Kind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserQuestionVariant0Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant0Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserQuestionVariant0OptionsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "label",
-///    "value"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "value": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserQuestionVariant0OptionsItem {
@@ -1538,17 +523,6 @@ impl ::std::convert::From<&AskUserQuestionVariant0OptionsItem>
 }
 ///`AskUserQuestionVariant1Kind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "diff"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1564,11 +538,6 @@ impl ::std::convert::From<&AskUserQuestionVariant0OptionsItem>
 pub enum AskUserQuestionVariant1Kind {
     #[serde(rename = "diff")]
     Diff,
-}
-impl ::std::convert::From<&Self> for AskUserQuestionVariant1Kind {
-    fn from(value: &AskUserQuestionVariant1Kind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserQuestionVariant1Kind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1592,47 +561,8 @@ impl ::std::convert::TryFrom<&str> for AskUserQuestionVariant1Kind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserQuestionVariant1Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant1Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserQuestionVariant2EntriesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "path"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "path": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserQuestionVariant2EntriesItem {
@@ -1651,17 +581,6 @@ impl ::std::convert::From<&AskUserQuestionVariant2EntriesItem>
 }
 ///`AskUserQuestionVariant2Kind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "files"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1677,11 +596,6 @@ impl ::std::convert::From<&AskUserQuestionVariant2EntriesItem>
 pub enum AskUserQuestionVariant2Kind {
     #[serde(rename = "files")]
     Files,
-}
-impl ::std::convert::From<&Self> for AskUserQuestionVariant2Kind {
-    fn from(value: &AskUserQuestionVariant2Kind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserQuestionVariant2Kind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1705,45 +619,8 @@ impl ::std::convert::TryFrom<&str> for AskUserQuestionVariant2Kind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserQuestionVariant2Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant2Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserQuestionVariant3ActionsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "label",
-///    "value"
-///  ],
-///  "properties": {
-///    "label": {
-///      "type": "string"
-///    },
-///    "value": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserQuestionVariant3ActionsItem {
@@ -1759,17 +636,6 @@ impl ::std::convert::From<&AskUserQuestionVariant3ActionsItem>
 }
 ///`AskUserQuestionVariant3Kind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "image"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1785,11 +651,6 @@ impl ::std::convert::From<&AskUserQuestionVariant3ActionsItem>
 pub enum AskUserQuestionVariant3Kind {
     #[serde(rename = "image")]
     Image,
-}
-impl ::std::convert::From<&Self> for AskUserQuestionVariant3Kind {
-    fn from(value: &AskUserQuestionVariant3Kind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserQuestionVariant3Kind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1813,35 +674,8 @@ impl ::std::convert::TryFrom<&str> for AskUserQuestionVariant3Kind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserQuestionVariant3Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant3Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserQuestionVariant4Kind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "table"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1857,11 +691,6 @@ impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant3K
 pub enum AskUserQuestionVariant4Kind {
     #[serde(rename = "table")]
     Table,
-}
-impl ::std::convert::From<&Self> for AskUserQuestionVariant4Kind {
-    fn from(value: &AskUserQuestionVariant4Kind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserQuestionVariant4Kind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1885,65 +714,8 @@ impl ::std::convert::TryFrom<&str> for AskUserQuestionVariant4Kind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserQuestionVariant4Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserQuestionVariant4Kind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AskUserTableQuestion`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "columns",
-///    "kind",
-///    "question",
-///    "rows"
-///  ],
-///  "properties": {
-///    "columns": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "table"
-///      ]
-///    },
-///    "question": {
-///      "type": "string"
-///    },
-///    "rows": {
-///      "type": "array",
-///      "items": {
-///        "type": "array",
-///        "items": {
-///          "type": "string"
-///        }
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AskUserTableQuestion {
@@ -1952,24 +724,8 @@ pub struct AskUserTableQuestion {
     pub question: ::std::string::String,
     pub rows: ::std::vec::Vec<::std::vec::Vec<::std::string::String>>,
 }
-impl ::std::convert::From<&AskUserTableQuestion> for AskUserTableQuestion {
-    fn from(value: &AskUserTableQuestion) -> Self {
-        value.clone()
-    }
-}
 ///`AskUserTableQuestionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "table"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -1985,11 +741,6 @@ impl ::std::convert::From<&AskUserTableQuestion> for AskUserTableQuestion {
 pub enum AskUserTableQuestionKind {
     #[serde(rename = "table")]
     Table,
-}
-impl ::std::convert::From<&Self> for AskUserTableQuestionKind {
-    fn from(value: &AskUserTableQuestionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AskUserTableQuestionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2013,79 +764,8 @@ impl ::std::convert::TryFrom<&str> for AskUserTableQuestionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AskUserTableQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AskUserTableQuestionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AssistantMessage`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "interrupted": {
-///      "type": "boolean"
-///    },
-///    "modelUsed": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "assistant"
-///      ]
-///    },
-///    "toolCalls": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolCall"
-///      }
-///    },
-///    "truncated": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AssistantMessage {
@@ -2112,25 +792,8 @@ pub struct AssistantMessage {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub truncated: ::std::option::Option<bool>,
 }
-impl ::std::convert::From<&AssistantMessage> for AssistantMessage {
-    fn from(value: &AssistantMessage) -> Self {
-        value.clone()
-    }
-}
 ///`AssistantMessageModelUsed`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2148,11 +811,6 @@ pub enum AssistantMessageModelUsed {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for AssistantMessageModelUsed {
-    fn from(value: &AssistantMessageModelUsed) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageModelUsed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2178,35 +836,8 @@ impl ::std::convert::TryFrom<&str> for AssistantMessageModelUsed {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AssistantMessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AssistantMessageRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "assistant"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2222,11 +853,6 @@ impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageModelUse
 pub enum AssistantMessageRole {
     #[serde(rename = "assistant")]
     Assistant,
-}
-impl ::std::convert::From<&Self> for AssistantMessageRole {
-    fn from(value: &AssistantMessageRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for AssistantMessageRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2250,56 +876,8 @@ impl ::std::convert::TryFrom<&str> for AssistantMessageRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for AssistantMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for AssistantMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`AttachmentRef`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "filename",
-///    "id",
-///    "sizeBytes",
-///    "url"
-///  ],
-///  "properties": {
-///    "filename": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "mime": {
-///      "type": "string"
-///    },
-///    "sizeBytes": {
-///      "type": "integer"
-///    },
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentRef {
@@ -2311,83 +889,21 @@ pub struct AttachmentRef {
     pub size_bytes: i64,
     pub url: ::std::string::String,
 }
-impl ::std::convert::From<&AttachmentRef> for AttachmentRef {
-    fn from(value: &AttachmentRef) -> Self {
-        value.clone()
-    }
-}
 ///`AutocorrectRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "text"
-///  ],
-///  "properties": {
-///    "text": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct AutocorrectRequest {
     pub text: ::std::string::String,
 }
-impl ::std::convert::From<&AutocorrectRequest> for AutocorrectRequest {
-    fn from(value: &AutocorrectRequest) -> Self {
-        value.clone()
-    }
-}
 ///`AutocorrectResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "text"
-///  ],
-///  "properties": {
-///    "text": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct AutocorrectResponse {
     pub text: ::std::string::String,
 }
-impl ::std::convert::From<&AutocorrectResponse> for AutocorrectResponse {
-    fn from(value: &AutocorrectResponse) -> Self {
-        value.clone()
-    }
-}
 ///`BinaryKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llama-server",
-///    "loca-core-speech",
-///    "deno"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2403,21 +919,13 @@ impl ::std::convert::From<&AutocorrectResponse> for AutocorrectResponse {
 pub enum BinaryKind {
     #[serde(rename = "llama-server")]
     LlamaServer,
-    #[serde(rename = "loca-core-speech")]
-    LocaCoreSpeech,
     #[serde(rename = "deno")]
     Deno,
-}
-impl ::std::convert::From<&Self> for BinaryKind {
-    fn from(value: &BinaryKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for BinaryKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match *self {
             Self::LlamaServer => f.write_str("llama-server"),
-            Self::LocaCoreSpeech => f.write_str("loca-core-speech"),
             Self::Deno => f.write_str("deno"),
         }
     }
@@ -2427,7 +935,6 @@ impl ::std::str::FromStr for BinaryKind {
     fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
         match value {
             "llama-server" => Ok(Self::LlamaServer),
-            "loca-core-speech" => Ok(Self::LocaCoreSpeech),
             "deno" => Ok(Self::Deno),
             _ => Err("invalid value".into()),
         }
@@ -2439,48 +946,8 @@ impl ::std::convert::TryFrom<&str> for BinaryKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for BinaryKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for BinaryKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`BinaryProbeResult`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "version"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "$ref": "#/definitions/BinaryKind"
-///    },
-///    "sizeBytes": {
-///      "type": "integer"
-///    },
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BinaryProbeResult {
@@ -2493,57 +960,12 @@ pub struct BinaryProbeResult {
     pub size_bytes: ::std::option::Option<i64>,
     pub version: ::std::string::String,
 }
-impl ::std::convert::From<&BinaryProbeResult> for BinaryProbeResult {
-    fn from(value: &BinaryProbeResult) -> Self {
-        value.clone()
-    }
-}
 ///`BinaryStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "installed",
-///    "kind",
-///    "version"
-///  ],
-///  "properties": {
-///    "desiredVariant": {
-///      "description": "The variant this device should have, given detected hardware + the backend override (the ideal). A concrete better variant becoming installable surfaces through the update path, not the missing-requirement path.",
-///      "$ref": "#/definitions/BinaryVariant"
-///    },
-///    "installed": {
-///      "type": "boolean"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/BinaryKind"
-///    },
-///    "path": {
-///      "type": "string"
-///    },
-///    "target": {
-///      "description": "The desired variant captured at the last install (what that install AIMED for). Equals `desiredVariant` in the normal case; differs from `variant` only when the ideal wasn't resolvable upstream and the install degraded. Present-ness is judged by `target === desiredVariant` (not `variant === desiredVariant`), so an unavoidable fallback settles instead of reading as perpetually-missing. Undefined when not installed.",
-///      "$ref": "#/definitions/BinaryVariant"
-///    },
-///    "variant": {
-///      "description": "The GPU variant currently installed on disk (`cpu` for single-variant kinds; undefined when not installed).",
-///      "$ref": "#/definitions/BinaryVariant"
-///    },
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BinaryStatus {
-    ///The variant this device should have, given detected hardware + the backend override (the ideal). A concrete better variant becoming installable surfaces through the update path, not the missing-requirement path.
+    ///The ideal variant for this device (detected hardware + backend override).
     #[serde(
         rename = "desiredVariant",
         default,
@@ -2554,7 +976,7 @@ pub struct BinaryStatus {
     pub kind: BinaryKind,
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub path: ::std::option::Option<::std::string::String>,
-    ///The desired variant captured at the last install (what that install AIMED for). Equals `desiredVariant` in the normal case; differs from `variant` only when the ideal wasn't resolvable upstream and the install degraded. Present-ness is judged by `target === desiredVariant` (not `variant === desiredVariant`), so an unavoidable fallback settles instead of reading as perpetually-missing. Undefined when not installed.
+    ///What the last install AIMED for. Present-ness is judged by `target === desiredVariant`, so an install that degraded to an available variant settles instead of reading as perpetually-missing.
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub target: ::std::option::Option<BinaryVariant>,
     ///The GPU variant currently installed on disk (`cpu` for single-variant kinds; undefined when not installed).
@@ -2562,49 +984,8 @@ pub struct BinaryStatus {
     pub variant: ::std::option::Option<BinaryVariant>,
     pub version: ::std::string::String,
 }
-impl ::std::convert::From<&BinaryStatus> for BinaryStatus {
-    fn from(value: &BinaryStatus) -> Self {
-        value.clone()
-    }
-}
 ///`BinaryUpdateCheck`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "available",
-///    "installed",
-///    "installedVersion",
-///    "kind",
-///    "latestVersion"
-///  ],
-///  "properties": {
-///    "available": {
-///      "type": "boolean"
-///    },
-///    "installed": {
-///      "type": "boolean"
-///    },
-///    "installedVersion": {
-///      "type": [
-///        "string",
-///        "null"
-///      ]
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/BinaryKind"
-///    },
-///    "latestVersion": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BinaryUpdateCheck {
@@ -2616,31 +997,8 @@ pub struct BinaryUpdateCheck {
     #[serde(rename = "latestVersion")]
     pub latest_version: ::std::string::String,
 }
-impl ::std::convert::From<&BinaryUpdateCheck> for BinaryUpdateCheck {
-    fn from(value: &BinaryUpdateCheck) -> Self {
-        value.clone()
-    }
-}
 ///`BinaryVariant`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "cpu",
-///    "metal",
-///    "vulkan",
-///    "cuda",
-///    "rocm",
-///    "hip",
-///    "directml",
-///    "coreml"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2670,11 +1028,6 @@ pub enum BinaryVariant {
     Directml,
     #[serde(rename = "coreml")]
     Coreml,
-}
-impl ::std::convert::From<&Self> for BinaryVariant {
-    fn from(value: &BinaryVariant) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for BinaryVariant {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2712,74 +1065,8 @@ impl ::std::convert::TryFrom<&str> for BinaryVariant {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for BinaryVariant {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for BinaryVariant {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`BucketRecommendation`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "apply",
-///    "bucket",
-///    "footprintBytes",
-///    "modelId",
-///    "name",
-///    "quality",
-///    "quant",
-///    "variantLabel",
-///    "vision"
-///  ],
-///  "properties": {
-///    "apply": {
-///      "$ref": "#/definitions/AppliedModelSettings"
-///    },
-///    "bucket": {
-///      "$ref": "#/definitions/PresetBucket"
-///    },
-///    "footprintBytes": {
-///      "type": "integer"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "quality": {
-///      "description": "Resolved primary \"smartness\" score.",
-///      "type": "number"
-///    },
-///    "quant": {
-///      "type": "string"
-///    },
-///    "variantLabel": {
-///      "type": "string"
-///    },
-///    "vision": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BucketRecommendation {
@@ -2796,86 +1083,8 @@ pub struct BucketRecommendation {
     pub variant_label: ::std::string::String,
     pub vision: bool,
 }
-impl ::std::convert::From<&BucketRecommendation> for BucketRecommendation {
-    fn from(value: &BucketRecommendation) -> Self {
-        value.clone()
-    }
-}
 ///One row in the model browser: a catalog model plus how it would land on this device.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One row in the model browser: a catalog model plus how it would land on this device.",
-///  "type": "object",
-///  "required": [
-///    "apply",
-///    "family",
-///    "fits",
-///    "footprintBytes",
-///    "id",
-///    "name",
-///    "paramsB",
-///    "quant",
-///    "quants",
-///    "tags",
-///    "variantLabel",
-///    "vision"
-///  ],
-///  "properties": {
-///    "apply": {
-///      "$ref": "#/definitions/AppliedModelSettings"
-///    },
-///    "family": {
-///      "type": "string"
-///    },
-///    "fits": {
-///      "type": "boolean"
-///    },
-///    "footprintBytes": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "paramsB": {
-///      "type": "number"
-///    },
-///    "quality": {
-///      "type": "number"
-///    },
-///    "quant": {
-///      "description": "Best quant/variant that fits this device, or the smallest quant if none fit (then `fits` is false).",
-///      "type": "string"
-///    },
-///    "quants": {
-///      "description": "Every quant of this model the user can pick manually (recommended flagged).",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/QuantOption"
-///      }
-///    },
-///    "tags": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "variantLabel": {
-///      "type": "string"
-///    },
-///    "vision": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogModelView {
@@ -2899,27 +1108,8 @@ pub struct CatalogModelView {
     pub variant_label: ::std::string::String,
     pub vision: bool,
 }
-impl ::std::convert::From<&CatalogModelView> for CatalogModelView {
-    fn from(value: &CatalogModelView) -> Self {
-        value.clone()
-    }
-}
 ///`ChatDoneReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stop",
-///    "interrupted",
-///    "hop_limit",
-///    "length"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -2941,11 +1131,6 @@ pub enum ChatDoneReason {
     HopLimit,
     #[serde(rename = "length")]
     Length,
-}
-impl ::std::convert::From<&Self> for ChatDoneReason {
-    fn from(value: &ChatDoneReason) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ChatDoneReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2975,35 +1160,8 @@ impl ::std::convert::TryFrom<&str> for ChatDoneReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ChatDoneReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ChatDoneReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`CheckBinariesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/BinaryUpdateCheck"
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct CheckBinariesResponse(pub ::std::vec::Vec<BinaryUpdateCheck>);
@@ -3018,11 +1176,6 @@ impl ::std::convert::From<CheckBinariesResponse> for ::std::vec::Vec<BinaryUpdat
         value.0
     }
 }
-impl ::std::convert::From<&CheckBinariesResponse> for CheckBinariesResponse {
-    fn from(value: &CheckBinariesResponse) -> Self {
-        value.clone()
-    }
-}
 impl ::std::convert::From<::std::vec::Vec<BinaryUpdateCheck>> for CheckBinariesResponse {
     fn from(value: ::std::vec::Vec<BinaryUpdateCheck>) -> Self {
         Self(value)
@@ -3030,32 +1183,10 @@ impl ::std::convert::From<::std::vec::Vec<BinaryUpdateCheck>> for CheckBinariesR
 }
 ///`CheckUpdatesRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "ids": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct CheckUpdatesRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub ids: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-}
-impl ::std::convert::From<&CheckUpdatesRequest> for CheckUpdatesRequest {
-    fn from(value: &CheckUpdatesRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for CheckUpdatesRequest {
     fn default() -> Self {
@@ -3066,508 +1197,23 @@ impl ::std::default::Default for CheckUpdatesRequest {
 }
 ///`CheckUpdatesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "results"
-///  ],
-///  "properties": {
-///    "results": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ExtensionUpdateStatus"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CheckUpdatesResponse {
     pub results: ::std::vec::Vec<ExtensionUpdateStatus>,
 }
-impl ::std::convert::From<&CheckUpdatesResponse> for CheckUpdatesResponse {
-    fn from(value: &CheckUpdatesResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ClearStorageCategoryRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "categoryId"
-///  ],
-///  "properties": {
-///    "categoryId": {
-///      "description": "Category to empty of its non-locked items. For `settings` this is a factory reset: defaults restored and secrets wiped.",
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ClearStorageCategoryRequest {
     ///Category to empty of its non-locked items. For `settings` this is a factory reset: defaults restored and secrets wiped.
     #[serde(rename = "categoryId")]
     pub category_id: ::std::string::String,
 }
-impl ::std::convert::From<&ClearStorageCategoryRequest> for ClearStorageCategoryRequest {
-    fn from(value: &ClearStorageCategoryRequest) -> Self {
-        value.clone()
-    }
-}
-///`ClientToServerFrame`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "ping"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "pong"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "sessionId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "anchorMessageId": {
-///          "description": "User message anchoring this turn. When set, core deletes every message strictly between the anchor and the next-newer user message, truncates the LLM transcript at the anchor (inclusive), and inserts the new turn's messages into that slot. Absent means a fresh tail turn anchored on the newest user message.",
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.start"
-///          ]
-///        },
-///        "route": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        },
-///        "systemPrompt": {
-///          "description": "Effective system prompt for this turn, composed client-side (base prompt + context block + snippet overrides). The client owns the context fields (local date/time, OS, ...), so the final string is sent per turn; when absent, core falls back to its `prompts.defaultSystemPrompt` setting.",
-///          "type": "string"
-///        },
-///        "toolsHint": {
-///          "description": "Rendered `[toolsAvailable:...]` segment of the context template. Sent separately from `systemPrompt` because only core knows whether tools survive the relevance filter: it appends this to the prompt iff the turn actually exposes tools to the model.",
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.interrupt"
-///          ]
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "sessionId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.subscribe"
-///          ]
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "answers",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "answers": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/AskUserAnswer"
-///          }
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.askuser_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "allow",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "allow": {
-///          "type": "boolean"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.permission_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.cancel"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "accepted",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "accepted": {
-///          "type": "boolean"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "draft": {
-///          "$ref": "#/definitions/ScheduledPromptDraft"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "schedule.confirm_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum ClientToServerFrame {
-    #[serde(rename = "ping")]
-    Ping,
-    #[serde(rename = "pong")]
-    Pong,
-    #[serde(rename = "chat.start")]
-    ChatStart {
-        ///User message anchoring this turn. When set, core deletes every message strictly between the anchor and the next-newer user message, truncates the LLM transcript at the anchor (inclusive), and inserts the new turn's messages into that slot. Absent means a fresh tail turn anchored on the newest user message.
-        #[serde(
-            rename = "anchorMessageId",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        anchor_message_id: ::std::option::Option<::std::string::String>,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        route: ::std::option::Option<ClientToServerFrameRoute>,
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-        ///Effective system prompt for this turn, composed client-side (base prompt + context block + snippet overrides). The client owns the context fields (local date/time, OS, ...), so the final string is sent per turn; when absent, core falls back to its `prompts.defaultSystemPrompt` setting.
-        #[serde(
-            rename = "systemPrompt",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        system_prompt: ::std::option::Option<::std::string::String>,
-        ///Rendered `[toolsAvailable:...]` segment of the context template. Sent separately from `systemPrompt` because only core knows whether tools survive the relevance filter: it appends this to the prompt iff the turn actually exposes tools to the model.
-        #[serde(
-            rename = "toolsHint",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        tools_hint: ::std::option::Option<::std::string::String>,
-    },
-    #[serde(rename = "chat.interrupt")]
-    ChatInterrupt {
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.subscribe")]
-    ChatSubscribe {
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.askuser_response")]
-    ToolAskuserResponse {
-        answers: ::std::vec::Vec<AskUserAnswer>,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.permission_response")]
-    ToolPermissionResponse {
-        allow: bool,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.cancel")]
-    ToolCancel {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-    },
-    #[serde(rename = "schedule.confirm_response")]
-    ScheduleConfirmResponse {
-        accepted: bool,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        draft: ::std::option::Option<ScheduledPromptDraft>,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-}
-impl ::std::convert::From<&Self> for ClientToServerFrame {
-    fn from(value: &ClientToServerFrame) -> Self {
-        value.clone()
-    }
-}
-///`ClientToServerFrameRoute`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ClientToServerFrameRoute {
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "secondary")]
-    Secondary,
-}
-impl ::std::convert::From<&Self> for ClientToServerFrameRoute {
-    fn from(value: &ClientToServerFrameRoute) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ClientToServerFrameRoute {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Default => f.write_str("default"),
-            Self::Secondary => f.write_str("secondary"),
-        }
-    }
-}
-impl ::std::str::FromStr for ClientToServerFrameRoute {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "default" => Ok(Self::Default),
-            "secondary" => Ok(Self::Secondary),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ClientToServerFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ClientToServerFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ClientToServerFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 /**What a Core can do, as opposed to what the device rendering its UI can do. Those are different questions, and confusing them gets the interesting case backwards: a phone paired to a desktop Core must still offer extensions, scheduled prompts and stdio MCP servers, because all three are properties of the Core, not of the screen. Device concerns (touch affordances, sheets, soft-keyboard behaviour, window geometry) stay on the platform flag and the settings schema's `desktopOnly`; these do not.
 
 A client caches the block on connect. Absent means "a Core that predates negotiation", which is treated as fully capable rather than fully incapable: a false negative hides a working feature with no affordance to discover it, where a false positive shows a control that fails with a worded reason.*/
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "What a Core can do, as opposed to what the device rendering its UI can do. Those are different questions, and confusing them gets the interesting case backwards: a phone paired to a desktop Core must still offer extensions, scheduled prompts and stdio MCP servers, because all three are properties of the Core, not of the screen. Device concerns (touch affordances, sheets, soft-keyboard behaviour, window geometry) stay on the platform flag and the settings schema's `desktopOnly`; these do not.\n\nA client caches the block on connect. Absent means \"a Core that predates negotiation\", which is treated as fully capable rather than fully incapable: a false negative hides a working feature with no affordance to discover it, where a false positive shows a control that fails with a worded reason.",
-///  "type": "object",
-///  "required": [
-///    "coreUpdate",
-///    "extensions",
-///    "localInference",
-///    "localSpeech",
-///    "pairing",
-///    "scheduledPrompts",
-///    "stdioMcp"
-///  ],
-///  "properties": {
-///    "coreUpdate": {
-///      "description": "This Core can replace its own binary. Named `coreUpdate` rather than `update` because on mobile the CLIENT self-updates while Core cannot, being inside the app bundle, and a bare `update` invites hiding the wrong affordance.",
-///      "type": "boolean"
-///    },
-///    "extensions": {
-///      "description": "Extension tools can actually RUN. Installing is not the question: an extension installs fine with no worker spawner and then every one of its tools fails at call time, which is the state worth hiding.",
-///      "type": "boolean"
-///    },
-///    "localInference": {
-///      "description": "A language model can run inside Core, so a local model selection is servable rather than a download with nothing to load it.",
-///      "type": "boolean"
-///    },
-///    "localSpeech": {
-///      "description": "Speech recognition and synthesis can run inside Core.",
-///      "type": "boolean"
-///    },
-///    "pairing": {
-///      "description": "**Inbound only: this Core can accept NEW paired clients.**\n\nIt is not \"this device can pair\". A client pairing OUT to a remote Core is unaffected by this flag; what is false on an embedded Core is that anything can pair TO it, because it has no listener by design. So this gates minting a pairing code and revoking a device on THIS Core, never the wizard that adds a remote one.",
-///      "type": "boolean"
-///    },
-///    "scheduledPrompts": {
-///      "description": "A saved schedule will actually fire. The routes serve either way, so a prompt already saved stays readable and deletable rather than invisible; what is false here is the timer that arms it.",
-///      "type": "boolean"
-///    },
-///    "stdioMcp": {
-///      "description": "A local (spawned) MCP server can be started. Remote MCP servers are unaffected, and they are the half that works everywhere.",
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoreCapabilities {
@@ -3591,47 +1237,8 @@ pub struct CoreCapabilities {
     #[serde(rename = "stdioMcp")]
     pub stdio_mcp: bool,
 }
-impl ::std::convert::From<&CoreCapabilities> for CoreCapabilities {
-    fn from(value: &CoreCapabilities) -> Self {
-        value.clone()
-    }
-}
-///In-flight + waiting counts behind the `busy` state, surfaced in the CoreBar's expanded card. "active" is processing now; "queued" is waiting for a slot.
+///In-flight + waiting counts behind the `busy` state.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "In-flight + waiting counts behind the `busy` state, surfaced in the CoreBar's expanded card. \"active\" is processing now; \"queued\" is waiting for a slot.",
-///  "type": "object",
-///  "required": [
-///    "activeStreams",
-///    "llmActive",
-///    "llmQueued",
-///    "speechActive",
-///    "speechQueued"
-///  ],
-///  "properties": {
-///    "activeStreams": {
-///      "type": "integer"
-///    },
-///    "llmActive": {
-///      "type": "integer"
-///    },
-///    "llmQueued": {
-///      "type": "integer"
-///    },
-///    "speechActive": {
-///      "type": "integer"
-///    },
-///    "speechQueued": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoreQueues {
@@ -3646,29 +1253,8 @@ pub struct CoreQueues {
     #[serde(rename = "speechQueued")]
     pub speech_queued: i64,
 }
-impl ::std::convert::From<&CoreQueues> for CoreQueues {
-    fn from(value: &CoreQueues) -> Self {
-        value.clone()
-    }
-}
 ///`CoreStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "starting_up",
-///    "downloading",
-///    "idle",
-///    "busy",
-///    "updating",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -3694,11 +1280,6 @@ pub enum CoreStatus {
     Updating,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for CoreStatus {
-    fn from(value: &CoreStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for CoreStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -3732,61 +1313,8 @@ impl ::std::convert::TryFrom<&str> for CoreStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for CoreStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for CoreStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`CoreStatusSnapshot`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "status",
-///    "subsystems"
-///  ],
-///  "properties": {
-///    "detail": {
-///      "description": "Short human detail for a tooltip (e.g. \"loading whisper\", \"3 queued\").",
-///      "type": "string"
-///    },
-///    "progress": {
-///      "description": "Coarse 0..1 boot / load / download progress when known; drives a progress hint.",
-///      "type": "number"
-///    },
-///    "queues": {
-///      "description": "Queue / in-flight counts, present while busy; drives the expanded card.",
-///      "$ref": "#/definitions/CoreQueues"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/CoreStatus"
-///    },
-///    "subsystems": {
-///      "description": "Every sidecar the core has started, with its status (and error message when failed). Always present; drives the per-subsystem fold + the client per-sidecar facade.",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/SubsystemStatus"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct CoreStatusSnapshot {
@@ -3795,38 +1323,14 @@ pub struct CoreStatusSnapshot {
     pub detail: ::std::option::Option<::std::string::String>,
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub progress: ::std::option::Option<f64>,
-    ///Queue / in-flight counts, present while busy; drives the expanded card.
+    ///Present while busy.
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub queues: ::std::option::Option<CoreQueues>,
     pub status: CoreStatus,
-    ///Every sidecar the core has started, with its status (and error message when failed). Always present; drives the per-subsystem fold + the client per-sidecar facade.
     pub subsystems: ::std::vec::Vec<SubsystemStatus>,
-}
-impl ::std::convert::From<&CoreStatusSnapshot> for CoreStatusSnapshot {
-    fn from(value: &CoreStatusSnapshot) -> Self {
-        value.clone()
-    }
 }
 ///`CreateSessionRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "temporary": {
-///      "description": "A scratch session the client discards when it moves on: creating any other session, or navigating away, orphans it. Absent means a normal session.",
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct CreateSessionRequest {
     ///A scratch session the client discards when it moves on: creating any other session, or navigating away, orphans it. Absent means a normal session.
@@ -3834,11 +1338,6 @@ pub struct CreateSessionRequest {
     pub temporary: ::std::option::Option<bool>,
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub title: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&CreateSessionRequest> for CreateSessionRequest {
-    fn from(value: &CreateSessionRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for CreateSessionRequest {
     fn default() -> Self {
@@ -3848,185 +1347,14 @@ impl ::std::default::Default for CreateSessionRequest {
         }
     }
 }
-///`CreateSessionResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "$ref": "#/definitions/Session"
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct CreateSessionResponse(pub Session);
-impl ::std::ops::Deref for CreateSessionResponse {
-    type Target = Session;
-    fn deref(&self) -> &Session {
-        &self.0
-    }
-}
-impl ::std::convert::From<CreateSessionResponse> for Session {
-    fn from(value: CreateSessionResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&CreateSessionResponse> for CreateSessionResponse {
-    fn from(value: &CreateSessionResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<Session> for CreateSessionResponse {
-    fn from(value: Session) -> Self {
-        Self(value)
-    }
-}
 ///`DeleteStoragePathsRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "paths"
-///  ],
-///  "properties": {
-///    "paths": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct DeleteStoragePathsRequest {
     pub paths: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&DeleteStoragePathsRequest> for DeleteStoragePathsRequest {
-    fn from(value: &DeleteStoragePathsRequest) -> Self {
-        value.clone()
-    }
-}
 ///`DisplayContent`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "markdown"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "dataB64",
-///        "mime",
-///        "type"
-///      ],
-///      "properties": {
-///        "alt": {
-///          "type": "string"
-///        },
-///        "dataB64": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "columns",
-///        "rows",
-///        "type"
-///      ],
-///      "properties": {
-///        "columns": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "rows": {
-///          "type": "array",
-///          "items": {
-///            "type": "array",
-///            "items": {
-///              "type": "string"
-///            }
-///          }
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "table"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "after",
-///        "before",
-///        "type"
-///      ],
-///      "properties": {
-///        "after": {
-///          "type": "string"
-///        },
-///        "before": {
-///          "type": "string"
-///        },
-///        "title": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "diff"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum DisplayContent {
@@ -4053,211 +1381,8 @@ pub enum DisplayContent {
         title: ::std::option::Option<::std::string::String>,
     },
 }
-impl ::std::convert::From<&Self> for DisplayContent {
-    fn from(value: &DisplayContent) -> Self {
-        value.clone()
-    }
-}
-///`DisplayMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "callId": {
-///      "type": "string"
-///    },
-///    "content": {
-///      "$ref": "#/definitions/DisplayContent"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "display"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct DisplayMessage {
-    #[serde(
-        rename = "callId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub call_id: ::std::option::Option<::std::string::String>,
-    pub content: DisplayContent,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    pub id: ::std::string::String,
-    pub ord: i64,
-    pub role: DisplayMessageRole,
-}
-impl ::std::convert::From<&DisplayMessage> for DisplayMessage {
-    fn from(value: &DisplayMessage) -> Self {
-        value.clone()
-    }
-}
-///`DisplayMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "display"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum DisplayMessageRole {
-    #[serde(rename = "display")]
-    Display,
-}
-impl ::std::convert::From<&Self> for DisplayMessageRole {
-    fn from(value: &DisplayMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for DisplayMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Display => f.write_str("display"),
-        }
-    }
-}
-impl ::std::str::FromStr for DisplayMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "display" => Ok(Self::Display),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for DisplayMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for DisplayMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for DisplayMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`DownloadEntry`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "absPath",
-///    "addedAtMs",
-///    "destination",
-///    "downloadedBytes",
-///    "filename",
-///    "groupId",
-///    "id",
-///    "relPath",
-///    "source",
-///    "status"
-///  ],
-///  "properties": {
-///    "absPath": {
-///      "type": "string"
-///    },
-///    "addedAtMs": {
-///      "type": "integer"
-///    },
-///    "destination": {
-///      "type": "string",
-///      "enum": [
-///        "models",
-///        "binaries",
-///        "extensions"
-///      ]
-///    },
-///    "downloadedBytes": {
-///      "type": "integer"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "filename": {
-///      "type": "string"
-///    },
-///    "groupId": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "relPath": {
-///      "type": "string"
-///    },
-///    "sizeBytes": {
-///      "type": "integer"
-///    },
-///    "source": {
-///      "type": "string"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/DownloadStatus"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadEntry {
@@ -4285,26 +1410,8 @@ pub struct DownloadEntry {
     pub source: ::std::string::String,
     pub status: DownloadStatus,
 }
-impl ::std::convert::From<&DownloadEntry> for DownloadEntry {
-    fn from(value: &DownloadEntry) -> Self {
-        value.clone()
-    }
-}
 ///`DownloadEntryDestination`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "models",
-///    "binaries",
-///    "extensions"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -4324,11 +1431,6 @@ pub enum DownloadEntryDestination {
     Binaries,
     #[serde(rename = "extensions")]
     Extensions,
-}
-impl ::std::convert::From<&Self> for DownloadEntryDestination {
-    fn from(value: &DownloadEntryDestination) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for DownloadEntryDestination {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -4356,96 +1458,8 @@ impl ::std::convert::TryFrom<&str> for DownloadEntryDestination {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for DownloadEntryDestination {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for DownloadEntryDestination {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`DownloadExtensionRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "name",
-///        "source"
-///      ],
-///      "properties": {
-///        "name": {
-///          "type": "string"
-///        },
-///        "source": {
-///          "type": "string",
-///          "enum": [
-///            "npm"
-///          ]
-///        },
-///        "version": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "path",
-///        "source"
-///      ],
-///      "properties": {
-///        "path": {
-///          "type": "string"
-///        },
-///        "slug": {
-///          "type": "string"
-///        },
-///        "source": {
-///          "type": "string",
-///          "enum": [
-///            "local"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "id",
-///        "source"
-///      ],
-///      "properties": {
-///        "id": {
-///          "type": "string"
-///        },
-///        "source": {
-///          "type": "string",
-///          "enum": [
-///            "seeded"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "source", deny_unknown_fields)]
 pub enum DownloadExtensionRequest {
@@ -4464,260 +1478,22 @@ pub enum DownloadExtensionRequest {
     #[serde(rename = "seeded")]
     Seeded { id: ::std::string::String },
 }
-impl ::std::convert::From<&Self> for DownloadExtensionRequest {
-    fn from(value: &DownloadExtensionRequest) -> Self {
-        value.clone()
-    }
-}
-///`DownloadModelsRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "items"
-///  ],
-///  "properties": {
-///    "items": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "source"
-///        ],
-///        "properties": {
-///          "group": {
-///            "type": "string",
-///            "enum": [
-///              "llm",
-///              "stt",
-///              "tts",
-///              "embed"
-///            ]
-///          },
-///          "source": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-pub struct DownloadModelsRequest {
-    pub items: ::std::vec::Vec<DownloadModelsRequestItemsItem>,
-}
-impl ::std::convert::From<&DownloadModelsRequest> for DownloadModelsRequest {
-    fn from(value: &DownloadModelsRequest) -> Self {
-        value.clone()
-    }
-}
-///`DownloadModelsRequestItemsItem`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "source"
-///  ],
-///  "properties": {
-///    "group": {
-///      "type": "string",
-///      "enum": [
-///        "llm",
-///        "stt",
-///        "tts",
-///        "embed"
-///      ]
-///    },
-///    "source": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct DownloadModelsRequestItemsItem {
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub group: ::std::option::Option<DownloadModelsRequestItemsItemGroup>,
-    pub source: ::std::string::String,
-}
-impl ::std::convert::From<&DownloadModelsRequestItemsItem> for DownloadModelsRequestItemsItem {
-    fn from(value: &DownloadModelsRequestItemsItem) -> Self {
-        value.clone()
-    }
-}
-///`DownloadModelsRequestItemsItemGroup`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llm",
-///    "stt",
-///    "tts",
-///    "embed"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum DownloadModelsRequestItemsItemGroup {
-    #[serde(rename = "llm")]
-    Llm,
-    #[serde(rename = "stt")]
-    Stt,
-    #[serde(rename = "tts")]
-    Tts,
-    #[serde(rename = "embed")]
-    Embed,
-}
-impl ::std::convert::From<&Self> for DownloadModelsRequestItemsItemGroup {
-    fn from(value: &DownloadModelsRequestItemsItemGroup) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for DownloadModelsRequestItemsItemGroup {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Llm => f.write_str("llm"),
-            Self::Stt => f.write_str("stt"),
-            Self::Tts => f.write_str("tts"),
-            Self::Embed => f.write_str("embed"),
-        }
-    }
-}
-impl ::std::str::FromStr for DownloadModelsRequestItemsItemGroup {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "llm" => Ok(Self::Llm),
-            "stt" => Ok(Self::Stt),
-            "tts" => Ok(Self::Tts),
-            "embed" => Ok(Self::Embed),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for DownloadModelsRequestItemsItemGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for DownloadModelsRequestItemsItemGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for DownloadModelsRequestItemsItemGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`DownloadModelsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "jobIds"
-///  ],
-///  "properties": {
-///    "jobIds": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadModelsResponse {
     #[serde(rename = "jobIds")]
     pub job_ids: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&DownloadModelsResponse> for DownloadModelsResponse {
-    fn from(value: &DownloadModelsResponse) -> Self {
-        value.clone()
-    }
-}
 ///`DownloadPlan`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "alreadyHave",
-///    "source"
-///  ],
-///  "properties": {
-///    "alreadyHave": {
-///      "type": "boolean"
-///    },
-///    "error": {
-///      "description": "The last attempt to prepare this download failed; the confirm modal shows a retry note instead of a size. Carried through from the requirements snapshot's `RequiredFile.error`.",
-///      "type": "string"
-///    },
-///    "sizeHint": {
-///      "type": "integer"
-///    },
-///    "source": {
-///      "type": "string"
-///    },
-///    "version": {
-///      "description": "Resolved version for sidecar-binary plans (e.g. an upstream release tag). Unset for model files.",
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadPlan {
     #[serde(rename = "alreadyHave")]
     pub already_have: bool,
-    ///The last attempt to prepare this download failed; the confirm modal shows a retry note instead of a size. Carried through from the requirements snapshot's `RequiredFile.error`.
+    ///The last attempt to prepare this download failed; the confirm modal shows a retry note instead of a size.
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub error: ::std::option::Option<::std::string::String>,
     #[serde(
@@ -4731,40 +1507,8 @@ pub struct DownloadPlan {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub version: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&DownloadPlan> for DownloadPlan {
-    fn from(value: &DownloadPlan) -> Self {
-        value.clone()
-    }
-}
 ///`DownloadRequirementsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "binaryJobIds",
-///    "modelJobIds"
-///  ],
-///  "properties": {
-///    "binaryJobIds": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "modelJobIds": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DownloadRequirementsResponse {
@@ -4773,28 +1517,8 @@ pub struct DownloadRequirementsResponse {
     #[serde(rename = "modelJobIds")]
     pub model_job_ids: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&DownloadRequirementsResponse> for DownloadRequirementsResponse {
-    fn from(value: &DownloadRequirementsResponse) -> Self {
-        value.clone()
-    }
-}
 ///`DownloadStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "Pending",
-///    "Downloading",
-///    "Completed",
-///    "Error",
-///    "Cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -4813,11 +1537,6 @@ pub enum DownloadStatus {
     Completed,
     Error,
     Cancelled,
-}
-impl ::std::convert::From<&Self> for DownloadStatus {
-    fn from(value: &DownloadStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for DownloadStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -4849,111 +1568,21 @@ impl ::std::convert::TryFrom<&str> for DownloadStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for DownloadStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for DownloadStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`EmbedRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "texts"
-///  ],
-///  "properties": {
-///    "texts": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct EmbedRequest {
     pub texts: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&EmbedRequest> for EmbedRequest {
-    fn from(value: &EmbedRequest) -> Self {
-        value.clone()
-    }
-}
 ///`EmbedResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "vectors"
-///  ],
-///  "properties": {
-///    "vectors": {
-///      "type": "array",
-///      "items": {
-///        "type": "array",
-///        "items": {
-///          "type": "number"
-///        }
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct EmbedResponse {
     pub vectors: ::std::vec::Vec<::std::vec::Vec<f64>>,
 }
-impl ::std::convert::From<&EmbedResponse> for EmbedResponse {
-    fn from(value: &EmbedResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ErrMessage`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "namedArgs": {
-///      "type": "object",
-///      "required": [
-///        "err"
-///      ],
-///      "properties": {
-///        "err": {}
-///      },
-///      "additionalProperties": false
-///    }
-///  },
-///  "$comment": "(err: unknown) => string"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ErrMessage {
     #[serde(
@@ -4962,11 +1591,6 @@ pub struct ErrMessage {
         skip_serializing_if = "::std::option::Option::is_none"
     )]
     pub named_args: ::std::option::Option<ErrMessageNamedArgs>,
-}
-impl ::std::convert::From<&ErrMessage> for ErrMessage {
-    fn from(value: &ErrMessage) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for ErrMessage {
     fn default() -> Self {
@@ -4977,90 +1601,13 @@ impl ::std::default::Default for ErrMessage {
 }
 ///`ErrMessageNamedArgs`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "err"
-///  ],
-///  "properties": {
-///    "err": {}
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ErrMessageNamedArgs {
     pub err: ::serde_json::Value,
 }
-impl ::std::convert::From<&ErrMessageNamedArgs> for ErrMessageNamedArgs {
-    fn from(value: &ErrMessageNamedArgs) -> Self {
-        value.clone()
-    }
-}
 ///`ErrorCode`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "invalid_token",
-///    "revoked",
-///    "missing_token",
-///    "admin_token_required",
-///    "admin_password_required",
-///    "admin_password_invalid",
-///    "admin_password_rate_limited",
-///    "invalid_pairing_code",
-///    "pairing_code_expired",
-///    "pairing_code_claimed",
-///    "pairing_rate_limited",
-///    "not_found",
-///    "forbidden",
-///    "validation_error",
-///    "conflict",
-///    "session_busy",
-///    "session_not_found",
-///    "message_not_found",
-///    "stream_not_found",
-///    "context_window_exceeded",
-///    "server_busy",
-///    "server_unavailable",
-///    "provider_error",
-///    "provider_unauthorized",
-///    "provider_rate_limited",
-///    "no_loca_json",
-///    "invalid_loca_json",
-///    "deps_install_failed",
-///    "tarball_fetch_failed",
-///    "extract_failed",
-///    "extension_not_found",
-///    "tool_not_found",
-///    "permissions_required",
-///    "permissions_revoked",
-///    "extension_hash_drift",
-///    "extension_already_installed",
-///    "tool_name_collision",
-///    "model_not_found",
-///    "binary_not_found",
-///    "checksum_mismatch",
-///    "signature_invalid",
-///    "manifest_fetch_failed",
-///    "update_failed",
-///    "manual_rollback_required",
-///    "update_in_progress",
-///    "insufficient_storage",
-///    "internal_error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -5168,11 +1715,6 @@ pub enum ErrorCode {
     InsufficientStorage,
     #[serde(rename = "internal_error")]
     InternalError,
-}
-impl ::std::convert::From<&Self> for ErrorCode {
-    fn from(value: &ErrorCode) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5288,243 +1830,8 @@ impl ::std::convert::TryFrom<&str> for ErrorCode {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ErrorCode {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ErrorCode {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`ErrorMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "code": {
-///      "type": "string"
-///    },
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "details": {
-///      "type": "object",
-///      "additionalProperties": {}
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "error"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct ErrorMessage {
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub code: ::std::option::Option<::std::string::String>,
-    pub content: ::std::string::String,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub details:
-        ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-    pub id: ::std::string::String,
-    pub ord: i64,
-    pub role: ErrorMessageRole,
-}
-impl ::std::convert::From<&ErrorMessage> for ErrorMessage {
-    fn from(value: &ErrorMessage) -> Self {
-        value.clone()
-    }
-}
-///`ErrorMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ErrorMessageRole {
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for ErrorMessageRole {
-    fn from(value: &ErrorMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ErrorMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for ErrorMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ErrorMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ErrorMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ErrorMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`Extension`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "contentHash",
-///    "displayName",
-///    "enabledToolCount",
-///    "hasDatabase",
-///    "hasDeps",
-///    "id",
-///    "installedAtMs",
-///    "installedPath",
-///    "manifestHash",
-///    "source",
-///    "status",
-///    "toolCount",
-///    "undeclaredPolicy",
-///    "updatedAtMs",
-///    "version"
-///  ],
-///  "properties": {
-///    "contentHash": {
-///      "type": "string"
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "displayName": {
-///      "type": "string"
-///    },
-///    "enabledToolCount": {
-///      "type": "integer"
-///    },
-///    "hasDatabase": {
-///      "type": "boolean"
-///    },
-///    "hasDeps": {
-///      "type": "boolean"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "installedAtMs": {
-///      "type": "integer"
-///    },
-///    "installedPath": {
-///      "type": "string"
-///    },
-///    "manifestHash": {
-///      "type": "string"
-///    },
-///    "source": {
-///      "$ref": "#/definitions/ExtensionSource"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/ExtensionStatus"
-///    },
-///    "toolCount": {
-///      "type": "integer"
-///    },
-///    "tools": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/Tool"
-///      }
-///    },
-///    "undeclaredPolicy": {
-///      "$ref": "#/definitions/UndeclaredPolicy"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    },
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Extension {
@@ -5559,63 +1866,15 @@ pub struct Extension {
     pub updated_at_ms: i64,
     pub version: ::std::string::String,
 }
-impl ::std::convert::From<&Extension> for Extension {
-    fn from(value: &Extension) -> Self {
-        value.clone()
-    }
-}
 ///`ExtensionActionResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionActionResponse {
     pub id: ::std::string::String,
 }
-impl ::std::convert::From<&ExtensionActionResponse> for ExtensionActionResponse {
-    fn from(value: &ExtensionActionResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ExtensionJobResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "extensionId",
-///    "jobId"
-///  ],
-///  "properties": {
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "jobId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionJobResponse {
@@ -5624,54 +1883,8 @@ pub struct ExtensionJobResponse {
     #[serde(rename = "jobId")]
     pub job_id: ::std::string::String,
 }
-impl ::std::convert::From<&ExtensionJobResponse> for ExtensionJobResponse {
-    fn from(value: &ExtensionJobResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ExtensionSearchResult`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "source",
-///    "version"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "homepage": {
-///      "type": "string"
-///    },
-///    "license": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "source": {
-///      "type": "string",
-///      "enum": [
-///        "npm"
-///      ]
-///    },
-///    "version": {
-///      "type": "string"
-///    },
-///    "weeklyDownloads": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionSearchResult {
@@ -5690,24 +1903,8 @@ pub struct ExtensionSearchResult {
     )]
     pub weekly_downloads: ::std::option::Option<i64>,
 }
-impl ::std::convert::From<&ExtensionSearchResult> for ExtensionSearchResult {
-    fn from(value: &ExtensionSearchResult) -> Self {
-        value.clone()
-    }
-}
 ///`ExtensionSearchResultSource`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "npm"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -5723,11 +1920,6 @@ impl ::std::convert::From<&ExtensionSearchResult> for ExtensionSearchResult {
 pub enum ExtensionSearchResultSource {
     #[serde(rename = "npm")]
     Npm,
-}
-impl ::std::convert::From<&Self> for ExtensionSearchResultSource {
-    fn from(value: &ExtensionSearchResultSource) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ExtensionSearchResultSource {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5751,37 +1943,8 @@ impl ::std::convert::TryFrom<&str> for ExtensionSearchResultSource {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionSearchResultSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionSearchResultSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ExtensionSource`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "npm",
-///    "local",
-///    "seeded"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -5801,11 +1964,6 @@ pub enum ExtensionSource {
     Local,
     #[serde(rename = "seeded")]
     Seeded,
-}
-impl ::std::convert::From<&Self> for ExtensionSource {
-    fn from(value: &ExtensionSource) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ExtensionSource {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5833,37 +1991,8 @@ impl ::std::convert::TryFrom<&str> for ExtensionSource {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionSource {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ExtensionStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "downloaded",
-///    "installed",
-///    "drift"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -5883,11 +2012,6 @@ pub enum ExtensionStatus {
     Installed,
     #[serde(rename = "drift")]
     Drift,
-}
-impl ::std::convert::From<&Self> for ExtensionStatus {
-    fn from(value: &ExtensionStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ExtensionStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5915,59 +2039,8 @@ impl ::std::convert::TryFrom<&str> for ExtensionStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ExtensionStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ExtensionStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ExtensionUpdateStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "installedVersion",
-///    "latestVersion",
-///    "updateAvailable"
-///  ],
-///  "properties": {
-///    "error": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "installedVersion": {
-///      "type": "string"
-///    },
-///    "latestVersion": {
-///      "type": [
-///        "string",
-///        "null"
-///      ]
-///    },
-///    "updateAvailable": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionUpdateStatus {
@@ -5981,213 +2054,8 @@ pub struct ExtensionUpdateStatus {
     #[serde(rename = "updateAvailable")]
     pub update_available: bool,
 }
-impl ::std::convert::From<&ExtensionUpdateStatus> for ExtensionUpdateStatus {
-    fn from(value: &ExtensionUpdateStatus) -> Self {
-        value.clone()
-    }
-}
-///`GetCoreSettingsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct GetCoreSettingsResponse(
-    pub ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-);
-impl ::std::ops::Deref for GetCoreSettingsResponse {
-    type Target = ::serde_json::Map<::std::string::String, ::serde_json::Value>;
-    fn deref(&self) -> &::serde_json::Map<::std::string::String, ::serde_json::Value> {
-        &self.0
-    }
-}
-impl ::std::convert::From<GetCoreSettingsResponse>
-    for ::serde_json::Map<::std::string::String, ::serde_json::Value>
-{
-    fn from(value: GetCoreSettingsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&GetCoreSettingsResponse> for GetCoreSettingsResponse {
-    fn from(value: &GetCoreSettingsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json::Value>>
-    for GetCoreSettingsResponse
-{
-    fn from(value: ::serde_json::Map<::std::string::String, ::serde_json::Value>) -> Self {
-        Self(value)
-    }
-}
-///`GetRequirementsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "$ref": "#/definitions/RequirementsSnapshot"
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct GetRequirementsResponse(pub RequirementsSnapshot);
-impl ::std::ops::Deref for GetRequirementsResponse {
-    type Target = RequirementsSnapshot;
-    fn deref(&self) -> &RequirementsSnapshot {
-        &self.0
-    }
-}
-impl ::std::convert::From<GetRequirementsResponse> for RequirementsSnapshot {
-    fn from(value: GetRequirementsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&GetRequirementsResponse> for GetRequirementsResponse {
-    fn from(value: &GetRequirementsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<RequirementsSnapshot> for GetRequirementsResponse {
-    fn from(value: RequirementsSnapshot) -> Self {
-        Self(value)
-    }
-}
-///`GetSessionResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "messages",
-///    "ownerClientId",
-///    "title",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "messages": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/Message"
-///      }
-///    },
-///    "ownerClientId": {
-///      "type": "string"
-///    },
-///    "temporary": {
-///      "description": "A temporary session lives only in core RAM: it never appears in the session list, is never written to disk, and is discarded the moment the client navigates away (or the core restarts). Fixed at creation.",
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string"
-///    },
-///    "tokenUsage": {
-///      "$ref": "#/definitions/TokenUsage"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct GetSessionResponse {
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    pub id: ::std::string::String,
-    pub messages: ::std::vec::Vec<Message>,
-    #[serde(rename = "ownerClientId")]
-    pub owner_client_id: ::std::string::String,
-    ///A temporary session lives only in core RAM: it never appears in the session list, is never written to disk, and is discarded the moment the client navigates away (or the core restarts). Fixed at creation.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub temporary: ::std::option::Option<bool>,
-    pub title: ::std::string::String,
-    #[serde(
-        rename = "tokenUsage",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub token_usage: ::std::option::Option<TokenUsage>,
-    #[serde(rename = "updatedAtMs")]
-    pub updated_at_ms: i64,
-}
-impl ::std::convert::From<&GetSessionResponse> for GetSessionResponse {
-    fn from(value: &GetSessionResponse) -> Self {
-        value.clone()
-    }
-}
-///`GetStorageResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "$ref": "#/definitions/StorageTree"
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct GetStorageResponse(pub StorageTree);
-impl ::std::ops::Deref for GetStorageResponse {
-    type Target = StorageTree;
-    fn deref(&self) -> &StorageTree {
-        &self.0
-    }
-}
-impl ::std::convert::From<GetStorageResponse> for StorageTree {
-    fn from(value: GetStorageResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&GetStorageResponse> for GetStorageResponse {
-    fn from(value: &GetStorageResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<StorageTree> for GetStorageResponse {
-    fn from(value: StorageTree) -> Self {
-        Self(value)
-    }
-}
 ///`GpuBackend`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "metal",
-///    "cuda",
-///    "rocm",
-///    "vulkan",
-///    "cpu"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6211,11 +2079,6 @@ pub enum GpuBackend {
     Vulkan,
     #[serde(rename = "cpu")]
     Cpu,
-}
-impl ::std::convert::From<&Self> for GpuBackend {
-    fn from(value: &GpuBackend) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for GpuBackend {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6247,50 +2110,8 @@ impl ::std::convert::TryFrom<&str> for GpuBackend {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for GpuBackend {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for GpuBackend {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`GpuInfo`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "backend",
-///    "name",
-///    "vramBytes"
-///  ],
-///  "properties": {
-///    "backend": {
-///      "$ref": "#/definitions/GpuBackend"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "vramBytes": {
-///      "description": "Dedicated VRAM in bytes. 0 on CPU-only or when unified (see `unifiedMemory`), where system RAM is the budget.",
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GpuInfo {
@@ -6300,46 +2121,8 @@ pub struct GpuInfo {
     #[serde(rename = "vramBytes")]
     pub vram_bytes: i64,
 }
-impl ::std::convert::From<&GpuInfo> for GpuInfo {
-    fn from(value: &GpuInfo) -> Self {
-        value.clone()
-    }
-}
 ///`Grant`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "grantedAtMs",
-///    "permissionKey",
-///    "permissionKind",
-///    "state",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "grantedAtMs": {
-///      "type": "integer"
-///    },
-///    "permissionKey": {
-///      "type": "string"
-///    },
-///    "permissionKind": {
-///      "$ref": "#/definitions/PermissionKind"
-///    },
-///    "state": {
-///      "$ref": "#/definitions/GrantState"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Grant {
@@ -6353,26 +2136,8 @@ pub struct Grant {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&Grant> for Grant {
-    fn from(value: &Grant) -> Self {
-        value.clone()
-    }
-}
 ///`GrantState`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "granted",
-///    "ask",
-///    "denied"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6392,11 +2157,6 @@ pub enum GrantState {
     Ask,
     #[serde(rename = "denied")]
     Denied,
-}
-impl ::std::convert::From<&Self> for GrantState {
-    fn from(value: &GrantState) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for GrantState {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6424,58 +2184,8 @@ impl ::std::convert::TryFrom<&str> for GrantState {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for GrantState {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for GrantState {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`HardwareInfo`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "availableRamBytes",
-///    "cpuCoresPhysical",
-///    "gpu",
-///    "totalRamBytes",
-///    "unifiedMemory"
-///  ],
-///  "properties": {
-///    "availableRamBytes": {
-///      "type": "integer"
-///    },
-///    "cpuCoresPhysical": {
-///      "type": "integer"
-///    },
-///    "gpu": {
-///      "$ref": "#/definitions/GpuInfo"
-///    },
-///    "totalRamBytes": {
-///      "type": "integer"
-///    },
-///    "unifiedMemory": {
-///      "description": "True on Apple Silicon: GPU shares system RAM, so the memory budget is availableRamBytes rather than a separate VRAM pool.",
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct HardwareInfo {
@@ -6490,61 +2200,8 @@ pub struct HardwareInfo {
     #[serde(rename = "unifiedMemory")]
     pub unified_memory: bool,
 }
-impl ::std::convert::From<&HardwareInfo> for HardwareInfo {
-    fn from(value: &HardwareInfo) -> Self {
-        value.clone()
-    }
-}
 ///`HealthResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "adminPasswordSet",
-///    "behindProxy",
-///    "capabilities",
-///    "core",
-///    "status",
-///    "uptimeMs",
-///    "version"
-///  ],
-///  "properties": {
-///    "adminPasswordSet": {
-///      "description": "Whether an admin password has been set. When true, an already-paired client can mint pairing codes / revoke other devices with the password (no need to read the on-disk admin token). Always true after a normal install, which sets one.",
-///      "type": "boolean"
-///    },
-///    "behindProxy": {
-///      "description": "Whether Core is served over HTTPS by a terminating reverse proxy. When true, the Client validates the proxy's real certificate (standard WebPKI) instead of pinning Core's self-signed one, and pairing drops the cert binding. An unauthenticated hint the pairing handshake verifies: a forged value cannot complete pairing (see the cert fold in services/auth.ts).",
-///      "type": "boolean"
-///    },
-///    "capabilities": {
-///      "description": "What this Core can do. Read on connect so the client negotiates rather than inferring capability from the platform it renders on.",
-///      "$ref": "#/definitions/CoreCapabilities"
-///    },
-///    "core": {
-///      "description": "Aggregate lifecycle status, so a client can seed the CoreBar on select without waiting for the first `core.status` WS frame.",
-///      "$ref": "#/definitions/CoreStatusSnapshot"
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "ok"
-///      ]
-///    },
-///    "uptimeMs": {
-///      "type": "integer"
-///    },
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct HealthResponse {
@@ -6563,24 +2220,8 @@ pub struct HealthResponse {
     pub uptime_ms: i64,
     pub version: ::std::string::String,
 }
-impl ::std::convert::From<&HealthResponse> for HealthResponse {
-    fn from(value: &HealthResponse) -> Self {
-        value.clone()
-    }
-}
 ///`HealthResponseStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "ok"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -6596,11 +2237,6 @@ impl ::std::convert::From<&HealthResponse> for HealthResponse {
 pub enum HealthResponseStatus {
     #[serde(rename = "ok")]
     Ok,
-}
-impl ::std::convert::From<&Self> for HealthResponseStatus {
-    fn from(value: &HealthResponseStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for HealthResponseStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -6624,50 +2260,12 @@ impl ::std::convert::TryFrom<&str> for HealthResponseStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for HealthResponseStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for HealthResponseStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`InstallBinariesRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "kinds": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/BinaryKind"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct InstallBinariesRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub kinds: ::std::option::Option<::std::vec::Vec<BinaryKind>>,
-}
-impl ::std::convert::From<&InstallBinariesRequest> for InstallBinariesRequest {
-    fn from(value: &InstallBinariesRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for InstallBinariesRequest {
     fn default() -> Self {
@@ -6678,60 +2276,14 @@ impl ::std::default::Default for InstallBinariesRequest {
 }
 ///`InstallBinariesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "jobIds"
-///  ],
-///  "properties": {
-///    "jobIds": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct InstallBinariesResponse {
     #[serde(rename = "jobIds")]
     pub job_ids: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&InstallBinariesResponse> for InstallBinariesResponse {
-    fn from(value: &InstallBinariesResponse) -> Self {
-        value.clone()
-    }
-}
 ///`IsApiErrorBody`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "namedArgs": {
-///      "type": "object",
-///      "required": [
-///        "value"
-///      ],
-///      "properties": {
-///        "value": {}
-///      },
-///      "additionalProperties": false
-///    }
-///  },
-///  "$comment": "(value: unknown) => value is ApiErrorBody"
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct IsApiErrorBody {
     #[serde(
@@ -6740,11 +2292,6 @@ pub struct IsApiErrorBody {
         skip_serializing_if = "::std::option::Option::is_none"
     )]
     pub named_args: ::std::option::Option<IsApiErrorBodyNamedArgs>,
-}
-impl ::std::convert::From<&IsApiErrorBody> for IsApiErrorBody {
-    fn from(value: &IsApiErrorBody) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for IsApiErrorBody {
     fn default() -> Self {
@@ -6755,44 +2302,13 @@ impl ::std::default::Default for IsApiErrorBody {
 }
 ///`IsApiErrorBodyNamedArgs`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "value"
-///  ],
-///  "properties": {
-///    "value": {}
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct IsApiErrorBodyNamedArgs {
     pub value: ::serde_json::Value,
 }
-impl ::std::convert::From<&IsApiErrorBodyNamedArgs> for IsApiErrorBodyNamedArgs {
-    fn from(value: &IsApiErrorBodyNamedArgs) -> Self {
-        value.clone()
-    }
-}
 ///`ListBinariesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/BinaryStatus"
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct ListBinariesResponse(pub ::std::vec::Vec<BinaryStatus>);
@@ -6807,98 +2323,20 @@ impl ::std::convert::From<ListBinariesResponse> for ::std::vec::Vec<BinaryStatus
         value.0
     }
 }
-impl ::std::convert::From<&ListBinariesResponse> for ListBinariesResponse {
-    fn from(value: &ListBinariesResponse) -> Self {
-        value.clone()
-    }
-}
 impl ::std::convert::From<::std::vec::Vec<BinaryStatus>> for ListBinariesResponse {
     fn from(value: ::std::vec::Vec<BinaryStatus>) -> Self {
         Self(value)
     }
 }
-///`ListDownloadsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/DownloadEntry"
-///  }
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct ListDownloadsResponse(pub ::std::vec::Vec<DownloadEntry>);
-impl ::std::ops::Deref for ListDownloadsResponse {
-    type Target = ::std::vec::Vec<DownloadEntry>;
-    fn deref(&self) -> &::std::vec::Vec<DownloadEntry> {
-        &self.0
-    }
-}
-impl ::std::convert::From<ListDownloadsResponse> for ::std::vec::Vec<DownloadEntry> {
-    fn from(value: ListDownloadsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&ListDownloadsResponse> for ListDownloadsResponse {
-    fn from(value: &ListDownloadsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::vec::Vec<DownloadEntry>> for ListDownloadsResponse {
-    fn from(value: ::std::vec::Vec<DownloadEntry>) -> Self {
-        Self(value)
-    }
-}
 ///`ListExtensionToolsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "tools"
-///  ],
-///  "properties": {
-///    "tools": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/Tool"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ListExtensionToolsResponse {
     pub tools: ::std::vec::Vec<Tool>,
 }
-impl ::std::convert::From<&ListExtensionToolsResponse> for ListExtensionToolsResponse {
-    fn from(value: &ListExtensionToolsResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ListExtensionsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/Extension"
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct ListExtensionsResponse(pub ::std::vec::Vec<Extension>);
@@ -6913,106 +2351,13 @@ impl ::std::convert::From<ListExtensionsResponse> for ::std::vec::Vec<Extension>
         value.0
     }
 }
-impl ::std::convert::From<&ListExtensionsResponse> for ListExtensionsResponse {
-    fn from(value: &ListExtensionsResponse) -> Self {
-        value.clone()
-    }
-}
 impl ::std::convert::From<::std::vec::Vec<Extension>> for ListExtensionsResponse {
     fn from(value: ::std::vec::Vec<Extension>) -> Self {
         Self(value)
     }
 }
-///`ListModelsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/ModelEntry"
-///  }
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct ListModelsResponse(pub ::std::vec::Vec<ModelEntry>);
-impl ::std::ops::Deref for ListModelsResponse {
-    type Target = ::std::vec::Vec<ModelEntry>;
-    fn deref(&self) -> &::std::vec::Vec<ModelEntry> {
-        &self.0
-    }
-}
-impl ::std::convert::From<ListModelsResponse> for ::std::vec::Vec<ModelEntry> {
-    fn from(value: ListModelsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&ListModelsResponse> for ListModelsResponse {
-    fn from(value: &ListModelsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::vec::Vec<ModelEntry>> for ListModelsResponse {
-    fn from(value: ::std::vec::Vec<ModelEntry>) -> Self {
-        Self(value)
-    }
-}
-///`ListSessionsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/SessionListEntry"
-///  }
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct ListSessionsResponse(pub ::std::vec::Vec<SessionListEntry>);
-impl ::std::ops::Deref for ListSessionsResponse {
-    type Target = ::std::vec::Vec<SessionListEntry>;
-    fn deref(&self) -> &::std::vec::Vec<SessionListEntry> {
-        &self.0
-    }
-}
-impl ::std::convert::From<ListSessionsResponse> for ::std::vec::Vec<SessionListEntry> {
-    fn from(value: ListSessionsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&ListSessionsResponse> for ListSessionsResponse {
-    fn from(value: &ListSessionsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::vec::Vec<SessionListEntry>> for ListSessionsResponse {
-    fn from(value: ::std::vec::Vec<SessionListEntry>) -> Self {
-        Self(value)
-    }
-}
 ///`McpConnectionStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "disconnected",
-///    "connecting",
-///    "connected",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7034,11 +2379,6 @@ pub enum McpConnectionStatus {
     Connected,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for McpConnectionStatus {
-    fn from(value: &McpConnectionStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpConnectionStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7068,63 +2408,8 @@ impl ::std::convert::TryFrom<&str> for McpConnectionStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpConnectionStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpConnectionStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpPrompt`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "enabled",
-///    "name",
-///    "serverId",
-///    "serverName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/McpPromptArg"
-///      }
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "serverId": {
-///      "type": "string"
-///    },
-///    "serverName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpPrompt {
@@ -7138,36 +2423,8 @@ pub struct McpPrompt {
     #[serde(rename = "serverName")]
     pub server_name: ::std::string::String,
 }
-impl ::std::convert::From<&McpPrompt> for McpPrompt {
-    fn from(value: &McpPrompt) -> Self {
-        value.clone()
-    }
-}
 ///`McpPromptArg`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "name"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "required": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpPromptArg {
@@ -7177,26 +2434,8 @@ pub struct McpPromptArg {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub required: ::std::option::Option<bool>,
 }
-impl ::std::convert::From<&McpPromptArg> for McpPromptArg {
-    fn from(value: &McpPromptArg) -> Self {
-        value.clone()
-    }
-}
 ///`McpRemoteAuth`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "none",
-///    "bearer",
-///    "oauth"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7216,11 +2455,6 @@ pub enum McpRemoteAuth {
     Bearer,
     #[serde(rename = "oauth")]
     Oauth,
-}
-impl ::std::convert::From<&Self> for McpRemoteAuth {
-    fn from(value: &McpRemoteAuth) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpRemoteAuth {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7248,59 +2482,8 @@ impl ::std::convert::TryFrom<&str> for McpRemoteAuth {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpRemoteAuth {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpResource`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "name",
-///    "serverId",
-///    "serverName",
-///    "uri"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "mimeType": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "serverId": {
-///      "type": "string"
-///    },
-///    "serverName": {
-///      "type": "string"
-///    },
-///    "uri": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpResource {
@@ -7319,130 +2502,8 @@ pub struct McpResource {
     pub server_name: ::std::string::String,
     pub uri: ::std::string::String,
 }
-impl ::std::convert::From<&McpResource> for McpResource {
-    fn from(value: &McpResource) -> Self {
-        value.clone()
-    }
-}
 ///`McpServer`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "args",
-///    "createdAtMs",
-///    "denoAllowAll",
-///    "denoPermissions",
-///    "enabled",
-///    "hasAuth",
-///    "id",
-///    "kind",
-///    "name",
-///    "oauthAuthorized",
-///    "promptCount",
-///    "promptEnabled",
-///    "remoteAuth",
-///    "resourceCount",
-///    "runtime",
-///    "status",
-///    "toolAlwaysAvailableOff",
-///    "toolCount",
-///    "toolEnabled",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "args": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "command": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "denoAllowAll": {
-///      "type": "boolean"
-///    },
-///    "denoPermissions": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "hasAuth": {
-///      "type": "boolean"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/McpTransportKind"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "oauthAuthorized": {
-///      "type": "boolean"
-///    },
-///    "promptCount": {
-///      "type": "integer"
-///    },
-///    "promptEnabled": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "remoteAuth": {
-///      "$ref": "#/definitions/McpRemoteAuth"
-///    },
-///    "resourceCount": {
-///      "type": "integer"
-///    },
-///    "runtime": {
-///      "$ref": "#/definitions/McpStdioRuntime"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/McpConnectionStatus"
-///    },
-///    "statusError": {
-///      "type": "string"
-///    },
-///    "toolAlwaysAvailableOff": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "toolCount": {
-///      "type": "integer"
-///    },
-///    "toolEnabled": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    },
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpServer {
@@ -7490,70 +2551,8 @@ pub struct McpServer {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub url: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&McpServer> for McpServer {
-    fn from(value: &McpServer) -> Self {
-        value.clone()
-    }
-}
 ///`McpServerInput`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "name"
-///  ],
-///  "properties": {
-///    "args": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "command": {
-///      "type": "string"
-///    },
-///    "denoAllowAll": {
-///      "type": "boolean"
-///    },
-///    "denoPermissions": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "hasAuth": {
-///      "type": "boolean"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/McpTransportKind"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "oauthAuthorized": {
-///      "type": "boolean"
-///    },
-///    "remoteAuth": {
-///      "$ref": "#/definitions/McpRemoteAuth"
-///    },
-///    "runtime": {
-///      "$ref": "#/definitions/McpStdioRuntime"
-///    },
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerInput {
@@ -7600,25 +2599,8 @@ pub struct McpServerInput {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub url: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&McpServerInput> for McpServerInput {
-    fn from(value: &McpServerInput) -> Self {
-        value.clone()
-    }
-}
 ///`McpStdioRuntime`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "custom",
-///    "deno"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7636,11 +2618,6 @@ pub enum McpStdioRuntime {
     Custom,
     #[serde(rename = "deno")]
     Deno,
-}
-impl ::std::convert::From<&Self> for McpStdioRuntime {
-    fn from(value: &McpStdioRuntime) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpStdioRuntime {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7666,36 +2643,8 @@ impl ::std::convert::TryFrom<&str> for McpStdioRuntime {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpStdioRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpStdioRuntime {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`McpTransportKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stdio",
-///    "remote"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7713,11 +2662,6 @@ pub enum McpTransportKind {
     Stdio,
     #[serde(rename = "remote")]
     Remote,
-}
-impl ::std::convert::From<&Self> for McpTransportKind {
-    fn from(value: &McpTransportKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for McpTransportKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7743,95 +2687,8 @@ impl ::std::convert::TryFrom<&str> for McpTransportKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for McpTransportKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for McpTransportKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`Memory`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "contentHash",
-///    "createdAtMs",
-///    "enabled",
-///    "filename",
-///    "id",
-///    "kind",
-///    "provider",
-///    "title",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "contentHash": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "filename": {
-///      "type": "string"
-///    },
-///    "files": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/MemoryKind"
-///    },
-///    "provider": {
-///      "type": "string"
-///    },
-///    "suggestedTools": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "summary": {
-///      "type": "string"
-///    },
-///    "summaryStale": {
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Memory {
@@ -7865,50 +2722,8 @@ pub struct Memory {
     #[serde(rename = "updatedAtMs")]
     pub updated_at_ms: i64,
 }
-impl ::std::convert::From<&Memory> for Memory {
-    fn from(value: &Memory) -> Self {
-        value.clone()
-    }
-}
 ///`MemoryFilterEntryPersisted`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "memoryId",
-///    "score",
-///    "summary",
-///    "title"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "knowledge",
-///        "skill"
-///      ]
-///    },
-///    "memoryId": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "summary": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryFilterEntryPersisted {
@@ -7919,25 +2734,8 @@ pub struct MemoryFilterEntryPersisted {
     pub summary: ::std::string::String,
     pub title: ::std::string::String,
 }
-impl ::std::convert::From<&MemoryFilterEntryPersisted> for MemoryFilterEntryPersisted {
-    fn from(value: &MemoryFilterEntryPersisted) -> Self {
-        value.clone()
-    }
-}
 ///`MemoryFilterEntryPersistedKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "knowledge",
-///    "skill"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -7955,11 +2753,6 @@ pub enum MemoryFilterEntryPersistedKind {
     Knowledge,
     #[serde(rename = "skill")]
     Skill,
-}
-impl ::std::convert::From<&Self> for MemoryFilterEntryPersistedKind {
-    fn from(value: &MemoryFilterEntryPersistedKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryFilterEntryPersistedKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -7985,259 +2778,8 @@ impl ::std::convert::TryFrom<&str> for MemoryFilterEntryPersistedKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryFilterEntryPersistedKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryFilterEntryPersistedKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`MemoryFilterMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role",
-///    "status"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "errorMessage": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "relevant": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/MemoryFilterEntryPersisted"
-///      }
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "memory_filter"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "complete",
-///        "error"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct MemoryFilterMessage {
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    #[serde(
-        rename = "errorMessage",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub error_message: ::std::option::Option<::std::string::String>,
-    pub id: ::std::string::String,
-    pub ord: i64,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub relevant: ::std::option::Option<::std::vec::Vec<MemoryFilterEntryPersisted>>,
-    pub role: MemoryFilterMessageRole,
-    pub status: MemoryFilterMessageStatus,
-}
-impl ::std::convert::From<&MemoryFilterMessage> for MemoryFilterMessage {
-    fn from(value: &MemoryFilterMessage) -> Self {
-        value.clone()
-    }
-}
-///`MemoryFilterMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "memory_filter"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum MemoryFilterMessageRole {
-    #[serde(rename = "memory_filter")]
-    MemoryFilter,
-}
-impl ::std::convert::From<&Self> for MemoryFilterMessageRole {
-    fn from(value: &MemoryFilterMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for MemoryFilterMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::MemoryFilter => f.write_str("memory_filter"),
-        }
-    }
-}
-impl ::std::str::FromStr for MemoryFilterMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "memory_filter" => Ok(Self::MemoryFilter),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for MemoryFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`MemoryFilterMessageStatus`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum MemoryFilterMessageStatus {
-    #[serde(rename = "complete")]
-    Complete,
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for MemoryFilterMessageStatus {
-    fn from(value: &MemoryFilterMessageStatus) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for MemoryFilterMessageStatus {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Complete => f.write_str("complete"),
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for MemoryFilterMessageStatus {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "complete" => Ok(Self::Complete),
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for MemoryFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "knowledge",
-///    "skill"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -8255,11 +2797,6 @@ pub enum MemoryKind {
     Knowledge,
     #[serde(rename = "skill")]
     Skill,
-}
-impl ::std::convert::From<&Self> for MemoryKind {
-    fn from(value: &MemoryKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MemoryKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -8285,91 +2822,8 @@ impl ::std::convert::TryFrom<&str> for MemoryKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MemoryKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MemoryKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MemoryMeta`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "contentHash",
-///    "createdAtMs",
-///    "enabled",
-///    "filename",
-///    "id",
-///    "kind",
-///    "provider",
-///    "title",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "contentHash": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "filename": {
-///      "type": "string"
-///    },
-///    "files": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/MemoryKind"
-///    },
-///    "provider": {
-///      "type": "string"
-///    },
-///    "suggestedTools": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "summary": {
-///      "type": "string"
-///    },
-///    "summaryStale": {
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryMeta {
@@ -8402,500 +2856,22 @@ pub struct MemoryMeta {
     #[serde(rename = "updatedAtMs")]
     pub updated_at_ms: i64,
 }
-impl ::std::convert::From<&MemoryMeta> for MemoryMeta {
-    fn from(value: &MemoryMeta) -> Self {
-        value.clone()
-    }
-}
 ///`MergeTranscriptionRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "existing",
-///    "next"
-///  ],
-///  "properties": {
-///    "existing": {
-///      "type": "string"
-///    },
-///    "next": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct MergeTranscriptionRequest {
     pub existing: ::std::string::String,
     pub next: ::std::string::String,
 }
-impl ::std::convert::From<&MergeTranscriptionRequest> for MergeTranscriptionRequest {
-    fn from(value: &MergeTranscriptionRequest) -> Self {
-        value.clone()
-    }
-}
 ///`MergeTranscriptionResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "text"
-///  ],
-///  "properties": {
-///    "text": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MergeTranscriptionResponse {
     pub text: ::std::string::String,
 }
-impl ::std::convert::From<&MergeTranscriptionResponse> for MergeTranscriptionResponse {
-    fn from(value: &MergeTranscriptionResponse) -> Self {
-        value.clone()
-    }
-}
 ///`Message`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "automated": {
-///          "type": "boolean"
-///        },
-///        "content": {
-///          "$ref": "#/definitions/MessageContent"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "user"
-///          ]
-///        },
-///        "systemPromptOverride": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "interrupted": {
-///          "type": "boolean"
-///        },
-///        "modelUsed": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "assistant"
-///          ]
-///        },
-///        "toolCalls": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolCall"
-///          }
-///        },
-///        "truncated": {
-///          "type": "boolean"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "system"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "arguments",
-///        "callId",
-///        "createdAtMs",
-///        "extensionId",
-///        "id",
-///        "ord",
-///        "role",
-///        "status",
-///        "toolName"
-///      ],
-///      "properties": {
-///        "arguments": {
-///          "description": "JSON string of arguments as the model emitted them. Persisted so the reloaded bubble keeps the call's inputs.",
-///          "type": "string"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "description": {
-///          "type": "string"
-///        },
-///        "error": {
-///          "type": "string"
-///        },
-///        "extensionId": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "label": {
-///          "description": "Last `tool.progress` label/description the tool emitted, persisted so the reloaded bubble keeps the tool's own wording (e.g. \"Opening YouTube\") instead of falling back to the generic tool-name phrase.",
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "progress": {
-///          "description": "0..1 completion fraction from the last `tool.progress` event.",
-///          "type": "number"
-///        },
-///        "result": {},
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "tool"
-///          ]
-///        },
-///        "status": {
-///          "$ref": "#/definitions/ToolCallStatus"
-///        },
-///        "toolName": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "interrupted": {
-///          "type": "boolean"
-///        },
-///        "modelUsed": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "pairedAssistantId": {
-///          "type": "string"
-///        },
-///        "reasoningDurationMs": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "reasoning"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role",
-///        "status"
-///      ],
-///      "properties": {
-///        "alwaysAvailable": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolFilterEntryPersisted"
-///          }
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "errorMessage": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "mcp": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolFilterEntryPersisted"
-///          }
-///        },
-///        "nameMatched": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolFilterEntryPersisted"
-///          }
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "phase1": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolFilterPhase1Persisted"
-///          }
-///        },
-///        "phase2": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/ToolFilterEntryPersisted"
-///          }
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "tool_filter"
-///          ]
-///        },
-///        "status": {
-///          "type": "string",
-///          "enum": [
-///            "complete",
-///            "error"
-///          ]
-///        },
-///        "toolsSent": {
-///          "description": "Number of tools actually exposed to the model this turn (post-filter, post-grant-gating). The phase arrays can't stand in for this: with filtering disabled they're empty while tools are still sent. The client uses it to mirror the tools hint into the system bubble only when core really appended it.",
-///          "type": "integer"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role",
-///        "status"
-///      ],
-///      "properties": {
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "errorMessage": {
-///          "type": "string"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "relevant": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/MemoryFilterEntryPersisted"
-///          }
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "memory_filter"
-///          ]
-///        },
-///        "status": {
-///          "type": "string",
-///          "enum": [
-///            "complete",
-///            "error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "content": {
-///          "$ref": "#/definitions/DisplayContent"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "display"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "content",
-///        "createdAtMs",
-///        "id",
-///        "ord",
-///        "role"
-///      ],
-///      "properties": {
-///        "code": {
-///          "type": "string"
-///        },
-///        "content": {
-///          "type": "string"
-///        },
-///        "createdAtMs": {
-///          "type": "integer"
-///        },
-///        "details": {
-///          "type": "object",
-///          "additionalProperties": {}
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "ord": {
-///          "type": "integer"
-///        },
-///        "role": {
-///          "type": "string",
-///          "enum": [
-///            "error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "role", deny_unknown_fields)]
 pub enum Message {
@@ -9085,41 +3061,13 @@ pub enum Message {
         ord: i64,
     },
 }
-impl ::std::convert::From<&Self> for Message {
-    fn from(value: &Message) -> Self {
-        value.clone()
-    }
-}
 ///`MessageContent`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/MessagePart"
-///      }
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MessageContent {
     Variant0(::std::string::String),
     Variant1(::std::vec::Vec<MessagePart>),
-}
-impl ::std::convert::From<&Self> for MessageContent {
-    fn from(value: &MessageContent) -> Self {
-        value.clone()
-    }
 }
 impl ::std::convert::From<::std::vec::Vec<MessagePart>> for MessageContent {
     fn from(value: ::std::vec::Vec<MessagePart>) -> Self {
@@ -9128,18 +3076,6 @@ impl ::std::convert::From<::std::vec::Vec<MessagePart>> for MessageContent {
 }
 ///`MessageModelUsed`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -9157,11 +3093,6 @@ pub enum MessageModelUsed {
     Default,
     #[serde(rename = "secondary")]
     Secondary,
-}
-impl ::std::convert::From<&Self> for MessageModelUsed {
-    fn from(value: &MessageModelUsed) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageModelUsed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -9187,153 +3118,8 @@ impl ::std::convert::TryFrom<&str> for MessageModelUsed {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`MessagePart`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "text",
-///        "type"
-///      ],
-///      "properties": {
-///        "text": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "text"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "image_url",
-///        "type"
-///      ],
-///      "properties": {
-///        "image_url": {
-///          "type": "object",
-///          "required": [
-///            "url"
-///          ],
-///          "properties": {
-///            "url": {
-///              "type": "string"
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_url"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "mime",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "filename",
-///        "path",
-///        "type"
-///      ],
-///      "properties": {
-///        "filename": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "document_file"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum MessagePart {
@@ -9358,54 +3144,15 @@ pub enum MessagePart {
         path: ::std::string::String,
     },
 }
-impl ::std::convert::From<&Self> for MessagePart {
-    fn from(value: &MessagePart) -> Self {
-        value.clone()
-    }
-}
 ///`MessagePartImageUrl`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "url"
-///  ],
-///  "properties": {
-///    "url": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MessagePartImageUrl {
     pub url: ::std::string::String,
 }
-impl ::std::convert::From<&MessagePartImageUrl> for MessagePartImageUrl {
-    fn from(value: &MessagePartImageUrl) -> Self {
-        value.clone()
-    }
-}
 ///`MessageStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -9423,11 +3170,6 @@ pub enum MessageStatus {
     Complete,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for MessageStatus {
-    fn from(value: &MessageStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for MessageStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -9453,53 +3195,8 @@ impl ::std::convert::TryFrom<&str> for MessageStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for MessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for MessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ModelEntry`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "absPath",
-///    "relPath",
-///    "sizeBytes",
-///    "source"
-///  ],
-///  "properties": {
-///    "absPath": {
-///      "type": "string"
-///    },
-///    "relPath": {
-///      "type": "string"
-///    },
-///    "sizeBytes": {
-///      "type": "integer"
-///    },
-///    "source": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModelEntry {
@@ -9511,102 +3208,8 @@ pub struct ModelEntry {
     pub size_bytes: i64,
     pub source: ::std::string::String,
 }
-impl ::std::convert::From<&ModelEntry> for ModelEntry {
-    fn from(value: &ModelEntry) -> Self {
-        value.clone()
-    }
-}
-///`ModelSpec`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string"
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize, ::serde::Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd,
-)]
-#[serde(transparent)]
-pub struct ModelSpec(pub ::std::string::String);
-impl ::std::ops::Deref for ModelSpec {
-    type Target = ::std::string::String;
-    fn deref(&self) -> &::std::string::String {
-        &self.0
-    }
-}
-impl ::std::convert::From<ModelSpec> for ::std::string::String {
-    fn from(value: ModelSpec) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&ModelSpec> for ModelSpec {
-    fn from(value: &ModelSpec) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::string::String> for ModelSpec {
-    fn from(value: ::std::string::String) -> Self {
-        Self(value)
-    }
-}
-impl ::std::str::FromStr for ModelSpec {
-    type Err = ::std::convert::Infallible;
-    fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
-        Ok(Self(value.to_string()))
-    }
-}
-impl ::std::fmt::Display for ModelSpec {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
 ///`OpenAiToolDef`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "function",
-///    "type"
-///  ],
-///  "properties": {
-///    "function": {
-///      "type": "object",
-///      "required": [
-///        "description",
-///        "name",
-///        "parameters"
-///      ],
-///      "properties": {
-///        "description": {
-///          "type": "string"
-///        },
-///        "name": {
-///          "type": "string"
-///        },
-///        "parameters": {
-///          "type": "object",
-///          "additionalProperties": {}
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "type": {
-///      "type": "string",
-///      "enum": [
-///        "function"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiToolDef {
@@ -9614,39 +3217,8 @@ pub struct OpenAiToolDef {
     #[serde(rename = "type")]
     pub type_: OpenAiToolDefType,
 }
-impl ::std::convert::From<&OpenAiToolDef> for OpenAiToolDef {
-    fn from(value: &OpenAiToolDef) -> Self {
-        value.clone()
-    }
-}
 ///`OpenAiToolDefFunction`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "parameters"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "parameters": {
-///      "type": "object",
-///      "additionalProperties": {}
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiToolDefFunction {
@@ -9654,24 +3226,8 @@ pub struct OpenAiToolDefFunction {
     pub name: ::std::string::String,
     pub parameters: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
 }
-impl ::std::convert::From<&OpenAiToolDefFunction> for OpenAiToolDefFunction {
-    fn from(value: &OpenAiToolDefFunction) -> Self {
-        value.clone()
-    }
-}
 ///`OpenAiToolDefType`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "function"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -9687,11 +3243,6 @@ impl ::std::convert::From<&OpenAiToolDefFunction> for OpenAiToolDefFunction {
 pub enum OpenAiToolDefType {
     #[serde(rename = "function")]
     Function,
-}
-impl ::std::convert::From<&Self> for OpenAiToolDefType {
-    fn from(value: &OpenAiToolDefType) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for OpenAiToolDefType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -9715,57 +3266,8 @@ impl ::std::convert::TryFrom<&str> for OpenAiToolDefType {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for OpenAiToolDefType {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for OpenAiToolDefType {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`PairedClientEntry`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "isMe",
-///    "lastSeenMs",
-///    "name"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "isMe": {
-///      "type": "boolean"
-///    },
-///    "lastSeenMs": {
-///      "type": "integer"
-///    },
-///    "name": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PairedClientEntry {
@@ -9778,34 +3280,8 @@ pub struct PairedClientEntry {
     pub last_seen_ms: i64,
     pub name: ::std::string::String,
 }
-impl ::std::convert::From<&PairedClientEntry> for PairedClientEntry {
-    fn from(value: &PairedClientEntry) -> Self {
-        value.clone()
-    }
-}
 ///`PairingCodeResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "code",
-///    "expiresAtMs"
-///  ],
-///  "properties": {
-///    "code": {
-///      "type": "string"
-///    },
-///    "expiresAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PairingCodeResponse {
@@ -9813,42 +3289,8 @@ pub struct PairingCodeResponse {
     #[serde(rename = "expiresAtMs")]
     pub expires_at_ms: i64,
 }
-impl ::std::convert::From<&PairingCodeResponse> for PairingCodeResponse {
-    fn from(value: &PairingCodeResponse) -> Self {
-        value.clone()
-    }
-}
 ///`PakeFinishResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "clientId",
-///    "confirmS",
-///    "coreVersion",
-///    "token"
-///  ],
-///  "properties": {
-///    "clientId": {
-///      "type": "string"
-///    },
-///    "confirmS": {
-///      "type": "string"
-///    },
-///    "coreVersion": {
-///      "type": "string"
-///    },
-///    "token": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PakeFinishResponse {
@@ -9860,34 +3302,8 @@ pub struct PakeFinishResponse {
     pub core_version: ::std::string::String,
     pub token: ::std::string::String,
 }
-impl ::std::convert::From<&PakeFinishResponse> for PakeFinishResponse {
-    fn from(value: &PakeFinishResponse) -> Self {
-        value.clone()
-    }
-}
 ///`PakeStartResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "msgB",
-///    "pakeId"
-///  ],
-///  "properties": {
-///    "msgB": {
-///      "type": "string"
-///    },
-///    "pakeId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PakeStartResponse {
@@ -9896,1352 +3312,20 @@ pub struct PakeStartResponse {
     #[serde(rename = "pakeId")]
     pub pake_id: ::std::string::String,
 }
-impl ::std::convert::From<&PakeStartResponse> for PakeStartResponse {
-    fn from(value: &PakeStartResponse) -> Self {
-        value.clone()
-    }
-}
-///`PatchCoreSettingsRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct PatchCoreSettingsRequest(
-    pub ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-);
-impl ::std::ops::Deref for PatchCoreSettingsRequest {
-    type Target = ::serde_json::Map<::std::string::String, ::serde_json::Value>;
-    fn deref(&self) -> &::serde_json::Map<::std::string::String, ::serde_json::Value> {
-        &self.0
-    }
-}
-impl ::std::convert::From<PatchCoreSettingsRequest>
-    for ::serde_json::Map<::std::string::String, ::serde_json::Value>
-{
-    fn from(value: PatchCoreSettingsRequest) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&PatchCoreSettingsRequest> for PatchCoreSettingsRequest {
-    fn from(value: &PatchCoreSettingsRequest) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json::Value>>
-    for PatchCoreSettingsRequest
-{
-    fn from(value: ::serde_json::Map<::std::string::String, ::serde_json::Value>) -> Self {
-        Self(value)
-    }
-}
-///`PatchCoreSettingsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "additionalProperties": {}
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct PatchCoreSettingsResponse(
-    pub ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-);
-impl ::std::ops::Deref for PatchCoreSettingsResponse {
-    type Target = ::serde_json::Map<::std::string::String, ::serde_json::Value>;
-    fn deref(&self) -> &::serde_json::Map<::std::string::String, ::serde_json::Value> {
-        &self.0
-    }
-}
-impl ::std::convert::From<PatchCoreSettingsResponse>
-    for ::serde_json::Map<::std::string::String, ::serde_json::Value>
-{
-    fn from(value: PatchCoreSettingsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&PatchCoreSettingsResponse> for PatchCoreSettingsResponse {
-    fn from(value: &PatchCoreSettingsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json::Value>>
-    for PatchCoreSettingsResponse
-{
-    fn from(value: ::serde_json::Map<::std::string::String, ::serde_json::Value>) -> Self {
-        Self(value)
-    }
-}
-///`PatchMessageRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "alwaysAvailable": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "arguments": {
-///      "description": "JSON string of arguments as the model emitted them. Persisted so the reloaded bubble keeps the call's inputs.",
-///      "type": "string"
-///    },
-///    "automated": {
-///      "type": "boolean"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "code": {
-///      "type": "string"
-///    },
-///    "content": {
-///      "anyOf": [
-///        {
-///          "type": "string"
-///        },
-///        {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/MessagePart"
-///          }
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "markdown",
-///            "type"
-///          ],
-///          "properties": {
-///            "markdown": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "markdown"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "dataB64",
-///            "mime",
-///            "type"
-///          ],
-///          "properties": {
-///            "alt": {
-///              "type": "string"
-///            },
-///            "dataB64": {
-///              "type": "string"
-///            },
-///            "mime": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "image"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "columns",
-///            "rows",
-///            "type"
-///          ],
-///          "properties": {
-///            "columns": {
-///              "type": "array",
-///              "items": {
-///                "type": "string"
-///              }
-///            },
-///            "rows": {
-///              "type": "array",
-///              "items": {
-///                "type": "array",
-///                "items": {
-///                  "type": "string"
-///                }
-///              }
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "table"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        {
-///          "type": "object",
-///          "required": [
-///            "after",
-///            "before",
-///            "type"
-///          ],
-///          "properties": {
-///            "after": {
-///              "type": "string"
-///            },
-///            "before": {
-///              "type": "string"
-///            },
-///            "title": {
-///              "type": "string"
-///            },
-///            "type": {
-///              "type": "string",
-///              "enum": [
-///                "diff"
-///              ]
-///            }
-///          },
-///          "additionalProperties": false
-///        }
-///      ]
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "details": {
-///      "type": "object",
-///      "additionalProperties": {}
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "errorMessage": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "interrupted": {
-///      "type": "boolean"
-///    },
-///    "label": {
-///      "description": "Last `tool.progress` label/description the tool emitted, persisted so the reloaded bubble keeps the tool's own wording (e.g. \"Opening YouTube\") instead of falling back to the generic tool-name phrase.",
-///      "type": "string"
-///    },
-///    "mcp": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "modelUsed": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "nameMatched": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "pairedAssistantId": {
-///      "type": "string"
-///    },
-///    "phase1": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterPhase1Persisted"
-///      }
-///    },
-///    "phase2": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "progress": {
-///      "description": "0..1 completion fraction from the last `tool.progress` event.",
-///      "type": "number"
-///    },
-///    "reasoningDurationMs": {
-///      "type": "integer"
-///    },
-///    "relevant": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/MemoryFilterEntryPersisted"
-///      }
-///    },
-///    "result": {},
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "user",
-///        "assistant",
-///        "system",
-///        "tool",
-///        "reasoning",
-///        "tool_filter",
-///        "memory_filter",
-///        "display",
-///        "error"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "pending",
-///        "running",
-///        "awaiting_user",
-///        "awaiting_permission",
-///        "completed",
-///        "failed",
-///        "cancelled",
-///        "complete",
-///        "error"
-///      ]
-///    },
-///    "systemPromptOverride": {
-///      "type": "string"
-///    },
-///    "toolCalls": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolCall"
-///      }
-///    },
-///    "toolName": {
-///      "type": "string"
-///    },
-///    "toolsSent": {
-///      "description": "Number of tools actually exposed to the model this turn (post-filter, post-grant-gating). The phase arrays can't stand in for this: with filtering disabled they're empty while tools are still sent. The client uses it to mirror the tools hint into the system bubble only when core really appended it.",
-///      "type": "integer"
-///    },
-///    "truncated": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-pub struct PatchMessageRequest {
-    #[serde(
-        rename = "alwaysAvailable",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub always_available: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    ///JSON string of arguments as the model emitted them. Persisted so the reloaded bubble keeps the call's inputs.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub arguments: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub automated: ::std::option::Option<bool>,
-    #[serde(
-        rename = "callId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub call_id: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub code: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub content: ::std::option::Option<PatchMessageRequestContent>,
-    #[serde(
-        rename = "createdAtMs",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub created_at_ms: ::std::option::Option<i64>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub description: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub details:
-        ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub error: ::std::option::Option<::std::string::String>,
-    #[serde(
-        rename = "errorMessage",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub error_message: ::std::option::Option<::std::string::String>,
-    #[serde(
-        rename = "extensionId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub extension_id: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub id: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub interrupted: ::std::option::Option<bool>,
-    ///Last `tool.progress` label/description the tool emitted, persisted so the reloaded bubble keeps the tool's own wording (e.g. "Opening YouTube") instead of falling back to the generic tool-name phrase.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub label: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub mcp: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    #[serde(
-        rename = "modelUsed",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub model_used: ::std::option::Option<PatchMessageRequestModelUsed>,
-    #[serde(
-        rename = "nameMatched",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub name_matched: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub ord: ::std::option::Option<i64>,
-    #[serde(
-        rename = "pairedAssistantId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub paired_assistant_id: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub phase1: ::std::option::Option<::std::vec::Vec<ToolFilterPhase1Persisted>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub phase2: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub progress: ::std::option::Option<f64>,
-    #[serde(
-        rename = "reasoningDurationMs",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub reasoning_duration_ms: ::std::option::Option<i64>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub relevant: ::std::option::Option<::std::vec::Vec<MemoryFilterEntryPersisted>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub result: ::std::option::Option<::serde_json::Value>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub role: ::std::option::Option<PatchMessageRequestRole>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub status: ::std::option::Option<PatchMessageRequestStatus>,
-    #[serde(
-        rename = "systemPromptOverride",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub system_prompt_override: ::std::option::Option<::std::string::String>,
-    #[serde(
-        rename = "toolCalls",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub tool_calls: ::std::option::Option<::std::vec::Vec<ToolCall>>,
-    #[serde(
-        rename = "toolName",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub tool_name: ::std::option::Option<::std::string::String>,
-    ///Number of tools actually exposed to the model this turn (post-filter, post-grant-gating). The phase arrays can't stand in for this: with filtering disabled they're empty while tools are still sent. The client uses it to mirror the tools hint into the system bubble only when core really appended it.
-    #[serde(
-        rename = "toolsSent",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub tools_sent: ::std::option::Option<i64>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub truncated: ::std::option::Option<bool>,
-}
-impl ::std::convert::From<&PatchMessageRequest> for PatchMessageRequest {
-    fn from(value: &PatchMessageRequest) -> Self {
-        value.clone()
-    }
-}
-impl ::std::default::Default for PatchMessageRequest {
-    fn default() -> Self {
-        Self {
-            always_available: Default::default(),
-            arguments: Default::default(),
-            automated: Default::default(),
-            call_id: Default::default(),
-            code: Default::default(),
-            content: Default::default(),
-            created_at_ms: Default::default(),
-            description: Default::default(),
-            details: Default::default(),
-            error: Default::default(),
-            error_message: Default::default(),
-            extension_id: Default::default(),
-            id: Default::default(),
-            interrupted: Default::default(),
-            label: Default::default(),
-            mcp: Default::default(),
-            model_used: Default::default(),
-            name_matched: Default::default(),
-            ord: Default::default(),
-            paired_assistant_id: Default::default(),
-            phase1: Default::default(),
-            phase2: Default::default(),
-            progress: Default::default(),
-            reasoning_duration_ms: Default::default(),
-            relevant: Default::default(),
-            result: Default::default(),
-            role: Default::default(),
-            status: Default::default(),
-            system_prompt_override: Default::default(),
-            tool_calls: Default::default(),
-            tool_name: Default::default(),
-            tools_sent: Default::default(),
-            truncated: Default::default(),
-        }
-    }
-}
-///`PatchMessageRequestContent`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "string"
-///    },
-///    {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/MessagePart"
-///      }
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "markdown",
-///        "type"
-///      ],
-///      "properties": {
-///        "markdown": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "markdown"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "dataB64",
-///        "mime",
-///        "type"
-///      ],
-///      "properties": {
-///        "alt": {
-///          "type": "string"
-///        },
-///        "dataB64": {
-///          "type": "string"
-///        },
-///        "mime": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "image"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "columns",
-///        "rows",
-///        "type"
-///      ],
-///      "properties": {
-///        "columns": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "rows": {
-///          "type": "array",
-///          "items": {
-///            "type": "array",
-///            "items": {
-///              "type": "string"
-///            }
-///          }
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "table"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "after",
-///        "before",
-///        "type"
-///      ],
-///      "properties": {
-///        "after": {
-///          "type": "string"
-///        },
-///        "before": {
-///          "type": "string"
-///        },
-///        "title": {
-///          "type": "string"
-///        },
-///        "type": {
-///          "type": "string",
-///          "enum": [
-///            "diff"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(untagged, deny_unknown_fields)]
-pub enum PatchMessageRequestContent {
-    Variant0(::std::string::String),
-    Variant1(::std::vec::Vec<MessagePart>),
-    Variant2 {
-        markdown: ::std::string::String,
-        #[serde(rename = "type")]
-        type_: PatchMessageRequestContentVariant2Type,
-    },
-    Variant3 {
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        alt: ::std::option::Option<::std::string::String>,
-        #[serde(rename = "dataB64")]
-        data_b64: ::std::string::String,
-        mime: ::std::string::String,
-        #[serde(rename = "type")]
-        type_: PatchMessageRequestContentVariant3Type,
-    },
-    Variant4 {
-        columns: ::std::vec::Vec<::std::string::String>,
-        rows: ::std::vec::Vec<::std::vec::Vec<::std::string::String>>,
-        #[serde(rename = "type")]
-        type_: PatchMessageRequestContentVariant4Type,
-    },
-    Variant5 {
-        after: ::std::string::String,
-        before: ::std::string::String,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        title: ::std::option::Option<::std::string::String>,
-        #[serde(rename = "type")]
-        type_: PatchMessageRequestContentVariant5Type,
-    },
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestContent {
-    fn from(value: &PatchMessageRequestContent) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::vec::Vec<MessagePart>> for PatchMessageRequestContent {
-    fn from(value: ::std::vec::Vec<MessagePart>) -> Self {
-        Self::Variant1(value)
-    }
-}
-///`PatchMessageRequestContentVariant2Type`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "markdown"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestContentVariant2Type {
-    #[serde(rename = "markdown")]
-    Markdown,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestContentVariant2Type {
-    fn from(value: &PatchMessageRequestContentVariant2Type) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestContentVariant2Type {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Markdown => f.write_str("markdown"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestContentVariant2Type {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "markdown" => Ok(Self::Markdown),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestContentVariant2Type {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestContentVariant2Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestContentVariant2Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestContentVariant3Type`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "image"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestContentVariant3Type {
-    #[serde(rename = "image")]
-    Image,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestContentVariant3Type {
-    fn from(value: &PatchMessageRequestContentVariant3Type) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestContentVariant3Type {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Image => f.write_str("image"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestContentVariant3Type {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "image" => Ok(Self::Image),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestContentVariant3Type {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestContentVariant3Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestContentVariant3Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestContentVariant4Type`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "table"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestContentVariant4Type {
-    #[serde(rename = "table")]
-    Table,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestContentVariant4Type {
-    fn from(value: &PatchMessageRequestContentVariant4Type) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestContentVariant4Type {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Table => f.write_str("table"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestContentVariant4Type {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "table" => Ok(Self::Table),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestContentVariant4Type {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestContentVariant4Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestContentVariant4Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestContentVariant5Type`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "diff"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestContentVariant5Type {
-    #[serde(rename = "diff")]
-    Diff,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestContentVariant5Type {
-    fn from(value: &PatchMessageRequestContentVariant5Type) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestContentVariant5Type {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Diff => f.write_str("diff"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestContentVariant5Type {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "diff" => Ok(Self::Diff),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestContentVariant5Type {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestContentVariant5Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestContentVariant5Type {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestModelUsed`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestModelUsed {
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "secondary")]
-    Secondary,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestModelUsed {
-    fn from(value: &PatchMessageRequestModelUsed) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestModelUsed {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Default => f.write_str("default"),
-            Self::Secondary => f.write_str("secondary"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestModelUsed {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "default" => Ok(Self::Default),
-            "secondary" => Ok(Self::Secondary),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "user",
-///    "assistant",
-///    "system",
-///    "tool",
-///    "reasoning",
-///    "tool_filter",
-///    "memory_filter",
-///    "display",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestRole {
-    #[serde(rename = "user")]
-    User,
-    #[serde(rename = "assistant")]
-    Assistant,
-    #[serde(rename = "system")]
-    System,
-    #[serde(rename = "tool")]
-    Tool,
-    #[serde(rename = "reasoning")]
-    Reasoning,
-    #[serde(rename = "tool_filter")]
-    ToolFilter,
-    #[serde(rename = "memory_filter")]
-    MemoryFilter,
-    #[serde(rename = "display")]
-    Display,
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestRole {
-    fn from(value: &PatchMessageRequestRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::User => f.write_str("user"),
-            Self::Assistant => f.write_str("assistant"),
-            Self::System => f.write_str("system"),
-            Self::Tool => f.write_str("tool"),
-            Self::Reasoning => f.write_str("reasoning"),
-            Self::ToolFilter => f.write_str("tool_filter"),
-            Self::MemoryFilter => f.write_str("memory_filter"),
-            Self::Display => f.write_str("display"),
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "user" => Ok(Self::User),
-            "assistant" => Ok(Self::Assistant),
-            "system" => Ok(Self::System),
-            "tool" => Ok(Self::Tool),
-            "reasoning" => Ok(Self::Reasoning),
-            "tool_filter" => Ok(Self::ToolFilter),
-            "memory_filter" => Ok(Self::MemoryFilter),
-            "display" => Ok(Self::Display),
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`PatchMessageRequestStatus`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled",
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum PatchMessageRequestStatus {
-    #[serde(rename = "pending")]
-    Pending,
-    #[serde(rename = "running")]
-    Running,
-    #[serde(rename = "awaiting_user")]
-    AwaitingUser,
-    #[serde(rename = "awaiting_permission")]
-    AwaitingPermission,
-    #[serde(rename = "completed")]
-    Completed,
-    #[serde(rename = "failed")]
-    Failed,
-    #[serde(rename = "cancelled")]
-    Cancelled,
-    #[serde(rename = "complete")]
-    Complete,
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for PatchMessageRequestStatus {
-    fn from(value: &PatchMessageRequestStatus) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for PatchMessageRequestStatus {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Pending => f.write_str("pending"),
-            Self::Running => f.write_str("running"),
-            Self::AwaitingUser => f.write_str("awaiting_user"),
-            Self::AwaitingPermission => f.write_str("awaiting_permission"),
-            Self::Completed => f.write_str("completed"),
-            Self::Failed => f.write_str("failed"),
-            Self::Cancelled => f.write_str("cancelled"),
-            Self::Complete => f.write_str("complete"),
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for PatchMessageRequestStatus {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "pending" => Ok(Self::Pending),
-            "running" => Ok(Self::Running),
-            "awaiting_user" => Ok(Self::AwaitingUser),
-            "awaiting_permission" => Ok(Self::AwaitingPermission),
-            "completed" => Ok(Self::Completed),
-            "failed" => Ok(Self::Failed),
-            "cancelled" => Ok(Self::Cancelled),
-            "complete" => Ok(Self::Complete),
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for PatchMessageRequestStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PatchMessageRequestStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PatchMessageRequestStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`PatchMessageResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "ord"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PatchMessageResponse {
     pub id: ::std::string::String,
     pub ord: i64,
 }
-impl ::std::convert::From<&PatchMessageResponse> for PatchMessageResponse {
-    fn from(value: &PatchMessageResponse) -> Self {
-        value.clone()
-    }
-}
 ///`PatchSessionRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct PatchSessionRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub title: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&PatchSessionRequest> for PatchSessionRequest {
-    fn from(value: &PatchSessionRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for PatchSessionRequest {
     fn default() -> Self {
@@ -11252,340 +3336,14 @@ impl ::std::default::Default for PatchSessionRequest {
 }
 ///`PatchSessionResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "title"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PatchSessionResponse {
     pub id: ::std::string::String,
     pub title: ::std::string::String,
 }
-impl ::std::convert::From<&PatchSessionResponse> for PatchSessionResponse {
-    fn from(value: &PatchSessionResponse) -> Self {
-        value.clone()
-    }
-}
 ///`PermissionDecl`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "host",
-///        "kind",
-///        "ports",
-///        "reason"
-///      ],
-///      "properties": {
-///        "host": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "net"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "ports": {
-///          "type": "array",
-///          "items": {
-///            "anyOf": [
-///              {
-///                "type": "integer"
-///              },
-///              {
-///                "type": "string",
-///                "enum": [
-///                  "*"
-///                ]
-///              }
-///            ]
-///          }
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "path",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "read"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "path",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "write"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "binary",
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "binary": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "run"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "key",
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "key": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "env"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "ffi"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "flag",
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "flag": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "sys"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "access",
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "access": {
-///          "type": "string",
-///          "enum": [
-///            "read",
-///            "write"
-///          ]
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "memories"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "llm"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tts"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "stt"
-///          ]
-///        },
-///        "optional": {
-///          "type": "boolean"
-///        },
-///        "reason": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum PermissionDecl {
@@ -11664,25 +3422,8 @@ pub enum PermissionDecl {
         reason: ::std::string::String,
     },
 }
-impl ::std::convert::From<&Self> for PermissionDecl {
-    fn from(value: &PermissionDecl) -> Self {
-        value.clone()
-    }
-}
 ///`PermissionDeclAccess`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "read",
-///    "write"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -11700,11 +3441,6 @@ pub enum PermissionDeclAccess {
     Read,
     #[serde(rename = "write")]
     Write,
-}
-impl ::std::convert::From<&Self> for PermissionDeclAccess {
-    fn from(value: &PermissionDeclAccess) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for PermissionDeclAccess {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -11730,52 +3466,13 @@ impl ::std::convert::TryFrom<&str> for PermissionDeclAccess {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PermissionDeclAccess {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PermissionDeclAccess {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`PermissionDeclPortsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "integer"
-///    },
-///    {
-///      "type": "string",
-///      "enum": [
-///        "*"
-///      ]
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum PermissionDeclPortsItem {
     Variant0(i64),
     Variant1(PermissionDeclPortsItemVariant1),
-}
-impl ::std::convert::From<&Self> for PermissionDeclPortsItem {
-    fn from(value: &PermissionDeclPortsItem) -> Self {
-        value.clone()
-    }
 }
 impl ::std::str::FromStr for PermissionDeclPortsItem {
     type Err = self::error::ConversionError;
@@ -11792,22 +3489,6 @@ impl ::std::str::FromStr for PermissionDeclPortsItem {
 impl ::std::convert::TryFrom<&str> for PermissionDeclPortsItem {
     type Error = self::error::ConversionError;
     fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for PermissionDeclPortsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PermissionDeclPortsItem {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
         value.parse()
     }
 }
@@ -11831,17 +3512,6 @@ impl ::std::convert::From<PermissionDeclPortsItemVariant1> for PermissionDeclPor
 }
 ///`PermissionDeclPortsItemVariant1`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "*"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -11857,11 +3527,6 @@ impl ::std::convert::From<PermissionDeclPortsItemVariant1> for PermissionDeclPor
 pub enum PermissionDeclPortsItemVariant1 {
     #[serde(rename = "*")]
     X,
-}
-impl ::std::convert::From<&Self> for PermissionDeclPortsItemVariant1 {
-    fn from(value: &PermissionDeclPortsItemVariant1) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for PermissionDeclPortsItemVariant1 {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -11885,45 +3550,8 @@ impl ::std::convert::TryFrom<&str> for PermissionDeclPortsItemVariant1 {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PermissionDeclPortsItemVariant1 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PermissionDeclPortsItemVariant1 {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`PermissionKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "net",
-///    "read",
-///    "write",
-///    "run",
-///    "env",
-///    "ffi",
-///    "sys",
-///    "memories",
-///    "llm",
-///    "tts",
-///    "stt"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -11959,11 +3587,6 @@ pub enum PermissionKind {
     Tts,
     #[serde(rename = "stt")]
     Stt,
-}
-impl ::std::convert::From<&Self> for PermissionKind {
-    fn from(value: &PermissionKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for PermissionKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12007,38 +3630,8 @@ impl ::std::convert::TryFrom<&str> for PermissionKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PermissionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PermissionKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///The three adaptive presets. `custom` (a manual model pick or hand-edited fields) is not a computed bucket and is absent here.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "The three adaptive presets. `custom` (a manual model pick or hand-edited fields) is not a computed bucket and is absent here.",
-///  "type": "string",
-///  "enum": [
-///    "smallest",
-///    "half",
-///    "full"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12058,11 +3651,6 @@ pub enum PresetBucket {
     Half,
     #[serde(rename = "full")]
     Full,
-}
-impl ::std::convert::From<&Self> for PresetBucket {
-    fn from(value: &PresetBucket) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for PresetBucket {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12090,66 +3678,8 @@ impl ::std::convert::TryFrom<&str> for PresetBucket {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for PresetBucket {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for PresetBucket {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`ProbeBinariesRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kinds"
-///  ],
-///  "properties": {
-///    "kinds": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/BinaryKind"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-pub struct ProbeBinariesRequest {
-    pub kinds: ::std::vec::Vec<BinaryKind>,
-}
-impl ::std::convert::From<&ProbeBinariesRequest> for ProbeBinariesRequest {
-    fn from(value: &ProbeBinariesRequest) -> Self {
-        value.clone()
-    }
-}
 ///`ProbeBinariesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/BinaryProbeResult"
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct ProbeBinariesResponse(pub ::std::vec::Vec<BinaryProbeResult>);
@@ -12164,112 +3694,13 @@ impl ::std::convert::From<ProbeBinariesResponse> for ::std::vec::Vec<BinaryProbe
         value.0
     }
 }
-impl ::std::convert::From<&ProbeBinariesResponse> for ProbeBinariesResponse {
-    fn from(value: &ProbeBinariesResponse) -> Self {
-        value.clone()
-    }
-}
 impl ::std::convert::From<::std::vec::Vec<BinaryProbeResult>> for ProbeBinariesResponse {
     fn from(value: ::std::vec::Vec<BinaryProbeResult>) -> Self {
         Self(value)
     }
 }
-///`ProbeModelsRequest`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "sources"
-///  ],
-///  "properties": {
-///    "sources": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-pub struct ProbeModelsRequest {
-    pub sources: ::std::vec::Vec<::std::string::String>,
-}
-impl ::std::convert::From<&ProbeModelsRequest> for ProbeModelsRequest {
-    fn from(value: &ProbeModelsRequest) -> Self {
-        value.clone()
-    }
-}
-///`ProbeModelsResponse`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/DownloadPlan"
-///  }
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(transparent)]
-pub struct ProbeModelsResponse(pub ::std::vec::Vec<DownloadPlan>);
-impl ::std::ops::Deref for ProbeModelsResponse {
-    type Target = ::std::vec::Vec<DownloadPlan>;
-    fn deref(&self) -> &::std::vec::Vec<DownloadPlan> {
-        &self.0
-    }
-}
-impl ::std::convert::From<ProbeModelsResponse> for ::std::vec::Vec<DownloadPlan> {
-    fn from(value: ProbeModelsResponse) -> Self {
-        value.0
-    }
-}
-impl ::std::convert::From<&ProbeModelsResponse> for ProbeModelsResponse {
-    fn from(value: &ProbeModelsResponse) -> Self {
-        value.clone()
-    }
-}
-impl ::std::convert::From<::std::vec::Vec<DownloadPlan>> for ProbeModelsResponse {
-    fn from(value: ::std::vec::Vec<DownloadPlan>) -> Self {
-        Self(value)
-    }
-}
 ///Live resource sample for a single process.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "Live resource sample for a single process.",
-///  "type": "object",
-///  "required": [
-///    "cpuPct",
-///    "pid",
-///    "rssMb"
-///  ],
-///  "properties": {
-///    "cpuPct": {
-///      "type": "number"
-///    },
-///    "pid": {
-///      "type": "integer"
-///    },
-///    "rssMb": {
-///      "type": "number"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessMetricsLite {
@@ -12279,53 +3710,8 @@ pub struct ProcessMetricsLite {
     #[serde(rename = "rssMb")]
     pub rss_mb: f64,
 }
-impl ::std::convert::From<&ProcessMetricsLite> for ProcessMetricsLite {
-    fn from(value: &ProcessMetricsLite) -> Self {
-        value.clone()
-    }
-}
 ///One selectable quantization of a model, with how it lands on this device.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One selectable quantization of a model, with how it lands on this device.",
-///  "type": "object",
-///  "required": [
-///    "fits",
-///    "footprintBytes",
-///    "modelSpec",
-///    "quant",
-///    "recommended",
-///    "variantLabel"
-///  ],
-///  "properties": {
-///    "fits": {
-///      "type": "boolean"
-///    },
-///    "footprintBytes": {
-///      "type": "integer"
-///    },
-///    "modelSpec": {
-///      "description": "Unique HF spec \"@provider/repo/branch/file.gguf\" (identifies the quant).",
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    },
-///    "recommended": {
-///      "description": "The quality/size sweet spot the fit engine recommends (and applies by default when this model is picked). Capped below Q8's diminishing returns.",
-///      "type": "boolean"
-///    },
-///    "variantLabel": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct QuantOption {
@@ -12341,329 +3727,8 @@ pub struct QuantOption {
     #[serde(rename = "variantLabel")]
     pub variant_label: ::std::string::String,
 }
-impl ::std::convert::From<&QuantOption> for QuantOption {
-    fn from(value: &QuantOption) -> Self {
-        value.clone()
-    }
-}
-///`ReasoningMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "interrupted": {
-///      "type": "boolean"
-///    },
-///    "modelUsed": {
-///      "type": "string",
-///      "enum": [
-///        "default",
-///        "secondary"
-///      ]
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "pairedAssistantId": {
-///      "type": "string"
-///    },
-///    "reasoningDurationMs": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "reasoning"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct ReasoningMessage {
-    pub content: ::std::string::String,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    pub id: ::std::string::String,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub interrupted: ::std::option::Option<bool>,
-    #[serde(
-        rename = "modelUsed",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub model_used: ::std::option::Option<ReasoningMessageModelUsed>,
-    pub ord: i64,
-    #[serde(
-        rename = "pairedAssistantId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub paired_assistant_id: ::std::option::Option<::std::string::String>,
-    #[serde(
-        rename = "reasoningDurationMs",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub reasoning_duration_ms: ::std::option::Option<i64>,
-    pub role: ReasoningMessageRole,
-}
-impl ::std::convert::From<&ReasoningMessage> for ReasoningMessage {
-    fn from(value: &ReasoningMessage) -> Self {
-        value.clone()
-    }
-}
-///`ReasoningMessageModelUsed`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ReasoningMessageModelUsed {
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "secondary")]
-    Secondary,
-}
-impl ::std::convert::From<&Self> for ReasoningMessageModelUsed {
-    fn from(value: &ReasoningMessageModelUsed) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ReasoningMessageModelUsed {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Default => f.write_str("default"),
-            Self::Secondary => f.write_str("secondary"),
-        }
-    }
-}
-impl ::std::str::FromStr for ReasoningMessageModelUsed {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "default" => Ok(Self::Default),
-            "secondary" => Ok(Self::Secondary),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ReasoningMessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ReasoningMessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ReasoningMessageModelUsed {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`ReasoningMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "reasoning"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ReasoningMessageRole {
-    #[serde(rename = "reasoning")]
-    Reasoning,
-}
-impl ::std::convert::From<&Self> for ReasoningMessageRole {
-    fn from(value: &ReasoningMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ReasoningMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Reasoning => f.write_str("reasoning"),
-        }
-    }
-}
-impl ::std::str::FromStr for ReasoningMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "reasoning" => Ok(Self::Reasoning),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ReasoningMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ReasoningMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ReasoningMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`RecommendationSet`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "applied",
-///    "buckets",
-///    "catalogGeneratedAt",
-///    "hardware"
-///  ],
-///  "properties": {
-///    "applied": {
-///      "description": "What the live settings currently point at, so the client can diff.",
-///      "type": "object",
-///      "properties": {
-///        "modelPath": {
-///          "type": "string"
-///        },
-///        "preset": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "buckets": {
-///      "description": "null for a bucket when nothing in the catalog fits (extreme low memory).",
-///      "type": "object",
-///      "required": [
-///        "full",
-///        "half",
-///        "smallest"
-///      ],
-///      "properties": {
-///        "full": {
-///          "anyOf": [
-///            {
-///              "$ref": "#/definitions/BucketRecommendation"
-///            },
-///            {
-///              "type": "null"
-///            }
-///          ]
-///        },
-///        "half": {
-///          "anyOf": [
-///            {
-///              "$ref": "#/definitions/BucketRecommendation"
-///            },
-///            {
-///              "type": "null"
-///            }
-///          ]
-///        },
-///        "smallest": {
-///          "anyOf": [
-///            {
-///              "$ref": "#/definitions/BucketRecommendation"
-///            },
-///            {
-///              "type": "null"
-///            }
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    "catalogGeneratedAt": {
-///      "type": "string"
-///    },
-///    "hardware": {
-///      "$ref": "#/definitions/HardwareInfo"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RecommendationSet {
@@ -12673,31 +3738,8 @@ pub struct RecommendationSet {
     pub catalog_generated_at: ::std::string::String,
     pub hardware: HardwareInfo,
 }
-impl ::std::convert::From<&RecommendationSet> for RecommendationSet {
-    fn from(value: &RecommendationSet) -> Self {
-        value.clone()
-    }
-}
 ///What the live settings currently point at, so the client can diff.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "What the live settings currently point at, so the client can diff.",
-///  "type": "object",
-///  "properties": {
-///    "modelPath": {
-///      "type": "string"
-///    },
-///    "preset": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RecommendationSetApplied {
@@ -12710,11 +3752,6 @@ pub struct RecommendationSetApplied {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub preset: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&RecommendationSetApplied> for RecommendationSetApplied {
-    fn from(value: &RecommendationSetApplied) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for RecommendationSetApplied {
     fn default() -> Self {
         Self {
@@ -12725,53 +3762,6 @@ impl ::std::default::Default for RecommendationSetApplied {
 }
 ///null for a bucket when nothing in the catalog fits (extreme low memory).
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "null for a bucket when nothing in the catalog fits (extreme low memory).",
-///  "type": "object",
-///  "required": [
-///    "full",
-///    "half",
-///    "smallest"
-///  ],
-///  "properties": {
-///    "full": {
-///      "anyOf": [
-///        {
-///          "$ref": "#/definitions/BucketRecommendation"
-///        },
-///        {
-///          "type": "null"
-///        }
-///      ]
-///    },
-///    "half": {
-///      "anyOf": [
-///        {
-///          "$ref": "#/definitions/BucketRecommendation"
-///        },
-///        {
-///          "type": "null"
-///        }
-///      ]
-///    },
-///    "smallest": {
-///      "anyOf": [
-///        {
-///          "$ref": "#/definitions/BucketRecommendation"
-///        },
-///        {
-///          "type": "null"
-///        }
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RecommendationSetBuckets {
@@ -12779,73 +3769,12 @@ pub struct RecommendationSetBuckets {
     pub half: ::std::option::Option<BucketRecommendation>,
     pub smallest: ::std::option::Option<BucketRecommendation>,
 }
-impl ::std::convert::From<&RecommendationSetBuckets> for RecommendationSetBuckets {
-    fn from(value: &RecommendationSetBuckets) -> Self {
-        value.clone()
-    }
-}
 ///One thing the current config needs present on disk. Shaped so the `missing` subset is directly renderable by the download confirm modal.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One thing the current config needs present on disk. Shaped so the `missing` subset is directly renderable by the download confirm modal.",
-///  "type": "object",
-///  "required": [
-///    "group",
-///    "present",
-///    "source",
-///    "type"
-///  ],
-///  "properties": {
-///    "error": {
-///      "description": "The last attempt to prepare/download/install this file failed and it needs a retry (e.g. an upstream binary that could not be resolved). Still counted in `missing` (it blocks), but the UI shows the reason + a retry affordance instead of a normal, sizeless \"Download\" line. Distinct from `unavailable` (platform-impossible, non-blocking).",
-///      "type": "string"
-///    },
-///    "group": {
-///      "type": "string",
-///      "enum": [
-///        "llm",
-///        "stt",
-///        "tts",
-///        "embed",
-///        "binary"
-///      ]
-///    },
-///    "present": {
-///      "type": "boolean"
-///    },
-///    "sizeHint": {
-///      "type": "integer"
-///    },
-///    "source": {
-///      "description": "HF model spec (\"@u/r/branch/file\"), or `binary:<kind>`.",
-///      "type": "string"
-///    },
-///    "type": {
-///      "type": "string",
-///      "enum": [
-///        "model",
-///        "binary"
-///      ]
-///    },
-///    "unavailable": {
-///      "description": "A binary with no upstream asset on this platform. Kept in `required` for visibility but excluded from `missing` so it never blocks the app.",
-///      "type": "boolean"
-///    },
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RequiredFile {
-    ///The last attempt to prepare/download/install this file failed and it needs a retry (e.g. an upstream binary that could not be resolved). Still counted in `missing` (it blocks), but the UI shows the reason + a retry affordance instead of a normal, sizeless "Download" line. Distinct from `unavailable` (platform-impossible, non-blocking).
+    ///Preparing this file failed and it needs a retry. Still counted in `missing` (it blocks), unlike `unavailable` (platform-impossible).
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub error: ::std::option::Option<::std::string::String>,
     pub group: RequiredFileGroup,
@@ -12866,28 +3795,8 @@ pub struct RequiredFile {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub version: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&RequiredFile> for RequiredFile {
-    fn from(value: &RequiredFile) -> Self {
-        value.clone()
-    }
-}
 ///`RequiredFileGroup`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llm",
-///    "stt",
-///    "tts",
-///    "embed",
-///    "binary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12911,11 +3820,6 @@ pub enum RequiredFileGroup {
     Embed,
     #[serde(rename = "binary")]
     Binary,
-}
-impl ::std::convert::From<&Self> for RequiredFileGroup {
-    fn from(value: &RequiredFileGroup) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for RequiredFileGroup {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -12947,36 +3851,8 @@ impl ::std::convert::TryFrom<&str> for RequiredFileGroup {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for RequiredFileGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for RequiredFileGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`RequiredFileType`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "model",
-///    "binary"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -12994,11 +3870,6 @@ pub enum RequiredFileType {
     Model,
     #[serde(rename = "binary")]
     Binary,
-}
-impl ::std::convert::From<&Self> for RequiredFileType {
-    fn from(value: &RequiredFileType) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for RequiredFileType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13024,38 +3895,8 @@ impl ::std::convert::TryFrom<&str> for RequiredFileType {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for RequiredFileType {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for RequiredFileType {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`RequirementGroup`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llm",
-///    "stt",
-///    "tts",
-///    "embed"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -13077,11 +3918,6 @@ pub enum RequirementGroup {
     Tts,
     #[serde(rename = "embed")]
     Embed,
-}
-impl ::std::convert::From<&Self> for RequirementGroup {
-    fn from(value: &RequirementGroup) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for RequirementGroup {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13111,116 +3947,17 @@ impl ::std::convert::TryFrom<&str> for RequirementGroup {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for RequirementGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for RequirementGroup {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`RequirementsSnapshot`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "missing",
-///    "required"
-///  ],
-///  "properties": {
-///    "missing": {
-///      "description": "Subset of `required` that is not present and not unavailable. Drives the popup and the app's pending gate.",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/RequiredFile"
-///      }
-///    },
-///    "required": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/RequiredFile"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RequirementsSnapshot {
-    ///Subset of `required` that is not present and not unavailable. Drives the popup and the app's pending gate.
+    ///Subset of `required` that is not present and not unavailable.
     pub missing: ::std::vec::Vec<RequiredFile>,
     pub required: ::std::vec::Vec<RequiredFile>,
 }
-impl ::std::convert::From<&RequirementsSnapshot> for RequirementsSnapshot {
-    fn from(value: &RequirementsSnapshot) -> Self {
-        value.clone()
-    }
-}
 ///The sampling knobs a model runs with at inference time. The catalog carries an optional per-model `sampling` tuned by its authors; DEFAULT_SAMPLING fills in for anything without one (custom local models, external providers).
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "The sampling knobs a model runs with at inference time. The catalog carries an optional per-model `sampling` tuned by its authors; DEFAULT_SAMPLING fills in for anything without one (custom local models, external providers).",
-///  "type": "object",
-///  "required": [
-///    "minP",
-///    "repeatPenalty",
-///    "temperature",
-///    "topK",
-///    "topP"
-///  ],
-///  "properties": {
-///    "dryMultiplier": {
-///      "description": "DRY (Don't Repeat Yourself) multiplier; 0 = disabled. Penalizes repeating whole phrases, catching the semantic loops the token-level repeat penalty misses. Omitted by a model's catalog tuning falls back to DEFAULT_SAMPLING.",
-///      "type": "number"
-///    },
-///    "minP": {
-///      "type": "number"
-///    },
-///    "presencePenalty": {
-///      "description": "OpenAI-style presence penalty; 0 = disabled. Nudges the model toward new words instead of reusing ones it already produced.",
-///      "type": "number"
-///    },
-///    "repeatPenalty": {
-///      "description": "llama.cpp repetition penalty; 1.0 = disabled.",
-///      "type": "number"
-///    },
-///    "samplers": {
-///      "description": "llama.cpp sampler-chain order (canonical names, applied in this sequence). Omitted = the server's default chain. Set only on catalog models known to benefit; see LOOP_RESISTANT_SAMPLER_ORDER.",
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "temperature": {
-///      "type": "number"
-///    },
-///    "topK": {
-///      "type": "integer"
-///    },
-///    "topP": {
-///      "type": "number"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Sampling {
@@ -13249,148 +3986,8 @@ pub struct Sampling {
     #[serde(rename = "topP")]
     pub top_p: f64,
 }
-impl ::std::convert::From<&Sampling> for Sampling {
-    fn from(value: &Sampling) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduleSpec`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "atMs",
-///        "kind"
-///      ],
-///      "properties": {
-///        "atMs": {
-///          "type": "integer"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "once"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "everyMinutes",
-///        "kind"
-///      ],
-///      "properties": {
-///        "everyMinutes": {
-///          "type": "integer"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "interval"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "hour",
-///        "kind",
-///        "minute",
-///        "weekdays"
-///      ],
-///      "properties": {
-///        "hour": {
-///          "type": "integer"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "weekly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer"
-///        },
-///        "weekdays": {
-///          "type": "array",
-///          "items": {
-///            "type": "integer"
-///          }
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "day",
-///        "hour",
-///        "kind",
-///        "minute"
-///      ],
-///      "properties": {
-///        "day": {
-///          "type": "integer"
-///        },
-///        "hour": {
-///          "type": "integer"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "monthly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "day",
-///        "hour",
-///        "kind",
-///        "minute",
-///        "month"
-///      ],
-///      "properties": {
-///        "day": {
-///          "type": "integer"
-///        },
-///        "hour": {
-///          "type": "integer"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "yearly"
-///          ]
-///        },
-///        "minute": {
-///          "type": "integer"
-///        },
-///        "month": {
-///          "type": "integer"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ScheduleSpec {
@@ -13420,42 +4017,8 @@ pub enum ScheduleSpec {
         month: i64,
     },
 }
-impl ::std::convert::From<&Self> for ScheduleSpec {
-    fn from(value: &ScheduleSpec) -> Self {
-        value.clone()
-    }
-}
 ///`ScheduledPromptDraft`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "instruction",
-///    "runMissed",
-///    "schedule",
-///    "title"
-///  ],
-///  "properties": {
-///    "instruction": {
-///      "type": "string"
-///    },
-///    "runMissed": {
-///      "type": "boolean"
-///    },
-///    "schedule": {
-///      "$ref": "#/definitions/ScheduleSpec"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduledPromptDraft {
@@ -13465,787 +4028,15 @@ pub struct ScheduledPromptDraft {
     pub schedule: ScheduleSpec,
     pub title: ::std::string::String,
 }
-impl ::std::convert::From<&ScheduledPromptDraft> for ScheduledPromptDraft {
-    fn from(value: &ScheduledPromptDraft) -> Self {
-        value.clone()
-    }
-}
 ///`SearchExtensionsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "results"
-///  ],
-///  "properties": {
-///    "results": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ExtensionSearchResult"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SearchExtensionsResponse {
     pub results: ::std::vec::Vec<ExtensionSearchResult>,
 }
-impl ::std::convert::From<&SearchExtensionsResponse> for SearchExtensionsResponse {
-    fn from(value: &SearchExtensionsResponse) -> Self {
-        value.clone()
-    }
-}
 ///`ServerToClientFrame`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "pong"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "ping"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "afterId",
-///        "final",
-///        "kind",
-///        "message",
-///        "sessionId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "afterId": {
-///          "description": "Chronological insert-after position. Only meaningful on the first emission for an id; null = insert at the turn anchor (after the anchoring user message).",
-///          "type": [
-///            "string",
-///            "null"
-///          ]
-///        },
-///        "final": {
-///          "description": "True when this snapshot is the persisted, terminal form.",
-///          "type": "boolean"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.message"
-///          ]
-///        },
-///        "message": {
-///          "description": "Full snapshot of one message. The first emission for an id is the birth; later emissions with the same id replace the message in place.",
-///          "$ref": "#/definitions/Message"
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "delta",
-///        "kind",
-///        "messageId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "delta": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.delta"
-///          ]
-///        },
-///        "messageId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "streamId",
-///        "tokenUsage"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.usage"
-///          ]
-///        },
-///        "streamId": {
-///          "type": "string"
-///        },
-///        "tokenUsage": {
-///          "$ref": "#/definitions/TokenUsage"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.done"
-///          ]
-///        },
-///        "reason": {
-///          "$ref": "#/definitions/ChatDoneReason"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "kind",
-///        "message",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "progress"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "description": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.progress"
-///          ]
-///        },
-///        "label": {
-///          "type": "string"
-///        },
-///        "progress": {
-///          "type": "number"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "questions",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.askuser_request"
-///          ]
-///        },
-///        "questions": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/AskUserQuestion"
-///          }
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "declared",
-///        "extensionId",
-///        "kind",
-///        "permissionKind",
-///        "requestId",
-///        "resource",
-///        "toolName"
-///      ],
-///      "properties": {
-///        "apiName": {
-///          "description": "The Deno API that triggered the check (e.g. `fetch()`), when known.",
-///          "type": "string"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "declared": {
-///          "description": "False when the access matches none of the tool's declared permissions and the extension's undeclared policy is `ask`.",
-///          "type": "boolean"
-///        },
-///        "extensionId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.permission_request"
-///          ]
-///        },
-///        "permissionKind": {
-///          "$ref": "#/definitions/PermissionKind"
-///        },
-///        "reason": {
-///          "description": "The declared permission's reason, when declared.",
-///          "type": "string"
-///        },
-///        "requestId": {
-///          "type": "string"
-///        },
-///        "resource": {
-///          "description": "What the tool is trying to touch, as reported by Deno (host:port, path, env key, binary, sys flag; empty for ffi-without-path).",
-///          "type": "string"
-///        },
-///        "toolName": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "level",
-///        "message"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.log"
-///          ]
-///        },
-///        "level": {
-///          "type": "string",
-///          "enum": [
-///            "debug",
-///            "info",
-///            "warn",
-///            "error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "result"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.result"
-///          ]
-///        },
-///        "result": {}
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "error",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "error": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.cancelled"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "id",
-///        "jobId",
-///        "kind",
-///        "line",
-///        "stream"
-///      ],
-///      "properties": {
-///        "id": {
-///          "type": "string"
-///        },
-///        "jobId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.install_log"
-///          ]
-///        },
-///        "line": {
-///          "type": "string"
-///        },
-///        "stream": {
-///          "type": "string",
-///          "enum": [
-///            "stdout",
-///            "stderr"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "id",
-///        "jobId",
-///        "kind",
-///        "ok"
-///      ],
-///      "properties": {
-///        "code": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "jobId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.install_done"
-///          ]
-///        },
-///        "ok": {
-///          "type": "boolean"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "mcp.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "items",
-///        "kind"
-///      ],
-///      "properties": {
-///        "items": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/DownloadEntry"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "downloads.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "missing",
-///        "required"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "requirements.snapshot"
-///          ]
-///        },
-///        "missing": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/RequiredFile"
-///          }
-///        },
-///        "required": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/RequiredFile"
-///          }
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "deleted",
-///        "kind",
-///        "values"
-///      ],
-///      "properties": {
-///        "deleted": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "settings.updated"
-///          ]
-///        },
-///        "secretNames": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "values": {
-///          "type": "object",
-///          "additionalProperties": {}
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "op",
-///        "sessionId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "session.updated"
-///          ]
-///        },
-///        "op": {
-///          "type": "string",
-///          "enum": [
-///            "title_changed",
-///            "title_generating",
-///            "message_added",
-///            "message_updated",
-///            "message_deleted"
-///          ]
-///        },
-///        "payload": {
-///          "type": "object",
-///          "properties": {
-///            "attachments": {
-///              "type": "array",
-///              "items": {
-///                "$ref": "#/definitions/AttachmentRef"
-///              }
-///            },
-///            "generating": {
-///              "type": "boolean"
-///            },
-///            "message": {},
-///            "messageId": {
-///              "type": "string"
-///            },
-///            "title": {
-///              "type": "string"
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "focus",
-///        "kind",
-///        "reason",
-///        "session"
-///      ],
-///      "properties": {
-///        "focus": {
-///          "description": "\"show\": navigate to the session and show the window now; \"show_when_done\": navigate silently, show the window when the session's stream finishes.",
-///          "$ref": "#/definitions/SessionCreatedFocus"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "session.created"
-///          ]
-///        },
-///        "reason": {
-///          "$ref": "#/definitions/SessionCreatedReason"
-///        },
-///        "scheduledPromptId": {
-///          "type": "string"
-///        },
-///        "session": {
-///          "$ref": "#/definitions/Session"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "draft",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "draft": {
-///          "$ref": "#/definitions/ScheduledPromptDraft"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "schedule.confirm_request"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "version"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "update.staged"
-///          ]
-///        },
-///        "version": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "kind",
-///        "message"
-///      ],
-///      "properties": {
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "update.error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "snapshot"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "core.status"
-///          ]
-///        },
-///        "snapshot": {
-///          "$ref": "#/definitions/CoreStatusSnapshot"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ServerToClientFrame {
@@ -14446,27 +4237,8 @@ pub enum ServerToClientFrame {
     #[serde(rename = "core.status")]
     CoreStatus { snapshot: CoreStatusSnapshot },
 }
-impl ::std::convert::From<&Self> for ServerToClientFrame {
-    fn from(value: &ServerToClientFrame) -> Self {
-        value.clone()
-    }
-}
 ///`ServerToClientFrameLevel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "debug",
-///    "info",
-///    "warn",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14488,11 +4260,6 @@ pub enum ServerToClientFrameLevel {
     Warn,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for ServerToClientFrameLevel {
-    fn from(value: &ServerToClientFrameLevel) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ServerToClientFrameLevel {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14522,39 +4289,8 @@ impl ::std::convert::TryFrom<&str> for ServerToClientFrameLevel {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ServerToClientFrameLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ServerToClientFrameLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ServerToClientFrameOp`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "title_changed",
-///    "title_generating",
-///    "message_added",
-///    "message_updated",
-///    "message_deleted"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14578,11 +4314,6 @@ pub enum ServerToClientFrameOp {
     MessageUpdated,
     #[serde(rename = "message_deleted")]
     MessageDeleted,
-}
-impl ::std::convert::From<&Self> for ServerToClientFrameOp {
-    fn from(value: &ServerToClientFrameOp) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ServerToClientFrameOp {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14614,51 +4345,8 @@ impl ::std::convert::TryFrom<&str> for ServerToClientFrameOp {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ServerToClientFrameOp {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ServerToClientFrameOp {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ServerToClientFramePayload`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "attachments": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/AttachmentRef"
-///      }
-///    },
-///    "generating": {
-///      "type": "boolean"
-///    },
-///    "message": {},
-///    "messageId": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ServerToClientFramePayload {
@@ -14677,11 +4365,6 @@ pub struct ServerToClientFramePayload {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub title: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&ServerToClientFramePayload> for ServerToClientFramePayload {
-    fn from(value: &ServerToClientFramePayload) -> Self {
-        value.clone()
-    }
-}
 impl ::std::default::Default for ServerToClientFramePayload {
     fn default() -> Self {
         Self {
@@ -14695,18 +4378,6 @@ impl ::std::default::Default for ServerToClientFramePayload {
 }
 ///`ServerToClientFrameStream`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stdout",
-///    "stderr"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14724,11 +4395,6 @@ pub enum ServerToClientFrameStream {
     Stdout,
     #[serde(rename = "stderr")]
     Stderr,
-}
-impl ::std::convert::From<&Self> for ServerToClientFrameStream {
-    fn from(value: &ServerToClientFrameStream) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ServerToClientFrameStream {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14754,64 +4420,8 @@ impl ::std::convert::TryFrom<&str> for ServerToClientFrameStream {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ServerToClientFrameStream {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ServerToClientFrameStream {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`Session`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "ownerClientId",
-///    "title",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ownerClientId": {
-///      "type": "string"
-///    },
-///    "temporary": {
-///      "description": "A temporary session lives only in core RAM: it never appears in the session list, is never written to disk, and is discarded the moment the client navigates away (or the core restarts). Fixed at creation.",
-///      "type": "boolean"
-///    },
-///    "title": {
-///      "type": "string"
-///    },
-///    "tokenUsage": {
-///      "$ref": "#/definitions/TokenUsage"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Session {
@@ -14833,25 +4443,8 @@ pub struct Session {
     #[serde(rename = "updatedAtMs")]
     pub updated_at_ms: i64,
 }
-impl ::std::convert::From<&Session> for Session {
-    fn from(value: &Session) -> Self {
-        value.clone()
-    }
-}
 ///`SessionCreatedFocus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "show",
-///    "show_when_done"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14869,11 +4462,6 @@ pub enum SessionCreatedFocus {
     Show,
     #[serde(rename = "show_when_done")]
     ShowWhenDone,
-}
-impl ::std::convert::From<&Self> for SessionCreatedFocus {
-    fn from(value: &SessionCreatedFocus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SessionCreatedFocus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14899,36 +4487,8 @@ impl ::std::convert::TryFrom<&str> for SessionCreatedFocus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SessionCreatedFocus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SessionCreatedFocus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`SessionCreatedReason`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "schedule",
-///    "greeting"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -14946,11 +4506,6 @@ pub enum SessionCreatedReason {
     Schedule,
     #[serde(rename = "greeting")]
     Greeting,
-}
-impl ::std::convert::From<&Self> for SessionCreatedReason {
-    fn from(value: &SessionCreatedReason) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SessionCreatedReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -14976,65 +4531,8 @@ impl ::std::convert::TryFrom<&str> for SessionCreatedReason {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SessionCreatedReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SessionCreatedReason {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`SessionListEntry`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "messageCount",
-///    "summary",
-///    "title",
-///    "updatedAtMs"
-///  ],
-///  "properties": {
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "messageCount": {
-///      "type": "integer"
-///    },
-///    "summary": {
-///      "description": "Length-limited snippets of the opening user/agent exchange, computed server-side. Empty when the session has no user or assistant messages yet.",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/SummaryPart"
-///      }
-///    },
-///    "title": {
-///      "type": "string"
-///    },
-///    "updatedAtMs": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SessionListEntry {
@@ -15049,137 +4547,29 @@ pub struct SessionListEntry {
     #[serde(rename = "updatedAtMs")]
     pub updated_at_ms: i64,
 }
-impl ::std::convert::From<&SessionListEntry> for SessionListEntry {
-    fn from(value: &SessionListEntry) -> Self {
-        value.clone()
-    }
-}
 ///`SetGrantsRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "grants"
-///  ],
-///  "properties": {
-///    "grants": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "key",
-///          "state"
-///        ],
-///        "properties": {
-///          "key": {
-///            "type": "string"
-///          },
-///          "state": {
-///            "$ref": "#/definitions/GrantState"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct SetGrantsRequest {
     pub grants: ::std::vec::Vec<SetGrantsRequestGrantsItem>,
 }
-impl ::std::convert::From<&SetGrantsRequest> for SetGrantsRequest {
-    fn from(value: &SetGrantsRequest) -> Self {
-        value.clone()
-    }
-}
 ///`SetGrantsRequestGrantsItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "key",
-///    "state"
-///  ],
-///  "properties": {
-///    "key": {
-///      "type": "string"
-///    },
-///    "state": {
-///      "$ref": "#/definitions/GrantState"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SetGrantsRequestGrantsItem {
     pub key: ::std::string::String,
     pub state: GrantState,
 }
-impl ::std::convert::From<&SetGrantsRequestGrantsItem> for SetGrantsRequestGrantsItem {
-    fn from(value: &SetGrantsRequestGrantsItem) -> Self {
-        value.clone()
-    }
-}
 ///`SetGrantsResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "grants"
-///  ],
-///  "properties": {
-///    "grants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/Grant"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SetGrantsResponse {
     pub grants: ::std::vec::Vec<Grant>,
 }
-impl ::std::convert::From<&SetGrantsResponse> for SetGrantsResponse {
-    fn from(value: &SetGrantsResponse) -> Self {
-        value.clone()
-    }
-}
 ///`SidecarKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "llama",
-///    "llama-embed",
-///    "speech",
-///    "tool"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15201,11 +4591,6 @@ pub enum SidecarKind {
     Speech,
     #[serde(rename = "tool")]
     Tool,
-}
-impl ::std::convert::From<&Self> for SidecarKind {
-    fn from(value: &SidecarKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SidecarKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15235,60 +4620,8 @@ impl ::std::convert::TryFrom<&str> for SidecarKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SidecarKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SidecarKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`SidecarSnapshot`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "status"
-///  ],
-///  "properties": {
-///    "cpuPct": {
-///      "type": "number"
-///    },
-///    "kind": {
-///      "$ref": "#/definitions/SidecarKind"
-///    },
-///    "message": {
-///      "type": "string"
-///    },
-///    "pid": {
-///      "type": "integer"
-///    },
-///    "progress": {
-///      "type": "number"
-///    },
-///    "rssMb": {
-///      "type": "number"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/SidecarStatus"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SidecarSnapshot {
@@ -15313,27 +4646,8 @@ pub struct SidecarSnapshot {
     pub rss_mb: ::std::option::Option<f64>,
     pub status: SidecarStatus,
 }
-impl ::std::convert::From<&SidecarSnapshot> for SidecarSnapshot {
-    fn from(value: &SidecarSnapshot) -> Self {
-        value.clone()
-    }
-}
 ///`SidecarStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "Disabled",
-///    "Loading",
-///    "Running",
-///    "Error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15351,11 +4665,6 @@ pub enum SidecarStatus {
     Loading,
     Running,
     Error,
-}
-impl ::std::convert::From<&Self> for SidecarStatus {
-    fn from(value: &SidecarStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SidecarStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15385,101 +4694,16 @@ impl ::std::convert::TryFrom<&str> for SidecarStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SidecarStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SidecarStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///Response of GET /api/v1/sidecars/status. The route samples only its own tracked processes (sidecar PIDs + the core process); it never accepts a PID from the caller. `sidecars` carries llama/whisper (and tts when loaded) with `rssMb`/`cpuPct` populated; `core` is the core process itself.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "Response of GET /api/v1/sidecars/status. The route samples only its own tracked processes (sidecar PIDs + the core process); it never accepts a PID from the caller. `sidecars` carries llama/whisper (and tts when loaded) with `rssMb`/`cpuPct` populated; `core` is the core process itself.",
-///  "type": "object",
-///  "required": [
-///    "core",
-///    "sidecars"
-///  ],
-///  "properties": {
-///    "core": {
-///      "$ref": "#/definitions/ProcessMetricsLite"
-///    },
-///    "sidecars": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/SidecarSnapshot"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SidecarsStatusResponse {
     pub core: ProcessMetricsLite,
     pub sidecars: ::std::vec::Vec<SidecarSnapshot>,
 }
-impl ::std::convert::From<&SidecarsStatusResponse> for SidecarsStatusResponse {
-    fn from(value: &SidecarsStatusResponse) -> Self {
-        value.clone()
-    }
-}
 ///`StorageCategory`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "deletable",
-///    "id",
-///    "label",
-///    "nodes",
-///    "size"
-///  ],
-///  "properties": {
-///    "deletable": {
-///      "description": "Whether this category supports deletion at all. Read-only categories (extensions, settings) are display-only; their rows are never selectable.",
-///      "type": "boolean"
-///    },
-///    "id": {
-///      "$ref": "#/definitions/StorageCategoryId"
-///    },
-///    "label": {
-///      "description": "Display label for the group header (e.g. \"Models\", \"Sessions\").",
-///      "type": "string"
-///    },
-///    "nodes": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/StorageNode"
-///      }
-///    },
-///    "size": {
-///      "description": "Sum of `nodes[].size` for this category.",
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct StorageCategory {
@@ -15492,30 +4716,8 @@ pub struct StorageCategory {
     ///Sum of `nodes[].size` for this category.
     pub size: i64,
 }
-impl ::std::convert::From<&StorageCategory> for StorageCategory {
-    fn from(value: &StorageCategory) -> Self {
-        value.clone()
-    }
-}
 ///`StorageCategoryId`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "models",
-///    "sessions",
-///    "binaries",
-///    "extensions",
-///    "cache",
-///    "logs",
-///    "settings"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -15543,11 +4745,6 @@ pub enum StorageCategoryId {
     Logs,
     #[serde(rename = "settings")]
     Settings,
-}
-impl ::std::convert::From<&Self> for StorageCategoryId {
-    fn from(value: &StorageCategoryId) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for StorageCategoryId {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -15583,362 +4780,8 @@ impl ::std::convert::TryFrom<&str> for StorageCategoryId {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for StorageCategoryId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for StorageCategoryId {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`StorageFile`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "name",
-///    "path",
-///    "size"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "file"
-///      ]
-///    },
-///    "lock_reason": {
-///      "description": "Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.",
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "path": {
-///      "type": "string"
-///    },
-///    "size": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct StorageFile {
-    pub kind: StorageFileKind,
-    ///Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub lock_reason: ::std::option::Option<::std::string::String>,
-    pub name: ::std::string::String,
-    pub path: ::std::string::String,
-    pub size: i64,
-}
-impl ::std::convert::From<&StorageFile> for StorageFile {
-    fn from(value: &StorageFile) -> Self {
-        value.clone()
-    }
-}
-///`StorageFileKind`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "file"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum StorageFileKind {
-    #[serde(rename = "file")]
-    File,
-}
-impl ::std::convert::From<&Self> for StorageFileKind {
-    fn from(value: &StorageFileKind) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for StorageFileKind {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::File => f.write_str("file"),
-        }
-    }
-}
-impl ::std::str::FromStr for StorageFileKind {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "file" => Ok(Self::File),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for StorageFileKind {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for StorageFileKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for StorageFileKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`StorageFolder`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "children",
-///    "kind",
-///    "name",
-///    "path",
-///    "size"
-///  ],
-///  "properties": {
-///    "children": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/StorageNode"
-///      }
-///    },
-///    "kind": {
-///      "type": "string",
-///      "enum": [
-///        "folder"
-///      ]
-///    },
-///    "lock_reason": {
-///      "description": "Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.",
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "path": {
-///      "type": "string"
-///    },
-///    "size": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct StorageFolder {
-    pub children: ::std::vec::Vec<StorageNode>,
-    pub kind: StorageFolderKind,
-    ///Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub lock_reason: ::std::option::Option<::std::string::String>,
-    pub name: ::std::string::String,
-    pub path: ::std::string::String,
-    pub size: i64,
-}
-impl ::std::convert::From<&StorageFolder> for StorageFolder {
-    fn from(value: &StorageFolder) -> Self {
-        value.clone()
-    }
-}
-///`StorageFolderKind`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "folder"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum StorageFolderKind {
-    #[serde(rename = "folder")]
-    Folder,
-}
-impl ::std::convert::From<&Self> for StorageFolderKind {
-    fn from(value: &StorageFolderKind) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for StorageFolderKind {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Folder => f.write_str("folder"),
-        }
-    }
-}
-impl ::std::str::FromStr for StorageFolderKind {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "folder" => Ok(Self::Folder),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for StorageFolderKind {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for StorageFolderKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for StorageFolderKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`StorageNode`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "name",
-///        "path",
-///        "size"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "file"
-///          ]
-///        },
-///        "lock_reason": {
-///          "description": "Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.",
-///          "type": "string"
-///        },
-///        "name": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "size": {
-///          "type": "integer"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "children",
-///        "kind",
-///        "name",
-///        "path",
-///        "size"
-///      ],
-///      "properties": {
-///        "children": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/StorageNode"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "folder"
-///          ]
-///        },
-///        "lock_reason": {
-///          "description": "Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.",
-///          "type": "string"
-///        },
-///        "name": {
-///          "type": "string"
-///        },
-///        "path": {
-///          "type": "string"
-///        },
-///        "size": {
-///          "type": "integer"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum StorageNode {
@@ -15962,88 +4805,8 @@ pub enum StorageNode {
         size: i64,
     },
 }
-impl ::std::convert::From<&Self> for StorageNode {
-    fn from(value: &StorageNode) -> Self {
-        value.clone()
-    }
-}
-///`StorageNodeBase`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "name",
-///    "path",
-///    "size"
-///  ],
-///  "properties": {
-///    "lock_reason": {
-///      "description": "Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.",
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "path": {
-///      "type": "string"
-///    },
-///    "size": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct StorageNodeBase {
-    ///Set by the core iff this item is currently in use and must not be deleted (e.g. a model a configured feature needs, a running sidecar's binary, an actively streaming session, the live settings file). The string is a human-readable reason shown as a tooltip. The core is the sole authority: it recomputes this on every delete request.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub lock_reason: ::std::option::Option<::std::string::String>,
-    pub name: ::std::string::String,
-    pub path: ::std::string::String,
-    pub size: i64,
-}
-impl ::std::convert::From<&StorageNodeBase> for StorageNodeBase {
-    fn from(value: &StorageNodeBase) -> Self {
-        value.clone()
-    }
-}
 ///`StorageTree`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "categories",
-///    "root_path",
-///    "total_size"
-///  ],
-///  "properties": {
-///    "categories": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/StorageCategory"
-///      }
-///    },
-///    "root_path": {
-///      "description": "Base dir whose `/models` child holds the model files, so the UI can map an HF spec to its on-disk path for in-use locking.",
-///      "type": "string"
-///    },
-///    "total_size": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct StorageTree {
@@ -16052,31 +4815,8 @@ pub struct StorageTree {
     pub root_path: ::std::string::String,
     pub total_size: i64,
 }
-impl ::std::convert::From<&StorageTree> for StorageTree {
-    fn from(value: &StorageTree) -> Self {
-        value.clone()
-    }
-}
 ///`SttFamily`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "whisper",
-///    "sense-voice",
-///    "moonshine",
-///    "paraformer",
-///    "transducer",
-///    "nemo-ctc",
-///    "dolphin",
-///    "telespeech-ctc"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -16106,11 +4846,6 @@ pub enum SttFamily {
     Dolphin,
     #[serde(rename = "telespeech-ctc")]
     TelespeechCtc,
-}
-impl ::std::convert::From<&Self> for SttFamily {
-    fn from(value: &SttFamily) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SttFamily {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -16148,70 +4883,8 @@ impl ::std::convert::TryFrom<&str> for SttFamily {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SttFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SttFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///One curated Speech-to-Text card resolved against the catalog, the wire shape of GET /api/v1/models/stt/catalog presets (badges for the client).
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One curated Speech-to-Text card resolved against the catalog, the wire shape of GET /api/v1/models/stt/catalog presets (badges for the client).",
-///  "type": "object",
-///  "required": [
-///    "english",
-///    "family",
-///    "fileSizeBytes",
-///    "id",
-///    "modelId",
-///    "modelSpec",
-///    "name",
-///    "quant"
-///  ],
-///  "properties": {
-///    "english": {
-///      "type": "boolean"
-///    },
-///    "family": {
-///      "$ref": "#/definitions/SttFamily"
-///    },
-///    "fileSizeBytes": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttPresetView {
@@ -16227,63 +4900,16 @@ pub struct SttPresetView {
     pub name: ::std::string::String,
     pub quant: ::std::string::String,
 }
-impl ::std::convert::From<&SttPresetView> for SttPresetView {
-    fn from(value: &SttPresetView) -> Self {
-        value.clone()
-    }
-}
 ///`SttStatusResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "provider",
-///    "running"
-///  ],
-///  "properties": {
-///    "provider": {
-///      "type": "string",
-///      "enum": [
-///        "local",
-///        "external"
-///      ]
-///    },
-///    "running": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttStatusResponse {
     pub provider: SttStatusResponseProvider,
     pub running: bool,
 }
-impl ::std::convert::From<&SttStatusResponse> for SttStatusResponse {
-    fn from(value: &SttStatusResponse) -> Self {
-        value.clone()
-    }
-}
 ///`SttStatusResponseProvider`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "local",
-///    "external"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -16301,11 +4927,6 @@ pub enum SttStatusResponseProvider {
     Local,
     #[serde(rename = "external")]
     External,
-}
-impl ::std::convert::From<&Self> for SttStatusResponseProvider {
-    fn from(value: &SttStatusResponseProvider) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SttStatusResponseProvider {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -16331,79 +4952,15 @@ impl ::std::convert::TryFrom<&str> for SttStatusResponseProvider {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SttStatusResponseProvider {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SttStatusResponseProvider {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`SttTranscribeResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "text"
-///  ],
-///  "properties": {
-///    "text": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SttTranscribeResponse {
     pub text: ::std::string::String,
 }
-impl ::std::convert::From<&SttTranscribeResponse> for SttTranscribeResponse {
-    fn from(value: &SttTranscribeResponse) -> Self {
-        value.clone()
-    }
-}
-///One subsystem (sidecar) the core has started, with its current status and, when broken, the diagnostic message (its log tail or exit code). The CoreBar lists the errored ones in its expanded card; the client's `serversState` facade is rebuilt from the full set. STT and TTS share the one `speech` process, so they appear as a single subsystem.
+///One subsystem (sidecar) the core has started. STT and TTS share the one `speech` process, so they appear as a single subsystem.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One subsystem (sidecar) the core has started, with its current status and, when broken, the diagnostic message (its log tail or exit code). The CoreBar lists the errored ones in its expanded card; the client's `serversState` facade is rebuilt from the full set. STT and TTS share the one `speech` process, so they appear as a single subsystem.",
-///  "type": "object",
-///  "required": [
-///    "kind",
-///    "status"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "$ref": "#/definitions/SidecarKind"
-///    },
-///    "message": {
-///      "description": "Diagnostic text for a failed subsystem (log tail / exit code).",
-///      "type": "string"
-///    },
-///    "status": {
-///      "$ref": "#/definitions/SidecarStatus"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SubsystemStatus {
@@ -16413,64 +4970,16 @@ pub struct SubsystemStatus {
     pub message: ::std::option::Option<::std::string::String>,
     pub status: SidecarStatus,
 }
-impl ::std::convert::From<&SubsystemStatus> for SubsystemStatus {
-    fn from(value: &SubsystemStatus) -> Self {
-        value.clone()
-    }
-}
 ///One labelled snippet in a session-list summary. The role is symbolic so the client can render its own labels (e.g. the configured agent name).
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One labelled snippet in a session-list summary. The role is symbolic so the client can render its own labels (e.g. the configured agent name).",
-///  "type": "object",
-///  "required": [
-///    "role",
-///    "text"
-///  ],
-///  "properties": {
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "user",
-///        "agent"
-///      ]
-///    },
-///    "text": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SummaryPart {
     pub role: SummaryPartRole,
     pub text: ::std::string::String,
 }
-impl ::std::convert::From<&SummaryPart> for SummaryPart {
-    fn from(value: &SummaryPart) -> Self {
-        value.clone()
-    }
-}
 ///`SummaryPartRole`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "user",
-///    "agent"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -16488,11 +4997,6 @@ pub enum SummaryPartRole {
     User,
     #[serde(rename = "agent")]
     Agent,
-}
-impl ::std::convert::From<&Self> for SummaryPartRole {
-    fn from(value: &SummaryPartRole) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for SummaryPartRole {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -16518,174 +5022,8 @@ impl ::std::convert::TryFrom<&str> for SummaryPartRole {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for SummaryPartRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SummaryPartRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`SystemMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "content": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "system"
-///      ]
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct SystemMessage {
-    pub content: ::std::string::String,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    pub id: ::std::string::String,
-    pub ord: i64,
-    pub role: SystemMessageRole,
-}
-impl ::std::convert::From<&SystemMessage> for SystemMessage {
-    fn from(value: &SystemMessage) -> Self {
-        value.clone()
-    }
-}
-///`SystemMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "system"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum SystemMessageRole {
-    #[serde(rename = "system")]
-    System,
-}
-impl ::std::convert::From<&Self> for SystemMessageRole {
-    fn from(value: &SystemMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for SystemMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::System => f.write_str("system"),
-        }
-    }
-}
-impl ::std::str::FromStr for SystemMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "system" => Ok(Self::System),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for SystemMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for SystemMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SystemMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`TokenUsage`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "completion",
-///    "prompt",
-///    "total"
-///  ],
-///  "properties": {
-///    "completion": {
-///      "type": "integer"
-///    },
-///    "prompt": {
-///      "type": "integer"
-///    },
-///    "total": {
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TokenUsage {
@@ -16693,101 +5031,8 @@ pub struct TokenUsage {
     pub prompt: i64,
     pub total: i64,
 }
-impl ::std::convert::From<&TokenUsage> for TokenUsage {
-    fn from(value: &TokenUsage) -> Self {
-        value.clone()
-    }
-}
 ///`Tool`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "alwaysAvailable",
-///    "description",
-///    "enabled",
-///    "extensionId",
-///    "fnExport",
-///    "grants",
-///    "id",
-///    "missingRequired",
-///    "name",
-///    "parameters",
-///    "platforms",
-///    "providerKind",
-///    "requiredPermissions",
-///    "triggers"
-///  ],
-///  "properties": {
-///    "alwaysAvailable": {
-///      "type": "boolean"
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "enabled": {
-///      "type": "boolean"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "fnExport": {
-///      "type": "string"
-///    },
-///    "grants": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/Grant"
-///      }
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "missingRequired": {
-///      "type": "array",
-///      "items": {
-///        "type": "integer"
-///      }
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "parameters": {
-///      "type": "object",
-///      "additionalProperties": {}
-///    },
-///    "platforms": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    },
-///    "providerKind": {
-///      "$ref": "#/definitions/ToolProviderKind"
-///    },
-///    "providerName": {
-///      "type": "string"
-///    },
-///    "requiredPermissions": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/PermissionDecl"
-///      }
-///    },
-///    "triggers": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
@@ -16818,83 +5063,8 @@ pub struct Tool {
     pub required_permissions: ::std::vec::Vec<PermissionDecl>,
     pub triggers: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&Tool> for Tool {
-    fn from(value: &Tool) -> Self {
-        value.clone()
-    }
-}
 ///`ToolCall`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "callId",
-///    "extensionId",
-///    "status",
-///    "toolName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "type": "string"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "logLines": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "atMs",
-///          "level",
-///          "message"
-///        ],
-///        "properties": {
-///          "atMs": {
-///            "type": "integer"
-///          },
-///          "level": {
-///            "type": "string",
-///            "enum": [
-///              "debug",
-///              "info",
-///              "warn",
-///              "error"
-///            ]
-///          },
-///          "message": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    },
-///    "progress": {
-///      "description": "0..1 completion fraction set by the `tool.progress` WS frame. The frame also carries transient `label` / `description` strings; only the number is persisted on the ToolCall.",
-///      "type": "number"
-///    },
-///    "result": {},
-///    "status": {
-///      "$ref": "#/definitions/ToolCallStatus"
-///    },
-///    "toolName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCall {
@@ -16919,44 +5089,8 @@ pub struct ToolCall {
     #[serde(rename = "toolName")]
     pub tool_name: ::std::string::String,
 }
-impl ::std::convert::From<&ToolCall> for ToolCall {
-    fn from(value: &ToolCall) -> Self {
-        value.clone()
-    }
-}
 ///`ToolCallLogLinesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "atMs",
-///    "level",
-///    "message"
-///  ],
-///  "properties": {
-///    "atMs": {
-///      "type": "integer"
-///    },
-///    "level": {
-///      "type": "string",
-///      "enum": [
-///        "debug",
-///        "info",
-///        "warn",
-///        "error"
-///      ]
-///    },
-///    "message": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCallLogLinesItem {
@@ -16965,27 +5099,8 @@ pub struct ToolCallLogLinesItem {
     pub level: ToolCallLogLinesItemLevel,
     pub message: ::std::string::String,
 }
-impl ::std::convert::From<&ToolCallLogLinesItem> for ToolCallLogLinesItem {
-    fn from(value: &ToolCallLogLinesItem) -> Self {
-        value.clone()
-    }
-}
 ///`ToolCallLogLinesItemLevel`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "debug",
-///    "info",
-///    "warn",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -17007,11 +5122,6 @@ pub enum ToolCallLogLinesItemLevel {
     Warn,
     #[serde(rename = "error")]
     Error,
-}
-impl ::std::convert::From<&Self> for ToolCallLogLinesItemLevel {
-    fn from(value: &ToolCallLogLinesItemLevel) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolCallLogLinesItemLevel {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -17041,41 +5151,8 @@ impl ::std::convert::TryFrom<&str> for ToolCallLogLinesItemLevel {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolCallLogLinesItemLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolCallLogLinesItemLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolCallStatus`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "pending",
-///    "running",
-///    "awaiting_user",
-///    "awaiting_permission",
-///    "completed",
-///    "failed",
-///    "cancelled"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -17103,11 +5180,6 @@ pub enum ToolCallStatus {
     Failed,
     #[serde(rename = "cancelled")]
     Cancelled,
-}
-impl ::std::convert::From<&Self> for ToolCallStatus {
-    fn from(value: &ToolCallStatus) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolCallStatus {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -17143,56 +5215,8 @@ impl ::std::convert::TryFrom<&str> for ToolCallStatus {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolCallStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolCallStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolDescriptor`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "extensionId",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "similarity": {
-///      "type": "number"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolDescriptor {
@@ -17205,38 +5229,8 @@ pub struct ToolDescriptor {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolDescriptor> for ToolDescriptor {
-    fn from(value: &ToolDescriptor) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterEntryPersisted`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterEntryPersisted {
@@ -17245,316 +5239,8 @@ pub struct ToolFilterEntryPersisted {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolFilterEntryPersisted> for ToolFilterEntryPersisted {
-    fn from(value: &ToolFilterEntryPersisted) -> Self {
-        value.clone()
-    }
-}
-///`ToolFilterMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role",
-///    "status"
-///  ],
-///  "properties": {
-///    "alwaysAvailable": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "errorMessage": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "mcp": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "nameMatched": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "phase1": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterPhase1Persisted"
-///      }
-///    },
-///    "phase2": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolFilterEntryPersisted"
-///      }
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "tool_filter"
-///      ]
-///    },
-///    "status": {
-///      "type": "string",
-///      "enum": [
-///        "complete",
-///        "error"
-///      ]
-///    },
-///    "toolsSent": {
-///      "description": "Number of tools actually exposed to the model this turn (post-filter, post-grant-gating). The phase arrays can't stand in for this: with filtering disabled they're empty while tools are still sent. The client uses it to mirror the tools hint into the system bubble only when core really appended it.",
-///      "type": "integer"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct ToolFilterMessage {
-    #[serde(
-        rename = "alwaysAvailable",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub always_available: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    #[serde(
-        rename = "errorMessage",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub error_message: ::std::option::Option<::std::string::String>,
-    pub id: ::std::string::String,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub mcp: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    #[serde(
-        rename = "nameMatched",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub name_matched: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    pub ord: i64,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub phase1: ::std::option::Option<::std::vec::Vec<ToolFilterPhase1Persisted>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub phase2: ::std::option::Option<::std::vec::Vec<ToolFilterEntryPersisted>>,
-    pub role: ToolFilterMessageRole,
-    pub status: ToolFilterMessageStatus,
-    ///Number of tools actually exposed to the model this turn (post-filter, post-grant-gating). The phase arrays can't stand in for this: with filtering disabled they're empty while tools are still sent. The client uses it to mirror the tools hint into the system bubble only when core really appended it.
-    #[serde(
-        rename = "toolsSent",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub tools_sent: ::std::option::Option<i64>,
-}
-impl ::std::convert::From<&ToolFilterMessage> for ToolFilterMessage {
-    fn from(value: &ToolFilterMessage) -> Self {
-        value.clone()
-    }
-}
-///`ToolFilterMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool_filter"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ToolFilterMessageRole {
-    #[serde(rename = "tool_filter")]
-    ToolFilter,
-}
-impl ::std::convert::From<&Self> for ToolFilterMessageRole {
-    fn from(value: &ToolFilterMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ToolFilterMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::ToolFilter => f.write_str("tool_filter"),
-        }
-    }
-}
-impl ::std::str::FromStr for ToolFilterMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "tool_filter" => Ok(Self::ToolFilter),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ToolFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ToolFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolFilterMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`ToolFilterMessageStatus`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "complete",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ToolFilterMessageStatus {
-    #[serde(rename = "complete")]
-    Complete,
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for ToolFilterMessageStatus {
-    fn from(value: &ToolFilterMessageStatus) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ToolFilterMessageStatus {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Complete => f.write_str("complete"),
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for ToolFilterMessageStatus {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "complete" => Ok(Self::Complete),
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ToolFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ToolFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolFilterMessageStatus {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolFilterPhase1Persisted`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "description",
-///    "name",
-///    "score",
-///    "toolId"
-///  ],
-///  "properties": {
-///    "description": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "score": {
-///      "type": "number"
-///    },
-///    "toolId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterPhase1Persisted {
@@ -17564,36 +5250,8 @@ pub struct ToolFilterPhase1Persisted {
     #[serde(rename = "toolId")]
     pub tool_id: ::std::string::String,
 }
-impl ::std::convert::From<&ToolFilterPhase1Persisted> for ToolFilterPhase1Persisted {
-    fn from(value: &ToolFilterPhase1Persisted) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "vector"
-///  ],
-///  "properties": {
-///    "topK": {
-///      "type": "integer"
-///    },
-///    "vector": {
-///      "type": "array",
-///      "items": {
-///        "type": "number"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ToolFilterRequest {
     #[serde(
@@ -17604,49 +5262,8 @@ pub struct ToolFilterRequest {
     pub top_k: ::std::option::Option<i64>,
     pub vector: ::std::vec::Vec<f64>,
 }
-impl ::std::convert::From<&ToolFilterRequest> for ToolFilterRequest {
-    fn from(value: &ToolFilterRequest) -> Self {
-        value.clone()
-    }
-}
 ///`ToolFilterResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "alwaysAvailable",
-///    "candidates",
-///    "nameMatched"
-///  ],
-///  "properties": {
-///    "alwaysAvailable": {
-///      "description": "The always-available set, returned alongside the cosine candidates rather than merged into them: the caller force-includes these ahead of the phase-2 filter, so they must stay distinguishable.",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolDescriptor"
-///      }
-///    },
-///    "candidates": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolDescriptor"
-///      }
-///    },
-///    "nameMatched": {
-///      "description": "Tools the query names directly. Force-included ahead of the candidates and the phase-2 filter, so a tool the user names by hand always reaches the model even with no fresh embedding or a rank past topK.",
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/ToolDescriptor"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolFilterResponse {
@@ -17658,201 +5275,8 @@ pub struct ToolFilterResponse {
     #[serde(rename = "nameMatched")]
     pub name_matched: ::std::vec::Vec<ToolDescriptor>,
 }
-impl ::std::convert::From<&ToolFilterResponse> for ToolFilterResponse {
-    fn from(value: &ToolFilterResponse) -> Self {
-        value.clone()
-    }
-}
-///`ToolMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "arguments",
-///    "callId",
-///    "createdAtMs",
-///    "extensionId",
-///    "id",
-///    "ord",
-///    "role",
-///    "status",
-///    "toolName"
-///  ],
-///  "properties": {
-///    "arguments": {
-///      "description": "JSON string of arguments as the model emitted them. Persisted so the reloaded bubble keeps the call's inputs.",
-///      "type": "string"
-///    },
-///    "callId": {
-///      "type": "string"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "description": {
-///      "type": "string"
-///    },
-///    "error": {
-///      "type": "string"
-///    },
-///    "extensionId": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "description": "Last `tool.progress` label/description the tool emitted, persisted so the reloaded bubble keeps the tool's own wording (e.g. \"Opening YouTube\") instead of falling back to the generic tool-name phrase.",
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "progress": {
-///      "description": "0..1 completion fraction from the last `tool.progress` event.",
-///      "type": "number"
-///    },
-///    "result": {},
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "tool"
-///      ]
-///    },
-///    "status": {
-///      "$ref": "#/definitions/ToolCallStatus"
-///    },
-///    "toolName": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct ToolMessage {
-    ///JSON string of arguments as the model emitted them. Persisted so the reloaded bubble keeps the call's inputs.
-    pub arguments: ::std::string::String,
-    #[serde(rename = "callId")]
-    pub call_id: ::std::string::String,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub description: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub error: ::std::option::Option<::std::string::String>,
-    #[serde(rename = "extensionId")]
-    pub extension_id: ::std::string::String,
-    pub id: ::std::string::String,
-    ///Last `tool.progress` label/description the tool emitted, persisted so the reloaded bubble keeps the tool's own wording (e.g. "Opening YouTube") instead of falling back to the generic tool-name phrase.
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub label: ::std::option::Option<::std::string::String>,
-    pub ord: i64,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub progress: ::std::option::Option<f64>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub result: ::std::option::Option<::serde_json::Value>,
-    pub role: ToolMessageRole,
-    pub status: ToolCallStatus,
-    #[serde(rename = "toolName")]
-    pub tool_name: ::std::string::String,
-}
-impl ::std::convert::From<&ToolMessage> for ToolMessage {
-    fn from(value: &ToolMessage) -> Self {
-        value.clone()
-    }
-}
-///`ToolMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "tool"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ToolMessageRole {
-    #[serde(rename = "tool")]
-    Tool,
-}
-impl ::std::convert::From<&Self> for ToolMessageRole {
-    fn from(value: &ToolMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for ToolMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Tool => f.write_str("tool"),
-        }
-    }
-}
-impl ::std::str::FromStr for ToolMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "tool" => Ok(Self::Tool),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ToolMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for ToolMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolProviderKind`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "extension",
-///    "mcp"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -17870,11 +5294,6 @@ pub enum ToolProviderKind {
     Extension,
     #[serde(rename = "mcp")]
     Mcp,
-}
-impl ::std::convert::From<&Self> for ToolProviderKind {
-    fn from(value: &ToolProviderKind) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for ToolProviderKind {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -17900,101 +5319,21 @@ impl ::std::convert::TryFrom<&str> for ToolProviderKind {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for ToolProviderKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ToolProviderKind {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`ToolSchemasRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "ids"
-///  ],
-///  "properties": {
-///    "ids": {
-///      "type": "array",
-///      "items": {
-///        "type": "string"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct ToolSchemasRequest {
     pub ids: ::std::vec::Vec<::std::string::String>,
 }
-impl ::std::convert::From<&ToolSchemasRequest> for ToolSchemasRequest {
-    fn from(value: &ToolSchemasRequest) -> Self {
-        value.clone()
-    }
-}
 ///`ToolSchemasResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "tools"
-///  ],
-///  "properties": {
-///    "tools": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/OpenAIToolDef"
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ToolSchemasResponse {
     pub tools: ::std::vec::Vec<OpenAiToolDef>,
 }
-impl ::std::convert::From<&ToolSchemasResponse> for ToolSchemasResponse {
-    fn from(value: &ToolSchemasResponse) -> Self {
-        value.clone()
-    }
-}
 ///`TtsFamily`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "kokoro",
-///    "kitten",
-///    "vits",
-///    "matcha"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -18016,11 +5355,6 @@ pub enum TtsFamily {
     Vits,
     #[serde(rename = "matcha")]
     Matcha,
-}
-impl ::std::convert::From<&Self> for TtsFamily {
-    fn from(value: &TtsFamily) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for TtsFamily {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -18050,93 +5384,8 @@ impl ::std::convert::TryFrom<&str> for TtsFamily {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for TtsFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for TtsFamily {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///One curated Text-to-Speech card resolved against the catalog (badges for the client). Carries the model's voices so the voice dropdown can populate from the selection without a second round-trip.
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "description": "One curated Text-to-Speech card resolved against the catalog (badges for the client). Carries the model's voices so the voice dropdown can populate from the selection without a second round-trip.",
-///  "type": "object",
-///  "required": [
-///    "defaultVoice",
-///    "family",
-///    "fileSizeBytes",
-///    "id",
-///    "modelId",
-///    "modelSpec",
-///    "name",
-///    "quant",
-///    "voices"
-///  ],
-///  "properties": {
-///    "defaultVoice": {
-///      "type": "string"
-///    },
-///    "family": {
-///      "$ref": "#/definitions/TtsFamily"
-///    },
-///    "fileSizeBytes": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "modelId": {
-///      "type": "string"
-///    },
-///    "modelSpec": {
-///      "type": "string"
-///    },
-///    "name": {
-///      "type": "string"
-///    },
-///    "quant": {
-///      "type": "string"
-///    },
-///    "voices": {
-///      "type": "array",
-///      "items": {
-///        "type": "object",
-///        "required": [
-///          "id",
-///          "label"
-///        ],
-///        "properties": {
-///          "id": {
-///            "type": "string"
-///          },
-///          "label": {
-///            "type": "string"
-///          },
-///          "lang": {
-///            "type": "string"
-///          }
-///        },
-///        "additionalProperties": false
-///      }
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsPresetView {
@@ -18154,37 +5403,8 @@ pub struct TtsPresetView {
     pub quant: ::std::string::String,
     pub voices: ::std::vec::Vec<TtsPresetViewVoicesItem>,
 }
-impl ::std::convert::From<&TtsPresetView> for TtsPresetView {
-    fn from(value: &TtsPresetView) -> Self {
-        value.clone()
-    }
-}
 ///`TtsPresetViewVoicesItem`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "label"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "lang": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsPresetViewVoicesItem {
@@ -18193,70 +5413,16 @@ pub struct TtsPresetViewVoicesItem {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub lang: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&TtsPresetViewVoicesItem> for TtsPresetViewVoicesItem {
-    fn from(value: &TtsPresetViewVoicesItem) -> Self {
-        value.clone()
-    }
-}
 ///`TtsStatusResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "loaded",
-///    "loading"
-///  ],
-///  "properties": {
-///    "loaded": {
-///      "type": "boolean"
-///    },
-///    "loading": {
-///      "type": "boolean"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsStatusResponse {
     pub loaded: bool,
     pub loading: bool,
 }
-impl ::std::convert::From<&TtsStatusResponse> for TtsStatusResponse {
-    fn from(value: &TtsStatusResponse) -> Self {
-        value.clone()
-    }
-}
 ///`TtsSynthesizeRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "text"
-///  ],
-///  "properties": {
-///    "speed": {
-///      "type": "number"
-///    },
-///    "text": {
-///      "type": "string"
-///    },
-///    "voice": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct TtsSynthesizeRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -18265,37 +5431,8 @@ pub struct TtsSynthesizeRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub voice: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&TtsSynthesizeRequest> for TtsSynthesizeRequest {
-    fn from(value: &TtsSynthesizeRequest) -> Self {
-        value.clone()
-    }
-}
 ///`TtsVoiceEntry`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "id",
-///    "label"
-///  ],
-///  "properties": {
-///    "id": {
-///      "type": "string"
-///    },
-///    "label": {
-///      "type": "string"
-///    },
-///    "lang": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TtsVoiceEntry {
@@ -18304,24 +5441,8 @@ pub struct TtsVoiceEntry {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub lang: ::std::option::Option<::std::string::String>,
 }
-impl ::std::convert::From<&TtsVoiceEntry> for TtsVoiceEntry {
-    fn from(value: &TtsVoiceEntry) -> Self {
-        value.clone()
-    }
-}
 ///`TtsVoicesResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "array",
-///  "items": {
-///    "$ref": "#/definitions/TtsVoiceEntry"
-///  }
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct TtsVoicesResponse(pub ::std::vec::Vec<TtsVoiceEntry>);
@@ -18336,11 +5457,6 @@ impl ::std::convert::From<TtsVoicesResponse> for ::std::vec::Vec<TtsVoiceEntry> 
         value.0
     }
 }
-impl ::std::convert::From<&TtsVoicesResponse> for TtsVoicesResponse {
-    fn from(value: &TtsVoicesResponse) -> Self {
-        value.clone()
-    }
-}
 impl ::std::convert::From<::std::vec::Vec<TtsVoiceEntry>> for TtsVoicesResponse {
     fn from(value: ::std::vec::Vec<TtsVoiceEntry>) -> Self {
         Self(value)
@@ -18348,18 +5464,6 @@ impl ::std::convert::From<::std::vec::Vec<TtsVoiceEntry>> for TtsVoicesResponse 
 }
 ///`UndeclaredPolicy`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "deny",
-///    "ask"
-///  ]
-///}
-/// ```
-/// </details>
 #[derive(
     ::serde::Deserialize,
     ::serde::Serialize,
@@ -18377,11 +5481,6 @@ pub enum UndeclaredPolicy {
     Deny,
     #[serde(rename = "ask")]
     Ask,
-}
-impl ::std::convert::From<&Self> for UndeclaredPolicy {
-    fn from(value: &UndeclaredPolicy) -> Self {
-        value.clone()
-    }
 }
 impl ::std::fmt::Display for UndeclaredPolicy {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -18407,47 +5506,12 @@ impl ::std::convert::TryFrom<&str> for UndeclaredPolicy {
         value.parse()
     }
 }
-impl ::std::convert::TryFrom<&::std::string::String> for UndeclaredPolicy {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for UndeclaredPolicy {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 ///`UpdateApplyRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct UpdateApplyRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub version: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&UpdateApplyRequest> for UpdateApplyRequest {
-    fn from(value: &UpdateApplyRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for UpdateApplyRequest {
     fn default() -> Self {
@@ -18458,93 +5522,20 @@ impl ::std::default::Default for UpdateApplyRequest {
 }
 ///`UpdateBinaryRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "kind"
-///  ],
-///  "properties": {
-///    "kind": {
-///      "$ref": "#/definitions/BinaryKind"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct UpdateBinaryRequest {
     pub kind: BinaryKind,
 }
-impl ::std::convert::From<&UpdateBinaryRequest> for UpdateBinaryRequest {
-    fn from(value: &UpdateBinaryRequest) -> Self {
-        value.clone()
-    }
-}
 ///`UpdateBinaryResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "jobId"
-///  ],
-///  "properties": {
-///    "jobId": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateBinaryResponse {
     #[serde(rename = "jobId")]
     pub job_id: ::std::string::String,
 }
-impl ::std::convert::From<&UpdateBinaryResponse> for UpdateBinaryResponse {
-    fn from(value: &UpdateBinaryResponse) -> Self {
-        value.clone()
-    }
-}
 ///`UpdateCheckResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "available",
-///    "currentVersion",
-///    "latestVersion",
-///    "manifestUrl"
-///  ],
-///  "properties": {
-///    "available": {
-///      "type": "boolean"
-///    },
-///    "currentVersion": {
-///      "type": "string"
-///    },
-///    "latestVersion": {
-///      "type": "string"
-///    },
-///    "manifestUrl": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateCheckResponse {
@@ -18556,36 +5547,12 @@ pub struct UpdateCheckResponse {
     #[serde(rename = "manifestUrl")]
     pub manifest_url: ::std::string::String,
 }
-impl ::std::convert::From<&UpdateCheckResponse> for UpdateCheckResponse {
-    fn from(value: &UpdateCheckResponse) -> Self {
-        value.clone()
-    }
-}
 ///`UpdateExtensionRequest`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "version": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct UpdateExtensionRequest {
     #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
     pub version: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&UpdateExtensionRequest> for UpdateExtensionRequest {
-    fn from(value: &UpdateExtensionRequest) -> Self {
-        value.clone()
-    }
 }
 impl ::std::default::Default for UpdateExtensionRequest {
     fn default() -> Self {
@@ -18596,31 +5563,6 @@ impl ::std::default::Default for UpdateExtensionRequest {
 }
 ///`UploadAttachmentResponse`
 ///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "absPath",
-///    "filename",
-///    "id"
-///  ],
-///  "properties": {
-///    "absPath": {
-///      "type": "string"
-///    },
-///    "filename": {
-///      "type": "string"
-///    },
-///    "id": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct UploadAttachmentResponse {
@@ -18628,1752 +5570,6 @@ pub struct UploadAttachmentResponse {
     pub abs_path: ::std::string::String,
     pub filename: ::std::string::String,
     pub id: ::std::string::String,
-}
-impl ::std::convert::From<&UploadAttachmentResponse> for UploadAttachmentResponse {
-    fn from(value: &UploadAttachmentResponse) -> Self {
-        value.clone()
-    }
-}
-///`UserMessage`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "required": [
-///    "content",
-///    "createdAtMs",
-///    "id",
-///    "ord",
-///    "role"
-///  ],
-///  "properties": {
-///    "automated": {
-///      "type": "boolean"
-///    },
-///    "content": {
-///      "$ref": "#/definitions/MessageContent"
-///    },
-///    "createdAtMs": {
-///      "type": "integer"
-///    },
-///    "id": {
-///      "type": "string"
-///    },
-///    "ord": {
-///      "type": "integer"
-///    },
-///    "role": {
-///      "type": "string",
-///      "enum": [
-///        "user"
-///      ]
-///    },
-///    "systemPromptOverride": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct UserMessage {
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub automated: ::std::option::Option<bool>,
-    pub content: MessageContent,
-    #[serde(rename = "createdAtMs")]
-    pub created_at_ms: i64,
-    pub id: ::std::string::String,
-    pub ord: i64,
-    pub role: UserMessageRole,
-    #[serde(
-        rename = "systemPromptOverride",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub system_prompt_override: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&UserMessage> for UserMessage {
-    fn from(value: &UserMessage) -> Self {
-        value.clone()
-    }
-}
-///`UserMessageRole`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "user"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum UserMessageRole {
-    #[serde(rename = "user")]
-    User,
-}
-impl ::std::convert::From<&Self> for UserMessageRole {
-    fn from(value: &UserMessageRole) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for UserMessageRole {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::User => f.write_str("user"),
-        }
-    }
-}
-impl ::std::str::FromStr for UserMessageRole {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "user" => Ok(Self::User),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for UserMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for UserMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for UserMessageRole {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`WsFrame`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "anyOf": [
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "ping"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "pong"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "sessionId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "anchorMessageId": {
-///          "description": "User message anchoring this turn. When set, core deletes every message strictly between the anchor and the next-newer user message, truncates the LLM transcript at the anchor (inclusive), and inserts the new turn's messages into that slot. Absent means a fresh tail turn anchored on the newest user message.",
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.start"
-///          ]
-///        },
-///        "route": {
-///          "type": "string",
-///          "enum": [
-///            "default",
-///            "secondary"
-///          ]
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        },
-///        "systemPrompt": {
-///          "description": "Effective system prompt for this turn, composed client-side (base prompt + context block + snippet overrides). The client owns the context fields (local date/time, OS, ...), so the final string is sent per turn; when absent, core falls back to its `prompts.defaultSystemPrompt` setting.",
-///          "type": "string"
-///        },
-///        "toolsHint": {
-///          "description": "Rendered `[toolsAvailable:...]` segment of the context template. Sent separately from `systemPrompt` because only core knows whether tools survive the relevance filter: it appends this to the prompt iff the turn actually exposes tools to the model.",
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.interrupt"
-///          ]
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "sessionId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.subscribe"
-///          ]
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "answers",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "answers": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/AskUserAnswer"
-///          }
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.askuser_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "allow",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "allow": {
-///          "type": "boolean"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.permission_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.cancel"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "accepted",
-///        "callId",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "accepted": {
-///          "type": "boolean"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "draft": {
-///          "$ref": "#/definitions/ScheduledPromptDraft"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "schedule.confirm_response"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "afterId",
-///        "final",
-///        "kind",
-///        "message",
-///        "sessionId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "afterId": {
-///          "description": "Chronological insert-after position. Only meaningful on the first emission for an id; null = insert at the turn anchor (after the anchoring user message).",
-///          "type": [
-///            "string",
-///            "null"
-///          ]
-///        },
-///        "final": {
-///          "description": "True when this snapshot is the persisted, terminal form.",
-///          "type": "boolean"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.message"
-///          ]
-///        },
-///        "message": {
-///          "description": "Full snapshot of one message. The first emission for an id is the birth; later emissions with the same id replace the message in place.",
-///          "$ref": "#/definitions/Message"
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "delta",
-///        "kind",
-///        "messageId",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "delta": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.delta"
-///          ]
-///        },
-///        "messageId": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "streamId",
-///        "tokenUsage"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.usage"
-///          ]
-///        },
-///        "streamId": {
-///          "type": "string"
-///        },
-///        "tokenUsage": {
-///          "$ref": "#/definitions/TokenUsage"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "reason",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.done"
-///          ]
-///        },
-///        "reason": {
-///          "$ref": "#/definitions/ChatDoneReason"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "kind",
-///        "message",
-///        "streamId"
-///      ],
-///      "properties": {
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "chat.error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        },
-///        "streamId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "progress"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "description": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.progress"
-///          ]
-///        },
-///        "label": {
-///          "type": "string"
-///        },
-///        "progress": {
-///          "type": "number"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "questions",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.askuser_request"
-///          ]
-///        },
-///        "questions": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/AskUserQuestion"
-///          }
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "declared",
-///        "extensionId",
-///        "kind",
-///        "permissionKind",
-///        "requestId",
-///        "resource",
-///        "toolName"
-///      ],
-///      "properties": {
-///        "apiName": {
-///          "description": "The Deno API that triggered the check (e.g. `fetch()`), when known.",
-///          "type": "string"
-///        },
-///        "callId": {
-///          "type": "string"
-///        },
-///        "declared": {
-///          "description": "False when the access matches none of the tool's declared permissions and the extension's undeclared policy is `ask`.",
-///          "type": "boolean"
-///        },
-///        "extensionId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.permission_request"
-///          ]
-///        },
-///        "permissionKind": {
-///          "$ref": "#/definitions/PermissionKind"
-///        },
-///        "reason": {
-///          "description": "The declared permission's reason, when declared.",
-///          "type": "string"
-///        },
-///        "requestId": {
-///          "type": "string"
-///        },
-///        "resource": {
-///          "description": "What the tool is trying to touch, as reported by Deno (host:port, path, env key, binary, sys flag; empty for ffi-without-path).",
-///          "type": "string"
-///        },
-///        "toolName": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "level",
-///        "message"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.log"
-///          ]
-///        },
-///        "level": {
-///          "type": "string",
-///          "enum": [
-///            "debug",
-///            "info",
-///            "warn",
-///            "error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind",
-///        "result"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.result"
-///          ]
-///        },
-///        "result": {}
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "error",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "error": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.error"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "kind"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "tool.cancelled"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "id",
-///        "jobId",
-///        "kind",
-///        "line",
-///        "stream"
-///      ],
-///      "properties": {
-///        "id": {
-///          "type": "string"
-///        },
-///        "jobId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.install_log"
-///          ]
-///        },
-///        "line": {
-///          "type": "string"
-///        },
-///        "stream": {
-///          "type": "string",
-///          "enum": [
-///            "stdout",
-///            "stderr"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "id",
-///        "jobId",
-///        "kind",
-///        "ok"
-///      ],
-///      "properties": {
-///        "code": {
-///          "type": "integer"
-///        },
-///        "id": {
-///          "type": "string"
-///        },
-///        "jobId": {
-///          "type": "string"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.install_done"
-///          ]
-///        },
-///        "ok": {
-///          "type": "boolean"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "extension.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "mcp.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "items",
-///        "kind"
-///      ],
-///      "properties": {
-///        "items": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/DownloadEntry"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "downloads.snapshot"
-///          ]
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "missing",
-///        "required"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "requirements.snapshot"
-///          ]
-///        },
-///        "missing": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/RequiredFile"
-///          }
-///        },
-///        "required": {
-///          "type": "array",
-///          "items": {
-///            "$ref": "#/definitions/RequiredFile"
-///          }
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "deleted",
-///        "kind",
-///        "values"
-///      ],
-///      "properties": {
-///        "deleted": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "settings.updated"
-///          ]
-///        },
-///        "secretNames": {
-///          "type": "array",
-///          "items": {
-///            "type": "string"
-///          }
-///        },
-///        "values": {
-///          "type": "object",
-///          "additionalProperties": {}
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "op",
-///        "sessionId"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "session.updated"
-///          ]
-///        },
-///        "op": {
-///          "type": "string",
-///          "enum": [
-///            "title_changed",
-///            "title_generating",
-///            "message_added",
-///            "message_updated",
-///            "message_deleted"
-///          ]
-///        },
-///        "payload": {
-///          "type": "object",
-///          "properties": {
-///            "attachments": {
-///              "type": "array",
-///              "items": {
-///                "$ref": "#/definitions/AttachmentRef"
-///              }
-///            },
-///            "generating": {
-///              "type": "boolean"
-///            },
-///            "message": {},
-///            "messageId": {
-///              "type": "string"
-///            },
-///            "title": {
-///              "type": "string"
-///            }
-///          },
-///          "additionalProperties": false
-///        },
-///        "sessionId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "focus",
-///        "kind",
-///        "reason",
-///        "session"
-///      ],
-///      "properties": {
-///        "focus": {
-///          "description": "\"show\": navigate to the session and show the window now; \"show_when_done\": navigate silently, show the window when the session's stream finishes.",
-///          "$ref": "#/definitions/SessionCreatedFocus"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "session.created"
-///          ]
-///        },
-///        "reason": {
-///          "$ref": "#/definitions/SessionCreatedReason"
-///        },
-///        "scheduledPromptId": {
-///          "type": "string"
-///        },
-///        "session": {
-///          "$ref": "#/definitions/Session"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "callId",
-///        "draft",
-///        "kind",
-///        "requestId"
-///      ],
-///      "properties": {
-///        "callId": {
-///          "type": "string"
-///        },
-///        "draft": {
-///          "$ref": "#/definitions/ScheduledPromptDraft"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "schedule.confirm_request"
-///          ]
-///        },
-///        "requestId": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "version"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "update.staged"
-///          ]
-///        },
-///        "version": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "code",
-///        "kind",
-///        "message"
-///      ],
-///      "properties": {
-///        "code": {
-///          "$ref": "#/definitions/ErrorCode"
-///        },
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "update.error"
-///          ]
-///        },
-///        "message": {
-///          "type": "string"
-///        }
-///      },
-///      "additionalProperties": false
-///    },
-///    {
-///      "type": "object",
-///      "required": [
-///        "kind",
-///        "snapshot"
-///      ],
-///      "properties": {
-///        "kind": {
-///          "type": "string",
-///          "enum": [
-///            "core.status"
-///          ]
-///        },
-///        "snapshot": {
-///          "$ref": "#/definitions/CoreStatusSnapshot"
-///        }
-///      },
-///      "additionalProperties": false
-///    }
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum WsFrame {
-    #[serde(rename = "ping")]
-    Ping,
-    #[serde(rename = "pong")]
-    Pong,
-    #[serde(rename = "chat.start")]
-    ChatStart {
-        ///User message anchoring this turn. When set, core deletes every message strictly between the anchor and the next-newer user message, truncates the LLM transcript at the anchor (inclusive), and inserts the new turn's messages into that slot. Absent means a fresh tail turn anchored on the newest user message.
-        #[serde(
-            rename = "anchorMessageId",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        anchor_message_id: ::std::option::Option<::std::string::String>,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        route: ::std::option::Option<WsFrameRoute>,
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-        ///Effective system prompt for this turn, composed client-side (base prompt + context block + snippet overrides). The client owns the context fields (local date/time, OS, ...), so the final string is sent per turn; when absent, core falls back to its `prompts.defaultSystemPrompt` setting.
-        #[serde(
-            rename = "systemPrompt",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        system_prompt: ::std::option::Option<::std::string::String>,
-        ///Rendered `[toolsAvailable:...]` segment of the context template. Sent separately from `systemPrompt` because only core knows whether tools survive the relevance filter: it appends this to the prompt iff the turn actually exposes tools to the model.
-        #[serde(
-            rename = "toolsHint",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        tools_hint: ::std::option::Option<::std::string::String>,
-    },
-    #[serde(rename = "chat.interrupt")]
-    ChatInterrupt {
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.subscribe")]
-    ChatSubscribe {
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.askuser_response")]
-    ToolAskuserResponse {
-        answers: ::std::vec::Vec<AskUserAnswer>,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.permission_response")]
-    ToolPermissionResponse {
-        allow: bool,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.cancel")]
-    ToolCancel {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-    },
-    #[serde(rename = "schedule.confirm_response")]
-    ScheduleConfirmResponse {
-        accepted: bool,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        draft: ::std::option::Option<ScheduledPromptDraft>,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.message")]
-    ChatMessage {
-        ///Chronological insert-after position. Only meaningful on the first emission for an id; null = insert at the turn anchor (after the anchoring user message).
-        #[serde(rename = "afterId")]
-        after_id: ::std::option::Option<::std::string::String>,
-        ///True when this snapshot is the persisted, terminal form.
-        #[serde(rename = "final")]
-        final_: bool,
-        ///Full snapshot of one message. The first emission for an id is the birth; later emissions with the same id replace the message in place.
-        message: Message,
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.delta")]
-    ChatDelta {
-        delta: ::std::string::String,
-        #[serde(rename = "messageId")]
-        message_id: ::std::string::String,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.usage")]
-    ChatUsage {
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-        #[serde(rename = "tokenUsage")]
-        token_usage: TokenUsage,
-    },
-    #[serde(rename = "chat.done")]
-    ChatDone {
-        reason: ChatDoneReason,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "chat.error")]
-    ChatError {
-        code: ErrorCode,
-        message: ::std::string::String,
-        #[serde(rename = "streamId")]
-        stream_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.progress")]
-    ToolProgress {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        description: ::std::option::Option<::std::string::String>,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        label: ::std::option::Option<::std::string::String>,
-        progress: f64,
-    },
-    #[serde(rename = "tool.askuser_request")]
-    ToolAskuserRequest {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        questions: ::std::vec::Vec<AskUserQuestion>,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "tool.permission_request")]
-    ToolPermissionRequest {
-        ///The Deno API that triggered the check (e.g. `fetch()`), when known.
-        #[serde(
-            rename = "apiName",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        api_name: ::std::option::Option<::std::string::String>,
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        ///False when the access matches none of the tool's declared permissions and the extension's undeclared policy is `ask`.
-        declared: bool,
-        #[serde(rename = "extensionId")]
-        extension_id: ::std::string::String,
-        #[serde(rename = "permissionKind")]
-        permission_kind: PermissionKind,
-        ///The declared permission's reason, when declared.
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        reason: ::std::option::Option<::std::string::String>,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-        ///What the tool is trying to touch, as reported by Deno (host:port, path, env key, binary, sys flag; empty for ffi-without-path).
-        resource: ::std::string::String,
-        #[serde(rename = "toolName")]
-        tool_name: ::std::string::String,
-    },
-    #[serde(rename = "tool.log")]
-    ToolLog {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        level: WsFrameLevel,
-        message: ::std::string::String,
-    },
-    #[serde(rename = "tool.result")]
-    ToolResult {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        result: ::serde_json::Value,
-    },
-    #[serde(rename = "tool.error")]
-    ToolError {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        code: ::std::option::Option<ErrorCode>,
-        error: ::std::string::String,
-    },
-    #[serde(rename = "tool.cancelled")]
-    ToolCancelled {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-    },
-    #[serde(rename = "extension.install_log")]
-    ExtensionInstallLog {
-        id: ::std::string::String,
-        #[serde(rename = "jobId")]
-        job_id: ::std::string::String,
-        line: ::std::string::String,
-        stream: WsFrameStream,
-    },
-    #[serde(rename = "extension.install_done")]
-    ExtensionInstallDone {
-        code: i64,
-        id: ::std::string::String,
-        #[serde(rename = "jobId")]
-        job_id: ::std::string::String,
-        ok: bool,
-    },
-    #[serde(rename = "extension.snapshot")]
-    ExtensionSnapshot,
-    #[serde(rename = "mcp.snapshot")]
-    McpSnapshot,
-    #[serde(rename = "downloads.snapshot")]
-    DownloadsSnapshot {
-        items: ::std::vec::Vec<DownloadEntry>,
-    },
-    #[serde(rename = "requirements.snapshot")]
-    RequirementsSnapshot {
-        missing: ::std::vec::Vec<RequiredFile>,
-        required: ::std::vec::Vec<RequiredFile>,
-    },
-    #[serde(rename = "settings.updated")]
-    SettingsUpdated {
-        deleted: ::std::vec::Vec<::std::string::String>,
-        #[serde(
-            rename = "secretNames",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        secret_names: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-        values: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-    },
-    #[serde(rename = "session.updated")]
-    SessionUpdated {
-        op: WsFrameOp,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        payload: ::std::option::Option<WsFramePayload>,
-        #[serde(rename = "sessionId")]
-        session_id: ::std::string::String,
-    },
-    #[serde(rename = "session.created")]
-    SessionCreated {
-        ///"show": navigate to the session and show the window now; "show_when_done": navigate silently, show the window when the session's stream finishes.
-        focus: SessionCreatedFocus,
-        reason: SessionCreatedReason,
-        #[serde(
-            rename = "scheduledPromptId",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        scheduled_prompt_id: ::std::option::Option<::std::string::String>,
-        session: Session,
-    },
-    #[serde(rename = "schedule.confirm_request")]
-    ScheduleConfirmRequest {
-        #[serde(rename = "callId")]
-        call_id: ::std::string::String,
-        draft: ScheduledPromptDraft,
-        #[serde(rename = "requestId")]
-        request_id: ::std::string::String,
-    },
-    #[serde(rename = "update.staged")]
-    UpdateStaged { version: ::std::string::String },
-    #[serde(rename = "update.error")]
-    UpdateError {
-        code: ErrorCode,
-        message: ::std::string::String,
-    },
-    #[serde(rename = "core.status")]
-    CoreStatus { snapshot: CoreStatusSnapshot },
-}
-impl ::std::convert::From<&Self> for WsFrame {
-    fn from(value: &WsFrame) -> Self {
-        value.clone()
-    }
-}
-///`WsFrameLevel`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "debug",
-///    "info",
-///    "warn",
-///    "error"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum WsFrameLevel {
-    #[serde(rename = "debug")]
-    Debug,
-    #[serde(rename = "info")]
-    Info,
-    #[serde(rename = "warn")]
-    Warn,
-    #[serde(rename = "error")]
-    Error,
-}
-impl ::std::convert::From<&Self> for WsFrameLevel {
-    fn from(value: &WsFrameLevel) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for WsFrameLevel {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Debug => f.write_str("debug"),
-            Self::Info => f.write_str("info"),
-            Self::Warn => f.write_str("warn"),
-            Self::Error => f.write_str("error"),
-        }
-    }
-}
-impl ::std::str::FromStr for WsFrameLevel {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "debug" => Ok(Self::Debug),
-            "info" => Ok(Self::Info),
-            "warn" => Ok(Self::Warn),
-            "error" => Ok(Self::Error),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for WsFrameLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for WsFrameLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for WsFrameLevel {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`WsFrameOp`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "title_changed",
-///    "title_generating",
-///    "message_added",
-///    "message_updated",
-///    "message_deleted"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum WsFrameOp {
-    #[serde(rename = "title_changed")]
-    TitleChanged,
-    #[serde(rename = "title_generating")]
-    TitleGenerating,
-    #[serde(rename = "message_added")]
-    MessageAdded,
-    #[serde(rename = "message_updated")]
-    MessageUpdated,
-    #[serde(rename = "message_deleted")]
-    MessageDeleted,
-}
-impl ::std::convert::From<&Self> for WsFrameOp {
-    fn from(value: &WsFrameOp) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for WsFrameOp {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::TitleChanged => f.write_str("title_changed"),
-            Self::TitleGenerating => f.write_str("title_generating"),
-            Self::MessageAdded => f.write_str("message_added"),
-            Self::MessageUpdated => f.write_str("message_updated"),
-            Self::MessageDeleted => f.write_str("message_deleted"),
-        }
-    }
-}
-impl ::std::str::FromStr for WsFrameOp {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "title_changed" => Ok(Self::TitleChanged),
-            "title_generating" => Ok(Self::TitleGenerating),
-            "message_added" => Ok(Self::MessageAdded),
-            "message_updated" => Ok(Self::MessageUpdated),
-            "message_deleted" => Ok(Self::MessageDeleted),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for WsFrameOp {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for WsFrameOp {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for WsFrameOp {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`WsFramePayload`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "object",
-///  "properties": {
-///    "attachments": {
-///      "type": "array",
-///      "items": {
-///        "$ref": "#/definitions/AttachmentRef"
-///      }
-///    },
-///    "generating": {
-///      "type": "boolean"
-///    },
-///    "message": {},
-///    "messageId": {
-///      "type": "string"
-///    },
-///    "title": {
-///      "type": "string"
-///    }
-///  },
-///  "additionalProperties": false
-///}
-/// ```
-/// </details>
-#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct WsFramePayload {
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub attachments: ::std::option::Option<::std::vec::Vec<AttachmentRef>>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub generating: ::std::option::Option<bool>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub message: ::std::option::Option<::serde_json::Value>,
-    #[serde(
-        rename = "messageId",
-        default,
-        skip_serializing_if = "::std::option::Option::is_none"
-    )]
-    pub message_id: ::std::option::Option<::std::string::String>,
-    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-    pub title: ::std::option::Option<::std::string::String>,
-}
-impl ::std::convert::From<&WsFramePayload> for WsFramePayload {
-    fn from(value: &WsFramePayload) -> Self {
-        value.clone()
-    }
-}
-impl ::std::default::Default for WsFramePayload {
-    fn default() -> Self {
-        Self {
-            attachments: Default::default(),
-            generating: Default::default(),
-            message: Default::default(),
-            message_id: Default::default(),
-            title: Default::default(),
-        }
-    }
-}
-///`WsFrameRoute`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "default",
-///    "secondary"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum WsFrameRoute {
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "secondary")]
-    Secondary,
-}
-impl ::std::convert::From<&Self> for WsFrameRoute {
-    fn from(value: &WsFrameRoute) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for WsFrameRoute {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Default => f.write_str("default"),
-            Self::Secondary => f.write_str("secondary"),
-        }
-    }
-}
-impl ::std::str::FromStr for WsFrameRoute {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "default" => Ok(Self::Default),
-            "secondary" => Ok(Self::Secondary),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for WsFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for WsFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for WsFrameRoute {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-///`WsFrameStream`
-///
-/// <details><summary>JSON schema</summary>
-///
-/// ```json
-///{
-///  "type": "string",
-///  "enum": [
-///    "stdout",
-///    "stderr"
-///  ]
-///}
-/// ```
-/// </details>
-#[derive(
-    ::serde::Deserialize,
-    ::serde::Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum WsFrameStream {
-    #[serde(rename = "stdout")]
-    Stdout,
-    #[serde(rename = "stderr")]
-    Stderr,
-}
-impl ::std::convert::From<&Self> for WsFrameStream {
-    fn from(value: &WsFrameStream) -> Self {
-        value.clone()
-    }
-}
-impl ::std::fmt::Display for WsFrameStream {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::Stdout => f.write_str("stdout"),
-            Self::Stderr => f.write_str("stderr"),
-        }
-    }
-}
-impl ::std::str::FromStr for WsFrameStream {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "stdout" => Ok(Self::Stdout),
-            "stderr" => Ok(Self::Stderr),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for WsFrameStream {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<&::std::string::String> for WsFrameStream {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: &::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for WsFrameStream {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
 }
 
 impl ::std::fmt::Debug for PakeFinishResponse {

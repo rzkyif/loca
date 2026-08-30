@@ -1,17 +1,9 @@
-//! The D4 suite.
+//! The chat suite, sectioned by the module under test.
 //!
-//! One file per crate convention, sectioned by the module under test. Every test
-//! here was watched failing against a staged mutation before it was trusted
-//! (D-015), and the mutation each one catches is recorded in
-//! `docs/rust-port/packages/D4/status.md` rather than in a comment per test.
-//!
-//! Two fixture rules this file follows, both from D-050:
-//!
-//! - a double never fills in what a test left out, so a stub tool host can
-//!   produce a controller that never resolves and an event stream that ends with
-//!   no terminal event;
-//! - an assertion that something did NOT happen is paired, in the same test or
-//!   its neighbour, with one proving the instrument would have noticed.
+//! Two fixture rules throughout: a double never fills in what a test left out
+//! (so a stub tool host can produce a controller that never resolves), and an
+//! assertion that something did NOT happen is paired with one proving the
+//! instrument would have noticed.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -82,10 +74,8 @@ fn kinds(frames: &[Value]) -> Vec<String> {
         .collect()
 }
 
-/// A `ModelIdle` that counts, so a test can fail when a call site is deleted.
-///
-/// Without this, "the claim notes activity" is unfalsifiable: `NoIdle` does
-/// nothing either way, which is D-050's third shape.
+/// A `ModelIdle` that counts: `NoIdle` does nothing either way, so without this
+/// "the claim notes activity" is unfalsifiable.
 #[derive(Default)]
 struct CountingIdle {
     activity: AtomicUsize,
@@ -158,17 +148,14 @@ async fn a_second_claim_on_the_same_client_and_session_is_refused() {
     let _first = claim(&streams, "s1", "sess-1", ALICE);
 
     assert!(streams.claim("s2", "sess-1", ALICE).is_none());
-    // The instrument, per D-050 #3: the same call on a different session DOES
-    // succeed, so the refusal above is the busy check and not a claim that
-    // never works.
+    // The instrument: the same call on a different session DOES succeed.
     assert!(streams.claim("s3", "sess-2", ALICE).is_some());
 }
 
 #[tokio::test]
 async fn a_claim_by_a_different_client_on_the_same_session_is_allowed() {
-    // Reads like a bug and is not: `broadcastToClient` scopes every frame to its
-    // owner, so two paired clients can each run a turn on one session. Scoping
-    // the busy check to the session alone would break that.
+    // Reads like a bug and is not: every frame is scoped to its owner, so two
+    // paired clients can each run a turn on one session.
     let streams = streams();
     let _alice = claim(&streams, "s1", "sess-1", ALICE);
 
@@ -178,7 +165,7 @@ async fn a_claim_by_a_different_client_on_the_same_session_is_allowed() {
 #[tokio::test]
 async fn three_live_messages_replay_in_birth_order() {
     // Three, not one: a `HashMap` reproduces a single-entry replay perfectly and
-    // scrambles a three-entry one about half the time (D-050 #5).
+    // scrambles a three-entry one about half the time.
     let streams = streams();
     let guard = claim(&streams, "s1", "sess-1", ALICE);
     let stream = guard.stream();
@@ -382,25 +369,58 @@ async fn cancel_all_cancels_every_token() {
 
 // --- writer.rs ---------------------------------------------------------------
 
-async fn writer_fixture(
-    store: &SessionsStore,
-    frames: &Arc<FrameBus>,
-    streams: &Arc<ActiveStreams>,
-) -> (String, StreamGuard, TurnWriter, Connection) {
-    let session = new_session(store, ALICE).await;
+/// A claimed turn with its writer, anchored on one user message, with the
+/// connection already drained of the setup's own frames.
+struct WriterEnv {
+    _tmp: TempDir,
+    _guard: StreamGuard,
+    store: SessionsStore,
+    session: String,
+    anchor: String,
+    writer: TurnWriter,
+    conn: Connection,
+}
+
+async fn writer_env() -> WriterEnv {
+    let (tmp, store) = store();
+    let frames = bus();
+    let streams = streams();
+    let session = new_session(&store, ALICE).await;
     let anchor = store
         .insert_message_after(&session, user_message("hello"), None)
         .await
-        .unwrap();
-    let guard = claim(streams, "s1", &session, ALICE);
-    let conn = frames.register(ALICE);
+        .unwrap()
+        .id;
+    let guard = claim(&streams, "s1", &session, ALICE);
+    let mut conn = frames.register(ALICE);
     let writer = TurnWriter::new(
         Arc::clone(guard.stream()),
         store.clone(),
-        Arc::clone(frames),
-        Some(anchor.id.clone()),
+        Arc::clone(&frames),
+        Some(anchor.clone()),
     );
-    (anchor.id, guard, writer, conn)
+    let _ = drain(&mut conn);
+    WriterEnv {
+        _tmp: tmp,
+        _guard: guard,
+        store,
+        session,
+        anchor,
+        writer,
+        conn,
+    }
+}
+
+impl WriterEnv {
+    /// Every message id in the session store, in order.
+    async fn ids(&self) -> Vec<String> {
+        self.store
+            .list_messages(&self.session)
+            .await
+            .iter()
+            .map(|m| m.id().unwrap_or_default().to_string())
+            .collect()
+    }
 }
 
 fn user_message(text: &str) -> StoredMessage {
@@ -420,20 +440,16 @@ fn message_doc(role: &str, content: &str) -> StoredMessage {
 
 #[tokio::test]
 async fn a_birth_carries_the_live_cursor_and_advances_it() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (anchor, _guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
     let reasoning = message("reasoning", "m-reasoning");
-    writer.born(&reasoning);
+    env.writer.born(&reasoning);
     let assistant = message("assistant", "m-assistant");
-    writer.born(&assistant);
+    env.writer.born(&assistant);
 
-    let sent = drain(&mut conn);
+    let sent = drain(&mut env.conn);
     assert_eq!(kinds(&sent), vec!["chat.message", "chat.message"]);
-    assert_eq!(sent[0]["afterId"], json!(anchor));
+    assert_eq!(sent[0]["afterId"], json!(env.anchor));
     assert_eq!(sent[0]["final"], json!(false));
     // The second birth points at the first, not at the anchor: nothing is
     // persisted yet, so only the live cursor has moved.
@@ -442,12 +458,9 @@ async fn a_birth_carries_the_live_cursor_and_advances_it() {
 
 #[tokio::test]
 async fn a_finalize_inserts_at_the_durable_cursor_not_the_live_one() {
-    // Anchored MID-HISTORY, which is the regenerate case, and the only fixture
-    // that can tell the two cursors apart. On a tail-anchored turn the live
-    // cursor names a message that is not in the store yet, the store falls back
-    // to appending, and appending is exactly where the durable cursor would have
-    // put it: both cursors produce the identical transcript and the test proves
-    // nothing. D-050 #5, found by a surviving mutation rather than by review.
+    // Anchored MID-HISTORY (the regenerate case), the only fixture that can tell
+    // the two cursors apart: on a tail-anchored turn both fall back to appending
+    // and produce the identical transcript.
     let (_tmp, store) = store();
     let frames = bus();
     let streams = streams();
@@ -506,17 +519,13 @@ async fn a_finalize_inserts_at_the_durable_cursor_not_the_live_one() {
 
 #[tokio::test]
 async fn a_born_then_finalized_message_carries_a_null_after_id() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (_anchor, _guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
     let assistant = message("assistant", "m-assistant");
-    writer.born(&assistant);
-    writer.finalize(&assistant).await.unwrap();
+    env.writer.born(&assistant);
+    env.writer.finalize(&assistant).await.unwrap();
 
-    let sent = drain(&mut conn);
+    let sent = drain(&mut env.conn);
     assert_eq!(sent.len(), 2);
     assert_eq!(sent[1]["final"], json!(true));
     // Already positioned by its birth. Re-sending a position would move a bubble
@@ -526,21 +535,17 @@ async fn a_born_then_finalized_message_carries_a_null_after_id() {
 
 #[tokio::test]
 async fn a_first_emission_finalize_carries_the_live_cursor_and_advances_it() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (anchor, _guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
     // The tool-call-only assistant: never born, so its finalize is what
     // positions it.
     let assistant = message("assistant", "m-assistant");
-    writer.finalize(&assistant).await.unwrap();
+    env.writer.finalize(&assistant).await.unwrap();
     let second = message("assistant", "m-second");
-    writer.finalize(&second).await.unwrap();
+    env.writer.finalize(&second).await.unwrap();
 
-    let sent = drain(&mut conn);
-    assert_eq!(sent[0]["afterId"], json!(anchor));
+    let sent = drain(&mut env.conn);
+    assert_eq!(sent[0]["afterId"], json!(env.anchor));
     assert_eq!(sent[0]["final"], json!(true));
     // Advanced, so the next unborn message lands after it rather than back at
     // the anchor.
@@ -549,47 +554,35 @@ async fn a_first_emission_finalize_carries_the_live_cursor_and_advances_it() {
 
 #[tokio::test]
 async fn the_two_cursors_reconverge_after_a_reasoning_assistant_pair() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (_anchor, guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let session = guard.stream().session_id.clone();
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
     let reasoning = message("reasoning", "m-reasoning");
-    writer.born(&reasoning);
+    env.writer.born(&reasoning);
     let assistant = message("assistant", "m-assistant");
-    writer.born(&assistant);
-    writer.finalize(&reasoning).await.unwrap();
-    writer.finalize(&assistant).await.unwrap();
+    env.writer.born(&assistant);
+    env.writer.finalize(&reasoning).await.unwrap();
+    env.writer.finalize(&assistant).await.unwrap();
 
     // Both cursors now name the assistant, so a message born in the next hop
     // lands after it.
-    assert_eq!(writer.cursor(), Some("m-assistant"));
+    assert_eq!(env.writer.cursor(), Some("m-assistant"));
     let next = message("assistant", "m-next");
-    writer.born(&next);
-    writer.finalize(&next).await.unwrap();
+    env.writer.born(&next);
+    env.writer.finalize(&next).await.unwrap();
 
-    let ids: Vec<String> = store
-        .list_messages(&session)
-        .await
-        .iter()
-        .skip(1)
-        .map(|m| m.id().unwrap_or_default().to_string())
-        .collect();
-    assert_eq!(ids, vec!["m-reasoning", "m-assistant", "m-next"]);
+    assert_eq!(
+        env.ids().await[1..],
+        ["m-reasoning", "m-assistant", "m-next"],
+    );
 }
 
 #[tokio::test]
 async fn the_assigned_ord_lands_on_the_live_object() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (_anchor, _guard, mut writer, _conn) = writer_fixture(&store, &frames, &streams).await;
+    let mut env = writer_env().await;
 
     let assistant = message("assistant", "m-assistant");
     assert_eq!(assistant.lock().unwrap().ord(), Some(-1));
-    writer.finalize(&assistant).await.unwrap();
+    env.writer.finalize(&assistant).await.unwrap();
 
     // The store assigns it, and the live object is what a resubscribe replays,
     // so the sentinel has to be overwritten in place.
@@ -598,56 +591,40 @@ async fn the_assigned_ord_lands_on_the_live_object() {
 
 #[tokio::test]
 async fn a_message_that_fails_the_contract_is_logged_and_the_persist_survives() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (_anchor, guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let session = guard.stream().session_id.clone();
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
     // `role` is a closed enum on the wire, so this cannot be rendered as a
     // `chat.message`. Aborting the turn over it would lose every message after
     // it too.
     let broken = message("not-a-role", "m-broken");
-    writer.finalize(&broken).await.unwrap();
+    env.writer.finalize(&broken).await.unwrap();
 
-    assert!(drain(&mut conn).is_empty(), "no frame could be sent");
-    let ids: Vec<String> = store
-        .list_messages(&session)
-        .await
-        .iter()
-        .map(|m| m.id().unwrap_or_default().to_string())
-        .collect();
+    assert!(drain(&mut env.conn).is_empty(), "no frame could be sent");
     assert!(
-        ids.contains(&"m-broken".to_string()),
+        env.ids().await.contains(&"m-broken".to_string()),
         "but it was persisted"
     );
 }
 
 #[tokio::test]
 async fn the_anchor_seeds_both_cursors() {
-    let (_tmp, store) = store();
-    let frames = bus();
-    let streams = streams();
-    let (anchor, _guard, mut writer, mut conn) = writer_fixture(&store, &frames, &streams).await;
-    let _ = drain(&mut conn);
+    let mut env = writer_env().await;
 
-    assert_eq!(writer.cursor(), Some(anchor.as_str()));
+    assert_eq!(env.writer.cursor(), Some(env.anchor.as_str()));
     let assistant = message("assistant", "m-assistant");
-    writer.born(&assistant);
-    let sent = drain(&mut conn);
+    env.writer.born(&assistant);
+    let sent = drain(&mut env.conn);
     // The live cursor was seeded too, so the first birth of the turn lands
     // immediately after the user message rather than at the top.
-    assert_eq!(sent[0]["afterId"], json!(anchor));
+    assert_eq!(sent[0]["afterId"], json!(env.anchor));
 }
 
 // --- deps.rs -----------------------------------------------------------------
 
 #[tokio::test]
 async fn no_tools_phase2_returns_its_input_rather_than_an_empty_set() {
-    // Failing open IS phase 2's contract: an unreachable model must not leave a
-    // turn with no tools. Returning empty here would make "no filter ran" and
-    // "the filter rejected everything" indistinguishable.
+    // Failing open IS phase 2's contract: returning empty would make "no filter
+    // ran" and "the filter rejected everything" indistinguishable.
     let host = NoTools;
     let candidates = vec![crate::contract::api::ToolDescriptor {
         description: "does a thing".into(),
@@ -1742,9 +1719,8 @@ fn stub_tool(extension_id: &str, name: &str) -> Tool {
     }
 }
 
-/// What the stub host is scripted with. Every field is explicit and nothing has
-/// a helpful default: a double that fills in what a test left out hides the
-/// branch that depends on it being absent (D-050 #1).
+/// What the stub host is scripted with. Every field is explicit: a double that
+/// fills in what a test left out hides the branch that depends on its absence.
 #[derive(Default)]
 struct Script {
     tools: HashMap<String, Tool>,
@@ -2136,9 +2112,8 @@ async fn an_mcp_server_error_fails_the_message_and_emits_no_tool_error_frame() {
         "{:?}",
         field(&message, "error")
     );
-    // Deliberate asymmetry, ported as-is: only the extension path emits
-    // `tool.error`. The instrument for this "no frame" claim is the extension
-    // test below, which asserts the same recorder DOES see one.
+    // Deliberate asymmetry: only the extension path emits `tool.error`. The
+    // instrument is the extension test below, where the recorder DOES see one.
     assert!(drain(&mut f.conn).is_empty());
 }
 
@@ -2569,9 +2544,8 @@ use super::complexity::{classify_complexity, route_of};
 
 #[test]
 fn the_classifier_reads_complex_only_when_simple_is_absent() {
-    // A table rather than a happy case: the "both words present" row is the
-    // whole reason the predicate is a conjunction, and a single "complex" case
-    // passes with the `!contains("simple")` half deleted.
+    // A table: the "both words present" row is the whole reason the predicate is
+    // a conjunction, and a single "complex" case passes without it.
     let cases = [
         ("complex", LlmRoute::Secondary),
         ("COMPLEX", LlmRoute::Secondary),
@@ -2695,17 +2669,15 @@ use super::title::{sanitize, select_title_context};
 
 #[test]
 fn sanitize_applies_its_six_steps_in_order() {
-    // A table, because the ORDER is the content of the function and each row
-    // pins a different step against the one before it.
+    // The ORDER is the content of the function: each row pins one step against
+    // the one before it.
     let cases = [
         ("Hello world", "Hello world"),
         // The think block goes first: taking the first line first would leave a
         // dangling `<think>` opener behind.
         ("<think>hmm</think>Refactor plan", "Refactor plan"),
-        // And the consequence of that order, which is the oracle's behaviour
-        // rather than a rounding of it: a block followed by a newline leaves the
-        // first line empty, so the title is dropped and the session stays
-        // untitled. Pinned so a "tidier" order cannot change it silently.
+        // The consequence of that order: a block followed by a newline leaves
+        // the first line empty, so the session stays untitled.
         ("<think>\nhmm\n</think>\nRefactor plan", ""),
         ("<THINK>x</THINK>Caps tag", "Caps tag"),
         // Only the first line survives.
@@ -2785,11 +2757,9 @@ fn the_bubbles_the_title_prompt_cannot_use_are_skipped() {
 
 #[test]
 fn a_tight_context_window_keeps_the_newest_turns_and_drops_the_oldest() {
-    // The middle line is sized to fall BETWEEN the budget with the safety
-    // margin subtracted and the budget without it: about 52 tokens, against 26
-    // remaining with the margin and 90 without. A longer line is dropped either
-    // way, which is how the first version of this test let the margin be
-    // deleted without noticing (D-050 #5, measured rather than reasoned).
+    // The middle line is sized to fall BETWEEN the budget with the safety margin
+    // subtracted and the budget without it: about 52 tokens, against 26
+    // remaining with the margin and 90 without.
     let history = vec![
         turn_message("user", "opening question"),
         turn_message("assistant", &"a".repeat(200)),
@@ -3170,13 +3140,9 @@ async fn the_cap_applies_and_always_available_tools_are_exempt_from_it() {
 
 #[tokio::test]
 async fn a_denied_permission_withholds_a_tool_from_the_offering() {
-    // This covers the FIRST of the two places the gate is applied: the catalog
-    // read, which is what the unfiltered path selects from. The SECOND, after
-    // the map back through the relevance index, is the one that matters for a
-    // filtered turn and is NOT covered here: reaching it needs a working
-    // embedding endpoint, which these fixtures deliberately do not have.
-    // Deleting the second application leaves this test green, which was
-    // measured rather than assumed.
+    // Covers the FIRST of the two places the gate is applied, the catalog read.
+    // The second, after the map back through the relevance index, needs a
+    // working embedding endpoint these fixtures deliberately do not have.
     let mut denied = stub_tool("ext", "reader");
     denied.required_permissions = vec![PermissionDecl::Read {
         optional: None,
@@ -3244,9 +3210,8 @@ async fn an_ungranted_permission_behaves_as_ask_rather_than_as_denied() {
 
 #[tokio::test]
 async fn an_embedding_failure_errors_the_bubble_and_still_offers_mcp_tools() {
-    // The asymmetry that is easiest to lose in a port: the extension pipeline is
-    // inside the failure guard and the MCP append is deliberately outside it,
-    // because MCP tools were never in the embedding index.
+    // The extension pipeline is inside the failure guard and the MCP append is
+    // outside it: MCP tools were never in the embedding index.
     let mut mcp = stub_tool("srv", "search_docs");
     mcp.always_available = true;
     let script = Script {
@@ -3390,11 +3355,78 @@ async fn chat_env_on(
     }
 }
 
-async fn use_local_provider(settings: &crate::settings::Settings) {
-    settings
-        .patch(settings_of(json!({ "llm.provider": "local" })))
-        .await
-        .unwrap();
+impl ChatEnv {
+    /// A connection for `client`, drained of the setup's own frames.
+    fn conn(&self, client: &str) -> Connection {
+        let mut conn = self.frames.register(client);
+        let _ = drain(&mut conn);
+        conn
+    }
+
+    /// A session owned by ALICE holding one user message.
+    async fn asked(&self, text: &str) -> String {
+        let session = new_session(&self.store, ALICE).await;
+        self.store
+            .insert_message_after(&session, user_message(text), None)
+            .await
+            .unwrap();
+        session
+    }
+
+    async fn patch(&self, value: Value) {
+        self.settings.patch(settings_of(value)).await.unwrap();
+    }
+
+    async fn local(&self) {
+        self.patch(json!({ "llm.provider": "local" })).await;
+    }
+
+    /// Local, plus a fully configured secondary endpoint, so a routing test
+    /// asserts the switch rather than the absence of configuration.
+    async fn dual_model(&self, enabled: bool) {
+        self.patch(json!({
+            "llm.provider": "local",
+            "dualModel.enabled": enabled,
+            "dualModel.external.baseUrl": SECONDARY_URL,
+            "dualModel.external.model": "fast-model",
+            "dualModel.external.apiKey": "sk-secondary",
+        }))
+        .await;
+    }
+}
+
+/// A [`ChatEnv`] over a provider that answers `text`, with no tool host.
+async fn text_env(text: &str) -> ChatEnv {
+    chat_env(
+        Arc::new(crate::llm::testing::ScriptedProvider::text(text)),
+        ChatDeps::unwired(),
+    )
+    .await
+}
+
+/// The same over a provider that never finishes, so a turn is genuinely still
+/// running when the next frame arrives.
+async fn wedged_env() -> ChatEnv {
+    chat_env(
+        Arc::new(
+            crate::llm::testing::ScriptedProvider::text("slow")
+                .with_gap(std::time::Duration::from_secs(3600)),
+        ),
+        ChatDeps::unwired(),
+    )
+    .await
+}
+
+/// A [`ChatEnv`] plus the provider it was built over, for asserting on the
+/// endpoint each request was handed.
+async fn recording_env(text: &str) -> (ChatEnv, Arc<crate::llm::testing::ScriptedProvider>) {
+    let provider = Arc::new(crate::llm::testing::ScriptedProvider::text(text));
+    let env = chat_env(
+        Arc::clone(&provider) as Arc<dyn crate::llm::ChatProvider>,
+        ChatDeps::unwired(),
+    )
+    .await;
+    (env, provider)
 }
 
 fn start_frame(session_id: &str, stream_id: &str) -> crate::contract::inbound::ChatStartWs {
@@ -3411,8 +3443,8 @@ fn start_frame(session_id: &str, stream_id: &str) -> crate::contract::inbound::C
 /// only have come from the secondary route.
 const SECONDARY_URL: &str = "https://secondary.example.test/v1";
 
-/// [`start_frame`] with the client PINNING a route, which is the case an absent
-/// `route` has to stay distinguishable from (D-071).
+/// [`start_frame`] with the client PINNING a route, which an absent `route` has
+/// to stay distinguishable from.
 fn pinned_frame(
     session_id: &str,
     stream_id: &str,
@@ -3461,23 +3493,13 @@ async fn drain_until(conn: &mut Connection, kind: &str) -> Vec<Value> {
 
 #[tokio::test]
 async fn a_turn_persists_the_token_usage_it_broadcast() {
-    // Live equals reload, for the context gauge. The port kept the oracle's
-    // `chat.usage` frame and dropped the `setTokenUsage` on the line beneath it
-    // (`chat-stream-muxer.ts:371-378`), so the gauge was correct while the turn
-    // streamed and empty every time the session was reopened.
-    let env = chat_env(
-        Arc::new(crate::llm::testing::ScriptedProvider::text("hello world")),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("hi"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    // Live equals reload, for the context gauge: broadcasting usage without
+    // persisting it leaves the gauge correct while the turn streams and empty
+    // every time the session is reopened.
+    let env = text_env("hello world").await;
+    env.local().await;
+    let session = env.asked("hi").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let frames = drain_until(&mut conn, "chat.done").await;
@@ -3495,19 +3517,10 @@ async fn a_turn_persists_the_token_usage_it_broadcast() {
 
 #[tokio::test]
 async fn a_turn_streams_announces_and_persists_its_assistant_message() {
-    let env = chat_env(
-        Arc::new(crate::llm::testing::ScriptedProvider::text("hello world")),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("hi"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let env = text_env("hello world").await;
+    env.local().await;
+    let session = env.asked("hi").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let frames = drain_until(&mut conn, "chat.done").await;
@@ -3538,18 +3551,10 @@ async fn a_turn_streams_announces_and_persists_its_assistant_message() {
 async fn a_second_start_on_the_same_session_is_refused_as_session_busy() {
     // The provider never finishes, so the first turn is genuinely still running
     // when the second frame arrives.
-    let env = chat_env(
-        Arc::new(
-            crate::llm::testing::ScriptedProvider::text("slow")
-                .with_gap(std::time::Duration::from_secs(3600)),
-        ),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
+    let env = wedged_env().await;
+    env.local().await;
     let session = new_session(&env.store, ALICE).await;
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     wait_active(&env.chat, &session).await;
@@ -3570,26 +3575,10 @@ async fn a_second_start_on_the_same_session_is_refused_as_session_busy() {
 async fn a_different_client_may_run_a_turn_on_the_same_session() {
     // Reads like a bug and is not: every frame is scoped to its owner, so two
     // clients on one session cannot see each other's stream.
-    let env = chat_env(
-        Arc::new(
-            crate::llm::testing::ScriptedProvider::text("slow")
-                .with_gap(std::time::Duration::from_secs(3600)),
-        ),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
-    let session = env
-        .store
-        .create(CreateSessionInput {
-            owner_client_id: ALICE.to_string(),
-            ..Default::default()
-        })
-        .await
-        .unwrap()
-        .id;
-    let mut alice = env.frames.register(ALICE);
-    let _ = drain(&mut alice);
+    let env = wedged_env().await;
+    env.local().await;
+    let session = new_session(&env.store, ALICE).await;
+    let mut alice = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     wait_active(&env.chat, &session).await;
@@ -3609,18 +3598,10 @@ async fn a_different_client_may_run_a_turn_on_the_same_session() {
 
 #[tokio::test]
 async fn an_unconfigured_external_provider_fails_fast_with_an_actionable_message() {
-    let env = chat_env(
-        Arc::new(crate::llm::testing::ScriptedProvider::text("never reached")),
-        ChatDeps::unwired(),
-    )
-    .await;
-    env.settings
-        .patch(settings_of(json!({ "llm.provider": "external" })))
-        .await
-        .unwrap();
+    let env = text_env("never reached").await;
+    env.patch(json!({ "llm.provider": "external" })).await;
     let session = new_session(&env.store, ALICE).await;
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let frames = drain_until(&mut conn, "chat.error").await;
@@ -3648,14 +3629,9 @@ async fn a_model_that_only_calls_tools_stops_at_the_hop_limit() {
         ChatDeps::unwired(),
     )
     .await;
-    use_local_provider(&env.settings).await;
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("go"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    env.local().await;
+    let session = env.asked("go").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let frames = drain_until(&mut conn, "chat.done").await;
@@ -3701,14 +3677,9 @@ async fn an_interrupt_ends_the_turn_and_keeps_what_it_streamed() {
         ChatDeps::unwired(),
     )
     .await;
-    use_local_provider(&env.settings).await;
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("hi"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    env.local().await;
+    let session = env.asked("hi").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     // Wait for the first delta so there is something to keep, then interrupt.
@@ -3733,18 +3704,10 @@ async fn an_interrupt_ends_the_turn_and_keeps_what_it_streamed() {
 
 #[tokio::test]
 async fn an_interrupt_from_another_client_is_ignored() {
-    let env = chat_env(
-        Arc::new(
-            crate::llm::testing::ScriptedProvider::text("slow")
-                .with_gap(std::time::Duration::from_secs(3600)),
-        ),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
+    let env = wedged_env().await;
+    env.local().await;
     let session = new_session(&env.store, ALICE).await;
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     wait_active(&env.chat, &session).await;
@@ -3767,15 +3730,10 @@ async fn an_interrupt_from_another_client_is_ignored() {
 async fn every_stream_deregisters_once_its_turn_ends() {
     // A leaked entry has no symptom other than the background queue's idle gate
     // never opening again, so memory summaries would silently stop running.
-    let env = chat_env(
-        Arc::new(crate::llm::testing::ScriptedProvider::text("done")),
-        ChatDeps::unwired(),
-    )
-    .await;
-    use_local_provider(&env.settings).await;
+    let env = text_env("done").await;
+    env.local().await;
     let session = new_session(&env.store, ALICE).await;
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let _ = drain_until(&mut conn, "chat.done").await;
@@ -3786,37 +3744,12 @@ async fn every_stream_deregisters_once_its_turn_ends() {
 
 #[tokio::test]
 async fn dual_model_routing_is_reachable_from_a_real_turn() {
-    // D-066 is the repo owner's ruling and D-071 implemented it across three
-    // stacked defaults. Both stopped at the wire: nothing drove a turn through
-    // `resolve_route`, so staging `return LlmRoute::Default` at the top of the
-    // auto-routing branch left all 116 chat tests green. The feature was
-    // unblocked rather than demonstrated, and this is the demonstration.
-    //
     // Observed through the ENDPOINT the provider was handed, which is the only
     // externally visible consequence of the routing decision.
-    let provider = Arc::new(crate::llm::testing::ScriptedProvider::text("complex"));
-    let env = chat_env(
-        Arc::clone(&provider) as Arc<dyn crate::llm::ChatProvider>,
-        ChatDeps::unwired(),
-    )
-    .await;
-    env.settings
-        .patch(settings_of(json!({
-            "llm.provider": "local",
-            "dualModel.enabled": true,
-            "dualModel.external.baseUrl": SECONDARY_URL,
-            "dualModel.external.model": "fast-model",
-            "dualModel.external.apiKey": "sk-secondary",
-        })))
-        .await
-        .unwrap();
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("rewrite my compiler"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let (env, provider) = recording_env("complex").await;
+    env.dual_model(true).await;
+    let session = env.asked("rewrite my compiler").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let _ = drain_until(&mut conn, "chat.done").await;
@@ -3841,32 +3774,10 @@ async fn dual_model_routing_is_reachable_from_a_real_turn() {
 /// build that routes EVERYTHING to the secondary endpoint.
 #[tokio::test]
 async fn dual_model_off_keeps_every_request_on_the_default_endpoint() {
-    let provider = Arc::new(crate::llm::testing::ScriptedProvider::text("complex"));
-    let env = chat_env(
-        Arc::clone(&provider) as Arc<dyn crate::llm::ChatProvider>,
-        ChatDeps::unwired(),
-    )
-    .await;
-    // The secondary endpoint is fully configured and the classifier would say
-    // "complex"; only the switch is off. So this asserts the switch, not the
-    // absence of configuration.
-    env.settings
-        .patch(settings_of(json!({
-            "llm.provider": "local",
-            "dualModel.enabled": false,
-            "dualModel.external.baseUrl": SECONDARY_URL,
-            "dualModel.external.model": "fast-model",
-            "dualModel.external.apiKey": "sk-secondary",
-        })))
-        .await
-        .unwrap();
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("rewrite my compiler"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let (env, provider) = recording_env("complex").await;
+    env.dual_model(false).await;
+    let session = env.asked("rewrite my compiler").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let _ = drain_until(&mut conn, "chat.done").await;
@@ -3879,37 +3790,15 @@ async fn dual_model_off_keeps_every_request_on_the_default_endpoint() {
     );
 }
 
-/// A client that PINS a route must bypass the classifier entirely.
-///
-/// This is the D-058 invariant from the other side: `route` was made optional so
-/// that absence means "decide for me", which only means anything if presence
-/// still means "do not". A build that ignored `frame.route` would pass both
-/// tests above.
+/// A client that PINS a route must bypass the classifier entirely: `route` is
+/// optional so absence means "decide for me", which only means anything if
+/// presence still means "do not". A build ignoring it passes both tests above.
 #[tokio::test]
 async fn a_pinned_default_route_suppresses_auto_routing() {
-    let provider = Arc::new(crate::llm::testing::ScriptedProvider::text("complex"));
-    let env = chat_env(
-        Arc::clone(&provider) as Arc<dyn crate::llm::ChatProvider>,
-        ChatDeps::unwired(),
-    )
-    .await;
-    env.settings
-        .patch(settings_of(json!({
-            "llm.provider": "local",
-            "dualModel.enabled": true,
-            "dualModel.external.baseUrl": SECONDARY_URL,
-            "dualModel.external.model": "fast-model",
-            "dualModel.external.apiKey": "sk-secondary",
-        })))
-        .await
-        .unwrap();
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("rewrite my compiler"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    let (env, provider) = recording_env("complex").await;
+    env.dual_model(true).await;
+    let session = env.asked("rewrite my compiler").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat
         .start(ALICE, pinned_frame(&session, "s1", "default"))
@@ -3926,13 +3815,11 @@ async fn a_pinned_default_route_suppresses_auto_routing() {
 
 #[tokio::test]
 async fn a_turn_keeps_the_channel_adjusted_local_port() {
-    // The regression D-072 introduced in the TypeScript, pinned here so the
-    // Rust core cannot acquire it. `load_effective_resolved` carries the
-    // schema's `llm.port = "7701"`, which is NOT channel-adjusted; handing that
-    // record to the endpoint resolver makes the present key beat the resolver's
-    // own channel-aware fallback, and a `dev` core then talks to the STABLE
-    // channel's llama-server. The turn therefore reads the record twice and
-    // resolves the endpoint from the sparse one.
+    // `load_effective_resolved` carries the schema's `llm.port = "7701"`, which
+    // is NOT channel-adjusted, and a present key beats the resolver's own
+    // channel-aware fallback, so a `dev` core would talk to the stable channel's
+    // llama-server. The turn therefore resolves the endpoint from the sparse
+    // record instead.
     let provider = Arc::new(crate::llm::testing::ScriptedProvider::text("hi"));
     let env = chat_env_on(
         Arc::clone(&provider) as Arc<dyn crate::llm::ChatProvider>,
@@ -3940,23 +3827,17 @@ async fn a_turn_keeps_the_channel_adjusted_local_port() {
         crate::config::Channel::Dev,
     )
     .await;
-    use_local_provider(&env.settings).await;
-    let session = new_session(&env.store, ALICE).await;
-    env.store
-        .insert_message_after(&session, user_message("hi"), None)
-        .await
-        .unwrap();
-    let mut conn = env.frames.register(ALICE);
-    let _ = drain(&mut conn);
+    env.local().await;
+    let session = env.asked("hi").await;
+    let mut conn = env.conn(ALICE);
 
     env.chat.start(ALICE, start_frame(&session, "s1")).await;
     let _ = drain_until(&mut conn, "chat.done").await;
 
     // 7701 + Channel::Dev's offset of 20. A literal, not the constant: a test
     // written in terms of the offset it tests cannot see that offset change.
-    // Every request the turn made, which is the hop plus the title generation
-    // that fires after a natural stop. Both resolve their endpoint the same
-    // way, so both are evidence.
+    // Every request, which is the hop plus the title generation that fires
+    // after a natural stop: both resolve their endpoint the same way.
     let seen = provider.requests();
     assert!(!seen.is_empty(), "the turn never reached the provider");
     for request in &seen {

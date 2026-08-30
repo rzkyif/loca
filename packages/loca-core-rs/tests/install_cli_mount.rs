@@ -1,33 +1,21 @@
 //! The install CLI is MOUNTED in the desktop frontend.
 //!
-//! **Why this is an integration test and not a unit test.** The thing under
-//! test is a call in `src/bin/loca-core.rs`, and a binary's `main` is not
-//! reachable from the library's own suite. Deleting that call compiled, passed
-//! every one of the crate's ~2100 tests, and made the entire `install/` subtree
-//! (1,338 lines) unreachable in silence: the NSIS installer, the macOS pkg
-//! postinstall, the deb/rpm hooks, every uninstaller and the Client's
-//! `start-service` / `stop-service` all invoke it as a subcommand.
+//! An integration test because the thing under test is a call in
+//! `src/bin/loca-core.rs`, and a binary's `main` is not reachable from the
+//! library's suite. Deleting that call compiles, passes every unit test, and
+//! silently makes the whole `install/` subtree unreachable: every installer
+//! hook, every uninstaller, and the Client's service controls invoke it.
 //!
-//! That is the ported-but-unreachable family (D-134, D-141, D-165, D-166), and
-//! it is the one instance the fleet knew about and left standing: `RESUME.md`
-//! carried it as "stated rather than left to be found", verified by hand
-//! against the real binary and by nothing else.
-//!
-//! **Why it was left.** `ServiceCtx.home` is deliberately `proc::real_home()`
+//! **Why it is hard.** `ServiceCtx.home` is deliberately `proc::real_home()`
 //! rather than `paths.root()`, because service definitions must land in the
 //! real `~/Library` or `~/.config` even when `LOCA_CORE_HOME` redirects core
-//! state to a tempdir. So `LOCA_CORE_HOME` does NOT isolate the service verbs,
-//! and running one "just to check the wiring" edits the developer's actual
-//! machine. Every verb does real work; none is a safe read-only probe.
+//! state. So `LOCA_CORE_HOME` does NOT isolate the service verbs, and every one
+//! of them does real work on the developer's machine.
 //!
-//! **What makes it testable anyway.** `mint-code` is the one verb whose work is
-//! confined to `paths` (which `LOCA_CORE_HOME` does isolate) and to loopback.
-//! With no core running it simply waits for a `/health` that never comes. So
-//! the observable is not what the verb ACHIEVES, it is what the process
-//! BECOMES: a dispatched subcommand waits and never binds a port, while an
-//! unmounted binary ignores argv and boots a server. Those two are
-//! distinguishable in a couple of seconds and without touching anything
-//! outside the tempdir.
+//! `mint-code` is the exception: its work is confined to `paths` and to
+//! loopback, and with no core running it just waits. So the observable is what
+//! the process BECOMES, not what the verb achieves: a dispatched subcommand
+//! waits and never binds a port, while an unmounted binary boots a server.
 
 // An integration test is its own crate, so the library's `#[cfg(test)]` allows
 // do not reach it and the ban has to be lifted here.
@@ -37,14 +25,9 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Plant an empty `loca-core-updater` where the boot-time helper check looks.
-///
-/// The desktop frontend refuses to start without it (D-025), which is the whole
-/// point of that check: a core with no relauncher discovers it mid-update.
-/// Nothing here runs the file, so an empty one is enough, and the conformance
-/// harness seeds the same stub for the same reason
-/// (`tests/conformance/harness/home.ts:80-81`). The name carries the `-dev`
-/// channel suffix because these runs set `LOCA_CHANNEL=dev`.
+/// Plant an empty `loca-core-updater` where the boot-time helper check looks:
+/// the desktop frontend refuses to start without one. Nothing runs the file, so
+/// empty is enough; the `-dev` suffix matches `LOCA_CHANNEL=dev` below.
 fn seed_updater_stub(home: &std::path::Path) {
     let bin = home.join("bin");
     std::fs::create_dir_all(&bin).expect("bin dir");
@@ -56,7 +39,7 @@ fn seed_updater_stub(home: &std::path::Path) {
     std::fs::write(bin.join(name), b"").expect("updater stub");
 }
 
-/// The distinctive line `mint-code` prints while it waits (`pair.rs:158`).
+/// The distinctive line `mint-code` prints while it waits.
 const MINTING: &str = "waiting for core's TLS cert";
 /// The distinctive line a BOOT prints once it is serving (`boot.rs`).
 const SERVING: &str = "listening on";
@@ -64,10 +47,8 @@ const SERVING: &str = "listening on";
 /// Run the built binary with `args` for `budget`, then kill it and return
 /// everything it wrote.
 ///
-/// Killed rather than waited on: neither outcome under test exits on its own
-/// inside the budget. `mint-code` has a 30-attempt health budget and a booted
-/// core runs until signalled, so a test that waited for exit would take 30
-/// seconds to learn what two seconds of output already says.
+/// Killed rather than waited on: neither outcome exits on its own inside the
+/// budget, and two seconds of output already says which one happened.
 fn run_briefly(args: &[&str], budget: Duration) -> String {
     let home = tempfile::tempdir().expect("tempdir");
     seed_updater_stub(home.path());
@@ -106,11 +87,9 @@ fn run_briefly(args: &[&str], budget: Duration) -> String {
 
 #[test]
 fn a_subcommand_reaches_the_install_cli_instead_of_booting_a_server() {
-    // 7 seconds, and the number is derived rather than picked: `wait_for_health`
-    // suppresses its first three attempts (`pair.rs:156`, `attempt > 3`) and
-    // beats once a second between them, so the line cannot appear before ~5s. A
-    // 3-second budget produced a FALSE RED on the first run of this test, which
-    // is a reminder that a timing budget is part of the assertion.
+    // 7 seconds, derived rather than picked: `wait_for_health` suppresses its
+    // first three attempts and beats once a second, so the line cannot appear
+    // before ~5s and a shorter budget is a false red.
     let output = run_briefly(&["mint-code"], Duration::from_secs(7));
 
     assert!(
@@ -119,10 +98,9 @@ fn a_subcommand_reaches_the_install_cli_instead_of_booting_a_server() {
          installer hook, every uninstaller and the Client's service controls is unreachable. \
          Output was:\n{output}",
     );
-    // The half that catches the specific regression. Without the `maybe_run`
-    // call the binary ignores argv entirely and boots normally, which still
-    // produces plenty of output; only the ABSENCE of a listener separates that
-    // from a dispatch.
+    // Without the `maybe_run` call the binary ignores argv and boots normally,
+    // which still produces output: only the absence of a listener separates
+    // that from a dispatch.
     assert!(
         !output.contains(SERVING),
         "a subcommand booted a server instead of dispatching, so argv is being ignored. \
@@ -132,15 +110,10 @@ fn a_subcommand_reaches_the_install_cli_instead_of_booting_a_server() {
 
 #[test]
 fn empty_argv_still_boots_rather_than_being_treated_as_nothing_to_do() {
-    // The `None` arm, and it is as load-bearing as the `Some`. launchd starts
-    // this binary with EMPTY argv and the updater relaunches it with
-    // `--restart-args`, so a frontend that treated "not a subcommand" as
-    // "nothing to do" would give a service install that never starts a core and
-    // a self-update that never comes back.
-    //
-    // Cheap to get wrong in the obvious direction: an over-eager guard that
-    // dispatched on any argv, or a `maybe_run` that returned `Some(0)` for an
-    // unknown verb, would exit silently here and this is what notices.
+    // The `None` arm, as load-bearing as the `Some`: launchd starts this
+    // binary with EMPTY argv and the updater relaunches it with
+    // `--restart-args`, so treating "not a subcommand" as "nothing to do"
+    // gives a service install that never starts a core.
     let output = run_briefly(&[], Duration::from_secs(6));
 
     assert!(
@@ -153,15 +126,13 @@ fn empty_argv_still_boots_rather_than_being_treated_as_nothing_to_do() {
 /// Run the built binary to COMPLETION and return `(exit code, output)`.
 ///
 /// Separate from [`run_briefly`] because the two outcomes below exit on their
-/// own: one refuses to start and one rolls back, and the exit CODE is half of
-/// what each asserts.
+/// own, and the exit code is half of what each asserts.
 fn run_to_exit(home: &std::path::Path, port: &str, budget: Duration) -> (Option<i32>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_loca-core"))
         .env("LOCA_CHANNEL", "dev")
         .env("LOCA_CORE_HOME", home)
-        // Its own port. Neither outcome here should bind anything, but a
-        // REGRESSION in either boots a full core, and on the shared dev port
-        // that would fail the neighbouring test instead of this one.
+        // Its own port: a regression in either boots a full core, and on the
+        // shared dev port that would fail the neighbouring test.
         .env("LOCA_CORE_PORT", port)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -177,9 +148,8 @@ fn run_to_exit(home: &std::path::Path, port: &str, budget: Duration) -> (Option<
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    // Reaped on both paths, not just the timeout one: a process that exited on
-    // its own was already collected by `try_wait`, and calling `wait` again on
-    // it is a no-op that keeps the "always waited" rule readable.
+    // Reaped on both paths: a second `wait` on an already-collected process
+    // is a no-op.
     let _ = child.kill();
     let _ = child.wait();
 
@@ -196,13 +166,10 @@ fn run_to_exit(home: &std::path::Path, port: &str, budget: Duration) -> (Option<
 
 #[test]
 fn a_missing_updater_stops_the_core_starting_at_all() {
-    // `main`'s `ensure_helper_binaries` call (D-025).
-    //
-    // Without it a core with no `loca-core-updater` starts happily and finds
-    // out mid-update that nothing can relaunch it, which turns a broken install
-    // into a core that is DOWN rather than one that refused to come up. The
-    // check is in the frontend rather than in `boot()` on purpose: `boot()` is
-    // shared with the mobile embed, which has no updater and no self-update.
+    // `main`'s `ensure_helper_binaries` call. Without it a core with no
+    // `loca-core-updater` starts happily and finds out mid-update that nothing
+    // can relaunch it. In the frontend rather than `boot()`, which is shared
+    // with the mobile embed, where there is no updater at all.
     let home = tempfile::tempdir().expect("tempdir");
     // Deliberately NOT seeded: this is the one test that wants it missing.
     let (code, output) = run_to_exit(home.path(), "7741", Duration::from_secs(15));
@@ -221,25 +188,20 @@ fn a_missing_updater_stops_the_core_starting_at_all() {
 
 #[test]
 fn a_spent_update_marker_rolls_back_and_exits_75() {
-    // `main`'s `handle_update_marker_on_boot` call.
+    // `main`'s `handle_update_marker_on_boot` call. `commit_update` in `boot`
+    // clears markers on healthy boots; without this half nothing consults one
+    // on an unhealthy boot, so a core that updated into a binary that cannot
+    // start crash-loops with its recovery unused.
     //
-    // The write half of this was already wired (`commit_update` in `boot`), so
-    // markers were being CLEARED on healthy boots and never CONSULTED on
-    // unhealthy ones: a core that self-updated into a binary that cannot start
-    // would crash-loop forever with its own recovery sitting unused on disk.
-    //
-    // **Exit 75, not 0.** launchd relaunches on any exit, but systemd's
-    // `Restart=on-failure` and Task Scheduler's only relaunch on a failure
-    // exit, so a clean exit would leave the rolled-back binary stopped on two
-    // of three platforms.
+    // **Exit 75, not 0.** systemd's `Restart=on-failure` and Task Scheduler's
+    // only relaunch on a failure exit.
     let home = tempfile::tempdir().expect("tempdir");
     seed_updater_stub(home.path());
     let paths = loca_core::paths::Paths::rooted(home.path());
 
     // The rollback moves the LIVE binary aside and renames the anchor into its
-    // place, so both files have to exist where an install would have put them.
-    // The process under test runs from cargo's target dir, which is why this is
-    // planted rather than assumed.
+    // place, so both must exist where an install would have put them; the
+    // process under test runs from cargo's target dir.
     let live = home
         .path()
         .join("bin")
@@ -249,8 +211,8 @@ fn a_spent_update_marker_rolls_back_and_exits_75() {
             "loca-core-dev"
         });
     std::fs::write(&live, b"the core that cannot start").expect("live binary");
-    // The anchor the rollback restores. Non-empty, because an empty one is what
-    // an interrupted copy leaves and the rollback refuses it by design.
+    // The anchor. Non-empty, because an empty one is an interrupted copy and
+    // the rollback refuses it.
     let anchor = home
         .path()
         .join("bin")
@@ -260,8 +222,7 @@ fn a_spent_update_marker_rolls_back_and_exits_75() {
             "loca-core-dev.old"
         });
     std::fs::write(&anchor, b"the previous core").expect("anchor");
-    // Executable, because the rollback inspects the anchor rather than trusting
-    // its existence and refuses to install one it can see is unrunnable.
+    // Executable: the rollback refuses an anchor it can see is unrunnable.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -282,8 +243,8 @@ fn a_spent_update_marker_rolls_back_and_exits_75() {
         else {
             panic!("the marker was not written");
         };
-        // Re-read between bumps: `bump` writes `marker.attempts + 1` from the
-        // snapshot it is given, so bumping the same one twice still lands on 1.
+        // Re-read between bumps: `bump` writes `attempts + 1` from the
+        // snapshot it is given.
         let mut marker = marker;
         for _ in 0..loca_core::update::rollback::MAX_BOOT_ATTEMPTS {
             loca_core::update::marker::bump(&paths, &marker)

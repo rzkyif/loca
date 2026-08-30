@@ -1,12 +1,9 @@
 //! Source-string parsing and the size probe.
 //!
-//! One source format: `@user/repo/branch/filename`. It maps to
-//! `user/repo/filename` under the destination root (the branch is addressing,
-//! not layout) and to the HuggingFace resolve URL.
-//!
-//! This module decides where bytes land on disk, so its per-component check is a
-//! security control rather than input hygiene: `relPath` is joined onto a root
-//! that holds every model the user owns.
+//! One source format: `@user/repo/branch/filename`, mapping to
+//! `user/repo/filename` under the destination root and to the HuggingFace
+//! resolve URL. The per-component check is a security control: `rel_path` is
+//! joined onto a root that holds every model the user owns.
 
 use std::path::{Path, PathBuf};
 
@@ -15,14 +12,8 @@ use crate::downloads::cancel::CancellationToken;
 use crate::downloads::net::{Net, Redirect};
 use crate::error::{validation, Result};
 
-/// Whether a probe may reach the network for a size hint.
-///
-/// An enum rather than the `bool` the TypeScript passes, because this is the one
-/// boolean in the codebase whose two answers differ by "does this contact
-/// HuggingFace". `probe(sources, false)` read backwards is a silent consent
-/// violation; `Probe::LocalOnly` read backwards does not compile into the wrong
-/// thing. The `bool` survives only at D6's already-shipped trait boundary, where
-/// it is converted on the first line.
+/// Whether a probe may reach the network for a size hint. An enum rather than a
+/// `bool` because reading it backwards would be a silent consent violation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Probe {
     /// Presence only. The always-on requirements snapshot's mode.
@@ -48,14 +39,9 @@ pub struct ParsedSource {
     pub filename: String,
 }
 
-/// Reject a path component that would let `rel_path` escape the destination root
-/// when joined: traversal, empties, NUL, or a separator where one segment is
-/// expected.
-///
-/// The backslash rejection is not Windows pedantry: `a\..\..\etc` is one
-/// component to a POSIX split and three to the Windows path API, so a component
-/// that passes this check on one platform and traverses on the other is exactly
-/// the defect this refuses.
+/// Reject a component that could escape the destination root when joined.
+/// Backslashes are refused because `a\..\..\etc` is one component to a POSIX
+/// split and three to the Windows path API.
 fn assert_safe_component(component: &str, source: &str) -> Result<()> {
     if component.is_empty()
         || component == "."
@@ -70,8 +56,7 @@ fn assert_safe_component(component: &str, source: &str) -> Result<()> {
 
 pub fn parse_source(source: &str, hf_base_url: &str) -> Result<ParsedSource> {
     if !source.starts_with('@') {
-        // A bare path. Accepted so a caller can name a file that is already on
-        // disk; not downloadable, which the empty URL is how the transfer learns.
+        // A bare path: already on disk, not downloadable (the empty URL says so).
         let filename = source.rsplit('/').next().unwrap_or(source).to_string();
         return Ok(ParsedSource {
             rel_path: source.to_string(),
@@ -87,9 +72,8 @@ pub fn parse_source(source: &str, hf_base_url: &str) -> Result<ParsedSource> {
     assert_safe_component(username, source)?;
     assert_safe_component(reponame, source)?;
     assert_safe_component(branchname, source)?;
-    // The filename may legitimately be a nested repo path (`subdir/model.gguf`),
-    // so each segment is checked rather than the joined string: a check on the
-    // join sees `a/../../etc` as one unfamiliar name and passes it.
+    // The filename may be a nested repo path, so each segment is checked: a
+    // check on the join sees `a/../../etc` as one unfamiliar name.
     let filename = parts[3..].join("/");
     for segment in filename.split('/') {
         assert_safe_component(segment, source)?;
@@ -120,10 +104,8 @@ impl ProbeResult {
             source: self.source.clone(),
             already_have: self.already_have,
             size_hint: self.size_bytes.map(|n| n as i64),
-            // A probe knows neither: `error` is the requirements snapshot's own
-            // carry-through and `version` belongs to a binary plan. Absent, not
-            // defaulted, because the contract omits them when unset and a
-            // present-but-empty answer is a different one (D-028).
+            // `error` and `version` belong to other plan kinds; the contract
+            // omits them when unset, and present-but-empty is a different answer.
             error: None,
             version: None,
         }
@@ -131,12 +113,8 @@ impl ProbeResult {
 }
 
 /// Presence, and for a missing file in [`Probe::WithSizes`] a size hint.
-///
-/// The size HEAD is the only outbound call here, and it is skipped three ways:
-/// a non-`@` source has no upstream, a file already on disk needs no estimate,
-/// and [`Probe::LocalOnly`] forbids it outright. That last one is what the
-/// always-on requirements snapshot passes, so this function is on the path the
-/// consent rule is really protecting.
+/// The size HEAD is the only outbound call and is skipped for a non-`@` source,
+/// a file already on disk, and [`Probe::LocalOnly`] (the consent-protected path).
 pub async fn probe_source(
     net: &Net,
     source: &str,
@@ -167,25 +145,15 @@ pub async fn probe_source(
 /// The size of `url`, or `None` when it cannot be established.
 ///
 /// A HuggingFace resolve URL 302s to a CDN that often omits `content-length` on
-/// a HEAD, while the 302 itself carries `x-linked-size`. So the redirect is read
-/// first and the followed HEAD is the fallback, not the other way round.
-///
-/// Every failure is swallowed: a probe is an estimate for a progress bar, and a
-/// caller that cannot show one still has to be able to offer the download.
-/// A manual HEAD that ERRORS ends the probe rather than falling through to the
-/// followed one: the oracle wraps both in one `try` (`sources.ts:93-127`), so a
-/// failing first HEAD skips the second. Trying anyway would make an extra
-/// outbound request per failed probe, and would answer a size where the oracle
-/// answers none.
+/// a HEAD while the 302 carries `x-linked-size`, so the redirect is read first.
+/// Every failure is swallowed (a probe is a progress-bar estimate), and a manual
+/// HEAD that errors ends the probe rather than costing a second request.
 async fn probe_size(net: &Net, url: &str, cancel: &CancellationToken) -> Option<u64> {
     let head = net.head(url, Redirect::Manual, cancel).await.ok()?;
     if let Some(linked) = head.header_u64("x-linked-size") {
         return Some(linked);
     }
-    // Zero means the REDIRECT's own body rather than the resource's. A 302
-    // carries no body and plenty of servers say so explicitly, so taking 0
-    // here reports the file as empty and skips the fallback below that
-    // would have found its real size.
+    // Zero describes the redirect's own (empty) body, not the resource.
     match head.header_u64("content-length") {
         Some(length) if length > 0 => return Some(length),
         _ => {}
@@ -204,10 +172,24 @@ mod tests {
     use crate::error::ErrorCode;
 
     const HF: &str = "https://huggingface.co";
+    const SRC: &str = "@u/r/main/model.gguf";
+
+    async fn probe(net: &Net, dir: &Path, base: &str, mode: Probe) -> ProbeResult {
+        let cancel = CancellationToken::new();
+        bounded(probe_source(net, SRC, dir, base, mode, &cancel))
+            .await
+            .unwrap()
+    }
+
+    fn unsafe_component(source: &str) {
+        let err = parse_source(source, HF).unwrap_err();
+        assert_eq!(err.code, ErrorCode::ValidationError, "{source}");
+        assert!(err.message.contains("unsafe source component"), "{source}");
+    }
 
     #[test]
     fn the_on_disk_path_is_user_repo_file_with_no_branch() {
-        let parsed = parse_source("@u/r/main/model.gguf", HF).unwrap();
+        let parsed = parse_source(SRC, HF).unwrap();
         assert_eq!(parsed.rel_path, "u/r/model.gguf");
         assert_eq!(
             parsed.url,
@@ -224,10 +206,7 @@ mod tests {
             parsed.url,
             "https://huggingface.co/u/r/resolve/main/sub/dir/model.gguf?download=true"
         );
-        assert_eq!(
-            parsed.filename, "model.gguf",
-            "the filename is the base name; the relative path keeps the directories"
-        );
+        assert_eq!(parsed.filename, "model.gguf");
     }
 
     #[test]
@@ -239,40 +218,30 @@ mod tests {
             "@u/r/main/../../../etc/passwd",
             "@./r/main/f.gguf",
         ] {
-            let err = parse_source(source, HF).unwrap_err();
-            assert_eq!(err.code, ErrorCode::ValidationError, "{source}");
-            assert!(err.message.contains("unsafe source component"), "{source}");
+            unsafe_component(source);
         }
     }
 
     #[test]
     fn a_nested_filename_is_checked_segment_by_segment() {
-        // The join reads as one unfamiliar name and passes; the segments do not.
-        let err = parse_source("@u/r/main/sub/../../../etc/passwd", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
+        unsafe_component("@u/r/main/sub/../../../etc/passwd");
     }
 
     #[test]
     fn a_backslash_component_is_refused() {
-        // One component to a POSIX split, three to the Windows path API.
-        let err = parse_source("@u/r/main/sub\\..\\..\\evil", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
-        let err = parse_source("@u\\..\\../r/main/f", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
+        unsafe_component("@u/r/main/sub\\..\\..\\evil");
+        unsafe_component("@u\\..\\../r/main/f");
     }
 
     #[test]
     fn a_nul_component_is_refused() {
-        let err = parse_source("@u/r/main/model\0.gguf", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
+        unsafe_component("@u/r/main/model\0.gguf");
     }
 
     #[test]
     fn an_empty_component_is_refused() {
-        let err = parse_source("@u//main/f.gguf", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
-        let err = parse_source("@u/r/main/sub//f.gguf", HF).unwrap_err();
-        assert!(err.message.contains("unsafe source component"));
+        unsafe_component("@u//main/f.gguf");
+        unsafe_component("@u/r/main/sub//f.gguf");
     }
 
     #[test]
@@ -290,10 +259,7 @@ mod tests {
     fn a_bare_path_parses_as_present_but_not_downloadable() {
         let parsed = parse_source("/abs/path/model.gguf", HF).unwrap();
         assert_eq!(parsed.rel_path, "/abs/path/model.gguf");
-        assert_eq!(
-            parsed.url, "",
-            "an empty URL is how the transfer refuses it"
-        );
+        assert_eq!(parsed.url, "");
         assert_eq!(parsed.filename, "model.gguf");
     }
 
@@ -307,23 +273,9 @@ mod tests {
 
     #[tokio::test]
     async fn probing_locally_makes_no_outbound_call() {
-        // The consent rule's own test: this is the mode the always-on
-        // requirements snapshot uses, and it must never reach a host.
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            HF,
-            Probe::LocalOnly,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), HF, Probe::LocalOnly).await;
         assert_eq!(net.calls(), 0, "a local-only probe reached the network");
         assert!(!probe.already_have);
         assert_eq!(probe.size_bytes, None);
@@ -336,19 +288,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("u/r")).unwrap();
         std::fs::write(dir.path().join("u/r/model.gguf"), b"here").unwrap();
-        let cancel = CancellationToken::new();
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            HF,
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), HF, Probe::WithSizes).await;
         assert!(probe.already_have);
         assert_eq!(probe.size_bytes, None, "presence needs no size estimate");
         assert_eq!(net.calls(), 0, "a file on disk was probed upstream anyway");
@@ -356,64 +296,28 @@ mod tests {
 
     #[tokio::test]
     async fn the_302_carries_the_real_size_and_the_cdn_does_not() {
-        // x-linked-size is the resource; the redirect's own content-length is
-        // whatever the resolve endpoint answered with, which is not it.
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
         let server = Upstream::start(Serve::Status(200))
             .await
             .with_head_redirect(
                 "/cdn",
                 &[("x-linked-size", "4294967296"), ("content-length", "12")],
             );
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            server.base(),
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), server.base(), Probe::WithSizes).await;
         assert_eq!(probe.size_bytes, Some(4_294_967_296));
         assert_eq!(net.calls(), 1, "the 302 answered, so no fallback HEAD ran");
     }
 
     #[tokio::test]
     async fn a_redirect_that_declares_a_zero_length_falls_back_rather_than_believing_it() {
-        // A 302 carries no body, and plenty of servers say `content-length: 0`
-        // explicitly, so a zero here describes the REDIRECT rather than the
-        // resource. Believing it reports the file as empty and skips the
-        // fallback that would have found its real size.
-        //
-        // The oracle had this wrong and was fixed alongside: it tested the
-        // truthiness of the STRING (`sources.ts:105`) and "0" is truthy, so a
-        // declared zero ended the probe. Fixed in both, because a fix on one
-        // side only would be a divergence from the thing this port is checked
-        // against.
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
         let server = Upstream::start(Serve::Status(200))
             .await
             .with_head_redirect("/cdn", &[("content-length", "0")])
             .with_head_headers(&[("content-length", "777")]);
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            server.base(),
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), server.base(), Probe::WithSizes).await;
         assert_eq!(
             probe.size_bytes,
             Some(777),
@@ -426,50 +330,21 @@ mod tests {
     async fn a_redirect_with_no_size_falls_back_to_the_followed_head() {
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
         let server = Upstream::start(Serve::Status(200))
             .await
             .with_head_redirect("/cdn", &[])
             .with_head_headers(&[("content-length", "777")]);
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            server.base(),
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), server.base(), Probe::WithSizes).await;
         assert_eq!(probe.size_bytes, Some(777));
         assert_eq!(net.calls(), 2, "the manual HEAD, then the followed one");
     }
 
     #[tokio::test]
     async fn a_manual_head_that_fails_ends_the_probe_rather_than_trying_again() {
-        // The oracle wraps both HEADs in ONE try (`sources.ts:93-127`), so a
-        // failing first one skips the second. Falling through costs an extra
-        // outbound request per failed probe, and reports a size where the
-        // oracle reports none, which is a wire difference rather than a tidiness
-        // one.
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            // Port 1 never listens, so the HEAD fails at connect.
-            "http://127.0.0.1:1",
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        // Port 1 never listens, so the HEAD fails at connect.
+        let probe = probe(&net, dir.path(), "http://127.0.0.1:1", Probe::WithSizes).await;
         assert_eq!(probe.size_bytes, None);
         assert_eq!(
             net.calls(),
@@ -482,19 +357,7 @@ mod tests {
     async fn a_probe_failure_is_a_missing_estimate_rather_than_an_error() {
         let net = Net::new().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let cancel = CancellationToken::new();
-
-        let probe = bounded(probe_source(
-            &net,
-            "@u/r/main/model.gguf",
-            dir.path(),
-            "http://127.0.0.1:1",
-            Probe::WithSizes,
-            &cancel,
-        ))
-        .await
-        .unwrap();
-
+        let probe = probe(&net, dir.path(), "http://127.0.0.1:1", Probe::WithSizes).await;
         assert_eq!(probe.size_bytes, None);
         assert!(
             !probe.already_have,

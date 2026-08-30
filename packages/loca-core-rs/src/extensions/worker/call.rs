@@ -1,21 +1,13 @@
 //! One in-flight tool call against a warm worker.
 //!
-//! Ports `packages/loca-core/src/extensions/worker-call.ts`.
-//!
 //! Owns the call's settle state, its pausable time budget ([`super::timeout`]),
 //! the bookkeeping for every open user prompt (askUser, permission, schedule
 //! confirmation, and the module broker's own permission prompts), and the
 //! handler for everything the worker says.
 //!
-//! # What it deliberately does not own
-//!
-//! It never touches the pool's maps or the worker's in-flight count. Four
+//! It never touches the pool's maps or the worker's in-flight count: four
 //! callbacks ([`PoolCallbacks`]) report each lifecycle transition back to the
-//! pool, which owns both the accounting (so the count is released from exactly
-//! one place per settle) and the worker's warm/retire/kill fate. A call that
-//! decremented the count itself would double-decrement on any path that also
-//! kills the worker, and a worker stuck at a negative in-flight count is a
-//! worker eviction can never take.
+//! pool, so the count is released from exactly one place per settle.
 //!
 //! # The three invariants that are easy to lose
 //!
@@ -145,12 +137,9 @@ pub struct ModuleCall {
     pub args: Value,
 }
 
-/// How the broker asks the user for a permission mid-dispatch.
-///
-/// The approval it returns is **call scoped**: it authorises this request and
-/// is never written to the grants table. A port that persisted it would turn
-/// one "allow this once" into a permanent grant with no user-visible record of
-/// having done so.
+/// How the broker asks the user for a permission mid-dispatch. The approval it
+/// returns is **call scoped**: it authorises this request and is never written
+/// to the grants table.
 #[async_trait]
 pub trait ModulePrompter: Send + Sync {
     async fn ask(&self, prompt: ModulePrompt) -> bool;
@@ -162,11 +151,9 @@ pub trait ModuleDispatch: Send + Sync {
     async fn dispatch(&self, call: ModuleCall, prompter: Arc<dyn ModulePrompter>) -> Result<Value>;
 }
 
-/// The slice of a worker one call drives.
-///
-/// A trait rather than [`super::handle::WorkerHandle`] so the state machine can
-/// be tested against a recording worker on a paused clock. Every branch here is
-/// a timing decision, and against a real `deno` none of them is observable.
+/// The slice of a worker one call drives. A trait rather than
+/// [`super::handle::WorkerHandle`] so the state machine can be tested against a
+/// recording worker on a paused clock.
 #[async_trait]
 pub trait CallWorker: Send + Sync {
     fn subscribe(&self) -> mpsc::UnboundedReceiver<WorkerEvent>;
@@ -227,21 +214,16 @@ pub struct CallController {
     pub call_id: String,
     commands: mpsc::UnboundedSender<Command>,
     /// Shared with the driver so [`CallController::has_pending_schedule`] can
-    /// answer synchronously. Callers with side effects keyed to a confirmation
-    /// (chat persists the draft) must ask before acting: a replayed response is
-    /// otherwise indistinguishable from the real one.
+    /// answer synchronously: a replayed response is otherwise
+    /// indistinguishable from the real one.
     pending_schedule: Arc<Mutex<HashSet<String>>>,
     /// Taken by the first [`CallController::done`]; `None` afterwards.
     done: Mutex<Option<oneshot::Receiver<Result<Value>>>>,
 }
 
 impl CallController {
-    /// Ask the worker to stop.
-    ///
-    /// Returns at once. The chat bubble transitions on the
-    /// [`CallEvent::ToolCancelled`] this emits synchronously; `done` settles
-    /// when the worker acknowledges, or when the drain budget runs out and the
-    /// worker is killed.
+    /// Ask the worker to stop. Returns at once; `done` settles when the worker
+    /// acknowledges, or when the drain budget runs out and it is killed.
     pub fn cancel(&self) {
         let _ = self.commands.send(Command::Cancel);
     }
@@ -279,16 +261,10 @@ impl CallController {
         lock(&self.pending_schedule).contains(request_id)
     }
 
-    /// The call's outcome: the tool's result, or the error it failed with.
-    ///
-    /// Takes the receiver, so it resolves once. A second await is a caller
-    /// bug rather than a hang: it gets `internal_error` immediately.
-    ///
-    /// `&self` rather than `&mut self`, which is why the receiver sits behind a
-    /// lock: the orchestrator holds this controller behind a `Box<dyn Trait>`
-    /// shared with whatever answers the user's prompts, and a `&mut` outcome
-    /// would mean nothing else could touch the call while a turn was awaiting
-    /// it. The lock is never held across the await.
+    /// The call's outcome. Takes the receiver, so it resolves once; a second
+    /// await gets `internal_error` immediately rather than hanging. `&self`
+    /// (hence the lock) so the orchestrator can still answer prompts while a
+    /// turn awaits it; the lock is never held across the await.
     pub async fn done(&self) -> Result<Value> {
         let taken = lock_outcome(&self.done).take();
         let Some(done) = taken else {
@@ -346,10 +322,8 @@ pub fn start_call(
     let (done_tx, done_rx) = oneshot::channel();
     let pending_schedule = Arc::new(Mutex::new(HashSet::new()));
 
-    // Subscribe BEFORE the driver is spawned and before boot is awaited. A
-    // subscription taken after the first await misses whatever the worker said
-    // in between, which reproduces about one run in ten and looks like a hung
-    // tool rather than a lost frame.
+    // Subscribe BEFORE the driver is spawned and before boot is awaited: a
+    // later subscription misses whatever the worker said in between.
     let incoming = worker.subscribe();
 
     let driver = Driver {
@@ -390,10 +364,9 @@ struct DriverPrompter {
 impl ModulePrompter for DriverPrompter {
     async fn ask(&self, prompt: ModulePrompt) -> bool {
         let (reply_tx, reply_rx) = oneshot::channel();
-        // `mod-` is load-bearing, not decoration: module prompts reuse the
-        // `tool.permission_request` frame rather than defining their own, so
-        // the prefix is how a response is routed back to the broker rather
-        // than to the worker's terminal.
+        // `mod-` is load-bearing: module prompts reuse the
+        // `tool.permission_request` frame, so the prefix is what routes a
+        // response back to the broker rather than the worker's terminal.
         let request_id = format!("mod-{}", uuid::Uuid::new_v4());
         if self
             .commands
@@ -406,8 +379,7 @@ impl ModulePrompter for DriverPrompter {
         {
             return false;
         }
-        // A dropped sender means the call settled without answering, which is
-        // a refusal: the safe direction for a permission nobody granted.
+        // A dropped sender means the call settled without answering: a refusal.
         reply_rx.await.unwrap_or(false)
     }
 }
@@ -430,13 +402,9 @@ struct Driver {
     /// per kind: see the module header.
     open_user_waits: usize,
     cancelled: bool,
-    /// When a cancelled worker stops getting the benefit of the doubt.
-    ///
-    /// A deadline the main loop races rather than a sleep inside the cancel
-    /// handler: during the drain the worker may still acknowledge with
-    /// `tool_error`, and a handler that blocked here would not be listening
-    /// when it did. The call would then be killed, and its worker discarded,
-    /// for having answered.
+    /// When a cancelled worker stops getting the benefit of the doubt. Raced by
+    /// the main loop rather than slept on, so a worker that acknowledges during
+    /// the drain is not killed for having answered.
     cancel_deadline: Option<tokio::time::Instant>,
 }
 
@@ -461,17 +429,9 @@ impl Driver {
     ) {
         let settle = self.boot_and_drive(&mut incoming, &mut commands).await;
 
-        // Broker prompts still waiting on the user cannot be answered on a
-        // settled call, and an unanswered one leaves the broker's task parked
-        // forever holding whatever it was about to do.
-        //
-        // Deleting this loop currently changes nothing observable, and that is
-        // recorded rather than acted on: dropping the driver drops these
-        // senders, `ask` maps a dropped sender to `false`, and the outcome is
-        // identical. It is kept because that equivalence is a property of drop
-        // order rather than of this code, and the first change that keeps the
-        // driver alive past a settle would turn every open broker prompt into a
-        // permanently parked task with nothing failing to say so.
+        // Release every broker prompt, so no task parks forever on a settled
+        // call. Dropping the driver happens to do the same today, but only as a
+        // property of drop order.
         for reply in std::mem::take(&mut self.broker_prompts).into_values() {
             let _ = reply.send(false);
         }
@@ -503,8 +463,8 @@ impl Driver {
         incoming: &mut mpsc::UnboundedReceiver<WorkerEvent>,
         commands: &mut mpsc::UnboundedReceiver<Command>,
     ) -> Settle {
-        // Boot is raced against a cancel, so a call cancelled while its worker
-        // is still starting does not sit out the whole boot budget first.
+        // Raced against a cancel, so a call cancelled during boot does not sit
+        // out the whole boot budget first.
         let booted = tokio::select! {
             result = self.worker.wait_for_boot(self.budgets.boot_timeout) => result,
             () = wait_for_cancel(commands) => {
@@ -515,13 +475,9 @@ impl Driver {
             }
         };
         if let Err(err) = booted {
-            // `on_boot_failed` releases no count here, because `on_started`
-            // never ran; what it does is arm idle eviction, so a worker that
-            // failed to boot does not sit in the warm set with no timer on it
-            // waiting to be pushed out by LRU pressure that may never come.
-            // Synthesize a log event as well as failing: without a terminal
-            // event of some kind the chat bubble stays in "running" forever,
-            // and a boot failure is exactly when a user most needs to see why.
+            // `on_boot_failed` releases no count (`on_started` never ran); it
+            // arms idle eviction. The synthesized log is the bubble's only
+            // terminal event, since no worker frame is coming.
             self.emit(CallEvent::Log {
                 level: LogLevel::Error,
                 message: format!("worker boot failed: {}", err.message),
@@ -544,7 +500,6 @@ impl Driver {
             tokio::select! {
                 event = incoming.recv() => {
                     let Some(event) = event else {
-                        // The worker's driver stopped without an exit event.
                         return Settle::Kill(AppError::new(
                             ErrorCode::InternalError,
                             "tool worker stopped",
@@ -556,8 +511,8 @@ impl Driver {
                 }
                 command = commands.recv() => {
                     let Some(command) = command else {
-                        // Every controller was dropped. Nobody can answer a
-                        // prompt or read the result, so the call is abandoned.
+                        // Every controller was dropped: nobody can answer a
+                        // prompt or read the result.
                         return Settle::Kill(AppError::new(
                             ErrorCode::InternalError,
                             "tool call abandoned",
@@ -573,9 +528,8 @@ impl Driver {
                     }
                 }
                 () = sleep_until(self.cancel_deadline) => {
-                    // The cancel frame was never acknowledged, so the worker is
-                    // wedged or CPU bound and the cooperative path is not
-                    // coming. Kill it, or `done` never settles at all.
+                    // Never acknowledged, so the cooperative path is not
+                    // coming and `done` would never settle.
                     return Settle::Kill(AppError::new(
                         ErrorCode::InternalError,
                         "tool call cancelled",
@@ -602,15 +556,12 @@ impl Driver {
     fn on_budget_expired(&mut self) -> Option<Settle> {
         self.timeout.expire();
         if self.open_user_waits > 0 {
-            // Defensive: with the refcount the budget should never run out
-            // while a prompt is open. `expire` has cleared the anchor, so the
-            // next `end_user_wait` re-arms with whatever remains.
+            // Defensive: `expire` cleared the anchor, so the next
+            // `end_user_wait` re-arms with whatever remains.
             return None;
         }
-        // A cooperative `cancel` frame is useless against a CPU-bound or wedged
-        // tool: it never reaches the worker's event loop. Kill the process so
-        // it stops burning a core, rather than leaving it warm for the five
-        // minutes until idle eviction.
+        // A cooperative `cancel` never reaches a CPU-bound worker's event loop,
+        // so kill the process rather than leave it burning a core.
         Some(Settle::Kill(AppError::new(
             ErrorCode::InternalError,
             "tool call timed out",
@@ -623,17 +574,13 @@ impl Driver {
         match event {
             WorkerEvent::StderrLog { line } => {
                 // Deliberately NOT filtered by call id: stderr is the worker's,
-                // not any one call's, and the alternative is silently dropping
-                // the diagnostics a failing tool produces.
+                // and filtering drops a failing tool's diagnostics.
                 self.emit(CallEvent::StderrLog { line });
                 None
             }
             WorkerEvent::WorkerExited { .. } => {
-                // No pre-boot guard here, deliberately: this loop is only
-                // entered once boot has SUCCEEDED, so an exit before the call
-                // started is reported by `wait_for_boot` and never reaches this
-                // arm. A guard for it would read as a control and be incapable
-                // of firing.
+                // No pre-boot guard: this loop runs only after boot SUCCEEDED,
+                // so an earlier exit is `wait_for_boot`'s to report.
                 Some(Settle::Kill(AppError::new(
                     ErrorCode::InternalError,
                     if self.cancelled {
@@ -651,9 +598,8 @@ impl Driver {
                 declared,
                 reason,
             } => {
-                // The same budget pause as askUser. An auto-denied prompt never
-                // reaches here: the handle settles it in about a second,
-                // against the running budget, because nobody was asked.
+                // The same budget pause as askUser. An auto-denied prompt is
+                // settled by the handle and never reaches here.
                 self.begin_user_wait();
                 self.pending_permission.insert(request_id.clone());
                 self.emit(CallEvent::PermissionRequest {
@@ -671,8 +617,8 @@ impl Driver {
     }
 
     fn on_frame(&mut self, frame: WorkerToPool) -> Option<Settle> {
-        // A frame for somebody else's call. One worker can hold more than one
-        // call, and a frame delivered to the wrong one settles the wrong call.
+        // One worker can hold more than one call, and a frame delivered to the
+        // wrong one settles the wrong call.
         if frame.call_id().is_some_and(|id| id != self.call_id) {
             return None;
         }
@@ -741,10 +687,8 @@ impl Driver {
             }
             WorkerToPool::ToolResult { result, .. } => Some(Settle::Ok(result)),
             WorkerToPool::ToolError { error, .. } => Some(if self.cancelled {
-                // The consumer already saw `tool_cancelled` and moved on; the
-                // worker's late error is bookkeeping. Reporting the same
-                // "cancelled" keeps the error class consistent for whoever is
-                // awaiting `done`.
+                // The consumer already saw `tool_cancelled`; reporting the same
+                // "cancelled" keeps the error class consistent.
                 Settle::Failed(AppError::new(
                     ErrorCode::InternalError,
                     "tool call cancelled",
@@ -756,11 +700,9 @@ impl Driver {
     }
 
     fn on_ask_user(&mut self, request_id: String, questions: Vec<Value>) {
-        // The frame passed the structural screen, but the question shapes are
-        // extension supplied. A question the client's schema would reject must
-        // not pause the call on a form that never renders, so it is ANSWERED
-        // empty and the tool's await unwinds. See D-054 for why that means the
-        // payload arrives untyped.
+        // Question shapes are extension supplied, so they arrive untyped. One
+        // the client could not render is ANSWERED empty rather than pausing the
+        // call on a form that never appears.
         let typed: Option<Vec<AskUserQuestion>> = if questions.is_empty() {
             None
         } else {
@@ -796,8 +738,7 @@ impl Driver {
     }
 
     fn on_schedule_request(&mut self, request_id: String, draft: Value) {
-        // Same reasoning as askUser: a draft the client, or the insert path,
-        // would reject must unblock the tool rather than strand the call.
+        // Same reasoning as askUser: an unrenderable draft unblocks the tool.
         let Ok(draft) = serde_json::from_value::<ScheduledPromptDraft>(draft) else {
             tracing::warn!(
                 target: "loca::extensions",
@@ -830,8 +771,7 @@ impl Driver {
         args: Value,
     ) {
         let Some(modules) = self.modules.clone() else {
-            // No broker wired. Answering the error is what matters: the tool is
-            // awaiting this reply and silence is a hang.
+            // No broker wired. The tool is awaiting a reply; silence is a hang.
             self.worker.send(PoolToWorker::ModuleResponse {
                 call_id: self.call_id.clone(),
                 request_id,
@@ -853,9 +793,8 @@ impl Driver {
             commands: self.commands.clone(),
         });
         let commands = self.commands.clone();
-        // Concurrently, because a module call can be slow (an LLM completion, a
-        // transcription) and the tool may have several in flight. The reply is
-        // routed back through the driver rather than written from here, so it
+        // Concurrently, because a module call can be slow and the tool may have
+        // several in flight. The reply routes back through the driver so it
         // cannot land on a worker this call no longer owns.
         tokio::spawn(async move {
             let outcome = modules.dispatch(call, prompter).await;
@@ -870,9 +809,7 @@ impl Driver {
         let (ok, result, error) = match outcome {
             Ok(value) => (true, Some(value), None),
             // The error re-enters extension code, where a third-party tool can
-            // read it and send it anywhere. Scrub it exactly as a log line is
-            // scrubbed: a provider error naming a URL, a path or a token is the
-            // ordinary case, not the exotic one.
+            // read it and send it anywhere, so it is scrubbed like a log line.
             Err(err) => (false, None, Some(scrub_secrets(&err.message))),
         };
         self.worker.send(PoolToWorker::ModuleResponse {
@@ -902,8 +839,7 @@ impl Driver {
                     request_id,
                     answers,
                 });
-                // Resume with what REMAINS, not a fresh full window. A slow
-                // human answer must not extend the tool's compute budget.
+                // Resume with what REMAINS, not a fresh full window.
                 self.end_user_wait();
                 None
             }
@@ -986,10 +922,8 @@ impl Driver {
     }
 }
 
-/// Resolve when a [`Command::Cancel`] arrives, ignoring anything else.
-///
-/// Only used while boot is outstanding: no prompt can be open yet, and a
-/// response naming a request id that does not exist is dropped whole anyway.
+/// Resolve when a [`Command::Cancel`] arrives, ignoring anything else. Only
+/// used while boot is outstanding, when no prompt can be open yet.
 async fn wait_for_cancel(commands: &mut mpsc::UnboundedReceiver<Command>) {
     while let Some(command) = commands.recv().await {
         if matches!(command, Command::Cancel) {
@@ -1113,8 +1047,7 @@ mod tests {
         }
     }
 
-    /// A broker stand-in. `prompt` makes it ask before answering, which is the
-    /// only way the call's broker-prompt path is reachable.
+    /// A broker stand-in. `prompt` makes it ask before answering.
     struct FakeModules {
         prompt: Option<ModulePrompt>,
         outcome: Mutex<Option<Result<Value>>>,
@@ -1178,26 +1111,10 @@ mod tests {
     }
 
     impl Fixture {
-        /// The call's outcome, bounded.
-        ///
-        /// Every way a test in this module can hang ends here, waiting on a
-        /// settle that is never coming, so this is where the bound belongs: a
-        /// wrapper each test has to remember is the same forgettable hazard as
-        /// the `advance` one above, and the test that forgets is exactly the
-        /// test that hangs.
-        ///
-        /// A hanging test is strictly worse than a failing one. `cargo test`
-        /// has no per-test timeout, the whole crate shares one test binary, and
-        /// a wedged run takes every other package's suite down with it, which
-        /// is not hypothetical: it cost the fleet four stacked runs and an
-        /// orphaned binary.
-        ///
-        /// The budget is wall clock and enormous next to what these tests need,
-        /// which run on a virtual clock and finish in milliseconds, so it can
-        /// only fire on a real deadlock. It rides the same runtime deliberately:
-        /// a separate thread would defeat `start_paused`, and this works because
-        /// a deadlocked driver leaves the runtime idle, which is precisely when
-        /// a paused clock auto-advances to this timer.
+        /// The call's outcome, bounded, because `cargo test` has no per-test
+        /// timeout and a wedged run takes the whole crate's binary down. The
+        /// budget is wall clock and enormous next to these virtual-clock tests,
+        /// so it fires only on a real deadlock.
         async fn outcome(&mut self) -> Result<Value> {
             match tokio::time::timeout(Duration::from_secs(600), self.call.done()).await {
                 Ok(result) => result,
@@ -1228,12 +1145,7 @@ mod tests {
         }
     }
 
-    /// The budgets the product actually ships, not a set restated here.
-    ///
-    /// Restating them made `CallBudgets::default()` unpinned: every timing test
-    /// below asserted against its own copy of 60s / 2s / 10s, so doubling any
-    /// of the real defaults changed what users get and broke nothing. Taking
-    /// the real values means the same tests now guard them.
+    /// The budgets the product ships, so the timing tests below guard them.
     fn budgets() -> CallBudgets {
         CallBudgets::default()
     }
@@ -1262,29 +1174,17 @@ mod tests {
         start(Arc::new(RecordingWorker::default()), None)
     }
 
-    /// A real sleep, not a `yield_now`. Under a paused runtime the clock only
-    /// advances when every task is idle, and a message crossing two channels
-    /// needs the driver polled more than once; a yield does not guarantee that
-    /// and the resulting failures look like the behaviour under test.
+    /// A real sleep, not a `yield_now`: a message crossing two channels needs
+    /// the driver polled more than once, which a yield does not guarantee.
     async fn settle() {
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
 
-    /// Move the paused clock, settling on BOTH sides of the jump.
-    ///
-    /// The trailing settle is so the driver has processed whatever the jump
-    /// woke. The LEADING one is the subtle half: `advance` jumps in a single
-    /// hop, so any deadline the driver has not armed yet gets anchored at the
-    /// far side of the jump and the budget is measured from the wrong instant.
-    /// A caller that cancels and advances in the same breath then waits on a
-    /// kill that was scheduled two seconds after the clock already moved, and
-    /// the test does not fail: it HANGS, taking the whole crate's test binary
-    /// and every other agent's runs with it.
-    ///
-    /// That happened, so the settle lives in the helper rather than at the call
-    /// sites: two callers needed it, one had it, and there is no way to tell
-    /// them apart by reading. Anything that genuinely needs to observe the
-    /// un-settled state calls `tokio::time::advance` directly and says why.
+    /// Move the paused clock, settling on BOTH sides of the jump. The LEADING
+    /// settle is the subtle half: `advance` jumps in one hop, so a deadline the
+    /// driver has not armed yet is anchored past the jump and the test HANGS.
+    /// Anything that must observe the un-settled state calls
+    /// `tokio::time::advance` directly and says why.
     async fn advance(secs: u64) {
         settle().await;
         tokio::time::advance(Duration::from_secs(secs)).await;
@@ -1298,12 +1198,28 @@ mod tests {
         }
     }
 
+    fn ask_frame(request_id: &str, questions: Vec<Value>) -> WorkerToPool {
+        WorkerToPool::AskUserRequest {
+            call_id: "call-1".to_string(),
+            request_id: request_id.to_string(),
+            questions,
+        }
+    }
+
+    fn module_frame(module: ModuleName, op: &str) -> WorkerToPool {
+        WorkerToPool::ModuleRequest {
+            call_id: "call-1".to_string(),
+            request_id: "mreq-1".to_string(),
+            module,
+            op: op.to_string(),
+            args: Value::Null,
+        }
+    }
+
     // --- the happy path -----------------------------------------------------
 
     #[tokio::test(start_paused = true)]
     async fn the_call_frame_carries_the_tool_its_export_and_its_arguments() {
-        // The worker runtime reads these by name. A wrong export runs the wrong
-        // function, and wrong arguments run the right one on nothing.
         let f = plain();
         settle().await;
         let sent = f.worker.sent();
@@ -1326,14 +1242,11 @@ mod tests {
         f.worker.frame(result_frame());
         let out = f.outcome().await.unwrap();
         assert_eq!(out, Value::from("found"));
-        // settled, NOT killed: the worker answered and is healthy.
-        assert_eq!(f.counts.get(), (1, 1, 0, 0));
+        assert_eq!(f.counts.get(), (1, 1, 0, 0), "the worker was not reused");
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_tool_error_settles_the_call_without_discarding_the_worker() {
-        // A tool that threw is not a worker that is broken. Killing it here
-        // would respawn a Deno process on every failing tool call.
         let mut f = plain();
         settle().await;
         f.worker.frame(WorkerToPool::ToolError {
@@ -1348,8 +1261,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_frame_for_a_different_call_on_the_same_worker_is_ignored() {
-        // One worker can hold more than one call. A result routed to the wrong
-        // one settles a call that is still running and drops the real answer.
         let mut f = plain();
         settle().await;
         f.worker.frame(WorkerToPool::ToolResult {
@@ -1368,8 +1279,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn stderr_reaches_the_call_even_though_it_names_no_call() {
-        // The one event deliberately not filtered by call id. Filtering it out
-        // silently discards the diagnostics of every failing tool.
         let mut f = plain();
         settle().await;
         f.worker.feed(WorkerEvent::StderrLog {
@@ -1390,8 +1299,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_boot_failure_reports_a_terminal_event_and_never_runs_the_tool() {
-        // Without the synthesized log the chat bubble stays in "running"
-        // forever, because no worker frame is ever coming.
+        // Without the synthesized log the bubble stays "running" forever.
         let worker = Arc::new(RecordingWorker::default());
         *lock(&worker.boot) = Some("entry not found".to_string());
         let mut f = start(worker, None);
@@ -1417,17 +1325,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_cancel_during_boot_settles_at_once_rather_than_waiting_it_out() {
-        // The boot budget is ten seconds. A user who cancels must not watch
-        // out a spawn they already abandoned.
         let worker = Arc::new(RecordingWorker::default());
         *lock(&worker.boot_hangs) = true;
         let mut f = start(worker, None);
         settle().await;
         f.call.cancel();
-        // Bounded, because the failure being guarded against is a call that
-        // waits out a boot that never finishes. Without the bound this test
-        // hangs the suite rather than failing it, which reads as broken
-        // infrastructure instead of the bug.
+        // Bounded, or the guarded failure hangs the suite rather than failing.
         let err = tokio::time::timeout(Duration::from_secs(30), f.outcome())
             .await
             .expect("the cancel waited on a boot that never came")
@@ -1443,14 +1346,11 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_call_that_outruns_its_budget_kills_its_worker() {
-        // A cooperative cancel cannot reach a CPU-bound isolate, so the only
-        // way to stop it burning a core is to kill the process.
         let mut f = plain();
         settle().await;
         advance(61).await;
-        // Before the await, for the reason given in the resume test: awaiting
-        // first lets the clock run on to any later deadline, so a doubled
-        // budget would pass this too.
+        // Before the await: awaiting first lets the clock run on to any later
+        // deadline, so a doubled budget would pass this too.
         assert_eq!(
             f.counts.get(),
             (1, 0, 1, 0),
@@ -1464,10 +1364,8 @@ mod tests {
 
     #[test]
     fn the_shipped_budgets_are_the_pools_own() {
-        // The three numbers the timing tests above are written around. Pinned
-        // against the pool's config rather than restated, because the call and
-        // the pool holding different values for the same budget is invisible
-        // until a call outlives the worker it is running on.
+        // Pinned against the pool's config, because the two holding different
+        // values is invisible until a call outlives its worker.
         let budgets = CallBudgets::default();
         assert_eq!(budgets.call_timeout, Duration::from_secs(60));
         assert_eq!(budgets.drain_timeout, Duration::from_secs(2));
@@ -1499,16 +1397,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_hour_on_an_askuser_form_does_not_burn_the_tools_budget() {
-        // The whole point of the pausable countdown. Without the pause the
-        // call dies under a form the user is still filling in, and the tool is
-        // blamed for a timeout it spent no time on.
         let mut f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({ "question": "which?" })],
-        });
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({ "question": "which?" })],
+        ));
         settle().await;
         advance(3_600).await;
         assert_eq!(
@@ -1531,26 +1425,22 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_budget_resumes_with_what_remains_rather_than_starting_over() {
-        // 50 seconds of compute, an hour of human, then 11 more seconds of
-        // compute. A resume that restarted the window would survive this, and
-        // a tool could extend its budget indefinitely by prompting.
+        // 50s of compute, an hour of human, then 11s more: a tool must not be
+        // able to extend its budget by prompting.
         let mut f = plain();
         settle().await;
         advance(50).await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({ "question": "which?" })],
-        });
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({ "question": "which?" })],
+        ));
         settle().await;
         advance(3_600).await;
         f.call.respond_ask_user("ask-1", vec![]);
         settle().await;
         advance(11).await;
-        // Asserted on the callbacks HERE, before awaiting the outcome. Awaiting
-        // it first would auto-advance the paused clock to whatever the next
-        // timer is, so the call times out eventually under any budget at all
-        // and the assertion cannot see a resume that restarted the window.
+        // Before awaiting the outcome, which would auto-advance the paused
+        // clock to the next timer and time out under any budget at all.
         assert_eq!(
             f.counts.get(),
             (1, 0, 1, 0),
@@ -1564,16 +1454,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_budget_stays_paused_until_the_last_of_two_prompts_settles() {
-        // A flag per prompt kind lets the first answer re-arm the timer while
-        // the second is still on screen, and the call dies under it. The
-        // refcount is what stops that.
+        // A flag per prompt kind would let the first answer re-arm the timer
+        // while the second is still on screen.
         let mut f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({ "question": "a?" })],
-        });
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({ "question": "a?" })],
+        ));
         f.worker.feed(WorkerEvent::PermissionPrompt {
             request_id: "perm-1".to_string(),
             permission: PermissionKind::Read,
@@ -1602,16 +1490,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_response_naming_an_unknown_request_is_dropped_whole() {
-        // Stale, replayed or forged. Acting on it resumes the budget while the
-        // real prompt is still open, so the call dies under a live form; and
-        // forwarding its answers would answer a question nobody asked.
         let f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({ "question": "a?" })],
-        });
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({ "question": "a?" })],
+        ));
         settle().await;
         f.call.respond_ask_user("ask-99", vec![]);
         settle().await;
@@ -1634,19 +1518,15 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_unrenderable_question_is_answered_empty_rather_than_shown() {
-        // `diff` with no `after` matches no AskUserQuestion variant, so the
-        // client could not render it. Pausing the call on a form that never
-        // appears strands the tool for its whole budget; answering empty lets
-        // its await unwind. D-054.
+        // `diff` with no `after` matches no AskUserQuestion variant.
         let mut f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({
                 "kind": "diff", "question": "ok?", "before": "a",
             })],
-        });
+        ));
         settle().await;
 
         let response = f
@@ -1680,8 +1560,8 @@ mod tests {
             }
         )));
 
-        // And the budget was never paused, so a tool cannot buy itself
-        // unlimited time by sending questions nobody can render.
+        // And the budget was never paused, so a tool cannot buy itself time by
+        // sending questions nobody can render.
         advance(61).await;
         assert_eq!(
             f.outcome().await.unwrap_err().message,
@@ -1691,15 +1571,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_empty_question_set_is_answered_rather_than_forwarded() {
-        // A form with no questions renders as nothing to answer, so nobody
-        // would ever respond and the call would sit until its budget ran out.
         let mut f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![],
-        });
+        f.worker.frame(ask_frame("ask-1", vec![]));
         settle().await;
         assert!(f
             .worker
@@ -1714,18 +1588,17 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_valid_question_set_is_forwarded_to_the_user_untouched() {
-        // The positive control. Without it, a call that answered EVERY askUser
-        // empty would pass both tests above and no user would ever see a form.
+        // The positive control: a call that answered EVERY askUser empty would
+        // pass both tests above.
         let mut f = plain();
         settle().await;
-        f.worker.frame(WorkerToPool::AskUserRequest {
-            call_id: "call-1".to_string(),
-            request_id: "ask-1".to_string(),
-            questions: vec![serde_json::json!({
+        f.worker.frame(ask_frame(
+            "ask-1",
+            vec![serde_json::json!({
                 "kind": "choice", "question": "which?",
                 "options": [{ "label": "a", "value": "a" }],
             })],
-        });
+        ));
         settle().await;
         assert!(
             !f.worker
@@ -1763,9 +1636,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_schedule_confirmation_is_answerable_once_and_carries_the_users_edits() {
-        // `has_pending_schedule` is what chat checks before persisting a draft:
-        // a replayed response is otherwise indistinguishable from the real one,
-        // and the prompt would be scheduled twice.
+        // `has_pending_schedule` is what chat checks before persisting a draft.
         let f = plain();
         settle().await;
         let draft = serde_json::json!({
@@ -1813,9 +1684,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_oversize_display_is_dropped_with_a_reason_rather_than_persisted() {
-        // Accepted display content is rewritten into the session file on every
-        // later message and rebroadcast to every client, so the bound is not
-        // cosmetic.
+        // Accepted content is rewritten into the session file on every later
+        // message and rebroadcast to every client.
         let mut f = plain();
         settle().await;
         f.worker.frame(WorkerToPool::Display {
@@ -1869,13 +1739,7 @@ mod tests {
             Some(FakeModules::returning(serde_json::json!({ "n": 7 })) as Arc<dyn ModuleDispatch>),
         );
         settle().await;
-        worker.frame(WorkerToPool::ModuleRequest {
-            call_id: "call-1".to_string(),
-            request_id: "mreq-1".to_string(),
-            module: ModuleName::Memories,
-            op: "list".to_string(),
-            args: Value::Null,
-        });
+        worker.frame(module_frame(ModuleName::Memories, "list"));
         settle().await;
         let response = worker
             .sent()
@@ -1898,10 +1762,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_module_error_reaches_the_tool_scrubbed() {
-        // This is where a CORE-side error message becomes text a third-party
-        // tool can read and send anywhere. A provider error naming a bearer
-        // token is the ordinary case, and the failure is invisible: the tool
-        // gets a slightly more detailed error and nothing looks wrong.
+        // Where a CORE-side error becomes text a third-party tool can send
+        // anywhere, and the failure is invisible if it leaks.
         let worker = Arc::new(RecordingWorker::default());
         let secret = "sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
         let f = start(
@@ -1912,13 +1774,7 @@ mod tests {
             ),
         );
         settle().await;
-        worker.frame(WorkerToPool::ModuleRequest {
-            call_id: "call-1".to_string(),
-            request_id: "mreq-1".to_string(),
-            module: ModuleName::Llm,
-            op: "complete".to_string(),
-            args: Value::Null,
-        });
+        worker.frame(module_frame(ModuleName::Llm, "complete"));
         settle().await;
         let error = worker
             .sent()
@@ -1940,11 +1796,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_module_permission_prompt_is_answered_by_the_user_not_the_terminal() {
-        // A broker prompt reuses `tool.permission_request` rather than defining
-        // its own frame, so the ONLY thing separating it from a Deno terminal
-        // prompt is the `mod-` request-id prefix. Route it wrong and the
-        // answer is typed at a terminal nobody is prompting on, while the
-        // broker waits forever.
+        // A broker prompt reuses `tool.permission_request`, so the ONLY thing
+        // separating it from a terminal prompt is the `mod-` prefix.
         let worker = Arc::new(RecordingWorker::default());
         let modules = FakeModules::prompting();
         let mut f = start(
@@ -1952,13 +1805,7 @@ mod tests {
             Some(Arc::clone(&modules) as Arc<dyn ModuleDispatch>),
         );
         settle().await;
-        worker.frame(WorkerToPool::ModuleRequest {
-            call_id: "call-1".to_string(),
-            request_id: "mreq-1".to_string(),
-            module: ModuleName::Memories,
-            op: "write".to_string(),
-            args: Value::Null,
-        });
+        worker.frame(module_frame(ModuleName::Memories, "write"));
         settle().await;
 
         let request_id = f
@@ -2025,8 +1872,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_broker_prompt_still_open_when_the_call_dies_is_released_as_refused() {
-        // Otherwise the broker's task parks forever holding whatever it was
-        // about to do, and its permission is neither granted nor denied.
         let worker = Arc::new(RecordingWorker::default());
         let modules = FakeModules::prompting();
         let mut f = start(
@@ -2034,13 +1879,7 @@ mod tests {
             Some(Arc::clone(&modules) as Arc<dyn ModuleDispatch>),
         );
         settle().await;
-        worker.frame(WorkerToPool::ModuleRequest {
-            call_id: "call-1".to_string(),
-            request_id: "mreq-1".to_string(),
-            module: ModuleName::Memories,
-            op: "write".to_string(),
-            args: Value::Null,
-        });
+        worker.frame(module_frame(ModuleName::Memories, "write"));
         settle().await;
         worker.feed(WorkerEvent::WorkerExited { code: Some(9) });
         assert!(f.outcome().await.is_err());
@@ -2074,9 +1913,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_worker_that_acknowledges_a_cancel_within_the_drain_is_kept() {
-        // The drain has to be a deadline the driver races, not a sleep it sits
-        // in: a worker that answers during the window would otherwise be killed
-        // for having answered.
         let mut f = plain();
         settle().await;
         f.call.cancel();
@@ -2119,11 +1955,8 @@ mod tests {
         let mut f = plain();
         settle().await;
         f.call.cancel();
-        // Let the driver process the cancel BEFORE moving the clock. `advance`
-        // jumps in one hop, so a deadline the driver has not armed yet is
-        // anchored at the far side of the jump and the whole budget is
-        // measured from the wrong instant: both halves of this test then pass
-        // for a reason that has nothing to do with two seconds.
+        // Let the driver process the cancel BEFORE moving the clock, or the
+        // deadline is anchored past the jump and both halves pass for nothing.
         settle().await;
         tokio::time::advance(Duration::from_millis(1_900)).await;
         settle().await;
@@ -2139,9 +1972,8 @@ mod tests {
         assert!(f.outcome().await.is_err());
         assert_eq!(f.counts.get(), (1, 1, 0, 0));
 
-        // The upper edge as well. With only the lower one, doubling the budget
-        // passes: nothing asks whether the kill arrived on time, and a
-        // cancelled worker goes on burning a core for twice as long.
+        // The upper edge as well: with only the lower one, doubling the budget
+        // passes.
         let g = plain();
         settle().await;
         g.call.cancel();
@@ -2157,9 +1989,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_worker_exit_settles_the_call_instead_of_waiting_out_the_budget() {
-        // A crash, an OOM, the answer give-up kill, or a permissions refresh.
-        // Waiting for the 60s budget on a process that is already gone is a
-        // minute of a spinner for nothing.
         let mut f = plain();
         settle().await;
         f.worker.feed(WorkerEvent::WorkerExited { code: Some(1) });

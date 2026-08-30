@@ -1,18 +1,13 @@
-//! Chat template application and output parsing.
+//! Chat template application and output parsing: the part of llama.cpp a
+//! `libllama`-only binding cannot reach. Jinja application, per-format
+//! tool-call extraction, GBNF constraint and the reasoning/`<think>` split all
+//! live in `common/chat.cpp`.
 //!
-//! This is the part of llama.cpp that a `libllama`-only binding cannot reach.
-//! Jinja template application, per-format tool-call extraction, GBNF grammar
-//! constraint and the reasoning/`<think>` split all live in `common/chat.cpp`,
-//! and every catalog model advertises `{tools, vision, reasoning}`.
-//!
-//! # The turn invariant
-//!
-//! `common_chat_params` is per-turn state. One [`ChatTemplates::apply`] per
-//! turn, and every parse of that turn's output goes through the [`ChatTurn`] it
-//! returned. Parsing against a different turn's handle is not detectable at the
-//! ABI and fails quietly and plausibly (the wrong PEG grammar still parses most
-//! text into `content`), so [`ChatTurn`] has no `Clone`, no `Default` and no
-//! public constructor: the only way to get one is from `apply`.
+//! The turn invariant: `common_chat_params` is per-turn state, so one
+//! [`ChatTemplates::apply`] per turn and every parse of that turn's output goes
+//! through the [`ChatTurn`] it returned. Parsing against another turn's handle
+//! is undetectable at the ABI and fails quietly, so [`ChatTurn`] has no
+//! `Clone`, no `Default` and no public constructor.
 
 use std::ptr::NonNull;
 use std::sync::Arc;
@@ -25,21 +20,16 @@ use super::ffi;
 use super::model::Model;
 use super::owned::{c_string, last_error, ShimString};
 
-/// How the model's reasoning output should be treated.
-///
-/// This is an **apply-time** setting, not a parse-time one. It selects the
-/// parser that [`ChatTemplates::apply`] builds, and that parser is what decides
-/// the split; `ChatTurn::parse_*` therefore takes no format argument.
-/// `common_chat_parser_params` does carry a `reasoning_format` field, but
-/// nothing reads it at the pinned commit, so exposing it would have been an
-/// inert knob. Verified by experiment rather than assumed: varying this at apply
-/// time flips the behaviour, varying it at parse time changes nothing.
+/// How the model's reasoning output should be treated. An APPLY-time setting:
+/// it selects the parser [`ChatTemplates::apply`] builds, and that parser
+/// decides the split, so `ChatTurn::parse_*` takes no format argument.
+/// `common_chat_parser_params` carries a `reasoning_format` field that nothing
+/// reads at the pinned commit, so exposing it would be an inert knob.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningFormat {
-    /// Split `<think>` blocks out into `reasoning_content`. What the shipping
-    /// core pins today, so the stream reader always finds the thoughts in the
-    /// same field whatever the llama.cpp default is.
+    /// Split `<think>` blocks out into `reasoning_content`. Pinned, so the
+    /// stream reader always finds the thoughts in the same field.
     Deepseek,
     /// Let llama.cpp choose per template. Splits, for every template tried.
     Auto,
@@ -66,8 +56,7 @@ pub struct AppliedChat {
     pub grammar: String,
     pub grammar_lazy: bool,
     /// Without these a lazy grammar either constrains from the first token or
-    /// never constrains at all, so they are carried even though N1 does not
-    /// interpret them.
+    /// never constrains at all, so they are carried through uninterpreted.
     pub grammar_triggers: Vec<GrammarTrigger>,
     pub format: i32,
     pub supports_thinking: bool,
@@ -85,10 +74,9 @@ pub struct GrammarTrigger {
     pub token: i32,
 }
 
-/// An OpenAI-shaped assistant message, as llama.cpp itself renders it.
-///
-/// The shim does not hand-map these shapes: llama.cpp converts OpenAI JSON in
-/// both directions already, so this is its output verbatim.
+/// An OpenAI-shaped assistant message, as llama.cpp itself renders it: it
+/// converts OpenAI JSON in both directions already, so this is its output
+/// verbatim rather than a hand-mapped shape.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AssistantMessage {
     #[serde(default)]
@@ -113,8 +101,7 @@ pub struct ToolCall {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolCallFunction {
     pub name: String,
-    /// A JSON string, not an object: that is the OpenAI wire shape and what the
-    /// shipping core's provider already consumes.
+    /// A JSON string, not an object: the OpenAI wire shape.
     pub arguments: String,
 }
 

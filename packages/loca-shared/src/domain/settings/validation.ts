@@ -1,8 +1,6 @@
-/**
- * Core-side validation for the settings PATCH endpoint: type/range/regex checks
- * per field, destination gating, and secret-key rejection. Also the shared
- * regex-rule evaluator used by both PATCH validation and the client renderer.
- */
+// Core-side validation for the settings PATCH endpoint: type/range/regex checks
+// per field, destination gating, and secret-key rejection. Also the shared
+// regex-rule evaluator used by both PATCH validation and the client renderer.
 
 import type { RegexValidation, SettingDestination, SettingField } from "./types.ts";
 import { findField, isValidSettingKey, SECRET_KEYS } from "./schema.ts";
@@ -10,9 +8,7 @@ import { settingKeyDestination } from "./routing.ts";
 import { modelFilesError } from "./model-files.ts";
 
 /** True when `value` is type-compatible with `field`'s declared `type`.
- *  Used by core-side PATCH /settings validation so a client can't persist a
- *  wrong-typed value that would later break core or flow into a sidecar
- *  argument. Render-only fields hold no persisted scalar, so they pass. */
+ *  Render-only fields hold no persisted scalar, so they pass. */
 function settingValueTypeOk(field: SettingField, value: unknown): boolean {
   switch (field.type) {
     case "boolean":
@@ -43,22 +39,12 @@ function settingValueTypeOk(field: SettingField, value: unknown): boolean {
 }
 
 /**
- * Validate a PATCH body destined for the core's settings endpoint
- * (`PATCH /api/v1/settings`). Returns a list of human-readable errors; an
- * empty list means the patch is acceptable. Rules:
- *   - every key must be a known schema key whose destination is in `allow`:
- *     the shared core store (`allow: ["core"]`, the default) never holds
- *     client-side or unknown keys; the per-client overlay path passes
- *     `allow: ["core", "client-on-core"]` so it accepts both core-stored layers
- *     but still rejects `client-on-client` local-only keys.
- *   - secret-typed keys (password fields) are rejected: their values belong in
- *     the encrypted vault via the secrets endpoint, never in settings.json.
- *   - render-only fields (command preview, services, storage, object
- *     management) hold no persistable scalar and are rejected.
- *   - `null`/`undefined` values are deletions (reset to default) and are OK on
- *     any accepted key.
- *   - values are type-checked (and regex-checked for text fields) so a
- *     malformed value can't be persisted.
+ * Validate a PATCH body for `PATCH /api/v1/settings`, returning human-readable
+ * errors (empty means acceptable). Every key must be a known schema key whose
+ * destination is in `allow`, so the per-client overlay path passes
+ * `["core", "client-on-core"]` and still rejects local-only keys. Secret-typed
+ * and render-only keys are rejected outright; `null`/`undefined` are deletions
+ * (reset to default) and pass on any accepted key.
  */
 export function validateSettingsPatch(
   patch: Record<string, unknown>,
@@ -114,8 +100,7 @@ export function validateSettingsPatch(
       }
     }
     // A plain number/float with declared bounds must respect them too, so an
-    // out-of-range value (e.g. a negative token budget or context size) can't
-    // reach the core and flow into a sidecar argv.
+    // out-of-range value can't reach the core and flow into a sidecar argv.
     if ((field.type === "number" || field.type === "float") && typeof value === "number") {
       if (field.min !== undefined && value < field.min) {
         errors.push(`"${key}" must be at least ${field.min}`);
@@ -143,12 +128,6 @@ export function validateSettingsPatch(
     }
   }
   return errors;
-}
-
-/** True if `key` names a secret-typed (password) setting whose value must be
- *  stored in the encrypted vault and never returned over the API. */
-export function isSecretSettingKey(key: string): boolean {
-  return (SECRET_KEYS as readonly string[]).includes(key);
 }
 
 export function getValidationError(regex: RegexValidation, value: unknown): string | null {

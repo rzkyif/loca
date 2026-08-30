@@ -68,11 +68,10 @@ impl Flows {
         self.cancel(server_id);
 
         let store = VaultCredentials::new(vault.clone(), server_id.to_string());
-        // Reap whatever a previous attempt for this server abandoned, before
-        // this one writes its own. See `VaultCredentials::clear_states` for why
-        // the reap lives here and not on the teardown paths. Hygiene rather
-        // than the user's goal, so a failure is logged and the sign-in
-        // continues: a vault this broken will fail the next write anyway.
+        // Reap whatever a previous attempt abandoned, before this one writes its
+        // own; see `VaultCredentials::clear_states` for why it lives here.
+        // Hygiene rather than the user's goal, so a failure is logged and the
+        // sign-in continues.
         if let Err(err) = store.clear_states().await {
             tracing::warn!(
                 target: "loca::mcp",

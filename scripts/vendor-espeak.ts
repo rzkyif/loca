@@ -15,14 +15,11 @@
 // byte equality.
 //
 // That is not a weaker check dressed up, it is the only honest one available:
-// tar records mtimes, uid, gid and entry order, and gzip records its own mtime
-// and compression level, so re-packing the same bytes on a different machine
-// produces a different file. Asserting byte equality would fail for reasons that
-// have nothing to do with the data, and the first person to hit that would
-// "fix" it by re-pinning whatever their machine produced, which is exactly the
-// check-that-cannot-fail shape this project keeps finding (D-084, D-146). Byte
-// equality is the wrong question; "does this archive contain precisely the
-// pinned upstream data" is the right one, and this answers it.
+// tar records mtimes, uid, gid and entry order, and gzip its own mtime and
+// compression level, so re-packing the same bytes on a different machine
+// produces a different file. Byte equality would fail for reasons unrelated to
+// the data; "does this archive contain precisely the pinned upstream data" is
+// the right question, and this answers it.
 //
 //   deno run -A scripts/vendor-espeak.ts           verify the committed archive
 //   deno run -A scripts/vendor-espeak.ts --write   regenerate it from upstream
@@ -38,8 +35,7 @@ import { encodeHex } from "@std/encoding/hex";
 const UPSTREAM_URL =
   "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2";
 
-/** Keep in sync with `ESPEAK_DATA_SHA256` in `scripts/release/core.ts`. Both
- *  read the same asset and a divergence means one of them is verifying nothing. */
+/** The pinned upstream sha256. */
 const UPSTREAM_SHA256 = "4135ccf82e1f40613491c0874d4945ae9e9c7840933d8e25a6f9e003d9ebf533";
 
 const REPO = dirname(dirname(fromFileUrl(import.meta.url)));

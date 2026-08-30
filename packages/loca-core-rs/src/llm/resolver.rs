@@ -1,18 +1,10 @@
 //! Turns a settings record into an endpoint the provider can call.
 //!
-//! Every key read here is declared in the shared schema
-//! (`@loca/shared/domain/settings/groups/{llm,dualModel}.ts`). The record must be
-//! the **sparse** one (`Settings::load` or `Settings::load_effective`), never
-//! `load_resolved` or `load_effective_resolved`.
-//!
-//! The reason narrowed to exactly one field and is now sharper for it.
+//! The record must be the SPARSE one (`Settings::load` or
+//! `Settings::load_effective`), never a resolved one, for exactly one field:
 //! `llm.port`'s schema default is the bare 7701, because static schema data
-//! cannot express `7701 + channel.port_offset()`. Hand this a resolved record
-//! and every `dev` and `latest` install silently talks to the STABLE channel's
-//! llama-server, which undoes the port offsets that let two channels run at
-//! once. The sampling fallbacks USED to be a second reason and no longer are;
-//! see [`default_sampling`] for why that divergence turned out to be staleness
-//! rather than intent, and D-078 for the same defect caught in the TypeScript.
+//! cannot express `7701 + channel.port_offset()`. A resolved record makes every
+//! `dev` and `latest` install talk to the STABLE channel's llama-server.
 //!
 //! External API keys come from the shared resolver in [`crate::external`]: the
 //! vault is authoritative and a plaintext value in `settings.json` is a
@@ -28,35 +20,12 @@ use crate::settings::SettingsRecord;
 use super::types::{LlmEndpointConfig, LlmRoute, Reasoning, ReasoningEffort};
 
 /// The local `llama-server` port before the channel offset.
-///
-/// A private const only until `Channel::llm_port()` lands beside `core_port()`
-/// (D3's request in `shared/interfaces.md`); the table this comes from lives in
-/// `config.rs` and 7702 / 7703 belong to it too.
 const DEFAULT_LLM_PORT: u16 = 7701;
 
 /// The sampling fallbacks, mirroring `DEFAULT_SAMPLING` in
-/// `packages/loca-shared/src/domain/recommend.ts`. They must stay equal to it:
-/// two cores that sample differently is a parity break a user would see as the
-/// model changing personality on upgrade.
-///
-/// **This block used to document a deliberate divergence and no longer does.**
-/// `topP` was 0.8 and `repeatPenalty` 1.05 here, against the settings schema's
-/// 0.95 and 1.0, and the comment argued for keeping the resolver's numbers
-/// because adopting the schema's would change what every existing install
-/// samples with.
-///
-/// That argument dissolved once someone checked the catalog instead of choosing
-/// between the two numbers. Every family in it (Qwen 3.5, Qwen 3.6, Gemma 4),
-/// from two vendors, publishes `topP` 0.95 and `repeatPenalty` 1.0 as its own
-/// recommendation, and 0.8 / 1.05 matched no model and no vendor. So it was not
-/// schema-versus-resolver at all: the schema agreed with the catalog and the
-/// resolver's constant was simply stale. `DEFAULT_SAMPLING` now carries the
-/// catalog's values and these follow it. See D-072.
-///
-/// The divergence was invisible for as long as it existed because the core read
-/// settings sparsely, so this fallback always won and the schema value never
-/// arrived to disagree with it. Fixing the read (D-037) is what made the two
-/// meet.
+/// `packages/loca-shared/src/domain/recommend.ts`. They must stay equal to it,
+/// and to the catalog's own per-family recommendations: a core that samples
+/// differently reads to a user as the model changing personality.
 mod default_sampling {
     pub const TEMPERATURE: f64 = 0.7;
     pub const TOP_P: f64 = 0.95;
@@ -74,17 +43,10 @@ const DEFAULT_EXTERNAL_CONTEXT: f64 = 128_000.0;
 ///
 /// Deliberately a loose substring test, and deliberately NOT
 /// [`crate::external::is_localhost_url`], which is a prefix test with a host
-/// boundary. The two answer different questions and the TypeScript keeps them
-/// apart for the same reason:
-///
-/// - this one gates SAMPLER FIELDS, where a false positive costs an ignored key
-///   on a request that still works, and where `0.0.0.0` has to count because
-///   that is a legal bind address for a hand-run llama-server;
-/// - the other one gates SENDING NO CREDENTIAL, where a false positive would
-///   extend the keyless-gateway exemption to a lookalike host.
-///
-/// Widening this to the strict test would stop sending samplers to a hand-run
-/// llama-server; narrowing that one to this would be a security bug.
+/// boundary. This one gates SAMPLER FIELDS, where a false positive costs an
+/// ignored key and `0.0.0.0` has to count as a legal llama-server bind address;
+/// the other gates SENDING NO CREDENTIAL, where a false positive would extend
+/// the keyless-gateway exemption to a lookalike host.
 fn accepts_llama_body_fields(base_url: &str) -> bool {
     base_url.contains("127.0.0.1") || base_url.contains("localhost") || base_url.contains("0.0.0.0")
 }

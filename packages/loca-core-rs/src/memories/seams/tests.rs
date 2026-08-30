@@ -1,9 +1,9 @@
-//! SEAMS' suite for the memories side of the extension supervisor's seams.
+//! The memories side of the extension supervisor's seams.
 //!
-//! The disabled-memory cases are the reason this file exists. Each of them
-//! stages the SAME memory twice, enabled and then disabled, and asserts the
-//! answer flips: a test that only ever looks at a disabled memory would still
-//! pass against an implementation that answers `not_found` for everything.
+//! Each disabled-memory case stages the SAME memory twice, enabled and then
+//! disabled, and asserts the answer flips: a test that only ever looks at a
+//! disabled memory would pass against an implementation that answers
+//! `not_found` for everything.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -359,13 +359,11 @@ async fn schedule_indexing_asks_for_a_full_pass() {
 
 #[tokio::test]
 async fn a_disabled_memory_is_refused_by_write_and_edit_and_leaks_nothing() {
-    // `get`/`get_file` already answer `not_found` for a disabled memory, but
-    // `write` and `edit` both return the prior content as `before`, and neither
-    // checked the flag. So a tool could read any disabled memory in full simply
-    // by writing to its title, which is precisely what disabling exists to
-    // prevent. Ruled by the repo owner: refuse with `forbidden` rather than
-    // pretend it is absent, because "absent" sends `write` to `create` and that
-    // fails the unique-title check with a `conflict` a tool cannot act on.
+    // `write` and `edit` return the prior content as `before`, so without a flag
+    // check a tool could read any disabled memory by writing to its title.
+    // Refused with `forbidden` rather than `not_found`, because "absent" sends
+    // `write` to `create`, which fails the unique-title check with a `conflict`
+    // a tool cannot act on.
     let env = env();
     let memory = env
         .store

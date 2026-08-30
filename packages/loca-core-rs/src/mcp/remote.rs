@@ -4,25 +4,13 @@
 //! `Authorization` header. `oauth` attaches the access token from the vault and
 //! refreshes it when the server says it is stale.
 //!
-//! # An OAuth server the row says is not signed in makes no request at all
-//!
-//! The connect is refused before any client is built, and the user sees a
-//! status that tells them to sign in.
-//!
-//! The state this actually protects is tokens present in the vault while the
-//! ROW says not authorized, and it is reachable: `Mcp::start_oauth`'s
-//! completion callback stores the tokens through the SDK and only then updates
-//! the row, and it logs and returns if that update fails. Without this check
-//! such a server would resolve metadata and connect on every sync, using a
-//! grant the row does not admit to holding, and the Sign in button would never
-//! be offered.
-//!
-//! With no tokens at all the check is belt-and-braces: `initialize_from_store`
-//! returns `false` without making a request. It is NOT true, at rmcp 3.1.2,
-//! that a never-signed-in server would otherwise kick off discovery and dynamic
-//! registration on its own; a previous version of this comment said so, and a
-//! reviewer who deleted the check on the strength of it would have found every
-//! test still passing.
+//! An OAuth server whose row says it is not signed in makes no request at all:
+//! the connect is refused before any client is built. The state that protects is
+//! tokens present in the vault while the ROW says not authorized, which is
+//! reachable because `Mcp::start_oauth`'s callback stores the tokens through the
+//! SDK and only then updates the row. Without the check such a server would
+//! connect on every sync using a grant the row does not admit to holding, and
+//! the Sign in button would never be offered.
 
 use std::time::Duration;
 
@@ -110,10 +98,9 @@ async fn connect_oauth(
     manager
         .with_client(http_client()?)
         .map_err(|err| oauth_error(err, "could not attach the HTTP client to the OAuth client"))?;
-    // Loads the stored registration and tokens, and resolves the authorization
-    // server's metadata. `false` means the stored credentials are gone or were
-    // discarded because the authorization server changed, which is the same
-    // sign-in-required state as never having signed in.
+    // Loads the stored registration and tokens and resolves the authorization
+    // server's metadata. `false` means the credentials are gone or were
+    // discarded, which is the same sign-in-required state as never signing in.
     let ready = manager
         .initialize_from_store()
         .await

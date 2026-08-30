@@ -1,6 +1,6 @@
 # Security Policy
 
-Loca is a local-first desktop app: a Deno service (`loca-core`) that owns all
+Loca is a local-first desktop app: a Rust service (`loca-core`) that owns all
 state and compute, paired with a deliberately thin Tauri + Svelte client
 (`loca-client`), plus helper binaries, a bundled extension, and a Cloudflare/R2
 distribution site. The interesting attack surface is binary and model
@@ -153,12 +153,10 @@ symlink/hardlink entries; `deno install` runs with `--allow-scripts=false` so
 npm lifecycle scripts never execute; tools install default-disabled and
 ungranted; and worker stdout/stderr are size-capped.
 
-**Sidecars.** `llama-server` (chat plus a second instance for embeddings) and
-`loca-core-speech` (Speech-to-Text + Text-to-Speech) are spawned without a
-shell and inherit only an allowlist of OS-essential environment variables (not
-the core's full environment, which can carry operator secrets like
-`GITHUB_TOKEN`). The llama.cpp web UI is only enabled when the server binds
-loopback, so it is never exposed on the network.
+**Subprocesses.** Inference and speech run in-process. MCP stdio servers and
+the `deno` tool workers are spawned without a shell and inherit only an
+allowlist of OS-essential environment variables (not the core's full
+environment, which can carry operator secrets like `GITHUB_TOKEN`).
 
 **Tauri client.** The webview loads only the bundled frontend (no remote-domain
 IPC), and all core traffic leaves through the Rust host's pinned-TLS net layer
@@ -254,7 +252,7 @@ gitignored `.env`; only public keys are committed.
 In-scope:
 
 - The Tauri host (Rust) and its commands, capabilities, and CSP.
-- The `loca-core` Deno service and its HTTP and WebSocket surface.
+- The `loca-core` Rust service and its HTTP and WebSocket surface.
 - The binary and model download and verification flow (Ed25519-signed
   manifests).
 - Secret handling (API keys in the vault / OS keychain).

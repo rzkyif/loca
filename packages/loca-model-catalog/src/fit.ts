@@ -26,26 +26,21 @@ export const FIT_CONFIG: FitConfigInput = {
     // Phones. A phone is not a small desktop, so this is a different policy
     // rather than a scaled one.
     //
-    // EVERY NUMBER MARKED "provisional" BELOW IS UNMEASURED. They were chosen so
-    // the shape is right and are meant to be replaced by the S0.4 device
-    // session; that is why they live here, as catalog data, rather than in the
-    // engine. Retuning one is a one-line change with no core release. See
-    // docs/rust-port/packages/M4/status.md for the measurement that fixes each.
+    // EVERY NUMBER MARKED "provisional" BELOW IS UNMEASURED: they were chosen so
+    // the shape is right, and living here as catalog data means retuning one is a
+    // one-line change with no core release.
     mobile: {
-      // PROVISIONAL. Fractions of TOTAL RAM, with no absolute margin: on iOS the
+      // PROVISIONAL. Fractions of TOTAL RAM with no absolute margin: on iOS the
       // real ceiling is the per-app jetsam limit, which scales with the device,
       // so a fraction already expresses headroom and the desktop 1.5 GB margin
-      // would take 19% of an 8 GB phone on top of it and leave nothing that
-      // fits. `full` is the jetsam ceiling; `half` is the larger question of
-      // what stays resident when the user switches apps and comes back.
+      // would leave nothing that fits on an 8 GB phone.
       budgetFraction: { half: 0.2, full: 0.35 },
       safetyMarginBytes: 0,
 
-      // PROVISIONAL, and the one most likely to be wrong. The desktop 600 MB is
-      // sized for a llama-server process with a desktop-sized graph; in process
-      // on a phone with one slot it should be smaller, but nothing here knows by
-      // how much. At 6 GB this single number is ~40% of the half budget, so an
-      // error of 200 MB changes which preset exists at all.
+      // PROVISIONAL, and the one most likely to be wrong: the desktop 600 MB is
+      // sized for a llama-server process with a desktop graph, and in-process on
+      // a phone it should be smaller by an unknown amount. At 6 GB this is ~40%
+      // of the half budget, so a 200 MB error changes which presets exist.
       computeOverheadBytes: 400_000_000,
 
       // Below the desktop floor on purpose: Qwen3.5-2B does not fit a 6 GB phone
@@ -57,19 +52,14 @@ export const FIT_CONFIG: FitConfigInput = {
       // processing is seconds on a phone CPU at 8192. The 2048 rung is not
       // tuning, it is structural: the desktop ladder bottoms out at 4096, so
       // without it no phone-sized context is reachable at any budget and every
-      // bucket comes back empty (D-158).
+      // bucket comes back empty.
       ctxCeiling: { smallest: 2048, half: 4096, full: 4096 },
       ctxLadder: [8192, 4096, 2048],
 
-      // Not preselected, and not budgeted for. mmproj files run from 205 MB to
-      // 1.2 GB, and on a 6 GB phone that one file is the difference between a
-      // Balanced preset existing and no Balanced preset at all, so a phone does
-      // not start out reserving room for one.
-      //
-      // This is a DEFAULT, not a ceiling. The projector path is still written on
-      // select and the shim links libmtmd on mobile too, so turning Image
-      // Attachments on works here exactly as it does on a desktop: the budget
-      // stops matching what is loaded, which is the user's call to make.
+      // Not preselected and not budgeted for: mmproj files run 205 MB to 1.2 GB,
+      // and on a 6 GB phone that one file decides whether a Balanced preset
+      // exists at all. A DEFAULT, not a ceiling: turning Image Attachments on
+      // still works, the budget just stops matching what is loaded.
       vision: false,
     },
   },

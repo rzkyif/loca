@@ -22,7 +22,7 @@ export const chatStartWsSchema = z
     // default route" from "the client said nothing", and only the second is
     // allowed to auto-route to the secondary model (chat.ts:296-299). A default
     // here makes the field always present, so that test can never be false and
-    // dual-model routing never runs. See D-058 / D-066.
+    // dual-model routing never runs.
     route: z.enum(["default", "secondary"]).optional(),
     // Per-turn effective system prompt composed client-side; see the frame
     // type in api/ws.ts. Empty string is meaningful ("send no system

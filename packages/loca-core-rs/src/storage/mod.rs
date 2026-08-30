@@ -1,8 +1,5 @@
 //! The storage browser: what is on disk and what can be reclaimed.
 //!
-//! Work package **D9** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
 //! Core is the sole authority on what may be removed. Every row is tagged with
 //! a `lock_reason` when it is in use, and a reclaim request re-derives that lock
 //! from the state at the moment of the request, so a stale or tampered client
@@ -18,19 +15,12 @@
 //!    is testable with literal facts over a tempdir.
 //! 3. Removals that belong to another subsystem go back out through the seams.
 //!
-//! The blocking pool is a translation rather than an optimisation: the
-//! TypeScript walks with async `Deno.readDir` and never blocks its event loop,
-//! and synchronous `std::fs` on a runtime worker would block one. This walk is
-//! the only thing in the core that can spend seconds in the filesystem.
-//!
-//! # Cost
-//!
-//! `GET /api/v1/storage` stats every file under the models directory, the three
-//! cache directories and every installed extension, on every request. The Deno
-//! cache dominates, since a populated `DENO_DIR` is tens of thousands of small
-//! files. Nothing is cached, deliberately: a cached tree on the delete path
-//! would defeat the point of re-deriving the lock, and the index a delete
-//! resolves against has to describe the disk as it is now.
+//! The walk runs on the blocking pool because it is the only thing in the core
+//! that can spend seconds in the filesystem: `GET /api/v1/storage` stats every
+//! file under the models directory, the three cache directories and every
+//! installed extension, on every request. Nothing is cached, deliberately: a
+//! cached tree on the delete path would defeat the point of re-deriving the
+//! lock, and the index a delete resolves against has to describe the disk now.
 
 pub mod categories;
 pub mod deps;
@@ -207,9 +197,8 @@ fn build_tree(paths: &Paths, facts: &Facts) -> StorageTree {
 ///
 /// On a default install this is `~/.loca`, **not** the channel root, because
 /// models are shared across channels while everything else is not. The two
-/// coincide only when the root was overridden, which is what every tempdir test
-/// and the whole conformance harness do, so neither can catch this returning
-/// `paths.root()` instead.
+/// coincide whenever the root is overridden, which every tempdir test does, so
+/// no test here can catch this returning `paths.root()` instead.
 fn root_path(paths: &Paths) -> String {
     paths
         .models_dir()

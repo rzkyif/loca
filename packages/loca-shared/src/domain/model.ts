@@ -1,7 +1,6 @@
 // Model + binary types shared across core and client.
 
-// All triples the binary manifest publishes. Core only ever downloads the
-// host triple's binary at install time.
+// All triples the binary manifest publishes.
 export const TRIPLES = [
   "x86_64-apple-darwin",
   "aarch64-apple-darwin",
@@ -13,15 +12,13 @@ export const TRIPLES = [
 
 export type Triple = (typeof TRIPLES)[number];
 
-export const BINARY_KINDS = ["llama-server", "loca-core-speech", "deno"] as const;
+export const BINARY_KINDS = ["llama-server", "deno"] as const;
 
 export type BinaryKind = (typeof BINARY_KINDS)[number];
 
 // GPU-backend build variants a binary may ship. `cpu` is the guaranteed
-// fallback present for every triple; the rest are hardware-specific builds
-// (llama.cpp: metal/vulkan/cuda/rocm/hip; sherpa-onnx: cuda/directml/coreml).
-// A device selects the best variant its hardware supports and the manifest
-// offers, always terminating at `cpu` (see domain/variant.ts).
+// fallback present for every triple; a device picks the best variant its
+// hardware supports and the manifest offers, always terminating at `cpu`.
 export const BINARY_VARIANTS = [
   "cpu",
   "metal",
@@ -35,9 +32,8 @@ export const BINARY_VARIANTS = [
 
 export type BinaryVariant = (typeof BINARY_VARIANTS)[number];
 
-// HF-style spec: "@user/repo/branch/file". Branch may be "main".
-// The model storage path is derived by stripping the leading "@" and treating
-// the remainder as a relative path under ~/.loca/core/models/.
+// HF-style spec: "@user/repo/branch/file". The storage path strips the leading
+// "@" and is relative to ~/.loca/core/models/.
 export type ModelSpec = `@${string}/${string}/${string}/${string}`;
 
 export interface ModelEntry {
@@ -74,8 +70,7 @@ export interface DownloadPlan {
    *  Unset for model files. */
   version?: string;
   /** The last attempt to prepare this download failed; the confirm modal shows a
-   *  retry note instead of a size. Carried through from the requirements
-   *  snapshot's `RequiredFile.error`. */
+   *  retry note instead of a size. */
   error?: string;
 }
 
@@ -84,10 +79,9 @@ export interface DownloadPlan {
 //  - Pinned (stable channel): exact per-triple URLs + sha256, resolved at
 //    release time. The signed manifest commits to the exact bytes.
 //  - Resolver (latest channel): an upstream GitHub repo + per-triple asset name
-//    patterns. The core resolves the LATEST release at runtime, so upstream
-//    updates reach latest users without us re-releasing. The signed manifest
-//    commits to the repo + patterns (not the version); the download is
-//    verified against GitHub's published sha256 digest.
+//    patterns, resolved to the LATEST release at runtime and verified against
+//    GitHub's published sha256 digest.
+
 // One downloadable artifact: a primary asset-name pattern plus optional
 // companion archives (e.g. the Windows CUDA `cudart` runtime) extracted into the
 // same lib dir. "{tag}" expands to the release tag_name in every pattern.
@@ -96,21 +90,19 @@ export interface VariantAsset {
   extra?: string[];
 }
 
-// A triple maps to either a single bare asset pattern (single-variant, treated
-// as `cpu`) or a per-variant map. A variant map MUST include `cpu` (the
-// guaranteed fallback). Read through `assetVariants` so both shapes normalize.
+// Either a single bare asset pattern (single-variant, treated as `cpu`) or a
+// per-variant map, which MUST include `cpu`. Normalize via `assetVariants`.
 export type TripleAsset = string | Partial<Record<BinaryVariant, string | VariantAsset>>;
 
-// One resolved, pinned download: the primary URL + sha256 plus any companion
-// archives (extracted libs-only into bin/lib/<kind>).
+// One resolved, pinned download plus any companion archives (extracted
+// libs-only into bin/lib/<kind>).
 export interface PinnedTarget {
   url: string;
   sha256: string;
   extras?: { url: string; sha256: string }[];
 }
 
-// A triple maps to either a single bare pinned target (single-variant, treated
-// as `cpu`) or a per-variant map. Read through `platformVariants`.
+// Pinned mirror of TripleAsset. Normalize via `platformVariants`.
 export type VariantPlatform = PinnedTarget | Partial<Record<BinaryVariant, PinnedTarget>>;
 
 export interface BinaryManifestPinnedEntry {
@@ -118,21 +110,15 @@ export interface BinaryManifestPinnedEntry {
   platforms: Record<Triple, VariantPlatform>;
 }
 
-// `assets` maps a triple to the upstream asset name(s); "{tag}" expands to the
-// release's tag_name (e.g. "llama-{tag}-bin-macos-arm64.tar.gz").
 export interface UpstreamResolver {
   repo: string;
   assets: Partial<Record<Triple, TripleAsset>>;
-  /** When set, resolve this exact release tag instead of the latest. Pins a
-   *  binary on EVERY channel (latest/dev resolve at runtime, stable pins from
-   *  the same tag at release time), so bumping it is a deliberate edit. */
+  /** Resolve this exact release tag instead of the latest, on EVERY channel. */
   pinnedTag?: string;
 }
 
-/** Normalize a triple's asset config into a per-variant map. A bare string is a
- *  single `cpu` variant; a bare per-variant string value becomes `{ asset }`.
- *  Everything downstream (selection, resolution, manifest generation) reads
- *  through this, so single-variant kinds (deno, mac llama) need no special case. */
+/** Normalize a triple's asset config into a per-variant map, so single-variant
+ *  kinds (deno, mac llama) need no special case downstream. */
 export function assetVariants(
   a: TripleAsset | undefined,
 ): Partial<Record<BinaryVariant, VariantAsset>> {
@@ -146,9 +132,7 @@ export function assetVariants(
   return out;
 }
 
-/** Normalize a pinned platform entry into a per-variant map. A bare
- *  `PinnedTarget` (has `url`) is the `cpu` variant. Mirror of {@link assetVariants}
- *  for the pinned (stable-channel) manifest shape. */
+/** Pinned mirror of {@link assetVariants}; a bare `PinnedTarget` is `cpu`. */
 export function platformVariants(
   p: VariantPlatform | undefined,
 ): Partial<Record<BinaryVariant, PinnedTarget>> {
@@ -162,23 +146,13 @@ export interface BinaryManifestResolverEntry {
 
 // Single source of truth for the upstream resolver config per sidecar binary:
 // the GitHub repo + per-triple asset-name pattern ("{tag}" expands to the
-// release's tag_name). Consumed by:
-//  - the release script: STABLE pins the current latest (URL + sha256) at
-//    release time; LATEST embeds the resolver verbatim so the core resolves the
-//    latest release at runtime.
-//  - a DEV core: builds resolver entries from this in-code (dev has no
-//    published manifest), so a from-source build pulls the latest upstream
-//    sidecar release exactly like latest.
-// Partial: self-hosted kinds (loca-core-speech) have no upstream resolver. The
-// release builds and pins them directly into binaries.json (scripts/release/
-// core.ts composeBinaryManifest), so they are absent from this map.
+// release's tag_name). The release script pins it for stable and embeds it
+// verbatim for latest; a dev core builds resolver entries from it in-code.
 export const UPSTREAM_BINARIES: Partial<Record<BinaryKind, UpstreamResolver>> = {
   "llama-server": {
     repo: "ggml-org/llama.cpp",
-    // Per-variant asset maps: `cpu` is always present (the guaranteed fallback);
-    // GPU variants are the upstream GPU builds. macOS bakes Metal into the single
-    // default build, so mac stays a bare (cpu-keyed) string. See domain/variant.ts
-    // for how a device picks the best offered variant for its detected backend.
+    // macOS bakes Metal into the single default build, so mac stays a bare
+    // (cpu-keyed) string.
     assets: {
       "aarch64-apple-darwin": "llama-{tag}-bin-macos-arm64.tar.gz",
       "x86_64-apple-darwin": "llama-{tag}-bin-macos-x64.tar.gz",
@@ -206,10 +180,8 @@ export const UPSTREAM_BINARIES: Partial<Record<BinaryKind, UpstreamResolver>> = 
   },
   deno: {
     repo: "denoland/deno",
-    // Pinned on every channel: tool-worker permission prompts are parsed
-    // from this version's prompt wording (loca-core/src/extensions/
-    // prompt-parser.ts). Bump deliberately and re-run the live-probe test
-    // (prompt-live-probe.test.ts) against the new release first.
+    // Pinned on every channel: tool-worker permission prompts are parsed from
+    // this version's wording. Re-run prompt-live-probe.test.ts before bumping.
     pinnedTag: "v2.8.2",
     assets: {
       "aarch64-apple-darwin": "deno-aarch64-apple-darwin.zip",
@@ -230,8 +202,7 @@ export function isResolverEntry(e: BinaryManifestEntry): e is BinaryManifestReso
 
 export interface BinaryManifest {
   schemaVersion: 1;
-  // The core release version this manifest shipped with. Monotonic anchor the
-  // runtime uses to refuse a strictly-older (replayed) signed manifest.
+  // Monotonic anchor used to refuse a strictly-older (replayed) manifest.
   version: string;
   binaries: Record<BinaryKind, BinaryManifestEntry>;
   signature: string; // base64 Ed25519 over canonical JSON of the manifest minus signature
@@ -245,23 +216,16 @@ export interface BinaryStatus {
   /** The GPU variant currently installed on disk (`cpu` for single-variant
    *  kinds; undefined when not installed). */
   variant?: BinaryVariant;
-  /** The desired variant captured at the last install (what that install AIMED
-   *  for). Equals `desiredVariant` in the normal case; differs from `variant`
-   *  only when the ideal wasn't resolvable upstream and the install degraded.
-   *  Present-ness is judged by `target === desiredVariant` (not
-   *  `variant === desiredVariant`), so an unavoidable fallback settles instead of
-   *  reading as perpetually-missing. Undefined when not installed. */
+  /** What the last install AIMED for. Present-ness is judged by
+   *  `target === desiredVariant`, so an install that degraded to an available
+   *  variant settles instead of reading as perpetually-missing. */
   target?: BinaryVariant;
-  /** The variant this device should have, given detected hardware + the backend
-   *  override (the ideal). A concrete better variant becoming installable surfaces
-   *  through the update path, not the missing-requirement path. */
+  /** The ideal variant for this device (detected hardware + backend override). */
   desiredVariant?: BinaryVariant;
 }
 
-// Resolved download metadata for a not-yet-installed binary, surfaced in the
-// startup download confirmation. `version` is the resolved release (or
-// "unknown" when it couldn't be resolved); `sizeBytes` is the download size
-// when known (GitHub asset size on latest, HEAD Content-Length on stable).
+// Resolved download metadata for a not-yet-installed binary. `version` is
+// "unknown" when it couldn't be resolved.
 export interface BinaryProbeResult {
   kind: BinaryKind;
   version: string;
@@ -270,17 +234,14 @@ export interface BinaryProbeResult {
 
 // --- requirements -----------------------------------------------------------
 //
-// The single source of truth for "what files does the current configuration
-// need" (models + sidecar binaries). The core computes a RequirementsSnapshot
-// from these and broadcasts it; the client renders one pending-downloads popup.
+// What the current configuration needs on disk (models + sidecar binaries). The
+// core computes a RequirementsSnapshot and broadcasts it; the client renders one
+// pending-downloads popup.
 
 /** Synthetic source prefix for a sidecar binary surfaced in the same list as
  *  HF model files (e.g. `binary:llama-server`). */
 export const BINARY_SOURCE_PREFIX = "binary:";
 
-export function binarySource(kind: BinaryKind): string {
-  return `${BINARY_SOURCE_PREFIX}${kind}`;
-}
 export function isBinarySource(source: string): boolean {
   return source.startsWith(BINARY_SOURCE_PREFIX);
 }
@@ -301,11 +262,8 @@ export interface RequiredFile {
   /** A binary with no upstream asset on this platform. Kept in `required` for
    *  visibility but excluded from `missing` so it never blocks the app. */
   unavailable?: boolean;
-  /** The last attempt to prepare/download/install this file failed and it needs
-   *  a retry (e.g. an upstream binary that could not be resolved). Still counted
-   *  in `missing` (it blocks), but the UI shows the reason + a retry affordance
-   *  instead of a normal, sizeless "Download" line. Distinct from `unavailable`
-   *  (platform-impossible, non-blocking). */
+  /** Preparing this file failed and it needs a retry. Still counted in
+   *  `missing` (it blocks), unlike `unavailable` (platform-impossible). */
   error?: string;
   sizeHint?: number;
   version?: string;
@@ -313,8 +271,7 @@ export interface RequiredFile {
 
 export interface RequirementsSnapshot {
   required: RequiredFile[];
-  /** Subset of `required` that is not present and not unavailable. Drives the
-   *  popup and the app's pending gate. */
+  /** Subset of `required` that is not present and not unavailable. */
   missing: RequiredFile[];
 }
 
@@ -323,74 +280,34 @@ export interface RequiredModelRef {
   group: RequirementGroup;
 }
 
-// The schema defaults for the two enable flags, applied here so a SPARSE
-// settings object (the on-disk file stores only non-default values) yields the
-// same answer as a resolved one. Both default to false (see
-// settings/groups/{stt,tts}.ts), so a fresh install needs no speech model or
-// binary to send a text message; voice is opt-in. A provider absent or set to
-// anything other than "external" means local.
+// The schema defaults for the two enable flags, repeated here so a SPARSE
+// settings object (only non-default values on disk) yields the same answer as a
+// resolved one.
 const STT_ENABLED_DEFAULT = false;
 const TTS_ENABLED_DEFAULT = false;
 
-/** True when speech-to-text runs on the local `loca-core-speech` binary (it is
- *  enabled and not pointed at an external service). The single predicate behind
- *  every gate that branches local-vs-external STT (model + binary requirements,
- *  the speech sidecar's desired state), so they cannot drift on an absent flag,
- *  an absent provider, or a malformed value, whether fed sparse or resolved
- *  settings. */
+/** True when speech-to-text runs on the local engine. */
 export function sttUsesLocal(s: Record<string, unknown>): boolean {
   const enabled = s["stt.enabled"] ?? STT_ENABLED_DEFAULT;
   return !!enabled && s["stt.provider"] !== "external";
 }
 
-/** True when text-to-speech runs on the local `loca-core-speech` binary.
- *  Mirror of {@link sttUsesLocal} for the TTS gates. */
+/** Mirror of {@link sttUsesLocal} for the TTS gates. */
 export function ttsUsesLocal(s: Record<string, unknown>): boolean {
   const enabled = s["tts.enabled"] ?? TTS_ENABLED_DEFAULT;
   return !!enabled && s["tts.provider"] !== "external";
 }
 
-/** Sidecar binary kinds the settings require: `deno` always (runs the tool
- *  worker); `llama-server` always (local chat when the LLM provider is local,
- *  plus embeddings for tool-relevance, which always run on a second llama-server
- *  instance); `loca-core-speech` iff local STT or TTS is enabled (one binary
- *  serves both Whisper STT and Kokoro TTS). */
-export function requiredBinaryKinds(s: Record<string, unknown>): BinaryKind[] {
-  const out: BinaryKind[] = ["deno", "llama-server"];
-  if (sttUsesLocal(s) || ttsUsesLocal(s)) out.push("loca-core-speech");
-  return out;
-}
-
-/** Triples a self-hosted (no upstream resolver) binary cannot run on.
- *  loca-core-speech statically links sherpa-onnx; upstream ships a static lib
- *  for every shipped triple. windows-arm64 is the one the sherpa-onnx-sys crate's
- *  download map omits, so the build supplies it via SHERPA_ONNX_LIB_DIR (staged by
- *  the "Stage sherpa-onnx win-arm64 lib" step in .github/workflows/release.yml).
- *  No triple is unsupported today; the map stays for any future per-triple gap. */
-const SELF_HOSTED_UNSUPPORTED: Partial<Record<BinaryKind, ReadonlySet<Triple>>> = {};
-
-/** True when `kind` can never be installed on `triple` (so it's marked
- *  `unavailable` rather than perpetually `missing`). Resolver-backed kinds have
- *  no upstream asset for the triple; self-hosted kinds (pinned directly into
- *  binaries.json) are available everywhere except their statically-known
- *  unsupported triples. */
+/** True when `kind` has no upstream asset for `triple` (so it's marked
+ *  `unavailable` rather than perpetually `missing`). */
 export function binaryUnavailableOnTriple(kind: BinaryKind, triple: Triple): boolean {
   const resolver = UPSTREAM_BINARIES[kind];
-  if (resolver) return Object.keys(assetVariants(resolver.assets[triple])).length === 0;
-  return SELF_HOSTED_UNSUPPORTED[kind]?.has(triple) ?? false;
+  return !!resolver && Object.keys(assetVariants(resolver.assets[triple])).length === 0;
 }
 
-// Core update manifest (separate from binaries).
-//
-// `binaries` carries the per-triple loca-core executables. `workers` carries
-// the platform-independent .ts file(s) (just toolWorker now) spawned at runtime
-// by the core; shipping them separately from the compiled binary keeps
-// deno-compile's embedded-dependency set scoped to the core's own graph rather
-// than the whole workspace. `helpers` carries per-triple binaries that ship next
-// to core in ~/.loca/<channel>/core/bin/ and are installed (and swapped on
-// self-update) by the same code path: loca-core-keychain (Rust crate) and
-// loca-core-updater (Rust crate; the binary that performs the swap). They
-// are invoked via subprocess.
+// Core update manifest (separate from binaries). `workers` carries the
+// platform-independent tool-worker .ts; `helpers` carries per-triple binaries
+// shipped next to core (loca-core-updater, which performs the swap).
 export interface CoreManifest {
   schemaVersion: 1;
   version: string;
@@ -400,12 +317,8 @@ export interface CoreManifest {
   signature: string;
 }
 
-// Signed manifest for the CDN-distributed built-in extension. Mirrors CoreManifest:
-// the whole object minus `signature` is canonicalized + Ed25519-signed at release
-// time, and the runtime verifier reconstructs the same payload by stripping
-// `signature`. `version` is the extension's package.json version; `tarballUrl`
-// points at the gzipped tarball for that version and `sha256` is verified before
-// extraction.
+// Signed manifest for the CDN-distributed built-in extension. Mirrors
+// CoreManifest: the object minus `signature` is canonicalized + Ed25519-signed.
 export interface BuiltinExtensionManifest {
   schemaVersion: 1;
   version: string;
@@ -426,7 +339,6 @@ export interface SidecarSnapshot {
   rssMb?: number;
   cpuPct?: number;
   message?: string;
-  // 0..1 progress hint for the load phase (e.g. model download). Absent
-  // once running.
+  // 0..1 progress hint for the load phase. Absent once running.
   progress?: number;
 }

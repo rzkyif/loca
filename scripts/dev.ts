@@ -8,20 +8,16 @@
 
 import { fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import { SEEDED_EXTENSIONS } from "@loca/shared";
-import { computeDevManifest } from "../packages/loca-core/src/extensions/seeded-manifest.ts";
 
 const ROOT = fromFileUrl(new URL("..", import.meta.url));
 
-// Dev runs on the "dev" install channel (~/.loca/dev/{core,client}). Both
-// children inherit LOCA_CHANNEL so core and the Tauri client agree on the
-// isolated location + keychain namespace.
+// Dev runs on the "dev" install channel (~/.loca/dev/{core,client}); both
+// children inherit LOCA_CHANNEL so they agree on the isolated location and
+// keychain namespace.
 const CHANNEL_ENV = { LOCA_CHANNEL: "dev" };
-// The dev core binds the dev-channel port (stable base 7800 + dev offset 20,
-// see packages/loca-core/src/paths.ts) and serves the API over TLS with a
-// self-signed cert. The dev task trusts that cert for loopback via
-// --unsafely-ignore-certificate-errors=127.0.0.1 (set in deno.json), so these
-// HTTPS calls to the local core succeed without a public CA.
+// The dev core binds the dev-channel port (stable base 7800 + dev offset 20) and
+// serves TLS with a self-signed cert, which deno.json's dev task trusts for
+// loopback via --unsafely-ignore-certificate-errors=127.0.0.1.
 const CORE_URL = "https://127.0.0.1:7820";
 
 function homeDir(): string {
@@ -35,108 +31,45 @@ function homeDir(): string {
 const DEV_CORE_DIR = join(homeDir(), ".loca", "dev", "core");
 const ADMIN_TOKEN_FILE = join(DEV_CORE_DIR, ".admin-token");
 
-// Dev seeded-extension manifests. There is no published manifests/dev/extension.json,
-// so dev.ts generates one per seeded extension (the built-in plus the dev-only
-// samples) from the in-repo source and regenerates it on edits, at the cache path
-// core reads. The version carries a content hash so any edit reads as "Update
-// available" after a check; "Update" then reinstalls the codebase copy. The
-// version formula is reused from computeDevManifest() in
-// packages/loca-core/src/extensions/seeded-manifest.ts (no duplication).
-const SEEDED_SRC_DIRS = SEEDED_EXTENSIONS.map((e) => join(ROOT, "packages", e.dir));
-
-function devManifestPath(id: string): string {
-  return join(DEV_CORE_DIR, "cache", `${id}-manifest.json`);
-}
-
-async function writeDevExtensionManifests(): Promise<void> {
-  await ensureDir(join(DEV_CORE_DIR, "cache"));
-  for (const ext of SEEDED_EXTENSIONS) {
-    const manifest = await computeDevManifest(ext);
-    const path = devManifestPath(ext.id);
-    const tmp = path + ".tmp";
-    await Deno.writeTextFile(tmp, JSON.stringify(manifest, null, 2));
-    await Deno.rename(tmp, path);
-  }
-}
-
-/** Regenerate the dev manifests now, then on every change under any seeded
- *  extension's source dir (debounced). Fire-and-forget: the watcher lives for the
- *  dev session and is torn down when the orchestrator exits. */
-async function startDevExtensionManifest(): Promise<void> {
-  await writeDevExtensionManifests();
-  void (async () => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    try {
-      for await (const _event of Deno.watchFs(SEEDED_SRC_DIRS)) {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => void writeDevExtensionManifests().catch(() => {}), 200);
-      }
-    } catch {
-      // watch failures are non-fatal in dev
-    }
-  })();
-}
-// The dev client's data root. --reset wipes it whole (see resetClientSettings):
-// cores.json (the paired-cores registry, whose absence sends the next boot back
-// through core management, see the boot gate in
-// packages/loca-client/src/ui/routes/+page.svelte), settings.json, snippets/,
-// keychain.json (the dev file-backed bearer-token store), and logs. None of it
-// needs downloading, so nothing here is preserved.
+// The dev client's data root. --reset wipes it whole: cores.json (whose absence
+// sends the next boot back through core management), settings.json, snippets/,
+// keychain.json, and logs. None of it needs downloading, so nothing is kept.
 const DEV_CLIENT_DIR = join(homeDir(), ".loca", "dev", "client");
 
 // --reset is a denylist, not an allowlist: it deletes EVERYTHING under the dev
-// core dir EXCEPT these names, so the next boot starts from a clean slate
-// (db, settings, sessions, memories, secrets, admin token/password, the
-// seed markers, installed extensions, logs, caches - all gone and all
-// regenerated on boot). An allowlist silently let new state survive (this is
-// exactly how tools.enabled lingered across resets). The two preserved entries
-// are pure download/build artifacts that are expensive to re-acquire and hold
-// no user state:
-//   - bin/        the sidecar binaries (llama-server, loca-core-speech + its
-//                 fetched espeak-ng-data, the cargo-built helpers) and deno.
-//   - deno-cache/ the downloaded deno/npm dependency cache.
-// ~/.loca/models lives outside the channel root and so is never touched.
-// A future download-only cache added under the core dir belongs in this set.
+// core dir EXCEPT these names, so no new kind of state can silently survive.
+// The two preserved entries hold no user state, only expensive-to-reacquire
+// downloads: `bin/` (the sidecar binaries plus deno) and `deno-cache/`. A future
+// download-only cache under the core dir belongs in this set. ~/.loca/models
+// lives outside the channel root and is never touched.
 const CORE_RESET_PRESERVE = new Set(["bin", "deno-cache"]);
 
 // CLI flags, wired to the deno tasks in deno.json:
-//  --reset          delete the dev client's settings.json before launch so the
-//                   client boots into core management instead of straight to
-//                   chat, AND drop the dev core's SQLite db + built-in seed
-//                   marker so it boots onto a fresh schema and re-stages the
-//                   built-in extension (dev:reset / dev:reset:install).
+//  --reset          wipe the dev client and core state so the client boots into
+//                   core management on a fresh schema with the seeded
+//                   extensions re-staged.
 //  --fresh-install  make the client report no local core, so first boot shows
-//                   the welcome remote-connect page instead of silently pairing
-//                   with the dev core. Sets LOCA_DEV_FRESH_INSTALL for the
-//                   client (read by the Tauri pairing commands) and skips the
-//                   remote prefill so that page starts blank
-//                   (dev:reset:install).
+//                   the welcome remote-connect page instead of silently pairing.
+//                   Sets LOCA_DEV_FRESH_INSTALL and skips the remote prefill.
 const RESET = Deno.args.includes("--reset");
 const FRESH_INSTALL = Deno.args.includes("--fresh-install");
-// --android / --ios run the mobile client (`tauri android|ios dev`) against this
-// dev core instead of the desktop client. The mobile WebView runs on an
-// emulator/simulator/device, so the core must be reachable off-loopback
-// (LOCA_CORE_HOST=0.0.0.0 below) and the onboarding prefill is passed through
-// Vite env (mobile has no launch argv).
+// --android / --ios run the mobile client against this dev core. The WebView
+// runs on an emulator/simulator/device, so the core must be reachable
+// off-loopback (LOCA_CORE_HOST=0.0.0.0 below) and the onboarding prefill goes
+// through Vite env (mobile has no launch argv).
 const ANDROID = Deno.args.includes("--android");
 const IOS = Deno.args.includes("--ios");
-// The parts that are identical for either mobile target: bind the core to every
-// interface and route the prefill through Vite env rather than argv.
 const MOBILE = ANDROID || IOS;
 // --client-only spawns just the client (no dev core, no helper/sidecar setup),
-// the orchestrated equivalent of running the bare client task. It exists so the
-// mobile client-only loop still gets this script's clean teardown (the detached
-// Gradle/Xcode build sweep below) instead of leaking on Ctrl+C. A core is
-// assumed to be running separately; onboarding derives its address from the dev
-// host.
+// so the mobile client-only loop still gets this script's clean teardown instead
+// of leaking on Ctrl+C. A core is assumed to be running separately.
 const CLIENT_ONLY = Deno.args.includes("--client-only");
 
-// All child labels ("core", "client", "dev") are left-aligned to this width so
-// the message columns line up regardless of label length.
+// Child labels ("core", "client", "dev") are padded to this width so the message
+// columns line up.
 const LABEL_WIDTH = 6;
 
-// Color only when stdout is a real terminal and NO_COLOR is unset, so piping the
-// dev output to a file (or NO_COLOR=1) yields clean, escape-free text.
+// Color only on a real terminal with NO_COLOR unset, so piped output is clean.
 const useColor = !Deno.env.get("NO_COLOR") && Deno.stdout.isTerminal();
 
 function color(code: string, s: string): string {
@@ -144,8 +77,8 @@ function color(code: string, s: string): string {
 }
 
 // Compact wall-clock HH:MM:SS.mmm. dev.ts is the single timestamp authority for
-// the multiplexed console: children emit bare messages (core skips its own
-// timestamp via LOCA_LOG_NO_TIME) and this stamp is prepended to every line.
+// the multiplexed console; children emit bare messages (core skips its own via
+// LOCA_LOG_NO_TIME).
 function stamp(): string {
   const d = new Date();
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
@@ -155,30 +88,23 @@ function stamp(): string {
   )}`;
 }
 
-// `<time> <badge> ` prefix, built per line at write time so the timestamp marks
-// when the line arrived. The badge color is the child's SGR code.
+// `<time> <badge> ` prefix, built per line so the stamp marks its arrival.
 function linePrefix(name: string, code: string): string {
   return `${color("2", stamp())} ${color(code, name.padEnd(LABEL_WIDTH))} `;
 }
 
-// Strip ANSI escape sequences so the line matchers see plain text (tauri runs
-// cargo with `--color always`, and Deno bolds its "Watcher" prefix). Matches the
-// full CSI family, not just SGR color (`m`): cargo prefixes its final "Finished"
-// status with a clear-line `\x1b[2K`, so an `m`-only strip would leave a leading
-// ESC and miss the match.
+// Strip ANSI so the matchers below see plain text. Matches the full CSI family,
+// not just SGR (`m`): cargo prefixes "Finished" with a clear-line `\x1b[2K`, so
+// an `m`-only strip would leave a leading ESC and miss the match.
 // oxlint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 
-// Our own logs (core's @std/log + the client's fern) start every line with a
-// lowercase, padded level word. That positive signal is how we recognize a line
-// as ours and pass it through untouched; anything else is build noise (dropped)
-// or a leak (wrapped, below).
+// Our own logs start every line with a lowercase, padded level word. That
+// positive signal is how a line is recognized as ours and passed through.
 const LEVEL_RE = /^(?:error|warn|info|debug|trace)\s/;
 
-// The tauri-cli / cargo / deno-task orchestration chatter that shares the child's
-// stream with the app's own logs. Pure noise, dropped outright. Build
-// ERRORS/warnings don't match these, so they fall through to the leak path and
-// still surface (clearly marked as not-ours).
+// The tauri-cli / cargo / deno-task chatter sharing the child's stream. Dropped
+// outright; build errors match none of these and still surface as leaks.
 const BUILD_NOISE = [
   /^Running BeforeDevCommand\b/,
   /^Running DevCommand\b/,
@@ -193,38 +119,31 @@ const BUILD_NOISE = [
   /^Task\b/, // deno "Task <name> deno run ..."
 ];
 
-// Level SGR codes, matching core's @std/log + the client's fern coloring (see
-// each package's log module): debug dim, info green, warn yellow, error red.
+// Level SGR codes, matching core's @std/log and the client's fern coloring.
 const LEVEL_CODE = { debug: "2", info: "32", warn: "33", error: "31" } as const;
 
-// Render a line dev.ts synthesizes itself in the same `<level> <scope> <message>`
-// shape the children's own logs use, so it groups with them visually. The level
-// word is padded to 5 like @std/log / fern; the scope is dim.
+// A dev.ts-synthesized line in the children's own `<level> <scope> <message>`
+// shape, so it groups with them visually.
 function levelLine(level: keyof typeof LEVEL_CODE, scope: string, message: string): string {
   return `${color(LEVEL_CODE[level], level.padEnd(5))} ${color("2", scope)} ${message}`;
 }
 
-// Wrap a line that did NOT come from our logging system in a dim "leak" marker
-// so it's obvious it bypassed our format. We rely on a denylist for build noise,
-// so new leaks are inevitable; marking (not hiding) them keeps them visible.
+// Mark (rather than hide) a line that bypassed our logging format: BUILD_NOISE
+// is a denylist, so new leaks are inevitable and must stay visible.
 function leakLine(content: string): string {
   return `${color("2", "leak".padEnd(5))} ${content}`;
 }
 
-// Decide how a raw child line is presented: pass our own logs through verbatim,
-// drop build noise, render the known watcher lines as standard leveled logs, and
-// wrap everything else as a leak. Returns null to drop.
+// Present a raw child line: our own logs verbatim, build noise dropped (null),
+// watcher lines as leveled logs, everything else as a leak.
 function formatChildLine(raw: string): string | null {
   const plain = raw.replace(ANSI_RE, "").trimStart();
   if (plain.trim() === "") return null; // blank spacing from build tools
   if (BUILD_NOISE.some((re) => re.test(plain))) return null;
   if (LEVEL_RE.test(plain)) return raw; // our log: keep it (and its colors) verbatim
-  // Deno's `--watch` supervisor emits a small, known family of lines on core's
-  // stream: "Restarting! File change detected: ..." (only on an actual reload),
-  // "Waiting for graceful termination..." (on every reload and on Ctrl-C), and
-  // "Process started/finished.". They're fully expected, so render them as
-  // standard leveled `watcher`-scoped logs instead of leaks: the reload event as
-  // info, the rest as debug chatter.
+  // Deno's `--watch` supervisor emits a small, expected family of lines on
+  // core's stream; render them as `watcher`-scoped logs rather than leaks, the
+  // reload event as info and the rest as debug chatter.
   const watcher = plain.match(/^Watcher\s+(.*)$/);
   if (watcher) {
     const body = watcher[1];
@@ -269,11 +188,8 @@ function spawn(
   return { name, proc };
 }
 
-// A WritableStream permits only one active writer, so every child's stdout/
-// stderr pipe shares one long-lived writer per std stream. Acquiring a second
-// writer on Deno.stdout/stderr (e.g. once per child) throws "The stream is
-// already locked". The writers are never released; they live for the whole
-// dev session.
+// A WritableStream permits only one active writer, so every child's pipes share
+// one long-lived writer per std stream; a second would throw "already locked".
 const stdoutWriter = Deno.stdout.writable.getWriter();
 const stderrWriter = Deno.stderr.writable.getWriter();
 
@@ -316,10 +232,9 @@ function devLog(msg: string): void {
   console.log(`${linePrefix("dev", "33")}${msg}`);
 }
 
-// Generate (once) and return the dev core's admin token. The from-source core
-// never writes ~/.loca/dev/core/.admin-token itself, so without this the
-// client could not mint a pairing code against it. Written only when absent,
-// so an existing pairing keeps working across dev restarts.
+// Generate (once) and return the dev core's admin token: the from-source core
+// never writes .admin-token itself, so without this the client could not mint a
+// pairing code. Written only when absent, so pairings survive dev restarts.
 async function ensureAdminToken(): Promise<string> {
   await Deno.mkdir(DEV_CORE_DIR, { recursive: true });
   try {
@@ -341,13 +256,11 @@ async function ensureAdminToken(): Promise<string> {
   return token;
 }
 
-// Dev convenience: set a known, randomly-generated admin password on the dev
-// core and return it (or null on failure). The password gates the remote flows
-// (generate a pairing code, remove a device) that an already-paired client
-// drives, so without one those can't be exercised in dev. The stored hash is
-// argon2id (a prior plaintext can't be read back), so we overwrite each run and
-// print the fresh value. Skipped in --fresh-install, which exercises the
-// no-password first-boot state (the password is then set in Settings > Cores).
+// Set a known, random admin password on the dev core and return it (null on
+// failure). It gates the remote flows an already-paired client drives. The
+// stored hash is argon2id, so a prior plaintext can't be read back: overwrite
+// each run and print the fresh value. Skipped in --fresh-install, which
+// exercises the no-password first-boot state.
 async function setDevAdminPassword(token: string): Promise<string | null> {
   const suffix = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) =>
     b.toString(16).padStart(2, "0"),
@@ -368,9 +281,8 @@ async function setDevAdminPassword(token: string): Promise<string | null> {
   }
 }
 
-// Wait for the dev core to answer, mint a pairing code, print how to connect,
-// and return the code (or null on failure). Runs before the client spawns so
-// the code can be forwarded as a launch argument that prefills onboarding.
+// Wait for the dev core, mint a pairing code, print how to connect, and return
+// the code. Runs before the client spawns so the code can prefill onboarding.
 // Best-effort: on any failure, print the manual command and return null.
 async function mintPairingCode(token: string): Promise<string | null> {
   let up = false;
@@ -463,59 +375,21 @@ async function resetClientSettings(): Promise<void> {
   await wipeDirExcept(DEV_CLIENT_DIR, new Set());
 }
 
-// Wipe the dev core dir to a clean slate, preserving only the download/build
-// artifacts in CORE_RESET_PRESERVE. Everything else (db, settings, sessions,
-// memories, secrets, admin credentials, the seed markers, installed
-// extensions, caches, logs) is regenerated on the next boot: the db is rebuilt
-// from the current schema (editing schema.sql in place only reaches a fresh db,
-// since the migration runner skips a version the db already has and CREATE TABLE
-// IF NOT EXISTS never adds a column to an existing table; see
-// packages/loca-core/src/db/migrate.ts), and dropping the seed markers
-// re-stages the seeded extensions against that fresh db. Must run before core
-// spawns and opens the db.
+// Wipe the dev core dir to a clean slate, preserving only CORE_RESET_PRESERVE.
+// Everything else is regenerated on the next boot: the db is rebuilt from the
+// current schema (an in-place schema.sql edit only reaches a fresh db), and
+// dropping the seed markers re-stages the seeded extensions against it. Must run
+// before core spawns and opens the db.
 async function resetCoreState(): Promise<void> {
   await wipeDirExcept(DEV_CORE_DIR, CORE_RESET_PRESERVE);
 }
 
-// Collect a pid plus every descendant (children, grandchildren, …), gathered
-// up front before any are killed: once a parent dies its children reparent to
-// init and can no longer be found via `pgrep -P`. Deno's proc.kill() signals
-// only the direct child, so without walking the tree the Tauri CLI's vite dev
-// server (port 1420) and the built app binary survive as orphans that block the
-// next `deno task dev` run. Unix-only; on Windows just returns the pid itself.
-async function processTree(pid: number): Promise<number[]> {
-  if (Deno.build.os === "windows") return [pid];
-  const tree = [pid];
-  try {
-    const out = await new Deno.Command("pgrep", {
-      args: ["-P", String(pid)],
-      stdout: "piped",
-      stderr: "null",
-    }).output();
-    const kids = new TextDecoder()
-      .decode(out.stdout)
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map(Number);
-    for (const kid of kids) tree.push(...(await processTree(kid)));
-  } catch {
-    // pgrep unavailable; fall back to just this pid.
-  }
-  return tree;
-}
-
-// pids holding a TCP listen socket on `port` (Unix-only; empty if lsof is
-// missing). Used to reclaim port 1420 from a stale vite server orphaned by a
-// previous dev session that didn't shut down cleanly.
-async function listenersOn(port: number): Promise<number[]> {
+// Run a pid-listing command (Unix-only), returning the pids it printed. An
+// absent or failing tool yields no pids rather than throwing.
+async function pidsFrom(cmd: string, args: string[]): Promise<number[]> {
   if (Deno.build.os === "windows") return [];
   try {
-    const out = await new Deno.Command("lsof", {
-      args: ["-ti", `tcp:${port}`, "-sTCP:LISTEN"],
-      stdout: "piped",
-      stderr: "null",
-    }).output();
+    const out = await new Deno.Command(cmd, { args, stdout: "piped", stderr: "null" }).output();
     return new TextDecoder()
       .decode(out.stdout)
       .split("\n")
@@ -527,11 +401,30 @@ async function listenersOn(port: number): Promise<number[]> {
   }
 }
 
+// A pid plus every descendant, gathered BEFORE any are killed: once a parent
+// dies its children reparent to init and `pgrep -P` can no longer find them.
+// proc.kill() signals only the direct child, so without this the Tauri CLI's
+// vite server and the built app binary survive as orphans that block the next
+// run. On Windows, just the pid itself.
+async function processTree(pid: number): Promise<number[]> {
+  if (Deno.build.os === "windows") return [pid];
+  const tree = [pid];
+  for (const kid of await pidsFrom("pgrep", ["-P", String(pid)])) {
+    tree.push(...(await processTree(kid)));
+  }
+  return tree;
+}
+
+// pids holding a TCP listen socket on `port`, used to reclaim the Vite port from
+// a server orphaned by a previous session that didn't shut down cleanly.
+function listenersOn(port: number): Promise<number[]> {
+  return pidsFrom("lsof", ["-ti", `tcp:${port}`, "-sTCP:LISTEN"]);
+}
+
 const VITE_PORT = 1420;
 
-// Free the Vite dev port. Called at startup (in case an earlier dev session was
-// SIGKILLed and left an orphan behind) and again at shutdown (in case this
-// session's Vite server outlived the descendant-tree sweep).
+// Free the Vite dev port, at startup (an earlier session left an orphan) and
+// again at shutdown (this session's server outlived the tree sweep).
 async function reclaimVitePort(): Promise<void> {
   for (const pid of await listenersOn(VITE_PORT)) {
     devLog(`port ${VITE_PORT} held by stale pid ${pid}; terminating it`);
@@ -548,12 +441,10 @@ const VITE_CACHE_DIRS = [
   join(ROOT, "packages", "loca-client", "node_modules", ".vite"),
 ];
 
-// A `deps_temp_*` dir inside a Vite cache marks a dependency optimization that
-// was interrupted (Vite hard-killed mid-flight). Left in place it crashes the
-// next startup deep in rolldown ("Failed to unwrap exclusive reference of
-// `BindingBundler`"). A healthy cache holds only a `deps` dir, so we wipe the
-// cache only when that corruption marker is present, never slowing a clean
-// start. Vite re-optimizes from scratch on the next run (~0.5 s).
+// A `deps_temp_*` dir marks a dependency optimization Vite was hard-killed
+// mid-flight; left in place it crashes the next startup deep in rolldown
+// ("Failed to unwrap exclusive reference of `BindingBundler`"). Wiping only on
+// that marker never slows a clean start, and Vite re-optimizes in ~0.5s.
 async function clearStaleViteCache(): Promise<void> {
   for (const dir of VITE_CACHE_DIRS) {
     let interrupted = false;
@@ -578,13 +469,11 @@ async function clearStaleViteCache(): Promise<void> {
   }
 }
 
-// The android NDK cross-compile (cargo/rustc/clang) runs as a child of the
-// persistent Gradle daemon, which double-forks into its own session and so sits
-// OUTSIDE this process's descendant tree: `pgrep -P` can't reach it, and a Ctrl+C
-// would otherwise leave it grinding in the background. Match it by the NDK target
-// triples that appear in its command line and reap it. (The Gradle daemon itself
-// and the adb server are persistent by design and intentionally left running;
-// re-spawning the daemon's warm JVM on every run would slow rebuilds.)
+// The android NDK cross-compile runs under the persistent Gradle daemon, which
+// double-forks into its own session and so sits OUTSIDE this process's
+// descendant tree: `pgrep -P` can't reach it, and Ctrl+C would leave it
+// grinding. Match it by NDK target triple and reap it. The Gradle daemon and adb
+// server are persistent by design and left running.
 const ANDROID_TARGET_TRIPLES = [
   "aarch64-linux-android",
   "armv7-linux-androideabi",
@@ -592,11 +481,9 @@ const ANDROID_TARGET_TRIPLES = [
   "x86_64-linux-android",
 ];
 
-// The iOS analogue: `tauri ios dev` drives xcodebuild, which runs the cargo/rustc/
-// clang cross-compile for the apple-ios triples in its own process group, outside
-// this orchestrator's descendant tree. Match those by triple and reap them on
-// Ctrl+C. The Simulator app and CoreSimulator services are persistent by design
-// (like adb + the Gradle daemon) and are intentionally left running.
+// The iOS analogue: xcodebuild runs the apple-ios cross-compile in its own
+// process group, outside this orchestrator's descendant tree. Match by triple
+// and reap on Ctrl+C; Simulator.app and CoreSimulator are left running.
 const IOS_TARGET_TRIPLES = ["aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios"];
 
 // SIGKILL every process whose command line still references one of these NDK/SDK
@@ -669,9 +556,8 @@ async function shutdown(): Promise<void> {
 }
 
 // Final cleanup after the tree is killed: free the Vite port in case its server
-// outlived the tree (orphaned past pgrep -P reach), and on mobile reap the
-// detached Gradle-daemon / xcodebuild cross-compile. Best-effort, then exit
-// unconditionally so a hung sweep can never wedge the shutdown.
+// outlived the sweep, and on mobile reap the detached cross-compile.
+// Best-effort, then exit unconditionally so a hung sweep cannot wedge shutdown.
 async function finishShutdown(): Promise<void> {
   try {
     await reclaimVitePort();
@@ -703,17 +589,12 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-// Build the native helper binaries from source and link them into the dev
-// core's bin dir. Production downloads these via the signed manifest at install
-// time; dev has no such download, so without this they are absent and core
-// fails its boot-time helper check. The crate name is also the on-disk base
-// name; core looks them up channel-suffixed ("-dev").
-//
-// ONE crate, since the Rust core absorbed the other three: the keychain into
-// `secrets/**`, the hardware probe into `models/hardware.rs` (via `sysinfo`),
-// and the PTY host into `extensions/pty/**`. The updater stays separate because
-// a process cannot replace the executable it is running from on Windows, which
-// is a boundary rather than a leftover.
+// Build the native helper binaries from source and link them into the dev core's
+// bin dir. Production downloads these via the signed manifest at install time;
+// dev has no such download, so without this core fails its boot-time helper
+// check. The crate name is also the on-disk base name, channel-suffixed
+// ("-dev"). Only the updater is a separate crate, because a process cannot
+// replace the executable it is running from on Windows.
 const HELPER_CRATES = ["loca-core-updater"];
 
 async function provisionHelpers(): Promise<void> {
@@ -750,20 +631,12 @@ async function provisionHelpers(): Promise<void> {
   }
 }
 
-// The speech sidecar and its espeak-ng-data staging used to live here. Both are
-// gone rather than disabled: N3 absorbed sherpa-onnx into the core behind
-// `local-speech`, and the Kokoro phonemizer data is now a committed archive the
-// crate pulls in with `include_bytes!` and extracts on first synthesis. Dev
-// therefore fetches nothing for speech and stages no second binary.
-
 /// Build the Rust core for dev and return the path to the binary.
 ///
 /// Debug rather than release, so an edit-rebuild cycle is bearable; both native
-/// features on, so dev is shaped like production. The first build is slow (it
-/// compiles the vendored llama.cpp tree) and every later one is incremental.
-///
-/// There is no `--watch` equivalent here and that is a real change from the
-/// TypeScript core, which hot-reloaded. A core change now needs a dev restart.
+/// features on, so dev is shaped like production. The first build compiles the
+/// vendored llama.cpp tree and is slow; later ones are incremental. There is no
+/// `--watch`, so a core change needs a dev restart.
 async function buildDevCore(): Promise<string> {
   // `vendor/` is gitignored, so a fresh clone has no llama.cpp and `build.rs`
   // fails in a way that reads as a compiler error. Idempotent and near-instant
@@ -813,21 +686,13 @@ if (!CLIENT_ONLY) {
 
   adminToken = await ensureAdminToken();
 
-  // Generate the dev built-in extension manifest before core boots so first-boot
-  // seeding can resolve a version, and keep it fresh as the codebase extension is
-  // edited.
-  await startDevExtensionManifest();
-
   // Link the native helper binaries into the dev bin dir before core boots, so
   // its boot-time helper check passes and the first tool call can spawn in
   // prompt-capable mode.
   await provisionHelpers();
 
-  // Build the Rust core before spawning it. `provisionSpeechSidecar` is gone
-  // with the sidecar it staged: speech is in process now, behind `local-speech`,
-  // and so is inference behind `local-inference`. Dev builds BOTH, so what a
-  // developer runs is shaped like what ships; a dev core without them would
-  // report "no local model" for reasons that exist nowhere in production.
+  // Build the Rust core with both native features, so what a developer runs is
+  // shaped like what ships.
   const coreBin = await buildDevCore();
 
   children.push(
@@ -846,11 +711,9 @@ if (!CLIENT_ONLY) {
         // unreachable). The self-signed cert is still pinned at pairing, so this
         // only widens reachability, not trust.
         ...(MOBILE ? { LOCA_CORE_HOST: "0.0.0.0" } : {}),
-        // The tool worker is still TypeScript run under the pinned `deno`, so
-        // this override still points into the source tree and edits to it still
-        // take effect on the next tool call. It is the one part of the old core
-        // package the Rust core genuinely consumes rather than replaces.
-        LOCA_WORKERS_DIR: `${ROOT}packages/loca-core/src/workers`,
+        // The tool worker is TypeScript run under the pinned `deno`; point at
+        // the source tree so edits take effect on the next tool call.
+        LOCA_WORKERS_DIR: `${ROOT}packages/loca-core-rs/workers`,
         // dev.ts owns the timestamp + badge column, so core emits bare console
         // lines (no ISO timestamp). Its stderr is piped here (not a TTY), so force
         // color on so level coloring survives.
@@ -864,11 +727,10 @@ if (!CLIENT_ONLY) {
 await reclaimVitePort();
 await clearStaleViteCache();
 
-// Bake the dev channel for channel.rs (via the Tauri crate's build.rs). Desktop
-// picks up LOCA_CHANNEL at runtime, but a mobile build runs cargo inside
-// Xcode's script phase / the Gradle daemon, neither of which forwards the env to
-// the compile - so the on-disk `channel` file is the deterministic source. Write
-// it before the client (and its cargo build) spawns.
+// Bake the dev channel for channel.rs. Desktop reads LOCA_CHANNEL at runtime,
+// but a mobile build runs cargo inside Xcode's script phase / the Gradle daemon,
+// neither of which forwards the env to the compile, so the on-disk `channel`
+// file is the deterministic source. Write it before the client spawns.
 await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), "dev");
 
 // Mint the pairing code before spawning the client so it can be forwarded as a
@@ -879,14 +741,12 @@ const pairingCode = CLIENT_ONLY ? null : await mintPairingCode(adminToken);
 // --reset: clear the client's paired-cores state so it boots into onboarding.
 if (RESET) await resetClientSettings();
 
-// Resolve a concrete iOS simulator NAME for `tauri ios dev` so it never drops
-// into its interactive device picker, which spins forever under this script's
-// piped (non-TTY) stdin ("...you need to pick a device"). Tauri's [DEVICE]
-// positional matches by device name (not UDID). Prefers TAURI_IOS_DEVICE, then
-// any already-booted simulator (the developer's current choice), then boots the
-// first available iPhone and surfaces Simulator.app. Returns null only when
-// simctl finds nothing. (Android needs no equivalent: `tauri android dev`
-// auto-targets the running emulator.)
+// Resolve a concrete iOS simulator NAME (Tauri's [DEVICE] positional matches by
+// name, not UDID) so `tauri ios dev` never drops into its interactive picker,
+// which spins forever under this script's piped stdin. Prefers
+// TAURI_IOS_DEVICE, then an already-booted simulator, then boots the first
+// available iPhone. Null only when simctl finds nothing. Android needs no
+// equivalent: `tauri android dev` auto-targets the running emulator.
 async function resolveIosSimulator(): Promise<string | null> {
   const override = Deno.env.get("TAURI_IOS_DEVICE");
   if (override) return override;
@@ -924,10 +784,9 @@ async function resolveIosSimulator(): Promise<string | null> {
   return iphone.name;
 }
 
-// The onboarding prefill reaches the client differently per platform. Desktop
-// forwards it as launch argv (read by the read_launch_prefill command); mobile
-// has no argv path, so it is passed through Vite env vars that mobile.ts's
-// launchPrefill reads at runtime. All connect to this same dev core.
+// The onboarding prefill reaches the client differently per platform: desktop as
+// launch argv (read_launch_prefill), mobile through Vite env vars that
+// mobile.ts's launchPrefill reads at runtime.
 const clientPrefillEnv: Record<string, string> = {};
 const clientCmd = ["deno", "run", "-A", "npm:@tauri-apps/cli@^2"];
 if (MOBILE) {

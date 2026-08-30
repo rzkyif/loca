@@ -6,11 +6,11 @@
 //! would leave the desktop suite as the only thing that ever compiles this, and
 //! the mobile gap would be invisible on the machine where the code is written.
 //!
-//! The child itself belongs to D14. `sidecars::Manager::spawn` is what gives it
-//! Job Object membership on Windows, an environment allowlist rather than the
-//! core's whole environment, a graceful SIGTERM-then-SIGKILL terminate, and a
-//! kill-on-drop backstop. rmcp's own `transport-child-process` feature would
-//! bring a second spawn path with none of that, which is why it is not enabled.
+//! The child is spawned through `sidecars::Manager::spawn`, which gives it Job
+//! Object membership on Windows, an environment allowlist, a graceful
+//! SIGTERM-then-SIGKILL terminate and a kill-on-drop backstop. rmcp's own
+//! `transport-child-process` feature would be a second spawn path with none of
+//! that, which is why it is not enabled.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -87,10 +87,8 @@ pub fn plan(server: &ServerConfig, paths: &Paths, support: StdioSupport) -> Resu
                     )
                 })?;
             let env = inherited(OPERATIONAL_ENV_KEYS);
-            // Resolved against the same PATH the child is given, so this is the
-            // lookup the spawn itself would do. Reporting it here rather than
-            // after a failed spawn is what makes the message actionable instead
-            // of a bare "No such file or directory".
+            // The same lookup the spawn would do, reported here rather than
+            // after a failed spawn so the message is actionable.
             if !resolves(command, env.get(&OsString::from("PATH"))) {
                 return Err(AppError::new(
                     ErrorCode::ServerUnavailable,
@@ -124,11 +122,10 @@ fn plan_deno(server: &ServerConfig, paths: &Paths, label: String) -> Result<Spaw
     let deno = crate::sidecars::deno::resolve_worker_deno(paths)?;
     let mut args = vec!["run".to_string()];
     if server.deno_allow_all {
-        // Even under the allow-all toggle, the grant is backstopped with the
-        // same secret-file deny list the extension tool workers use. Deno's
-        // `--deny-*` wins over `--allow-*`, so a user-added deno MCP server
-        // still cannot read or write the core's secrets, admin token, database,
-        // memory store, or another extension's data.
+        // Even under allow-all, the grant is backstopped with the extension
+        // workers' secret-file deny list. Deno's `--deny-*` wins over
+        // `--allow-*`, so a deno MCP server still cannot reach the core's
+        // secrets, admin token, database, memories or another extension's data.
         let deny = deny_list(paths);
         args.push("--allow-all".to_string());
         args.push(format!("--deny-read={deny}"));
@@ -159,11 +156,7 @@ fn plan_deno(server: &ServerConfig, paths: &Paths, label: String) -> Result<Spaw
 /// The core's private paths, which a sandboxed child must never read or write
 /// even under a broad grant.
 ///
-/// **Interim duplicate.** The single source is `shared/sandbox-deny.ts`, which
-/// D12 owns and has not ported yet; when it lands, this function is deleted and
-/// the shared one is called. It already includes the `.master-key` transient
-/// D-013 requires, which the TypeScript list does not have because its master
-/// key write is not atomic.
+/// Includes the `.master-key` transient the atomic master-key write creates.
 fn deny_list(paths: &Paths) -> String {
     let root = paths.root();
     let db = paths.db_file();
@@ -213,11 +206,9 @@ fn resolves(command: &str, path_var: Option<&OsString>) -> bool {
 
 /// On Windows a bare `npx` is `npx.cmd` on disk. Elsewhere this yields nothing.
 ///
-/// The extensions come from the user's `PATHEXT` when it is set, because that
-/// is the list the OS itself would search, and a hard-coded list turns a
-/// launcher installed as something outside it (`.ps1`, a `.pyz`) into a
-/// confident "was not found" for a command that would in fact have run. The
-/// four defaults are the fallback, and cover every launcher this message names.
+/// The extensions come from the user's `PATHEXT` when set, because that is the
+/// list the OS itself searches; a hard-coded list would turn a launcher outside
+/// it into a confident "was not found" for a command that would have run.
 fn windows_variants(candidate: &Path) -> impl Iterator<Item = PathBuf> + '_ {
     const DEFAULT_EXTENSIONS: &str = ".EXE;.CMD;.BAT;.COM";
     if !cfg!(windows) {
@@ -284,9 +275,8 @@ pub async fn connect(
         .envs(plan.env.clone())
         .stdin(Stdin::Piped)
         .stdout(Output::Piped)
-        // Drained here rather than by D14's relay: the connect-failure status
-        // is user-visible and needs the child's own words, where the relay
-        // keeps ten lines at DEBUG for a different purpose.
+        // Drained here rather than by the sidecar relay: the connect-failure
+        // status is user-visible and needs the child's own words.
         .stderr(Output::Piped);
     let child: ChildHandle = sidecars.spawn(spec)?;
 
@@ -331,10 +321,9 @@ pub async fn connect(
     let session = session::adopt(
         service,
         tx,
-        // The closure owns the child handle, so the process lives exactly as
-        // long as the session and is terminated when it closes. Dropping the
-        // last handle would kill the child through D14's backstop instead,
-        // which is a harsher exit for the same outcome.
+        // The closure owns the child handle, so the process lives exactly as long
+        // as the session. Dropping the last handle would kill it through the
+        // sidecar backstop instead, a harsher exit for the same outcome.
         Some(Box::new(move || terminate(child))),
     );
     Ok(Connected { session, events })

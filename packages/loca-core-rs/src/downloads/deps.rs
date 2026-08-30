@@ -1,22 +1,14 @@
 //! What the download engine needs from the rest of the core.
-//!
-//! One narrow trait, following the `deps.rs` pattern D9 established and D6
-//! reused: the fact lives with the package that owns it, and this package holds
-//! only the question.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-/// The sha256 the **signed** model catalog pins for a source spec.
-///
-/// Anchor two of the transfer's three. It matters that it is the signed catalog
-/// rather than a header: it holds even when a proxy strips HuggingFace's etag,
-/// and it is the only anchor that survives the file moving to a mirror.
+/// The sha256 the **signed** model catalog pins for a source spec. Signed
+/// rather than a header, so it holds when a proxy strips HuggingFace's etag.
 #[async_trait]
 pub trait CatalogHashes: Send + Sync {
-    /// `None` when the spec is not a catalog file, which is the common case: a
-    /// user-supplied repo file has no pinned hash anywhere.
+    /// `None` when the spec is not a catalog file.
     async fn catalog_sha256(&self, spec: &str) -> Option<String>;
 }
 
@@ -45,12 +37,8 @@ impl Default for DownloadsDeps {
     }
 }
 
-/// The stub behind the catalog seam.
-///
-/// `None` is the honest answer rather than a degradation: a core with no catalog
-/// has no pinned hash, and the transfer then falls through to HuggingFace's own
-/// published sha256, which is already the normal path for any file the catalog
-/// does not list.
+/// The stub behind the catalog seam: no pinned hash, so the transfer falls
+/// through to HuggingFace's own published sha256.
 pub struct NoCatalog;
 
 #[async_trait]

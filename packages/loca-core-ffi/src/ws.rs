@@ -18,10 +18,8 @@
 //!
 //! **The inbound frame policy is not reimplemented here.** Every payload goes
 //! through `loca_core::transport::handle_client_frame`, the same function the
-//! socket pump calls. A second copy of the size cap, the envelope check and the
-//! dispatch would be a copy of the code that decides whether a `chat.start`
-//! frame reaches its handler at all, and the two would drift with nothing going
-//! red (D-084).
+//! socket pump calls, so the size cap, the envelope check and the dispatch
+//! cannot drift between the two.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -52,9 +50,8 @@ pub enum WsEvent {
 /// Where events go. Implemented over the Tauri `AppHandle` by the command
 /// layer, and by a recorder in these tests.
 ///
-/// A trait rather than a direct dependency on `tauri` so the pump below, which
-/// is the part with the ordering and lifetime rules, is exercised on the host.
-/// Everything mobile-only that cannot be tested is a liability (D-117).
+/// A trait rather than a direct dependency on `tauri`, so the pump below, which
+/// carries the ordering and lifetime rules, is exercised on the host.
 pub trait WsSink: Send + Sync {
     fn emit(&self, ws_id: &str, event: WsEvent);
 }
@@ -68,19 +65,16 @@ enum WsOut {
 /// One registered connection: its outbound channel, and which registration it
 /// is.
 ///
-/// The generation is what makes the map safe to share between a pump that is
-/// shutting down and a pump that has just taken its id. Without it, a pump
-/// removes by key on the way out and can delete a LIVE successor's entry. See
-/// [`Connections::open`].
+/// The generation makes the map safe to share between a pump that is shutting
+/// down and one that just took its id: without it, a pump removing by key on the
+/// way out can delete a live successor's entry.
 struct Registered {
     generation: u64,
     tx: mpsc::UnboundedSender<WsOut>,
 }
 
 /// The live in-process connections, keyed by the id the webview generated.
-///
-/// Cheap to clone; every clone shares one map, the way the client's static
-/// `WS_HANDLES` does.
+/// Cheap to clone; every clone shares one map.
 #[derive(Clone, Default)]
 pub struct Connections {
     live: Arc<Mutex<HashMap<String, Registered>>>,
@@ -95,31 +89,25 @@ impl Connections {
     /// Register `ws_id` with the frame bus and start pumping it.
     ///
     /// Registration and the `Open` event both happen HERE, synchronously,
-    /// before the task is spawned. Two things depend on that and neither is
-    /// incidental: a request the webview makes straight after this returns
-    /// cannot race ahead of the registration and lose a frame, and no seed
-    /// frame can be delivered before `Open`. The bus queues a new connection's
-    /// seeds at register time, so a pump that merely drains delivers them
-    /// first; emitting `Open` from inside the task would put it after them.
+    /// before the task is spawned, so a request the webview makes straight after
+    /// this cannot race ahead of the registration, and no seed frame can arrive
+    /// before `Open`: the bus queues seeds at register time, so emitting `Open`
+    /// from inside the task would put it after them.
     ///
     /// # Re-opening a live id
     ///
-    /// Re-using an id that is still live REPLACES the old connection, and every
-    /// part of that is deliberate:
+    /// Re-using a live id REPLACES the old connection:
     ///
     /// - Inserting drops the old sender, which ends the old pump.
     /// - The old pump deregisters only if the entry is still ITS generation,
-    ///   so it cannot delete the successor that just replaced it.
+    ///   so it cannot delete the successor that replaced it.
     /// - The old pump emits no `Close`, because the id it would name now
-    ///   belongs to a live connection and the webview would read that `close`
-    ///   as its NEW connection dying.
+    ///   belongs to a live connection.
     ///
-    /// The naive version of this (insert blindly, remove by key) takes both
-    /// connections down and leaves the webview with an `open` followed by a
-    /// `close` on an id it believes is connected. That is worse here than in
-    /// the desktop `net_ws_open` it was modelled on, because an in-process
-    /// connection is documented as unable to drop and the client is therefore
-    /// told it may skip its reconnect backoff.
+    /// The naive version (insert blindly, remove by key) takes both connections
+    /// down and leaves the webview with an `open` then a `close` on an id it
+    /// believes is connected, which the client is told it need not guard
+    /// against.
     pub fn open(&self, core: &Core, client_id: &str, ws_id: &str, sink: Arc<dyn WsSink>) {
         let conn = core.connect(client_id);
         let (tx, rx) = mpsc::unbounded_channel();
@@ -136,9 +124,8 @@ impl Connections {
 
     /// Hand a client frame to its connection.
     ///
-    /// An unknown id is ignored rather than an error, matching `net_ws_send`: a
-    /// send that races a close is an ordinary event on this boundary, not a
-    /// fault worth surfacing.
+    /// An unknown id is ignored rather than an error: a send that races a close
+    /// is ordinary on this boundary.
     pub fn send(&self, ws_id: &str, data: String) {
         if let Some(entry) = lock(&self.live).get(ws_id) {
             let _ = entry.tx.send(WsOut::Text(data));
@@ -162,10 +149,9 @@ impl Connections {
 
     /// Deregister `ws_id`, but only if it is still `generation`'s.
     ///
-    /// Returns whether this call owned the entry. `false` means the id was
-    /// taken over by a newer connection, which is the caller's signal to leave
-    /// the map alone AND to stay silent rather than emit a `Close` naming an id
-    /// that is now live.
+    /// Returns whether this call owned the entry. `false` means a newer
+    /// connection took the id over, so the caller must leave the map alone and
+    /// emit no `Close` naming an id that is now live.
     fn remove_if_owned(&self, ws_id: &str, generation: u64) -> bool {
         let mut live = lock(&self.live);
         match live.get(ws_id) {
@@ -184,16 +170,11 @@ impl Connections {
 /// return cannot leak a registry entry.
 ///
 /// **If this body ever grows a `?` or a fallible sink, move the deregistration
-/// and the `Close` emit into a drop guard first.** Both currently run after the
-/// loop, so an unwind would skip them: the registry entry would survive, every
-/// `core_ws_send` would keep succeeding into a dead channel, and no `close`
-/// would ever reach the webview. That is precisely the "connected but dead"
-/// state the deliberate absence of a heartbeat cannot detect, and the client is
-/// told it may skip its reconnect backoff. It is unreachable today only because
-/// nothing here can panic: `sink.emit` swallows its own failure,
-/// `handle_client_frame` is total, and `lock` recovers from poisoning. That is a
-/// property of the current body, not a guarantee, which is why the trigger is
-/// written down rather than the conclusion.
+/// and the `Close` emit into a drop guard first.** Both run after the loop, so an
+/// unwind would skip them and leave the "connected but dead" state the absence of
+/// a heartbeat cannot detect. Unreachable today only because nothing here can
+/// panic: `sink.emit` swallows its own failure, `handle_client_frame` is total,
+/// and `lock` recovers from poisoning.
 async fn pump(
     mut conn: loca_core::transport::Connection,
     mut rx: mpsc::UnboundedReceiver<WsOut>,
@@ -224,9 +205,9 @@ async fn pump(
             inbound = rx.recv() => match inbound {
                 Some(WsOut::Text(text)) => match handle_client_frame(&conn, &text) {
                     Handled::Ping => sink.emit(&ws_id, WsEvent::Message(PONG_FRAME.to_string())),
-                    // Nothing to do: we never ping, so a client pong answers
-                    // nothing. Accepted rather than warned about, so a shared
-                    // client-side heartbeat needs no local special case.
+                    // We never ping, so a client pong answers nothing.
+                    // Accepted silently, so a shared client-side heartbeat
+                    // needs no local special case.
                     Handled::Pong => {}
                     Handled::Nothing => {}
                 },
@@ -235,10 +216,8 @@ async fn pump(
         }
     }
 
-    // Only if this pump still owns the id. If a newer `open` took it over, the
-    // entry and the `Close` both belong to that connection, not this one, and
-    // announcing a close for a live id is exactly the "connected but dead"
-    // state the client is told it need not guard against.
+    // Only if this pump still owns the id: after a newer `open`, both the
+    // entry and the `Close` belong to that connection.
     if registry.remove_if_owned(&ws_id, generation) {
         sink.emit(&ws_id, WsEvent::Close { code: close_code });
     }
@@ -266,12 +245,9 @@ mod tests {
             lock(&self.0).clone()
         }
 
-        /// Wait until `pred` holds, BOUNDED.
-        ///
-        /// The bound is the point rather than a precaution: the pump is a
-        /// spawned task, so an event that never arrives is a HANG, and a hung
-        /// test wedges the whole test binary rather than reporting red. Two
-        /// seconds is orders of magnitude above anything here.
+        /// Wait until `pred` holds, bounded: the pump is a spawned task, so an
+        /// event that never arrives would hang the whole test binary rather
+        /// than reporting red.
         async fn wait_for(&self, pred: impl Fn(&[WsEvent]) -> bool) -> Vec<WsEvent> {
             let deadline = std::time::Duration::from_secs(2);
             let poll = async {
@@ -318,10 +294,9 @@ mod tests {
 
     #[tokio::test]
     async fn open_is_emitted_before_any_seed_frame() {
-        // The property the client's "report connected immediately" rests on. The
-        // bus queues seeds at register time, so getting this wrong is the
-        // default rather than an unlucky race: emitting `Open` from inside the
-        // spawned task puts it after every seed.
+        // What the client's "report connected immediately" rests on. The bus
+        // queues seeds at register time, so emitting `Open` from inside the
+        // spawned task puts it after every seed, every run.
         let core = testing::core();
         core.frames().add_seed(Arc::new(OneSeed));
         let sink = Arc::new(Recorder::default());
@@ -379,8 +354,8 @@ mod tests {
         conns.open(&core, CLIENT, "w1", sink.clone());
 
         conns.send("w1", r#"{"kind":"pong"}"#.to_string());
-        // Then a ping, which we know produces one message. If the pong had
-        // produced anything, it would be ahead of the pong reply.
+        // Then a ping, which produces one message: anything the pong produced
+        // would be ahead of it.
         conns.send("w1", r#"{"kind":"ping"}"#.to_string());
 
         let events = sink
@@ -391,8 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_malformed_frame_is_dropped_and_the_connection_survives() {
-        // The socket path's warn-and-drop policy, reached through the same
-        // function rather than a copy of it.
+        // The socket path's warn-and-drop policy, through the same function.
         let core = testing::core();
         let sink = Arc::new(Recorder::default());
         let conns = Connections::new();
@@ -425,9 +399,8 @@ mod tests {
         sink.wait_for(|e| e.iter().any(|e| matches!(e, WsEvent::Close { .. })))
             .await;
 
-        // Both sides, because they fail independently: the bus entry leaks if
-        // the `Connection` is not dropped, and the registry entry leaks if the
-        // pump forgets to remove it.
+        // Both sides, which fail independently: the bus entry leaks if the
+        // `Connection` is not dropped, the registry entry if the pump forgets.
         wait_until(|| core.frames().connection_count() == before).await;
         wait_until(|| conns.is_empty()).await;
     }
@@ -450,12 +423,10 @@ mod tests {
 
     #[tokio::test]
     async fn re_opening_a_live_id_replaces_it_and_leaves_the_new_one_working() {
-        // The naive version of `open` (insert blindly, remove by key) takes
-        // BOTH connections down: the old pump's sender is dropped, it wakes,
-        // and it removes the successor's entry on the way out. The webview is
-        // left with `open` then `close` on an id it believes is connected, and
-        // the client is explicitly told it may skip its reconnect backoff
-        // because an in-process connection cannot drop.
+        // The naive `open` (insert blindly, remove by key) takes BOTH
+        // connections down: the old pump wakes and removes the successor's
+        // entry, leaving the webview with `open` then `close` on an id it
+        // believes is connected.
         let core = testing::core();
         let first = Arc::new(Recorder::default());
         let second = Arc::new(Recorder::default());
@@ -477,9 +448,8 @@ mod tests {
             .await;
         assert_eq!(messages(&events), vec![PONG_FRAME.to_string()]);
 
-        // The superseded pump goes away SILENTLY. A `close` here would name an
-        // id that is live, which the webview cannot tell from its own
-        // connection dying.
+        // The superseded pump goes away silently: a `close` would name a live
+        // id the webview cannot tell from its own connection dying.
         assert!(
             !first
                 .events()
@@ -518,11 +488,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_domain_frame_reaches_the_inbound_handler() {
-        // The one thing `handle_client_frame` exists to decide, and the reason
-        // it was made `pub` rather than copied. Every other inbound test here
-        // probes heartbeats and rejects, so a pump that answered `ping` and
-        // dropped everything else would have passed all of them: that exact
-        // rewrite survived the review's mutation pass.
+        // The one thing `handle_client_frame` exists to decide. Every other
+        // inbound test here probes heartbeats and rejects, so a pump that
+        // answered `ping` and dropped everything else would pass all of them.
         let core = testing::core();
         let inbound = Arc::new(RecordingInbound::default());
         core.frames().on_inbound(inbound.clone());
@@ -543,8 +511,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_frame_over_the_size_cap_is_dropped_and_the_connection_survives() {
-        // The other half of the shared policy: the 1 MB denial-of-service bound
-        // on an unparsed payload. Nothing in this crate asserted it applied.
+        // The other half of the shared policy: the 1 MB denial-of-service
+        // bound on an unparsed payload.
         let core = testing::core();
         let inbound = Arc::new(RecordingInbound::default());
         core.frames().on_inbound(inbound.clone());
@@ -558,8 +526,7 @@ mod tests {
             "x".repeat(1_000_001)
         );
         conns.send("w1", huge);
-        // Then a well-formed one, so the assertion below is about the cap
-        // rather than about nothing having arrived yet.
+        // Then a well-formed one, so the assertion below is about the cap.
         conns.send(
             "w1",
             r#"{"kind":"chat.start","streamId":"small"}"#.to_string(),

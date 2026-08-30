@@ -10,17 +10,11 @@
   import MessageStackView from "@loca/shared/ui/components/chat/MessageStackView.svelte";
   import { bubbleGap, useUiContext } from "@loca/shared/ui/context";
   import Cursor from "./Cursor.svelte";
-  import { awaitStableHeight, Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, awaitStableHeight, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // A tool from a connected calendar MCP server, matched and called just like a
   // built-in tool. The relevant-tools bubble lists what matched; the tool call

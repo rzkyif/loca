@@ -2,19 +2,13 @@
 //
 // Every entry point is noexcept in effect: llama.cpp and nlohmann::json both
 // throw, and an exception crossing a C ABI boundary into Rust is undefined
-// behaviour, so each function catches everything and reports through
-// loca_last_error().
+// behaviour, so each function catches everything (`catch (...)`, not the
+// narrower std::exception form) and reports through loca_last_error().
 //
-// `catch (...)` rather than `catch (const std::exception &)` is deliberate. In
-// practice nlohmann, jinja and llama.cpp all throw std::exception subtypes, so
-// the narrow catch was very likely sufficient; "very likely sufficient" is not
-// what an undefined-behaviour boundary should be built on, and the narrow form
-// made the file header's claim ("catches everything") false.
-//
-// What no catch can help with is GGML_ABORT, which is abort(). llama.cpp uses it
-// for programming errors (an out-of-range logits index, an unknown sampler
-// enum). Where the caller can reach one, the shim validates FIRST and reports an
-// error rather than letting the assertion fire; see loca_sampler_new.
+// What no catch can help with is GGML_ABORT, which is abort(). llama.cpp uses
+// it for programming errors (an out-of-range logits index, an unknown sampler
+// enum), so where the caller can reach one the shim validates FIRST and reports
+// an error rather than letting the assertion fire; see loca_sampler_new.
 
 #include "loca_llama.h"
 
@@ -36,47 +30,24 @@
 #include <string>
 #include <vector>
 
-// D-107, and it is bigger than "do not call ggml_backend_load_all()".
+// The unsafe backend loader has two doors: ggml_backend_load_all() searches the
+// process WORKING DIRECTORY and dlopen()s anything matching libggml-*.so, and
+// ggml_backend_load_all_from_path(dir) confines the directory search but then
+// dlopen()s whatever GGML_BACKEND_PATH names. For a service startable from any
+// directory, by an environment that is not always the operator's, both are
+// arbitrary code execution.
 //
-// The unsafe loader has two doors:
+// We are not the only caller: libllama calls ggml_backend_load_all() itself
+// from llama_backend_init(), llama_supports_gpu_offload() and
+// llama_supports_rpc(), each guarded by `if (!ggml_backend_reg_count())`, which
+// is the state at startup. So poisoning one identifier protects nothing.
 //
-//   ggml_backend_load_all()               searches the process WORKING DIRECTORY
-//                                         and dlopen()s anything matching
-//                                         libggml-*.so it finds there.
-//   ggml_backend_load_all_from_path(dir)  confines the directory search to `dir`,
-//                                         but then reads the GGML_BACKEND_PATH
-//                                         environment variable and dlopen()s
-//                                         whatever it names
-//                                         (ggml-backend-reg.cpp:588-592).
-//
-// For a service that can be started from any directory, by an environment that
-// is not always the operator's, both are arbitrary code execution.
-//
-// The part that was missed twice, and that only an experiment caught: WE ARE NOT
-// THE ONLY CALLER. libllama calls ggml_backend_load_all() itself, from three
-// entry points, each guarded by `if (!ggml_backend_reg_count())`:
-//
-//   llama_backend_init()          src/llama.cpp:131-133
-//   llama_supports_gpu_offload()  src/llama.cpp:101-104
-//   llama_supports_rpc()          src/llama.cpp:110-113
-//
-// So poisoning the identifier in THIS translation unit never protected anything
-// on its own: the old shim called llama_backend_init() first, the registry was
-// empty, and libllama scanned the working directory on our behalf. Setting
-// GGML_BACKEND_PATH and watching the dlopen attempt is what proved it, after the
-// same experiment had already proved the env half.
-//
-// The mitigation is therefore structural in two parts:
-//
-//  1. All FOUR identifiers are poisoned, so no edit to this file can reach any
-//     door, directly or through libllama's convenience wrappers.
-//  2. loca_backend_init() replicates llama_backend_init()'s safe half
-//     (ggml_time_init plus the f16 table warm-up) and deliberately omits the
-//     fallback. Backends only ever arrive through loca_backend_load() or
-//     loca_backend_load_dir(), both of which take a path from the caller.
-//
+// All FOUR are therefore poisoned, and loca_backend_init() replicates
+// llama_backend_init()'s safe half (ggml_time_init plus the f16 table warm-up)
+// while omitting the fallback. Backends only arrive through
+// loca_backend_load() or loca_backend_load_dir(), both taking a caller path.
 // `shim::tests` asserts all four are absent from this object's undefined
-// symbols, so the property is checked rather than promised.
+// symbols.
 #if defined(__GNUC__) || defined(__clang__)
 #  pragma GCC poison ggml_backend_load_all
 #  pragma GCC poison ggml_backend_load_all_from_path
@@ -95,12 +66,8 @@ void set_error(const std::string & msg) {
     g_last_error = msg;
 }
 
-// Called on entry to every fallible function.
-//
-// Without this the buffer holds the LAST failure on this thread, which may be
-// from an unrelated call minutes ago, and any failure path that forgets to
-// set_error reports that stale message as though it were its own. Clearing on
-// entry makes "no message" mean no message.
+// Called on entry to every fallible function, so a failure path that forgets to
+// set_error cannot report an unrelated call's stale message as its own.
 void clear_error() {
     g_last_error.clear();
 }
@@ -191,13 +158,10 @@ bool trigger_type_from(int raw, common_grammar_trigger_type & out) {
     }
 }
 
-// Maps sampler names through llama.cpp's own table, so every alias the shipping
-// llama-server accepts (`temp`, `top-k`, `topk`, `nucleus`, ...) keeps working.
-//
-// The strictness is ours. Upstream's mapper LOG_WRN's an unrecognised name and
-// drops it, which would turn a typo in the user's `llm.samplers` setting into a
-// silently shorter chain. Comparing the counts and naming the offender is the
-// difference between a config error and a generation that is quietly wrong.
+// Maps sampler names through llama.cpp's own table, so every alias llama-server
+// accepts (`temp`, `top-k`, `topk`, `nucleus`, ...) keeps working. The
+// strictness is ours: upstream LOG_WRN's an unrecognised name and drops it,
+// which would turn a typo in `llm.samplers` into a silently shorter chain.
 bool samplers_from_names(const std::vector<std::string> & names,
                          std::vector<common_sampler_type> & out, std::string & bad) {
     out = common_sampler_types_from_names(names);
@@ -223,35 +187,26 @@ struct loca_chat_params {
 
 namespace {
 
-// THE TRAP (D-002 finding 3), in the ONE place it is performed.
+// THE TRAP, in the ONE place it is performed.
 //
 // `common_chat_parser_params`' converting constructor copies only `format` and
 // `generation_prompt`; it does NOT carry the PEG parser, which `apply`
 // serialized into `params.parser`. Without the load below,
-// `common_chat_peg_parse` substitutes a pure-content parser
-// (common/chat.cpp:3596-3598), logs at DEBUG, and RETURNS SUCCESS: no
-// tool_calls, no reasoning_content, and the generation prompt leaking into
-// content. Nothing surfaces it.
+// `common_chat_peg_parse` substitutes a pure-content parser, logs at DEBUG, and
+// RETURNS SUCCESS: no tool_calls, no reasoning_content, and the generation
+// prompt leaking into content, with nothing to surface it.
 //
-// This is a shared helper rather than two copies precisely because the test that
-// guards it must exercise the same line the parse path runs. A probe with its
-// own `parser.load` would stay green after the real one was deleted, which is
-// the D-100 shape and is how the previous guard test ended up pointed at the
-// apply side instead.
-//
-// Returns false when the parser was serialized but did not survive the round
-// trip, i.e. when parsing would have degraded silently.
+// A shared helper rather than two copies, so the test that guards it exercises
+// the same line the parse path runs. Returns false when the parser was
+// serialized but did not survive the round trip.
 bool revive_parser(const loca_chat_params * ph, common_chat_parser_params & out) {
     out = common_chat_parser_params(ph->params);
     out.parser.load(ph->params.parser);
 
-    // Three other fields on common_chat_parser_params are deliberately left
-    // alone: `reasoning_format`, `reasoning_in_content` and `parse_tool_calls`.
-    // All three are read by upstream's SERVER, which we do not build, and by
-    // nothing in the parse path we link. Setting them creates the appearance of
-    // a control that does not exist; confirmed inert by mutating them and
-    // watching the tests stay green. What actually decides tool-call extraction
-    // and the reasoning split is the parser revived above.
+    // `reasoning_format`, `reasoning_in_content` and `parse_tool_calls` are
+    // deliberately left alone: all three are read by upstream's SERVER, which
+    // we do not build, so setting them creates the appearance of a control that
+    // does not exist. The parser revived above is what decides the split.
     return ph->params.parser.empty() || !out.parser.empty();
 }
 
@@ -303,14 +258,11 @@ void loca_string_free(char * s) {
 /* ---- backend registry -------------------------------------------------- */
 
 void loca_backend_init(void) {
-    // This is llama_backend_init() (src/llama.cpp:121-134) minus its
+    // llama_backend_init() minus its
     // `if (!ggml_backend_reg_count()) ggml_backend_load_all();` fallback, which
-    // is the working-directory scan D-107 forbids. Calling llama_backend_init()
-    // here is what made the poison above decorative for the whole of N1's first
-    // pass: the registry is empty at this point, so libllama took the unsafe
-    // path on our behalf before any of our own loading ran.
-    //
-    // Both remaining statements are public ggml API and are exactly what
+    // is the working-directory scan the poison above forbids: the registry is
+    // empty at this point, so calling it would take the unsafe path on our
+    // behalf. Both remaining statements are public ggml API and exactly what
     // llama_backend_init does: start the timer, and force the f16 conversion
     // tables to be built by creating and destroying an empty context.
     ggml_time_init();
@@ -358,8 +310,7 @@ int32_t loca_backend_load_dir(const char * dir) {
 
         // Enumerated here rather than delegated to
         // ggml_backend_load_all_from_path, which would also dlopen whatever
-        // GGML_BACKEND_PATH names. Nothing below reads the environment, and no
-        // path outside `dir` is ever opened.
+        // GGML_BACKEND_PATH names.
         const std::string prefix = backend_module_prefix();
         const std::string ext    = backend_module_extension();
 
@@ -434,10 +385,9 @@ loca_model * loca_model_load(const char * gguf_path, const char * opts_json) {
         if (opts_json && *opts_json) {
             const json in = json::parse(opts_json);
             mp.n_gpu_layers = in.value("n_gpu_layers", mp.n_gpu_layers);
-            // `use_mmap`/`use_mlock` are gone at this pin; the two booleans
-            // became one `load_mode` enum. Keeping weight pages file-backed and
-            // evictable is what holds a multi-GB model under iOS's per-app
-            // jetsam limit, so mmap stays the default rather than AUTO.
+            // `use_mmap`/`use_mlock` became one `load_mode` enum at this pin.
+            // File-backed, evictable weight pages are what hold a multi-GB
+            // model under iOS's jetsam limit, so mmap stays the default.
             const bool use_mmap  = in.value("use_mmap", true);
             const bool use_mlock = in.value("use_mlock", false);
             if (use_mmap && use_mlock) {
@@ -451,9 +401,8 @@ loca_model * loca_model_load(const char * gguf_path, const char * opts_json) {
             }
         }
         // Constructed before the load so the handle owns the model from the
-        // first instant it exists: every early return below is a `return
-        // nullptr` with the unique_ptr still holding, so nothing leaks on a
-        // throw between here and the release at the end.
+        // first instant it exists: nothing leaks on a throw between here and
+        // the release at the end.
         auto h = std::make_unique<loca_model>();
         h->model = llama_model_load_from_file(gguf_path, mp);
         if (!h->model) {
@@ -519,15 +468,11 @@ loca_context * loca_context_new(loca_model * m, const char * opts_json) {
             if (in.value("flash_attn", false)) {
                 cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
             }
-            // Embedding mode. `embeddings` switches the context from producing
-            // logits to producing hidden states, and `pooling_type` decides how
-            // the per-token states collapse to one vector per sequence.
-            //
-            // The pooling default is UNSPECIFIED rather than MEAN on purpose:
-            // llama.cpp then uses the pooling the GGUF itself was trained with,
-            // which for a sentence-embedding model is the right answer and for
-            // MiniLM is mean. Hardcoding MEAN here would silently produce
-            // wrong-but-plausible vectors for any model trained with CLS.
+            // `embeddings` switches the context from logits to hidden states,
+            // and `pooling_type` decides how the per-token states collapse.
+            // UNSPECIFIED rather than MEAN on purpose: llama.cpp then uses the
+            // pooling the GGUF was trained with, and hardcoding MEAN would
+            // silently produce plausible-but-wrong vectors for a CLS model.
             cp.embeddings = in.value("embeddings", false);
             const std::string pooling = in.value("pooling_type", std::string());
             if (pooling == "none") {
@@ -571,9 +516,8 @@ int32_t loca_context_n_past(const loca_context * c) {
     if (!c) {
         return 0;
     }
-    // The authoritative count, read back from llama.cpp's own memory rather
-    // than tracked in parallel. seq_pos_max returns -1 for an empty sequence,
-    // so the count is one more than the highest position held.
+    // Read back from llama.cpp's own memory rather than tracked in parallel.
+    // seq_pos_max returns -1 for an empty sequence.
     return static_cast<int32_t>(llama_memory_seq_pos_max(llama_get_memory(c->ctx), 0) + 1);
 }
 
@@ -649,8 +593,7 @@ int32_t loca_n_embd(const loca_model * m) {
 
 struct loca_mtmd {
     mtmd_context * ctx = nullptr;
-    // Copied, because mtmd_get_marker returns a pointer into the context and
-    // the ABI promises the marker outlives nothing but the handle itself.
+    // Copied, because mtmd_get_marker returns a pointer into the context.
     std::string marker;
 
     ~loca_mtmd() {
@@ -669,9 +612,8 @@ loca_mtmd * loca_mtmd_init(const loca_model * m, const char * mmproj_path,
     }
     try {
         mtmd_context_params cp = mtmd_context_params_default();
-        // Silent by default. llama.cpp's multimodal path prints timings and
-        // progress to stdout, and this process serves an HTTP API whose stdout
-        // is the log stream; the core's own tracing layer is what reports here.
+        // Silent by default: llama.cpp's multimodal path prints timings and
+        // progress to stdout, which for this process is the log stream.
         cp.print_timings = false;
         cp.n_threads = 4;
         cp.use_gpu = true;
@@ -688,8 +630,7 @@ loca_mtmd * loca_mtmd_init(const loca_model * m, const char * mmproj_path,
         h->ctx = mtmd_init_from_file(mmproj_path, m->model, cp);
         if (!h->ctx) {
             // mtmd reports through ggml's logger rather than a return message,
-            // so name the file: "failed to load" with no path is the least
-            // useful thing a user can be told about a two-file model.
+            // so name the file: a two-file model gives two things to check.
             set_error(std::string("could not load the multimodal projector at ") + mmproj_path);
             return nullptr;
         }
@@ -731,9 +672,8 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
         return -1;
     }
     try {
-        // Decode every image first, so a bad one fails before anything has been
-        // evaluated into the context. Half a prompt in the KV cache with no way
-        // to name what went wrong is the state worth avoiding.
+        // Decode every image first, so a bad one fails before anything has
+        // been evaluated into the context.
         std::vector<mtmd_bitmap *> bitmaps;
         // Freed on EVERY exit, including the error returns below.
         struct BitmapGuard {
@@ -750,9 +690,8 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
                 set_error("image " + std::to_string(i) + " is empty");
                 return -1;
             }
-            // `placeholder = false`: decode the real pixels. The placeholder
-            // mode exists for counting tokens without the image, which is not
-            // what a turn wants.
+            // `placeholder = false`: decode the real pixels. Placeholder mode
+            // exists for counting tokens without the image.
             auto wrapper = mtmd_helper_bitmap_init_from_buf(h->ctx, images[i], image_lens[i], false);
             if (!wrapper.bitmap) {
                 set_error("image " + std::to_string(i) +
@@ -766,9 +705,8 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
         text.text = prompt;
         text.text_len = std::strlen(prompt);
         text.add_special = add_special;
-        // The chat template has already run by the time a prompt reaches here,
-        // so the special tokens it emitted are in the string and must be parsed
-        // rather than escaped. Same choice the text path makes.
+        // The chat template has already run, so the special tokens it emitted
+        // are in the string and must be parsed rather than escaped.
         text.parse_special = true;
 
         mtmd_input_chunks * chunks = mtmd_input_chunks_init();
@@ -785,9 +723,9 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
                                          const_cast<const mtmd_bitmap **>(bitmaps.data()),
                                          bitmaps.size());
         if (rc != 0) {
-            // The two documented codes, spelled out. A marker-count mismatch is
-            // a caller bug with an obvious fix, and telling the user "image
-            // preprocessing error" for it would send them looking at the image.
+            // The two documented codes, spelled out: a marker-count mismatch is
+            // a caller bug, and "image preprocessing error" would send the user
+            // looking at the image.
             if (rc == 1) {
                 set_error("the prompt contains a different number of media markers than "
                           "images supplied (" + std::to_string(n_images) + " images, marker \"" +
@@ -799,9 +737,8 @@ int32_t loca_mtmd_eval(loca_mtmd * h, loca_context * c, const char * prompt,
             return -1;
         }
 
-        // Appended after whatever the context already holds, matching
-        // loca_decode. `logits_last` is true because the caller is about to
-        // sample the next token from exactly that position.
+        // Appended after whatever the context holds, matching loca_decode.
+        // `logits_last` is true: the caller is about to sample from there.
         llama_pos new_n_past = 0;
         const int32_t eval = mtmd_helper_eval_chunks(
             h->ctx, c->ctx, chunks, loca_context_n_past(c), /*seq_id*/ 0, n_batch,
@@ -842,29 +779,21 @@ int32_t loca_embed(loca_context * c, const int32_t * tokens, int32_t n,
             return -1;
         }
 
-        // Cleared per call so each text is embedded independently. Without this
-        // the second text would be pooled together with the first, which
-        // produces a plausible vector for the wrong thing: no error, just
-        // silently wrong relevance for every memory after the first. Null-safe,
-        // which matters because an embedding context may have no KV cache at all
-        // (llama-context.cpp:3901).
+        // Cleared per call so each text is embedded independently: otherwise
+        // the second is pooled with the first and produces a plausible vector
+        // for the wrong thing. Null-safe, because an embedding context may have
+        // no KV cache at all.
         llama_memory_clear(llama_get_memory(c->ctx), true);
 
-        // llama_decode, NOT llama_encode, and this is the one decision here
-        // worth stating. `llama_encode` reads like the right call for an
-        // embedding model and is not: it is for encoder-decoder architectures
-        // (T5), and llama.cpp's own `examples/embedding` refuses those outright.
-        // A BERT-family model like MiniLM goes through `decode`, which is also
-        // the ONLY one of the two that honours pooling: `output_all =
-        // cparams.embeddings` lives in `llama_context::decode`
-        // (llama-context.cpp:1658) and has no counterpart in `encode`.
+        // llama_decode, NOT llama_encode. `llama_encode` reads like the right
+        // call for an embedding model and is not: it is for encoder-decoder
+        // architectures, and `decode` is the only one of the two that honours
+        // pooling (`output_all = cparams.embeddings`).
         //
-        // That flag is also why `llama_batch_get_one` is enough here despite
-        // leaving the per-token output mask null. Pooling needs the hidden state
-        // of EVERY token, and a null mask normally means "last token only"; with
-        // `embeddings` set, llama.cpp resizes the mask to all-true instead
-        // (llama-batch.cpp:120-131). Without that, pooling would average one
-        // token's state and return a confidently wrong vector.
+        // That flag is also why `llama_batch_get_one` suffices despite leaving
+        // the per-token output mask null: a null mask normally means "last
+        // token only", but with `embeddings` set llama.cpp resizes it to
+        // all-true, which is what pooling needs.
         llama_batch batch = llama_batch_get_one(const_cast<int32_t *>(tokens), n);
         const int32_t rc = llama_decode(c->ctx, batch);
         if (rc != 0) {
@@ -873,10 +802,8 @@ int32_t loca_embed(loca_context * c, const int32_t * tokens, int32_t n,
         }
 
         // The POOLED vector for sequence 0. `llama_get_embeddings_seq` returns
-        // null when the context was built with pooling NONE, which is the one
-        // configuration this cannot serve: without pooling there is one vector
-        // per token and no single answer to return. Reported rather than
-        // papered over, because the fix is at context creation.
+        // null when the context was built with pooling NONE, the one
+        // configuration this cannot serve: the fix is at context creation.
         const float * seq = llama_get_embeddings_seq(c->ctx, 0);
         if (!seq) {
             set_error("no pooled embedding: the context has pooling disabled, so there is "
@@ -904,14 +831,9 @@ int32_t loca_decode(loca_context * c, const int32_t * tokens, int32_t n) {
     }
     try {
         // llama_batch_get_one leaves `pos` null, and llama.cpp then derives
-        // each position from the memory state as `seq_pos_max(seq) + 1`
-        // (llama-batch.cpp:90-117). So this appends after whatever the context
-        // already holds, which is what a single-sequence turn wants.
-        //
-        // There used to be an `n_past` parameter here. It was `(void)`-cast
-        // away while the header and the Rust doc both claimed it positioned the
-        // batch, which is the same "appearance of a control" this shim removed
-        // from the parser params. Read the real value with
+        // each position from the memory state as `seq_pos_max(seq) + 1`, so
+        // this appends after whatever the context holds. There is deliberately
+        // no `n_past` parameter: read the real value with
         // loca_context_n_past() instead of passing one in.
         llama_batch batch = llama_batch_get_one(const_cast<int32_t *>(tokens), n);
         const int32_t rc = llama_decode(c->ctx, batch);
@@ -935,9 +857,8 @@ const float * loca_get_logits(loca_context * c, int32_t i) {
         return nullptr;
     }
     // In a release build llama_get_logits_ith returns null for an out-of-range
-    // index rather than aborting (llama-context.cpp:888-894), and it reports
-    // through its own logger, not ours. Without the set_error below the caller
-    // would surface whatever unrelated failure the thread-local last held.
+    // index rather than aborting, and reports through its own logger. Without
+    // the set_error below the caller would surface a stale message.
     const float * logits = llama_get_logits_ith(c->ctx, i);
     if (!logits) {
         set_error("no logits at index " + std::to_string(i) +
@@ -1001,8 +922,7 @@ loca_sampler * loca_sampler_new(const loca_model * m, const char * spec_json) {
             return nullptr;
         }
 
-        // The ORDER, which is a user setting in the shipping core and is the
-        // whole reason this is a list rather than a set of booleans.
+        // The ORDER, a user setting, which is why this is a list.
         if (in.contains("samplers")) {
             const auto names = in.at("samplers").get<std::vector<std::string>>();
             std::vector<common_sampler_type> types;
@@ -1014,9 +934,8 @@ loca_sampler * loca_sampler_new(const loca_model * m, const char * spec_json) {
             p.samplers = std::move(types);
         }
 
-        // Token-level fields have to be tokenized against this model's vocab.
-        // Derived exactly the way upstream's server derives them, so a template
-        // that works there works here.
+        // Token-level fields are tokenized against this model's vocab, exactly
+        // the way upstream's server derives them.
         if (in.contains("preserved_tokens")) {
             for (const auto & t : in.at("preserved_tokens")) {
                 const auto ids = common_tokenize(vocab, t.get<std::string>(), false, true);
@@ -1044,12 +963,10 @@ loca_sampler * loca_sampler_new(const loca_model * m, const char * spec_json) {
                     continue;
                 }
                 if (kind == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
-                    // Upstream promotes a single-token word to a TOKEN trigger,
-                    // which is both faster and exact. It THROWS when the word is
-                    // one token but was not listed as preserved; here both lists
-                    // come out of the same common_chat_params, so the honest
-                    // fallback is to leave it as a WORD trigger rather than to
-                    // fail a turn over an internal inconsistency.
+                    // Upstream promotes a single-token word to a TOKEN trigger
+                    // and THROWS when it was not listed as preserved. Both
+                    // lists come from the same common_chat_params here, so
+                    // falling back to a WORD trigger beats failing a turn.
                     const auto ids = common_tokenize(vocab, value, false, true);
                     if (ids.size() == 1 && p.preserved_tokens.count(ids[0]) > 0) {
                         common_grammar_trigger trigger;
@@ -1069,11 +986,10 @@ loca_sampler * loca_sampler_new(const loca_model * m, const char * spec_json) {
 
         const std::string grammar = in.value("grammar", std::string());
         if (!grammar.empty()) {
-            // The KIND is load-bearing, not decoration: only an output-format or
-            // tool-calls grammar gets the generation prompt prefilled into the
-            // grammar sampler (common_grammar_needs_prefill). Without that
-            // prefill a tool-capable template constrains from the first token
-            // and the model is forced to emit a tool call on every turn.
+            // The KIND is load-bearing: only an output-format or tool-calls
+            // grammar gets the generation prompt prefilled into the grammar
+            // sampler, and without that prefill a tool-capable template
+            // constrains from the first token and forces a tool call.
             p.grammar = common_grammar(
                 grammar_type_from(in.value("grammar_kind", std::string("user"))), grammar);
         }
@@ -1107,9 +1023,9 @@ loca_sampler * loca_sampler_new(const loca_model * m, const char * spec_json) {
 
         auto h = std::make_unique<loca_sampler>();
         // Throws rather than returning a chain with a null in it, which is the
-        // whole reason this is common_sampler and not a hand-rolled chain: the
-        // hand-rolled version added llama_sampler_init_grammar's unchecked
-        // return, and the first sample() on a bad grammar was a SIGSEGV.
+        // whole reason this is common_sampler: a hand-rolled chain stores
+        // llama_sampler_init_grammar's unchecked null and the first sample()
+        // on a bad grammar is a SIGSEGV.
         h->smpl = common_sampler_init(m->model, p);
         if (!h->smpl) {
             set_error("common_sampler_init returned null");
@@ -1136,10 +1052,9 @@ int32_t loca_sampler_sample(loca_sampler * s, loca_context * c, int32_t idx) {
         return -1;
     }
     try {
-        // Does NOT accept the token. common_sampler_accept is the documented
-        // pairing (sampling.h states the equivalence explicitly), unlike
-        // llama_sampler_sample, which accepts internally and made the shim's own
-        // accept a silent double-advance of the grammar stack.
+        // Does NOT accept the token: common_sampler_accept is the documented
+        // pairing, unlike llama_sampler_sample, which accepts internally and
+        // would make a paired accept a silent double-advance.
         return common_sampler_sample(s->smpl, c->ctx, idx, /* grammar_first = */ false);
     } catch (const std::exception & e) {
         set_error(e.what());
@@ -1187,9 +1102,8 @@ loca_chat_templates * loca_chat_templates_init(const loca_model * model,
     clear_error();
     try {
         auto h = std::make_unique<loca_chat_templates>();
-        // common_chat_templates_init THROWS on a malformed template (it rethrows
-        // explicitly at common/chat.cpp:797), so the handle is owned before the
-        // call rather than after it.
+        // common_chat_templates_init THROWS on a malformed template, so the
+        // handle is owned before the call rather than after it.
         h->tmpls = common_chat_templates_init(model ? model->model : nullptr,
                                               template_override ? template_override : "",
                                               bos ? bos : "", eos ? eos : "");
@@ -1239,10 +1153,9 @@ loca_chat_params * loca_chat_apply(loca_chat_templates * h, const char * inputs_
             reasoning_format_from(in.value("reasoning_format", std::string("none")));
         inputs.use_jinja = true;
 
-        // Owned before the throwing call. common_chat_templates_apply renders
+        // Owned before the throwing call: common_chat_templates_apply renders
         // Jinja and can throw on a template that fails for one message shape,
-        // and a raw `new` here leaked a whole common_chat_params on every such
-        // turn while each request still returned a clean error.
+        // and a raw `new` here would leak a whole common_chat_params per turn.
         auto ph        = std::make_unique<loca_chat_params>();
         ph->params     = common_chat_templates_apply(h->tmpls.get(), inputs);
         const auto & p = ph->params;
@@ -1271,9 +1184,8 @@ loca_chat_params * loca_chat_apply(loca_chat_templates * h, const char * inputs_
             };
             char * dumped = dup_cstr(out.dump());
             if (!dumped) {
-                // dup_cstr already set the error. Returning null here rather
-                // than a handle with no metadata keeps the caller's contract
-                // simple: either both come back or neither does.
+                // dup_cstr already set the error. Either both come back or
+                // neither does.
                 return nullptr;
             }
             *out_json = dumped;
@@ -1304,7 +1216,7 @@ char * loca_chat_parse(const loca_chat_params * ph, const char * text, bool is_p
     }
     try {
         common_chat_parser_params pp;
-        // Because a silent success is the worst possible failure here, the
+        // A silent success is the worst possible failure here, so the
         // degradation is turned into a loud one.
         if (!revive_parser(ph, pp)) {
             set_error(
@@ -1325,12 +1237,9 @@ char * loca_chat_parse(const loca_chat_params * ph, const char * text, bool is_p
 }
 
 // Exposed so a test can assert the trap is guarded on the PARSE side, where it
-// actually lives, rather than inferring it from a tool-call assertion that could
-// pass for an unrelated reason.
-//
-// Runs the SAME `revive_parser` the parse path runs, so deleting the load breaks
-// both. Returns true only when this turn serialized a parser AND that parser
-// survived into the parser params.
+// lives. Runs the SAME `revive_parser` the parse path runs, so deleting the
+// load breaks both. True only when this turn serialized a parser AND that
+// parser survived into the parser params.
 bool loca_chat_parser_survives_revival(const loca_chat_params * ph) {
     if (!ph) {
         return false;

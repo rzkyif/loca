@@ -6,11 +6,9 @@
 //! providers bypass all of it: they enforce their own rate limits, and queueing
 //! locally would add latency while protecting nothing.
 //!
-//! The scheduler sits in FRONT of [`super::ChatProvider`] rather than inside any
-//! implementation of it, which is what keeps it transport-independent: the same
-//! queue governs today's `llama-server` over HTTP and Stage 3's in-process
-//! engine, and there is exactly one place `llm.local.parallelSlots` means
-//! something.
+//! The scheduler sits in FRONT of [`super::ChatProvider`] rather than inside
+//! any implementation, so one queue governs every transport and there is
+//! exactly one place `llm.local.parallelSlots` means something.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,11 +24,9 @@ use crate::transport::status::CoreStatusService;
 use super::provider::{ChatProvider, DeltaStream, ProviderError};
 use super::types::LlmRequest;
 
-/// Serial by default: one local completion at a time and the rest queue.
-///
-/// Matches `--parallel` on the `llama-server` command line, which runs a single
-/// slot so each turn gets the whole context window. Two numbers that must agree;
-/// raising one alone either starves the queue or oversubscribes the model.
+/// Serial by default: one local completion at a time and the rest queue, so
+/// each turn gets the whole context window. Must agree with the model's own
+/// slot count; raising one alone starves the queue or oversubscribes the model.
 const DEFAULT_PARALLEL_SLOTS: f64 = 1.0;
 
 /// Beyond `slots * this` waiting, a new turn is refused rather than queued. A
@@ -50,12 +46,9 @@ pub struct ScheduleOptions {
     /// not queue. Read `is_local_provider` off the resolved endpoint.
     pub is_local: bool,
     /// How many concurrent local completions the model is configured for, from
-    /// `llm.local.parallelSlots`.
-    ///
-    /// An `f64` because that is how it arrives: a JSON settings value read
-    /// through `num_setting`. Taking a `u32` here would move the "1.5 slots is
-    /// not a thing" rejection to whichever caller floors it first, and there is
-    /// more than one caller.
+    /// `llm.local.parallelSlots`. An `f64` because that is how it arrives, and
+    /// taking a `u32` would move the "1.5 slots is not a thing" rejection to
+    /// whichever of several callers floors it first.
     pub parallel_slots: Option<f64>,
 }
 
@@ -68,12 +61,9 @@ pub struct WatchdogInfo {
 
 pub type WatchdogHandler = Arc<dyn Fn(WatchdogInfo) + Send + Sync>;
 
-/// Where the queue depth is published.
-///
-/// A seam rather than a direct dependency on the aggregator so a test can record
-/// what was pushed. The production implementation is the core-status service,
-/// which is the push direction D-014 settled: the subsystem tells the aggregator,
-/// the aggregator does not poll the subsystem.
+/// Where the queue depth is published. A seam rather than a direct dependency
+/// on the aggregator so a test can record what was pushed; the subsystem tells
+/// the aggregator rather than being polled.
 pub trait QueueObserver: Send + Sync {
     fn note_llm_queue(&self, active: u32, queued: u32);
 }
@@ -100,9 +90,9 @@ struct Inner {
 struct State {
     active: u32,
     parallel_slots: u32,
-    /// One queue per client, plus the rotation over them. Kept as the
-    /// TypeScript has it: a client's entry exists only while it has someone
-    /// waiting, so the rotation never visits an empty queue.
+    /// One queue per client, plus the rotation over them. A client's entry
+    /// exists only while it has someone waiting, so the rotation never visits
+    /// an empty queue.
     queues: HashMap<String, VecDeque<Waiter>>,
     client_order: Vec<String>,
     next_client_idx: usize,
@@ -216,15 +206,9 @@ impl LlmScheduler {
     /// Take a slot, waiting in this client's queue if they are all busy, or
     /// refusing outright once the queue is already too deep.
     ///
-    /// The depth check lives HERE rather than in the caller so that testing it
-    /// and acting on it happen under one lock. Split across two critical
-    /// sections, two callers can both read `queued == max - 1`, both conclude
-    /// there is room, and both enqueue, leaving `max + 1` waiting. That is
-    /// benign (one extra waiter on a queue whose whole purpose is shedding
-    /// load) and it is also free to prevent, which is the argument for
-    /// preventing it: the TypeScript could not hit it at all, because its event
-    /// loop made check-then-act atomic for free, so a reader comparing the two
-    /// would have no reason to suspect the port had a race here.
+    /// The depth check lives HERE rather than in the caller so testing it and
+    /// acting on it happen under one lock: split across two critical sections,
+    /// two callers can both read `queued == max - 1` and both enqueue.
     async fn acquire(&self, client_id: &str) -> Result<Permit> {
         let waiting = {
             let mut state = lock(&self.inner.state);
@@ -484,10 +468,7 @@ fn watched(
         client_id: String,
         timeout: Duration,
         /// A `tokio` instant, not a `std` one, so it follows the same clock the
-        /// timeout does. With `std::time::Instant` the reported elapsed time is
-        /// measured against a different clock from the deadline, and on a paused
-        /// runtime the two disagree entirely, which makes a watchdog test unable
-        /// to see a watchdog that stopped working.
+        /// timeout does: on a paused runtime the two disagree entirely.
         started_at: tokio::time::Instant,
     }
 
@@ -502,12 +483,10 @@ fn watched(
         }),
         |state| async move {
             let mut watched = state?;
-            // The bound is on SILENCE, not on total duration: the timer restarts
-            // with every delta, so a slow but progressing completion (a big
-            // thinking model on CPU) is never cut off, and only a server that
-            // never produced a first token, or stopped producing, trips it.
-            // Bounding the total instead passes the same "a wedged stream
-            // errors" test and breaks every long generation.
+            // The bound is on SILENCE, not total duration: the timer restarts
+            // with every delta, so a slow but progressing completion is never
+            // cut off. Bounding the total instead passes the same "a wedged
+            // stream errors" test and breaks every long generation.
             match tokio::time::timeout(watched.timeout, watched.stream.next()).await {
                 Ok(Some(item)) => Some((item, Some(watched))),
                 Ok(None) => None,
@@ -750,12 +729,10 @@ mod tests {
 
     #[tokio::test]
     async fn interrupting_a_queued_turn_does_not_rewind_the_rotation() {
-        // The other half of the interrupt path. `a_turn_interrupted_while_queued`
-        // proves the waiter is removed; this proves the rotation index is fixed
-        // up when removing it shifts the client order underneath. Without the
-        // fix-up every client after the removed one is skipped for a whole
-        // rotation, which is invisible to every other test here because they all
-        // remove from the rotation point rather than from behind it.
+        // `a_turn_interrupted_while_queued` proves the waiter is removed; this
+        // proves the rotation index is fixed up when removing it shifts the
+        // client order underneath. Without that, every client after the removed
+        // one is skipped for a whole rotation.
         let scheduler = LlmScheduler::new();
         // Two slots, both held throughout, so exactly one slot frees at a time
         // and the queue has room for six waiters (the guard refuses at slots * 4).

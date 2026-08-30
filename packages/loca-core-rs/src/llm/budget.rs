@@ -1,16 +1,11 @@
 //! The per-use-case thinking budget for single-shot utility calls.
 //!
-//! Each single-shot use case (title generation, transcription cleanup and merge,
-//! memory summary, complexity check, tool-filter refinement) has its own
-//! `*ThinkingBudget` number setting. This reads and normalises one of them;
-//! callers pass it through [`super::Overrides::reasoning_budget`] and add it to
-//! their `max_tokens` so the answer still has room after the thinking.
-//!
-//! Fourteen lines in the TypeScript, and public surface here for the same reason
-//! it is exported there: the route slice, the title generator, the complexity
-//! router, the tool filter and the memory indexer all call it, across four work
-//! packages. Its `0` case is load-bearing rather than a degenerate input, and
-//! [`super::provider`] encodes it as "thinking off" rather than as "no cap".
+//! Each use case (title generation, transcription cleanup and merge, memory
+//! summary, complexity check, tool-filter refinement) has its own
+//! `*ThinkingBudget` setting. This reads and normalises one of them; callers
+//! pass it through [`super::Overrides::reasoning_budget`] and add it to their
+//! `max_tokens` so the answer still has room after the thinking. The `0` case
+//! is load-bearing: [`super::provider`] encodes it as "thinking off".
 
 use crate::settings::access::num_setting;
 use crate::settings::SettingsRecord;

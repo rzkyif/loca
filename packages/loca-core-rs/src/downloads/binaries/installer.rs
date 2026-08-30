@@ -1,26 +1,15 @@
 //! Installing a binary: resolve it, download it to staging, verify it, extract
 //! it, and record what landed.
 //!
-//! # `variant` and `target` are different questions
+//! `variant` is what is ON DISK; `target` is what the install AIMED for. They
+//! differ only when the ideal variant was not resolvable and the install
+//! degraded, and presence on the wire is judged by `target == desired_variant`,
+//! so an unavoidable fallback settles rather than re-offering itself forever.
+//! This core installs one variant (`cpu`), so the two are always equal, but
+//! writing only one would make every install look degraded to a client.
 //!
-//! `variant` is what is ON DISK. `target` is what the install AIMED for. They
-//! differ only when the ideal variant was not resolvable upstream and the
-//! install degraded to a lesser one, and the distinction is load-bearing on the
-//! wire: presence is judged by `target == desired_variant`, so an unavoidable
-//! fallback settles instead of reading as perpetually missing and re-offering
-//! itself in the requirements popup forever.
-//!
-//! This core installs one variant (`cpu`), so the two are always equal here.
-//! Recording both anyway is not ceremony: the field is on the contract, the
-//! client switches on it, and writing only one would make every install look
-//! like a degraded one to a client that checks.
-//!
-//! # A failed install has to stay visible
-//!
-//! [`BinariesInstaller::failure`] is what lets the requirements snapshot mark a
-//! missing binary as retryable and say why. Swallowing the error would leave the
-//! user with a binary that is simply absent, no reason given, and a retry button
-//! that reports nothing when it fails again.
+//! [`BinariesInstaller::failure`] keeps a failed install visible, so the
+//! requirements snapshot can mark a missing binary retryable and say why.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -44,13 +33,9 @@ use crate::error::{AppError, ErrorCode, Result};
 use crate::paths::Paths;
 use crate::storage::deps::RequirementsNotifier;
 
-/// The kinds this core can actually install.
-///
-/// `BinaryKind` stays 3-valued on the wire (`@loca/shared` is the contract and
-/// does not narrow until cutover), but the sidecar kinds were absorbed by D14
-/// and nothing here can execute them. Offering them would mean downloading
-/// gigabytes for a binary with no launcher. A tracked difference, recorded like
-/// D-039, never a placeholder.
+/// The kinds this core can actually install. `BinaryKind` stays 3-valued on the
+/// wire, but the sidecar kinds are in-process now and nothing here can execute
+/// them, so offering them would download gigabytes for no launcher.
 pub const INSTALLABLE_KINDS: &[BinaryKind] = &[BinaryKind::Deno];
 
 /// What `versions.json` records for one installed binary.
@@ -59,7 +44,7 @@ pub struct InstalledVersion {
     pub version: String,
     /// What is on disk.
     pub variant: Option<BinaryVariant>,
-    /// What the install aimed for. See the module docs.
+    /// What the install aimed for.
     pub target: Option<BinaryVariant>,
 }
 
@@ -81,10 +66,8 @@ struct Inner {
     /// succeeds. Read by the requirements snapshot.
     failures: Mutex<BTreeMap<String, String>>,
     /// Told whenever an install SETTLES, so the requirements snapshot is
-    /// recomputed off the install lifecycle rather than off the download queue.
-    /// See [`BinariesInstaller::attach_requirements`]. `None` until boot fills
-    /// it, which is what keeps every other construction site (the tests, the
-    /// unwired router) from having to name a notifier it has no use for.
+    /// recomputed off the install lifecycle rather than the download queue.
+    /// `None` until boot fills it.
     requirements: Mutex<Option<Arc<dyn RequirementsNotifier>>>,
 }
 
@@ -112,23 +95,17 @@ impl BinariesInstaller {
     /// Where an install SETTLING is reported, so the requirements snapshot can
     /// be recomputed and rebroadcast.
     ///
-    /// This is the only signal that can clear a binary out of `missing`, and
-    /// the download queue cannot stand in for it. A binaries row reaches
-    /// `Completed` when its ARCHIVE has landed, which is before
-    /// [`Self::finish`] extracts it and records the version, so a recompute
-    /// driven off the queue answers "still missing" and then never runs again:
-    /// the queue is idle, so there is no further edge, and the client sits on a
-    /// download that is done and a gate that never opens. That is why
-    /// `requirements::edges` refuses binaries rows outright and why readiness
-    /// arrives here instead. Ports `hub.ts:434-435`.
+    /// The only signal that can clear a binary out of `missing`. A binaries row
+    /// reaches `Completed` when its ARCHIVE lands, before [`Self::finish`]
+    /// extracts and records it, so a recompute driven off the queue answers
+    /// "still missing" and then never runs again: the queue is idle, so there
+    /// is no further edge, and the client's gate never opens.
     pub fn attach_requirements(&self, requirements: Arc<dyn RequirementsNotifier>) {
         *lock(&self.inner.requirements) = Some(requirements);
     }
 
-    /// Whether a requirements notifier was attached.
-    ///
-    /// A read port for the boot-seam suite (D-165), reading the LIVE field
-    /// rather than restating what boot intended.
+    /// Whether a requirements notifier was attached. A read port for the
+    /// boot-seam suite, reading the LIVE field rather than boot's intent.
     pub fn has_requirements(&self) -> bool {
         lock(&self.inner.requirements).is_some()
     }
@@ -148,14 +125,12 @@ impl BinariesInstaller {
     }
 
     fn record_failure(&self, kind: BinaryKind, message: &str) {
-        // Logged AND recorded. The log is for whoever is reading stderr; the map
-        // is what the requirements snapshot reads to tell the user why the
-        // binary they asked for is still missing.
+        // Logged AND recorded: the log is for stderr, the map is what the
+        // requirements snapshot reads to say why the binary is still missing.
         tracing::error!(target: "loca::downloads", "install {kind}: {message}");
         lock(&self.inner.failures).insert(kind.to_string(), message.to_string());
-        // A failure settles the install too: the snapshot turns the row from a
-        // reasonless missing entry into a retryable one, and only a recompute
-        // puts that reason in front of the user.
+        // A failure settles the install too, and only a recompute puts the
+        // reason in front of the user.
         self.notify_requirements();
     }
 
@@ -166,21 +141,14 @@ impl BinariesInstaller {
     /// The install state of every kind on the contract.
     ///
     /// **Never reaches the network.** It reads the cached manifest and the
-    /// disk, and the read is `cached_manifest`, which returns `None` for every
-    /// way a cache can be unusable rather than falling through to a fetch. This
-    /// is a deliberate divergence from the oracle (`manager.ts:281`), which
-    /// fetches when it has no cache; see the ADR. The repo's rule is absolute
-    /// and this route is rendered by a client on open, not by a user asking for
-    /// anything.
+    /// disk through `cached_manifest`, which returns `None` for every way a
+    /// cache can be unusable rather than falling through to a fetch: this route
+    /// is rendered by a client on open, not by a user asking for anything.
     pub async fn list(&self) -> Result<Vec<BinaryStatus>> {
         let manifest = self.cached_manifest().await;
         let installed = self.read_installed().await;
         let mut out = Vec::new();
-        for kind in [
-            BinaryKind::LlamaServer,
-            BinaryKind::LocaCoreSpeech,
-            BinaryKind::Deno,
-        ] {
+        for kind in [BinaryKind::LlamaServer, BinaryKind::Deno] {
             let key = kind.to_string();
             let path = self.inner.paths.bin_path(&binary_name(kind));
             let on_disk = tokio::fs::metadata(&path).await.is_ok();
@@ -188,10 +156,9 @@ impl BinariesInstaller {
             let recorded = record
                 .map(|r| r.version.as_str())
                 .filter(|version| !version.is_empty());
-            // A pinned entry knows its published version; a resolver entry does
-            // not until it asks GitHub, so it reports the installed one or the
-            // literal "latest" (`manager.ts:293-297`). With no manifest at all
-            // there is nothing to report but what is on disk.
+            // A pinned entry knows its published version; a resolver entry
+            // does not until it asks GitHub, so it reports the installed one or
+            // the literal "latest".
             let version = match manifest
                 .as_ref()
                 .and_then(|manifest| manifest.binaries.get(&key))
@@ -204,8 +171,7 @@ impl BinariesInstaller {
                 version,
                 installed: on_disk,
                 path: on_disk.then(|| path.display().to_string()),
-                // Both only when installed, and both from the record: see the
-                // module docs on why writing one and not the other is wrong.
+                // Both only when installed, and both from the record.
                 variant: on_disk.then(|| record.and_then(|r| r.variant)).flatten(),
                 target: on_disk.then(|| record.and_then(|r| r.target)).flatten(),
                 desired_variant: INSTALLABLE_KINDS
@@ -218,10 +184,8 @@ impl BinariesInstaller {
 
     /// Install the named kinds, or every missing one when `kinds` is absent.
     ///
-    /// **Absent and empty are different** (D-028). `None` means "install
-    /// everything missing"; `Some(vec![])` means "install nothing" and returns
-    /// no job ids. Collapsing them would make a client that sends an explicit
-    /// empty list trigger a full install.
+    /// **Absent and empty are different.** `None` means "install everything
+    /// missing"; `Some(vec![])` means "install nothing" and returns no job ids.
     ///
     /// One kind failing to resolve must not block the others, so a failure is
     /// recorded and the loop continues. `update` (a single kind) surfaces its
@@ -262,15 +226,10 @@ impl BinariesInstaller {
 
     /// Whether a newer version is published for each installable kind.
     ///
-    /// **One kind's resolve failing does not fail the route.** The oracle wraps
-    /// each kind in try/catch, logs, and still pushes a row
-    /// (`manager.ts:340-350`), and the reason is not tidiness: unauthenticated
-    /// GitHub is rate-limited to about 60 requests an hour per IP, so a
-    /// perfectly normal day turns the whole "check for updates" button into an
-    /// error envelope where the oracle answers "nothing available". Offline does
-    /// the same. Every kind therefore emits a row either way, with
-    /// `latest_version: "unknown"` and `available: false` when it could not be
-    /// resolved.
+    /// **One kind's resolve failing does not fail the route.** Unauthenticated
+    /// GitHub is rate-limited to about 60 requests an hour per IP, and offline
+    /// does the same, so every kind emits a row either way, with
+    /// `latest_version: "unknown"` and `available: false` when unresolved.
     pub async fn check(&self, cancel: &CancellationToken) -> Result<Vec<BinaryUpdateCheck>> {
         let manifest = self.load(true).await?;
         let installed = self.read_installed().await;
@@ -302,9 +261,8 @@ impl BinariesInstaller {
             out.push(BinaryUpdateCheck {
                 kind: *kind,
                 installed: on_disk,
-                // Guarded on having resolved something, so a kind that could not
-                // be reached never shows a phantom update to a version named
-                // "unknown".
+                // Guarded on having resolved something, so an unreachable kind
+                // never shows a phantom update to a version named "unknown".
                 available: resolved.is_some()
                     && on_disk
                     && installed_version.as_deref() != Some(latest_version.as_str()),
@@ -317,11 +275,10 @@ impl BinariesInstaller {
 
     /// The download size of each named kind, for the confirmation modal.
     ///
-    /// Degrades per kind for the same reason [`Self::check`] does, and emits a
-    /// row for every kind ASKED FOR rather than for every kind it could resolve
-    /// (`manager.ts:379-408`): the confirmation modal lists what the user is
-    /// about to accept, so a kind silently missing from the answer is a download
-    /// that happens without appearing in the list that consented to it.
+    /// Degrades per kind like [`Self::check`], and emits a row for every kind
+    /// ASKED FOR rather than every kind it could resolve: the confirmation
+    /// modal lists what the user is accepting, so a kind missing from the
+    /// answer is a download nothing consented to.
     pub async fn probe(
         &self,
         kinds: &[BinaryKind],
@@ -355,9 +312,8 @@ impl BinariesInstaller {
                     continue;
                 }
             };
-            // A pinned entry carries no size, so the modal falls back to a HEAD
-            // on the resolved URL (`manager.ts:396`). A resolver entry already
-            // learned it from the release asset.
+            // A pinned entry carries no size, so the modal falls back to a
+            // HEAD; a resolver entry learned it from the release asset.
             let size_bytes = match resolved.size_bytes {
                 Some(size) => Some(size),
                 None => self
@@ -380,23 +336,15 @@ impl BinariesInstaller {
     /// Finish binary installs a process exit interrupted before their archive
     /// was extracted.
     ///
-    /// The usual cause is the in-app update flow: the install kicks off sidecar
-    /// downloads and then triggers the core self-update, whose handoff to the
-    /// updater tears this process down mid-download.
+    /// The usual cause is the in-app update flow tearing this process down
+    /// mid-download. Resuming the BYTES is not enough: the extract-and-record
+    /// half lived in the task [`Self::kickoff`] spawned, which died with the
+    /// old process. So [`DownloadQueue::resume_pending`] skips `binaries` rows
+    /// and this re-runs the whole kickoff, or the row sits `Pending` forever
+    /// with the archive orphaned and the requirements gate unsatisfiable.
     ///
-    /// The queue can resume the BYTES, and that is not enough: the
-    /// extract-into-bin plus record-the-version half lives in the task
-    /// [`Self::kickoff`] spawned, which died with the old process, and a
-    /// generically resumed row re-verifies no sha256 either. So
-    /// [`DownloadQueue::resume_pending`] skips `binaries` rows and this re-runs
-    /// the whole kickoff instead: re-resolve, re-download, verify, extract,
-    /// record. Without it the row sits `Pending` forever with nothing alive to
-    /// advance it, the staged archive is orphaned, and the requirements gate
-    /// can never be satisfied.
-    ///
-    /// Best-effort by design: a per-kind failure is recorded as a retryable
-    /// requirements gate and never blocks boot. Cache-first, so a boot with no
-    /// interrupted work makes no request at all.
+    /// Best-effort: a per-kind failure never blocks boot. Cache-first, so a
+    /// boot with no interrupted work makes no request at all.
     pub async fn reconcile_interrupted_installs(&self) {
         let stale: Vec<_> = match self.inner.queue.snapshot().await {
             Ok(rows) => rows
@@ -423,10 +371,8 @@ impl BinariesInstaller {
                 }
             }
             // Drop the orphaned row and its partial: kickoff mints a fresh id,
-            // so leaving this one would strand the core status bar on
-            // "Downloading" with no worker behind it forever. `remove` no-ops on
-            // an in-flight row, and `resume_pending` skipped binaries, so
-            // nothing here is in flight.
+            // so leaving this one strands the status bar on "Downloading" with
+            // no worker. Nothing here is in flight to be no-opped on.
             if let Err(err) = self.inner.queue.remove(&row.id).await {
                 tracing::warn!(target: "loca::downloads", "reconcile: dropping {}: {err}", row.id);
             }
@@ -435,9 +381,8 @@ impl BinariesInstaller {
             return;
         }
 
-        // Cache-first: the manifest was fetched and cached during the original
-        // consented update, so re-initiating uses it with no new network. Only
-        // reached when there IS interrupted binary work.
+        // Cache-first: the manifest was cached during the original consented
+        // update, so re-initiating uses it with no new network.
         let manifest = match self.load(false).await {
             Ok(manifest) => manifest,
             Err(err) => {
@@ -469,8 +414,8 @@ impl BinariesInstaller {
 
     /// Resolve, download to staging, verify, extract, and record.
     async fn kickoff(&self, kind: BinaryKind, manifest: &BinaryManifest) -> Result<String> {
-        // A fresh attempt clears the previous reason, so a retry that is still
-        // running does not report the old failure as current.
+        // A fresh attempt clears the previous reason, so a running retry does
+        // not report the old failure as current.
         self.clear_failure(kind);
         if !INSTALLABLE_KINDS.contains(&kind) {
             return Err(AppError::new(
@@ -530,8 +475,8 @@ impl BinariesInstaller {
     /// The half that runs after the archive lands: extract and record.
     ///
     /// Separate from the download because the queue owns bytes and this owns
-    /// what they become. It is also why a `binaries` row is never resumed by the
-    /// generic queue: this step lives in the process that started it.
+    /// what they become, and why a `binaries` row is never generically resumed:
+    /// this step lives in the process that started it.
     async fn finish(
         &self,
         kind: BinaryKind,
@@ -556,15 +501,13 @@ impl BinariesInstaller {
                 format!("extraction task for {kind} failed: {err}"),
             )
         })??;
-        // The staged archive has served its purpose; leaving it behind would
-        // keep a full copy of every installed binary on disk forever.
+        // Leaving it would keep a full copy of every installed binary forever.
         let _ = tokio::fs::remove_file(&archive).await;
         self.write_installed_version(kind, &resolved.version)
             .await?;
         self.clear_failure(kind);
-        // After the version is recorded, never before: this is the first moment
-        // `list()` reports the binary as installed, so a recompute any earlier
-        // would broadcast the pre-extract answer.
+        // After the version is recorded, never before: the first moment
+        // `list()` reports the binary as installed.
         self.notify_requirements();
         Ok(())
     }
@@ -575,9 +518,8 @@ impl BinariesInstaller {
             kind.to_string(),
             InstalledVersion {
                 version: version.to_string(),
-                // BOTH, always. See the module docs: a client judges presence by
-                // `target`, so recording only `variant` makes every install look
-                // like a degraded one.
+                // BOTH, always: a client judges presence by `target`, so
+                // recording only `variant` makes every install look degraded.
                 variant: Some(BinaryVariant::Cpu),
                 target: Some(BinaryVariant::Cpu),
             },
@@ -621,13 +563,9 @@ impl BinariesInstaller {
 
     /// The manifest with no chance of a fetch, for `list`.
     ///
-    /// It does NOT go through `load(false)`. That call short-circuits only on a
-    /// GOOD cache, and a cache read returns `None` for four separate reasons
-    /// (absent, unreadable, malformed, failing verification), so every one of
-    /// the other three fell through to `fetch_and_verify`. Guarding on the file
-    /// merely EXISTING closes one of the four and reads as if it closed all of
-    /// them, which is how a route documented as network-free reached the
-    /// network on a truncated cache.
+    /// Deliberately not `load(false)`, which short-circuits only on a GOOD
+    /// cache: a cache read returns `None` when absent, unreadable, malformed or
+    /// unverifiable, and the other three would fall through to a fetch.
     async fn cached_manifest(&self) -> Option<BinaryManifest> {
         if self.inner.channel == Channel::Dev {
             return Some(crate::downloads::binaries::manifest::dev_manifest());
@@ -638,9 +576,9 @@ impl BinariesInstaller {
 
 /// The `group_id` every row a single kind's install creates is tagged with.
 ///
-/// The one thing that ties an orphaned row back to the kind that started it,
-/// which is what [`BinariesInstaller::reconcile_interrupted_installs`] reads on
-/// boot. Minted and parsed in one place so the two cannot drift.
+/// The one thing tying an orphaned row back to the kind that started it, read
+/// on boot by [`BinariesInstaller::reconcile_interrupted_installs`]. Minted and
+/// parsed in one place so the two cannot drift.
 pub fn group_id_for(kind: BinaryKind) -> String {
     format!("{GROUP_ID_PREFIX}{kind}")
 }
@@ -649,23 +587,20 @@ fn kind_from_group_id(group_id: &str) -> Option<BinaryKind> {
     match group_id.strip_prefix(GROUP_ID_PREFIX)? {
         "deno" => Some(BinaryKind::Deno),
         "llama-server" => Some(BinaryKind::LlamaServer),
-        "loca-core-speech" => Some(BinaryKind::LocaCoreSpeech),
         _ => None,
     }
 }
 
 const GROUP_ID_PREFIX: &str = "binaries:";
 
-/// What a version reads as when it could not be resolved. The oracle's literal
-/// (`manager.ts:331`), and load-bearing rather than cosmetic: it is what lets a
+/// What a version reads as when it could not be resolved, which is what lets a
 /// degraded row still be a row.
 const UNKNOWN_VERSION: &str = "unknown";
 
 /// The storage screen's view of the helper binaries.
 ///
-/// Implemented here rather than in `storage/`, following `ModelLocks for
-/// Models`: the fact lives with the package that owns it, and the storage
-/// package holds only the question.
+/// Implemented here rather than in `storage/`: the fact lives with the package
+/// that owns it, and the storage package holds only the question.
 #[async_trait::async_trait]
 impl crate::storage::deps::BinariesSource for BinariesInstaller {
     /// Only what is actually on disk, so the screen never offers to reclaim a
@@ -687,10 +622,8 @@ impl crate::storage::deps::BinariesSource for BinariesInstaller {
             .collect())
     }
 
-    /// The oracle unions the required kinds with the kinds a RUNNING sidecar
-    /// executes (`storage.ts:71-75`). This core has no second half to union:
-    /// llama.cpp and sherpa are in-process (D14), so no live subsystem is a
-    /// spawned binary, and `deno` is required whenever it is installable.
+    /// llama.cpp and sherpa are in-process, so no live subsystem is a spawned
+    /// binary, and `deno` is required whenever it is installable.
     async fn locked_kinds(&self) -> Result<std::collections::HashSet<String>> {
         Ok(crate::requirements::required_binary_kinds()
             .iter()
@@ -778,8 +711,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_kinds_array_installs_nothing() {
-        // D-028: absent means "everything missing", empty means "nothing". A
-        // client that sends [] must not trigger a full install.
+        // Absent means "everything missing", empty means "nothing".
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
 
@@ -800,16 +732,13 @@ mod tests {
         assert_eq!(installer.missing_kinds().await, vec![BinaryKind::Deno]);
 
         // With the binary on disk, nothing is missing.
-        let bin = dir.path().join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join(binary_name(BinaryKind::Deno)), b"x").unwrap();
+        place_deno(&dir);
         assert!(installer.missing_kinds().await.is_empty());
     }
 
     #[tokio::test]
     async fn a_failed_install_is_visible_to_the_requirements_snapshot() {
-        // Swallowing the error leaves the user with a binary that is simply
-        // absent, no reason given, and a retry that reports nothing.
+        // Swallowing it leaves a binary simply absent, with no reason given.
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
 
@@ -827,7 +756,7 @@ mod tests {
     }
 
     /// Records what the on-disk install record said at the MOMENT it was told,
-    /// which is the only way to prove the notification is not pre-extract.
+    /// the only way to prove the notification is not pre-extract.
     struct RecordingNotifier {
         versions: PathBuf,
         seen: Mutex<Vec<bool>>,
@@ -859,6 +788,22 @@ mod tests {
         (notifier, rx)
     }
 
+    /// Put a `deno` binary on disk under `dir`'s `bin`, so it reads as installed.
+    fn place_deno(dir: &tempfile::TempDir) {
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join(binary_name(BinaryKind::Deno)), b"x").unwrap();
+    }
+
+    /// The `deno` row out of a `list` answer, which every kind on the contract
+    /// carries.
+    fn deno_of(listed: &[BinaryStatus]) -> &BinaryStatus {
+        listed
+            .iter()
+            .find(|s| s.kind == BinaryKind::Deno)
+            .expect("deno is on the contract")
+    }
+
     fn zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
         use std::io::Write;
         let mut buf = std::io::Cursor::new(Vec::new());
@@ -873,20 +818,13 @@ mod tests {
         buf.into_inner()
     }
 
-    fn sha256_hex(bytes: &[u8]) -> String {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(bytes);
-        format!("{:x}", hasher.finalize())
-    }
+    use crate::files::sha256_hex;
 
     #[tokio::test]
     async fn a_finished_install_tells_requirements_once_the_binary_reads_as_installed() {
-        // The regression this exists for: a binaries row hits `Completed` when
-        // its ARCHIVE lands, so a client that recomputes off the download queue
-        // is told "still missing" and then never asked again, leaving the
-        // downloads list finished and the settings gate stuck on Downloading.
-        // Only this notification, after the version is recorded, clears it.
+        // A binaries row hits `Completed` when its ARCHIVE lands, so a client
+        // recomputing off the queue is told "still missing" and never asked
+        // again. Only this notification, after the record, clears it.
         let exe = binary_name(BinaryKind::Deno);
         let archive = zip_bytes(&[(exe.as_str(), b"EXE-BYTES")]);
         let asset = Upstream::start(Serve::Ranged(archive.clone())).await;
@@ -936,9 +874,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_install_tells_requirements_too() {
-        // A failure settles the install as much as a success does: the snapshot
-        // turns the row from a reasonless missing entry into a retryable one,
-        // and nothing puts that reason in front of the user without a recompute.
+        // A failure settles the install as much as a success does, and only a
+        // recompute puts the reason in front of the user.
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
         let (notifier, mut told) = recording(&installer);
@@ -956,40 +893,29 @@ mod tests {
     async fn one_kind_failing_does_not_block_the_others() {
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
-
-        // Both are attempted; only the unsupported one records a failure.
         installer
-            .install(Some(vec![
-                BinaryKind::LlamaServer,
-                BinaryKind::LocaCoreSpeech,
-            ]))
+            .install(Some(vec![BinaryKind::LlamaServer, BinaryKind::Deno]))
             .await
             .unwrap();
-
+        // The uninstallable kind records its failure without aborting the batch.
         assert!(installer.failure(BinaryKind::LlamaServer).is_some());
-        assert!(installer.failure(BinaryKind::LocaCoreSpeech).is_some());
+        assert!(installer.failure(BinaryKind::Deno).is_none());
     }
 
     #[tokio::test]
     async fn list_reports_the_variant_and_the_target_it_aimed_for() {
-        // A client judges presence by `target == desiredVariant`, so an install
-        // that records `variant` and not `target` reads as perpetually missing
-        // and re-offers itself in the requirements popup forever.
+        // A client judges presence by `target == desiredVariant`, so recording
+        // only `variant` reads as perpetually missing.
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
-        let bin = dir.path().join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join(binary_name(BinaryKind::Deno)), b"x").unwrap();
+        place_deno(&dir);
         installer
             .write_installed_version(BinaryKind::Deno, "v2.8.2")
             .await
             .unwrap();
 
         let listed = installer.list().await.unwrap();
-        let deno = listed
-            .iter()
-            .find(|s| s.kind == BinaryKind::Deno)
-            .expect("deno is on the contract");
+        let deno = deno_of(&listed);
 
         assert!(deno.installed);
         assert_eq!(deno.version, "v2.8.2");
@@ -1008,7 +934,7 @@ mod tests {
         let installer = installer(&dir);
 
         let listed = installer.list().await.unwrap();
-        let deno = listed.iter().find(|s| s.kind == BinaryKind::Deno).unwrap();
+        let deno = deno_of(&listed);
 
         assert!(!deno.installed);
         assert_eq!(deno.path, None);
@@ -1018,14 +944,13 @@ mod tests {
 
     #[tokio::test]
     async fn list_covers_every_kind_on_the_contract_even_the_uninstallable_ones() {
-        // The wire type stays 3-valued until cutover, so a client that renders
-        // all three must still get all three rather than a short list.
+        // A client renders a row per kind on the wire, so both are listed.
         let dir = tempfile::tempdir().unwrap();
         let installer = installer(&dir);
 
         let listed = installer.list().await.unwrap();
 
-        assert_eq!(listed.len(), 3);
+        assert_eq!(listed.len(), 2);
         let uninstallable = listed
             .iter()
             .find(|s| s.kind == BinaryKind::LlamaServer)
@@ -1050,14 +975,11 @@ mod tests {
 
     #[tokio::test]
     async fn list_makes_no_outbound_call_on_any_shipping_channel_or_cache_state() {
-        // The finding, and it breaks the repo's one ABSOLUTE rule. The test
-        // above runs on `Channel::Dev`, which returns an in-code manifest
-        // before the cache is consulted at all, so it cannot reach the branch
-        // it names. On a shipping channel the guard was "does the cache FILE
-        // exist", and a cache read returns `None` for four separate reasons:
-        // absent, unreadable, malformed, or failing verification. Three of the
-        // four therefore fell through to `fetch_and_verify`, so a truncated
-        // cache made `GET /api/v1/binaries` reach the internet.
+        // The test above runs on `Channel::Dev`, which returns an in-code
+        // manifest before the cache is consulted, so it cannot reach the branch
+        // it names. On a shipping channel a cache read returns `None` when
+        // absent, unreadable, malformed or unverifiable, and a guard on the
+        // file merely EXISTING lets three of those four reach the internet.
         for channel in [Channel::Stable, Channel::Latest] {
             for (what, cache) in
                 [
@@ -1089,7 +1011,7 @@ mod tests {
 
                 let listed = installer.list().await.unwrap();
 
-                assert_eq!(listed.len(), 3, "{channel} / {what}");
+                assert_eq!(listed.len(), 2, "{channel} / {what}");
                 assert_eq!(
                     installer.inner.net.calls(),
                     0,
@@ -1101,16 +1023,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_pinned_manifest_reports_its_published_version_without_asking_upstream() {
-        // The other half of the same route: a stable entry knows its version,
-        // so a list that reports "unknown" is hiding what the client needs to
-        // decide whether an install is even offered.
+        // A stable entry knows its version, so reporting "unknown" hides what
+        // the client needs to decide whether an install is offered.
         let dir = tempfile::tempdir().unwrap();
         let trust = Trusted::new();
         let installer = installer_on(&dir, Channel::Stable);
         stage_cache(&installer, &trust, published_stable_manifest()).await;
 
         let listed = installer.list().await.unwrap();
-        let deno = listed.iter().find(|s| s.kind == BinaryKind::Deno).unwrap();
+        let deno = deno_of(&listed);
 
         assert_eq!(deno.version, "v2.8.2");
         assert_eq!(installer.inner.net.calls(), 0);
@@ -1118,22 +1039,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_resolver_manifest_reports_latest_until_something_is_installed() {
-        // `manager.ts:293-297`. A resolver entry does not know its version
-        // without asking GitHub, and asking is what the consent rule forbids.
+        // A resolver entry does not know its version without asking GitHub,
+        // and asking is what the consent rule forbids.
         let dir = tempfile::tempdir().unwrap();
         let trust = Trusted::new();
         let installer = installer_on(&dir, Channel::Latest);
         stage_cache(&installer, &trust, published_latest_manifest()).await;
 
         let listed = installer.list().await.unwrap();
-        assert_eq!(
-            listed
-                .iter()
-                .find(|s| s.kind == BinaryKind::Deno)
-                .unwrap()
-                .version,
-            "latest"
-        );
+        assert_eq!(deno_of(&listed).version, "latest");
 
         installer
             .write_installed_version(BinaryKind::Deno, "v2.8.1")
@@ -1141,11 +1055,7 @@ mod tests {
             .unwrap();
         let listed = installer.list().await.unwrap();
         assert_eq!(
-            listed
-                .iter()
-                .find(|s| s.kind == BinaryKind::Deno)
-                .unwrap()
-                .version,
+            deno_of(&listed).version,
             "v2.8.1",
             "an installed resolver entry reports what is on disk"
         );
@@ -1156,11 +1066,9 @@ mod tests {
 
     #[tokio::test]
     async fn check_still_answers_when_upstream_cannot_be_reached() {
-        // The oracle wraps each kind in try/catch, logs, and still pushes a row
-        // (`manager.ts:340-350`). Unauthenticated GitHub is rate-limited to
-        // about 60 requests an hour per IP, so returning an error envelope here
-        // turns a normal day into a broken "check for updates" button where the
-        // oracle says "nothing available". Offline does the same.
+        // Unauthenticated GitHub is rate-limited to about 60 requests an hour
+        // per IP, so an error envelope here turns a normal day into a broken
+        // "check for updates" button. Offline does the same.
         let trust = Trusted::new();
         // Port 1 never listens, so the release lookup fails at connect.
         let _github = GithubHost::set("http://127.0.0.1:1");
@@ -1168,13 +1076,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (installer, _queue) =
             installer_with(&dir, Channel::Latest, &manifest.url("/binaries.json"));
-        // INSTALLED, with a recorded version. Without that the `available`
-        // half of this test cannot fail: a kind that is not on disk is not
-        // "available" under any implementation, so the guard that stops the
-        // phantom update would be untested on a fixture that omits it.
-        let bin = dir.path().join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join(binary_name(BinaryKind::Deno)), b"x").unwrap();
+        // INSTALLED, with a recorded version: a kind not on disk is not
+        // "available" under any implementation, so the phantom-update guard
+        // would be untested on a fixture that omits it.
+        place_deno(&dir);
         installer
             .write_installed_version(BinaryKind::Deno, "v2.8.2")
             .await
@@ -1197,10 +1102,8 @@ mod tests {
 
     #[tokio::test]
     async fn probe_answers_for_every_kind_it_was_asked_about() {
-        // The confirmation modal lists what the user is about to accept, so a
-        // kind silently missing from the answer is a download that happens
-        // without appearing in the list that consented to it
-        // (`manager.ts:379-408`).
+        // The confirmation modal lists what the user is accepting, so a kind
+        // missing from the answer is a download nothing consented to.
         let trust = Trusted::new();
         let _github = GithubHost::set("http://127.0.0.1:1");
         let dir = tempfile::tempdir().unwrap();
@@ -1242,9 +1145,8 @@ mod tests {
 
     #[tokio::test]
     async fn probe_heads_for_a_size_a_pinned_entry_does_not_publish() {
-        // A pinned (stable) entry carries no size, so the modal falls back to a
-        // HEAD on the resolved URL (`manager.ts:396`). Without it every stable
-        // download confirmation shows no size at all.
+        // A pinned entry carries no size, so the modal falls back to a HEAD;
+        // without it every stable confirmation shows no size at all.
         let trust = Trusted::new();
         let artifact = Upstream::start(Serve::Status(200))
             .await
@@ -1269,10 +1171,9 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_re_initiates_an_interrupted_binary_install() {
-        // `resume_pending` skips `binaries` rows deliberately, and that skip is
-        // only safe because something else finishes them. Nothing did: the row
-        // sat `Pending` forever with the staged archive orphaned and the
-        // requirements gate permanently unsatisfiable.
+        // `resume_pending` skips `binaries` rows, which is only safe because
+        // this finishes them: otherwise the row sits `Pending` forever with the
+        // archive orphaned and the requirements gate unsatisfiable.
         let trust = Trusted::new();
         let release = serde_json::json!({
             "tag_name": "v2.8.2",
@@ -1330,8 +1231,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_makes_no_request_when_nothing_was_interrupted() {
-        // Cache-first and work-first: a boot with a settled queue must not turn
-        // into an outbound request.
+        // A boot with a settled queue must not turn into a request.
         let dir = tempfile::tempdir().unwrap();
         let installer = installer_on(&dir, Channel::Stable);
 
@@ -1342,8 +1242,8 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_leaves_a_models_row_alone() {
-        // It is the BINARIES half of the boot sequence; `start` already owns
-        // the models rows, and touching them here would double-resume them.
+        // The BINARIES half of boot: `start` owns the models rows, and
+        // touching them here would double-resume them.
         let dir = tempfile::tempdir().unwrap();
         let (installer, queue) =
             installer_with(&dir, Channel::Stable, "http://127.0.0.1:1/binaries.json");
@@ -1372,13 +1272,9 @@ mod tests {
 
     #[test]
     fn a_group_id_round_trips_to_the_kind_that_minted_it() {
-        // The only thing tying an orphaned row back to its kind, so the minting
-        // and the parsing have to be one pair rather than two string literals.
-        for kind in [
-            BinaryKind::Deno,
-            BinaryKind::LlamaServer,
-            BinaryKind::LocaCoreSpeech,
-        ] {
+        // The only thing tying an orphaned row back to its kind, so minting
+        // and parsing must be one pair rather than two string literals.
+        for kind in [BinaryKind::Deno, BinaryKind::LlamaServer] {
             assert_eq!(kind_from_group_id(&group_id_for(kind)), Some(kind));
         }
         assert_eq!(kind_from_group_id("g"), None);
@@ -1426,6 +1322,6 @@ mod tests {
         std::fs::write(bin.join("versions.json"), b"{not json").unwrap();
 
         assert!(installer.read_installed().await.is_empty());
-        assert_eq!(installer.list().await.unwrap().len(), 3);
+        assert_eq!(installer.list().await.unwrap().len(), 2);
     }
 }

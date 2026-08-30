@@ -45,8 +45,7 @@ pub struct SessionDoc {
     /// because the in-memory document is the same type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temporary: Option<bool>,
-    /// Defaulted so an older or partial file still loads, matching the
-    /// TypeScript's `parsed.messages ??= []`.
+    /// Defaulted so an older or partial file still loads.
     #[serde(default)]
     pub messages: Vec<StoredMessage>,
     #[serde(default)]
@@ -69,19 +68,15 @@ impl SessionDoc {
 
 /// One message, exactly as it sits on disk.
 ///
-/// **Not `contract::api::Message`, deliberately.** That type is
-/// `#[serde(tag = "role", deny_unknown_fields)]` over nine closed variants,
-/// which is right at the wire boundary and wrong for a file we wrote ourselves:
-/// one message carrying a role or a field the enum does not know would fail the
-/// whole `session.json` parse, and the read path treats a failed parse as an
-/// absent session. A single drifted message would therefore erase a user's
-/// entire transcript from every listing, for a cosmetic cause.
+/// **Not `contract::api::Message`, deliberately.** That type denies unknown
+/// fields over nine closed variants, which is right at the wire boundary and
+/// wrong for a file we wrote ourselves: one drifted message would fail the whole
+/// `session.json` parse, and the read path treats a failed parse as an absent
+/// session, erasing a user's entire transcript from every listing.
 ///
-/// Keeping the raw map also makes the patch route a shallow merge rather than a
-/// nine-variant field-by-field reconstruction, and it is what makes the
-/// round-trip fidelity test in `tests.rs` meaningful. Strictness lives at the
-/// wire (`contract::inbound::MessageInput` on the way in,
-/// [`StoredMessage::validate`] on a patch); tolerance lives here.
+/// The raw map also makes the patch route a shallow merge. Strictness lives at
+/// the wire (`contract::inbound::MessageInput` in, [`StoredMessage::validate`]
+/// on a patch); tolerance lives here.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct StoredMessage(Map<String, Value>);
@@ -113,8 +108,7 @@ impl StoredMessage {
         self.0.get("id").and_then(Value::as_str)
     }
 
-    /// `None` when absent or not a number, which `next_ord` skips exactly as the
-    /// TypeScript's `m.ord > max` skips an `undefined`.
+    /// `None` when absent or not a number, which `next_ord` skips.
     pub fn ord(&self) -> Option<i64> {
         as_i64(self.0.get("ord")?)
     }
@@ -140,8 +134,7 @@ impl StoredMessage {
         self.0.insert("createdAtMs".into(), Value::from(ms));
     }
 
-    /// Shallow-merge `patch` over this message, the way the TypeScript spreads
-    /// `{ ...current, ...patch }`.
+    /// Shallow-merge `patch` over this message.
     pub fn merge(&mut self, patch: &Map<String, Value>) {
         for (key, value) in patch {
             self.0.insert(key.clone(), value.clone());
@@ -150,10 +143,9 @@ impl StoredMessage {
 
     /// Parse through the generated contract type.
     ///
-    /// The strictness this borrows is the point: `deny_unknown_fields` on the
-    /// per-role variants is what rejects an assistant-only field on a user
-    /// message, at exactly the strictness `messagePatchSchemaByRole` had, without
-    /// restating any of it.
+    /// The borrowed strictness is the point: `deny_unknown_fields` on the
+    /// per-role variants rejects an assistant-only field on a user message
+    /// without restating any of it.
     pub fn validate(&self) -> Result<crate::contract::api::Message, serde_json::Error> {
         serde_json::from_value(Value::Object(self.0.clone()))
     }

@@ -1,13 +1,6 @@
-//! The on-disk half of a memory: where its bytes live, and the naming rules
-//! that decide the path.
-//!
-//! Knowledge is one file, `<slug>.md`. A skill is a folder, `<slug>/`, holding
-//! `SKILL.md` plus any bundled reference files. Both sit under their provider's
-//! base directory: the core's `memories/` for user memories, an extension's
-//! install directory for the read-only ones it ships.
-//!
-//! Everything here is either pure string work or a filesystem call, and the two
-//! are kept apart so the naming rules can be tested without a directory.
+//! The on-disk half of a memory: paths, slugs, titles, and the filesystem
+//! calls. Knowledge is `<slug>.md`; a skill is `<slug>/SKILL.md` plus bundled
+//! files. Both sit under their provider's base directory.
 
 use std::path::{Path, PathBuf};
 
@@ -20,11 +13,8 @@ use crate::contract::api::MemoryKind;
 /// The instruction body inside a skill folder. The folder name is the slug.
 pub const SKILL_FILE: &str = "SKILL.md";
 
-/// A memory's content hash, lowercase hex, over the exact bytes on disk.
-///
-/// This is the value the whole freshness machinery compares: `summary` and
-/// `embedding` each pin the hash they were derived from, and `rescan` re-derives
-/// it to notice an edit made outside the app.
+/// sha256 of the exact bytes on disk, lowercase hex. What every freshness
+/// comparison pins to.
 pub fn content_hash(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
@@ -37,16 +27,9 @@ pub fn memory_path(base: &Path, kind: MemoryKind, filename: &str) -> PathBuf {
     }
 }
 
-/// `"Meeting Notes: Q3!"` -> `"meeting-notes-q3"`.
-///
-/// Lowercase, every run outside `[a-z0-9]` collapsed to one `-`, leading and
-/// trailing `-` stripped, then cut to 64. The trim happens **before** the cut,
-/// so a slug can still end in `-` if the 64th character is one; that is what the
-/// TypeScript does and the name only has to be unique, not pretty.
-///
-/// The class is ASCII on purpose. After the replacement the string is pure
-/// ASCII, which is also why cutting at 64 bytes equals cutting at 64 JavaScript
-/// code units.
+/// `"Meeting Notes: Q3!"` -> `"meeting-notes-q3"`: lowercase, runs outside
+/// ASCII `[a-z0-9]` collapsed to one `-`, edges trimmed, then cut to 64 (so a
+/// slug may still end in `-`).
 pub fn slugify(title: &str) -> String {
     let mut out = String::with_capacity(title.len());
     let mut pending_dash = false;
@@ -99,17 +82,9 @@ pub fn pretty_title(path: &str) -> String {
     }
 }
 
-/// The traversal guard shared by the three bundled-file operations.
-///
-/// `name` must be a plain file directly inside the skill folder. `SKILL.md` is
-/// rejected **case-insensitively**, because on a case-insensitive filesystem a
-/// bundled `skill.md` would otherwise resolve to the instruction body and
-/// overwrite it; that body is edited through `replace_content`, never here.
-///
-/// This is a name-shape check rather than a canonicalisation, which is stricter
-/// than resolving the path and comparing prefixes: `a/b`, `..` and `\` are all
-/// refused outright rather than being normalised into something that happens to
-/// stay inside.
+/// Traversal guard for bundled files: a plain name directly inside the skill
+/// folder. `SKILL.md` is refused case-insensitively so a case-insensitive
+/// filesystem cannot route a bundled `skill.md` onto the instruction body.
 pub fn check_skill_file_name(name: &str) -> Result<()> {
     if name.trim().is_empty()
         || name.eq_ignore_ascii_case(SKILL_FILE)
@@ -124,10 +99,7 @@ pub fn check_skill_file_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-// --- filesystem --------------------------------------------------------------
-//
-// `spawn_blocking` over `std::fs` rather than `tokio::fs`, matching the sessions
-// store: one blocking call per operation instead of tokio's per-syscall hop.
+// --- filesystem: `spawn_blocking` over `std::fs`, one hop per operation ------
 
 async fn blocking<T, F>(f: F) -> Result<T>
 where
@@ -148,17 +120,14 @@ pub async fn create_dir_all(path: PathBuf) -> Result<()> {
     blocking(move || std::fs::create_dir_all(path)).await
 }
 
-/// True when the path exists at all, directory or file. The TypeScript's
-/// `host.fs.stat` returning non-null.
+/// True when the path exists at all, directory or file.
 pub async fn exists(path: PathBuf) -> bool {
     tokio::task::spawn_blocking(move || path.exists())
         .await
         .unwrap_or(false)
 }
 
-/// Remove a file, or a directory and everything under it. Idempotent: a missing
-/// path is not an error, matching `host.fs.remove`, so a rescan cannot re-adopt
-/// content a delete already took.
+/// Remove a file, or a directory recursively. A missing path is not an error.
 pub async fn remove(path: PathBuf, recursive: bool) -> Result<()> {
     blocking(move || {
         let result = if recursive {
@@ -181,13 +150,8 @@ pub struct DirEntry {
     pub is_dir: bool,
 }
 
-/// Immediate entries of a directory, in the order the filesystem reports them.
-/// Empty when the directory is absent, which is the state before the first
-/// memory is created.
-///
-/// The order is preserved rather than sorted because `rescan` iterates it to
-/// adopt new files, and sorting here would silently change which of two
-/// same-stem candidates is adopted first.
+/// Immediate entries of a directory in filesystem order (not sorted: `rescan`
+/// adoption order is observable). Empty when the directory is absent.
 pub async fn read_dir(path: PathBuf) -> Vec<DirEntry> {
     tokio::task::spawn_blocking(move || {
         let Ok(entries) = std::fs::read_dir(path) else {
@@ -205,11 +169,7 @@ pub async fn read_dir(path: PathBuf) -> Vec<DirEntry> {
     .unwrap_or_default()
 }
 
-/// Write a memory's content, creating a skill's folder first.
-///
-/// Atomic through [`crate::files::write_atomic`]: a crash mid-write leaves the
-/// previous content rather than a truncated file, and a reader never sees half
-/// of one.
+/// Write a memory's content atomically, creating a skill's folder first.
 pub async fn write_memory_content(
     base: &Path,
     kind: MemoryKind,

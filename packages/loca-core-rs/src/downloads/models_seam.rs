@@ -1,34 +1,16 @@
-//! This package's implementation of D6's [`Downloads`] seam.
+//! This package's implementation of the models [`Downloads`] seam.
 //!
-//! The five `/api/v1/models` download routes answer through here. The trait is
-//! D6's and is not edited from this side; everything below adapts the queue to
-//! the shape D6 declared.
+//! Four of the six methods are synchronous, so the async work is adapted:
+//! `models_snapshot` reads the queue's cached snapshot rather than issuing a
+//! blocking database call from inside an async handler, and `cancel`, `retry`
+//! and `remove` spawn their work, since all three answer 204 immediately and
+//! the outcome reaches the client on the `downloads.snapshot` broadcast.
 //!
-//! # Sync trait, async queue
-//!
-//! Four of the six methods are synchronous, because the TypeScript's are: its
-//! SQLite calls block the event loop and its `cancel` is a map lookup. Here
-//! every store read goes through `Db::call` and a blocking pool, so the
-//! adaptation is deliberate rather than incidental:
-//!
-//! - `models_snapshot` reads the queue's cached snapshot, which the queue keeps
-//!   current on the boot pass, every broadcast and every reconcile. It never
-//!   lazily re-reads, because a blocking database call from a sync method inside
-//!   an async handler is the thing the cache exists to avoid.
-//! - `cancel`, `retry` and `remove` spawn their work. All three answer 204
-//!   immediately in the TypeScript too, so nothing is lost: the outcome reaches
-//!   the client on the `downloads.snapshot` broadcast it is already watching.
-//! - `enqueue_models` computes ids synchronously (`id_for` is pure) and spawns
-//!   the transfers, which is exactly what `models/manager.ts:25-44` does.
-//!
-//! # `network` gates the HEAD, never the presence check
-//!
-//! `probe(sources, network)` maps `network` onto [`Probe`] and nothing else.
-//! Presence is always a local `stat`, so the always-on requirements snapshot
-//! passes `false` and still gets a truthful `already_have`. Converted on the
-//! first line rather than threaded through as a bool, because a bare `false`
-//! read backwards at a call site is a silent consent violation and
-//! `Probe::LocalOnly` is not.
+//! `network` gates the outbound HEAD and never the presence check, which is
+//! always a local `stat`, so the always-on requirements snapshot passes `false`
+//! and still gets a truthful `already_have`. Converted to [`Probe`] on the first
+//! line, because a bare `false` read backwards at a call site is a silent
+//! consent violation and `Probe::LocalOnly` is not.
 
 use std::sync::Arc;
 
@@ -63,16 +45,16 @@ impl ModelDownloads {
         }
     }
 
-    /// The spec a `(source, group)` pair means. Models only: this seam is the
-    /// models slice, and a caller cannot steer the destination through it.
+    /// The spec a `(source, group)` pair means. Models only: a caller cannot
+    /// steer the destination through this seam.
     fn spec(source: &str, group: &str) -> EnqueueSpec {
         EnqueueSpec {
             source: source.to_string(),
             destination: DownloadEntryDestination::Models,
             group_id: group.to_string(),
             size_hint: None,
-            // No pinned hash: a model file's hash comes from the signed catalog
-            // or HuggingFace's etag, both resolved inside the transfer.
+            // No pinned hash: a model file's comes from the signed catalog or
+            // HuggingFace's etag, both resolved inside the transfer.
             sha256: None,
             url: None,
             rel_path: None,
@@ -84,16 +66,14 @@ impl ModelDownloads {
 #[async_trait]
 impl Downloads for ModelDownloads {
     async fn probe(&self, sources: &[String], network: bool) -> Result<Vec<DownloadPlan>> {
-        // The whole of `network`'s meaning, in one conversion. See the module
-        // docs: it gates the outbound HEAD and never the presence check.
+        // The whole of `network`'s meaning, in one conversion.
         let mode = Probe::from_network_flag(network);
         let cancel = CancellationToken::new();
         let root = self.paths.models_dir();
         let mut plans = Vec::with_capacity(sources.len());
         for source in sources {
-            // Sequential rather than joined: `WithSizes` issues a HEAD per
-            // missing file, and fanning those out in parallel is precisely the
-            // burst the queue's single permit exists to avoid.
+            // Sequential: `WithSizes` issues a HEAD per missing file, and
+            // fanning those out is the burst the single permit exists to avoid.
             let probed =
                 probe_source(&self.net, source, root, &self.hf_base_url, mode, &cancel).await?;
             plans.push(probed.to_plan());
@@ -102,12 +82,10 @@ impl Downloads for ModelDownloads {
     }
 
     fn enqueue_models(&self, items: &[(String, String)]) -> Result<Vec<String>> {
-        // Ids first, and fallibly: `id_for` resolves and containment-checks the
-        // destination path, so a source that would escape the models root is
-        // refused here rather than being spawned and failing invisibly. That is
-        // why this method returns a Result where the TypeScript's returns
-        // nothing: an empty `jobIds` would report that nothing needed
-        // downloading, which is a different and wrong answer.
+        // Ids first, and fallibly: `id_for` containment-checks the destination,
+        // so a source escaping the models root is refused here rather than
+        // spawned and failing invisibly. An empty `jobIds` would instead report
+        // that nothing needed downloading.
         let specs: Vec<EnqueueSpec> = items
             .iter()
             .map(|(source, group)| Self::spec(source, group))
@@ -117,8 +95,8 @@ impl Downloads for ModelDownloads {
             .map(|spec| self.queue.id_for(spec))
             .collect::<Result<Vec<String>>>()?;
 
-        // Then the transfers, fire-and-forget. The caller is already subscribed
-        // to `downloads.snapshot`, which is where progress and failure surface.
+        // Then the transfers, fire-and-forget: the caller is subscribed to
+        // `downloads.snapshot`, where progress and failure surface.
         for spec in specs {
             let queue = self.queue.clone();
             tokio::spawn(async move {
@@ -236,8 +214,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_only_probe_reports_presence_and_makes_no_outbound_call() {
-        // The consent rule at the seam: this is the mode the always-on
-        // requirements snapshot passes, and it must still answer truthfully.
+        // The mode the always-on requirements snapshot passes, which must
+        // still answer truthfully.
         let fx = fixture(HF);
         let present = fx.dir.path().join("models/u/r/have.gguf");
         std::fs::create_dir_all(present.parent().unwrap()).unwrap();
@@ -276,8 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_network_flag_gates_only_the_head_so_presence_agrees_either_way() {
-        // The property the trait's doc comment states, tested as a pair rather
-        // than assumed: the two modes must never disagree about `already_have`.
+        // The two modes must never disagree about `already_have`.
         let server = Upstream::start(Serve::Status(200))
             .await
             .with_head_redirect("/cdn", &[("x-linked-size", "4096")]);
@@ -301,8 +278,8 @@ mod tests {
 
     #[tokio::test]
     async fn enqueue_returns_ids_that_cancel_retry_and_remove_accept() {
-        // The ids this hands back are what the client sends to the other three
-        // routes, so an id that does not match the row makes all three no-op.
+        // These ids are what the client sends to the other three routes, so a
+        // mismatch makes all three no-op.
         let server = Upstream::start(Serve::Ranged(BODY.to_vec())).await;
         let fx = fixture(server.base());
 
@@ -320,7 +297,7 @@ mod tests {
     #[tokio::test]
     async fn an_enqueue_that_would_escape_the_models_root_is_refused_rather_than_spawned() {
         // Fallible on purpose: an empty `jobIds` would report that nothing
-        // needed downloading, which is a different and wrong answer.
+        // needed downloading.
         let fx = fixture(HF);
 
         let err = fx
@@ -334,10 +311,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_snapshot_carries_models_rows_and_hides_the_binaries_ones() {
-        // All THREE destinations, not just models and binaries. With only those
-        // two staged, a filter written as "not binaries" is indistinguishable
-        // from one written as "is models", and the seam is meant to be the
-        // models slice rather than everything-except-binaries.
+        // All THREE destinations: with only two staged, a filter written as
+        // "not binaries" is indistinguishable from one written as "is models".
         let fx = fixture(HF);
         let mut binary = ModelDownloads::spec("@u/r/main/deno.zip", "bin");
         binary.destination = DownloadEntryDestination::Binaries;
@@ -369,8 +344,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_snapshot_is_readable_without_blocking_and_survives_a_restart() {
-        // The cache is primed by the boot pass, so the first read after a
-        // restart reports the persisted queue rather than an empty one.
+        // The boot pass primes the cache, so the first read after a restart
+        // reports the persisted queue rather than an empty one.
         let fx = fixture(HF);
         let spec = ModelDownloads::spec("@u/r/main/model.gguf", "llm");
         let id = fx.queue.id_for(&spec).unwrap();
@@ -411,8 +386,7 @@ mod tests {
         .await;
 
         // The retried worker cannot reach 127.0.0.1:1, so the row settles on
-        // Error. Waiting for a TERMINAL status rather than merely "not
-        // Cancelled" matters for the step after it.
+        // Error. A TERMINAL status matters for the step after it.
         fx.seam.retry(&id);
         settle(|| {
             fx.queue
@@ -423,10 +397,8 @@ mod tests {
         .await;
 
         // `remove` refuses while an in-flight entry is live, and the worker
-        // writes the terminal status BEFORE it drops that entry (the window
-        // mutation 31 covers). A single call can therefore land inside it and
-        // no-op, so this retries the way a client would rather than sleeping a
-        // guessed interval and hoping.
+        // writes the terminal status BEFORE dropping that entry, so a single
+        // call can land in the window and no-op. This retries as a client would.
         settle(|| {
             fx.seam.remove(&id);
             fx.queue.cached_snapshot().iter().all(|r| r.id != id)

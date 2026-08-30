@@ -1,33 +1,13 @@
-//! The drift tripwire for the pinned `deno`.
+//! The drift tripwire for the pinned `deno`: drives real permission prompts
+//! through a real terminal and answers them on the production schedule, so a
+//! Deno release that changes the prompt wording or handshake fails here.
 //!
-//! Ports `packages/loca-core/src/extensions/prompt-live-probe.test.ts`. Every
-//! other test in this package feeds the parser text somebody typed into a
-//! fixture, which proves the parser matches the fixture. This one drives REAL
-//! permission prompts out of the real pinned binary, through a real terminal,
-//! and answers them on the real schedule, so a Deno release that changes the
-//! prompt wording or the answer handshake fails HERE rather than in a user's
-//! tool call.
-//!
-//! # It is skipped by default and must not be silently skipped in CI
-//!
-//! `#[ignore]`d, because it costs five to fifteen seconds of wall clock (seven
-//! prompts, each with a mandatory 300ms delay before the answer) and because
-//! the pinned `deno` is a consent-gated download that a contributor may simply
-//! not have. Both are fine locally and neither is fine in CI: a tripwire that
-//! quietly skips is a test that cannot fail, which is what
-//! `LOCA_REQUIRE_DENO_PROMPTS` exists to prevent. Setting it turns "no binary"
-//! from a skip into a failure.
-//!
-//! # Unix only, and what covers Windows instead
-//!
-//! The probe fixture reads `/etc/hosts` and dlopens a system library, and it
-//! expects PTY-shaped prompt output. The ConPTY path has its own local-only
-//! live cover; what CAN be tested without Windows (the DSR handshake, the
-//! console newline translation) lives in [`crate::extensions::pty`] and runs
-//! everywhere.
+//! `#[ignore]`d by default (slow, and the pinned `deno` is a consent-gated
+//! download). `LOCA_REQUIRE_DENO_PROMPTS=1` turns "no binary" from a skip into
+//! a failure so CI cannot silently skip it. Unix only: the fixture reads
+//! `/etc/hosts` and dlopens a system library; the ConPTY path has its own
+//! local-only live cover.
 
-/// Set to `1` in CI, after the pinned `deno` has been staged. Then an absent
-/// binary FAILS instead of skipping.
 #[cfg(test)]
 const REQUIRE: &str = "LOCA_REQUIRE_DENO_PROMPTS";
 
@@ -47,10 +27,8 @@ mod tests {
     use crate::paths::Paths;
     use crate::sidecars::deno::resolve_worker_deno;
 
-    /// One access per permission kind, and the y/n column below drives the
-    /// answer. A granted access must RESUME and produce data, which is what
-    /// proves pause-and-resume rather than merely that text was parsed; a
-    /// denied one must throw `NotCapable` into a script that keeps running.
+    /// One access per permission kind; granted ones must resume with data,
+    /// denied ones must throw `NotCapable` into a script that keeps running.
     const PROBE_SCRIPT: &str = r#"
 const out = (o) => console.log(JSON.stringify(o));
 async function probe(label, fn) {
@@ -71,8 +49,6 @@ await probe("ffi", () => Deno.dlopen("/usr/lib/libSystem.B.dylib", {}));
 out({ label: "end" });
 "#;
 
-    /// Which kinds are answered `y`. The three allowed ones verify resume; the
-    /// four denied ones verify `NotCapable`.
     const ANSWERS: &[(&str, bool)] = &[
         ("read", true),
         ("env", true),
@@ -83,34 +59,20 @@ out({ label: "end" });
         ("ffi", false),
     ];
 
-    /// The answer schedule the production answerer uses, restated here because
-    /// this test is what proves those numbers still work against a real
-    /// prompter. Deno's `clear_stdin` flushes until stdin has been quiescent
-    /// for about 100ms BEFORE it reads, so an immediate write is eaten.
-    ///
-    /// **The two cover each other and neither is individually observable**,
-    /// measured against a real `deno` rather than reasoned about: with the
-    /// delay at zero the first write IS eaten and the retry lands, and the
-    /// probe passes. Only removing both makes it hang, which the budget below
-    /// then reports as a failure. So do not delete the delay on the evidence
-    /// that nothing fails without it; what it buys is one prompt answered on
-    /// the first write instead of the second, seven times per call.
+    /// The production answer schedule. Deno's `clear_stdin` eats anything
+    /// written before stdin has been quiescent ~100ms, so the first write is
+    /// delayed and re-sent until the confirmation parses. Removing only one of
+    /// the two still passes (the other covers it); removing both hangs.
     const ANSWER_INITIAL_DELAY: Duration = Duration::from_millis(300);
     const ANSWER_RETRY: Duration = Duration::from_millis(600);
 
-    /// The whole probe. Seven prompts at 300ms plus retries, one real process
-    /// start. Bounded, because a tripwire that hangs is not a tripwire.
     const PROBE_BUDGET: Duration = Duration::from_secs(60);
 
     fn required() -> bool {
         std::env::var(REQUIRE).as_deref() == Ok("1")
     }
 
-    /// The pinned `deno`, as a running core would resolve it.
-    ///
-    /// Not `deno` off the `PATH`: this test exists to pin the version the
-    /// workers actually run under, and the developer's own `deno` is whatever
-    /// they installed.
+    /// The pinned `deno` as a running core resolves it, never `deno` off `PATH`.
     fn pinned_deno() -> Option<PathBuf> {
         let channel = Channel::from_env().ok()?;
         let paths = Paths::from_env(channel).ok()?;
@@ -119,9 +81,6 @@ out({ label: "end" });
 
     #[test]
     fn the_pinned_deno_is_present_when_it_is_required() {
-        // The whole purpose of this one is to make the skip LOUD. Without it,
-        // a CI runner with no staged binary reports a green suite that
-        // exercised nothing.
         if !required() {
             return;
         }
@@ -149,9 +108,7 @@ out({ label: "end" });
             .expect("the live probe hung; the prompt handshake never completed");
         let _ = std::fs::remove_file("/tmp/loca-live-probe.txt");
 
-        // 1. Every kind prompted, and the resource was parsed out of the live
-        //    text. `env` may legitimately be empty (Deno prompts for the whole
-        //    environment when no key is named).
+        // `env` may legitimately be empty (Deno prompts for the whole environment).
         let mut kinds: Vec<&str> = outcome.prompts.iter().map(|p| p.0.as_str()).collect();
         kinds.sort_unstable();
         let mut expected: Vec<&str> = ANSWERS.iter().map(|(kind, _)| *kind).collect();
@@ -167,9 +124,6 @@ out({ label: "end" });
             }
         }
 
-        // 2. Every prompt settled, with the verdict that was answered. A
-        //    settle that never arrives is what the give-up kill exists for, and
-        //    a settle with the wrong verdict means the answer was misread.
         assert_eq!(
             outcome.settles.len(),
             outcome.prompts.len(),
@@ -183,9 +137,7 @@ out({ label: "end" });
             );
         }
 
-        // 3. The part that proves pause-and-resume rather than parsing: the
-        //    granted accesses produced data, the denied ones raised
-        //    `NotCapable`, and the script kept running through all seven.
+        // Proves pause-and-resume rather than parsing.
         for (kind, allowed) in ANSWERS {
             let result = outcome
                 .results
@@ -232,8 +184,7 @@ out({ label: "end" });
     }
 
     async fn run(deno: &std::path::Path, script: &std::path::Path) -> Outcome {
-        // No `--allow-*` at all, so every access prompts. That is the point:
-        // the probe is measuring the prompter, not the sandbox derivation.
+        // No `--allow-*` at all, so every access prompts.
         let spawned = pty::spawn(PtySpawn {
             label: "live probe".to_string(),
             program: deno.to_path_buf(),
@@ -255,8 +206,7 @@ out({ label: "end" });
         let mut events = spawned.events;
         let stdout = spawned.stdout.expect("unix always has a protocol pipe");
 
-        // The script's own verdicts ride stdout, exactly as a worker's protocol
-        // does; only the prompt is on the terminal.
+        // Verdicts ride stdout like a worker's protocol; only the prompt is on the terminal.
         let verdicts = tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             let mut results = BTreeMap::new();
@@ -286,9 +236,6 @@ out({ label: "end" });
         let mut pending: Option<(Vec<u8>, Instant)> = None;
 
         loop {
-            // The answer is written on a schedule rather than on arrival, and
-            // re-written until the confirmation is parsed. Both numbers are the
-            // production ones.
             let next_write = pending
                 .as_ref()
                 .map(|(_, at)| *at)

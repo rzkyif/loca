@@ -15,18 +15,6 @@
   },
   "overrides": [
     {
-      "files": ["packages/loca-core-engine/src/**/*.ts"],
-      "rules": {
-        "loca/no-host-import": "error"
-      }
-    },
-    {
-      "files": ["packages/loca-core-engine/**/*.test.ts"],
-      "rules": {
-        "loca/no-host-import": "off"
-      }
-    },
-    {
       "files": ["packages/loca-client/src/ui/**/*.{ts,tsx}"],
       "rules": {
         "loca/no-tauri-import": "error"

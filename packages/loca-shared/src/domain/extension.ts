@@ -17,10 +17,9 @@ export type ExtensionSource = "npm" | "local" | "seeded";
 export type ExtensionStatus = "downloaded" | "installed" | "drift";
 
 // Seeded extensions Loca ships and installs on a fresh Core. Each id doubles as
-// the on-disk folder name under the extensions dir and as the package directory
-// name under packages/; ids satisfy the local-slug charset, so no flattening is
-// applied. The built-in is released + planted in prod; samples is dev-only (never
-// released, never planted) and exists purely as the capability showcase.
+// the on-disk folder name and the package directory name, and satisfies the
+// local-slug charset so no flattening applies. The built-in is released +
+// planted in prod; samples is dev-only, purely a capability showcase.
 export const BUILTIN_EXTENSION_ID = "loca-extension-builtin";
 export const SAMPLES_EXTENSION_ID = "loca-extension-samples";
 
@@ -64,11 +63,10 @@ export const PERMISSION_KINDS = [
 
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
-// Wire shape mirroring loca.json permission entries. Cardinality varies by
-// kind: net entries declare host/ports; read/write declare paths; run declares
-// binaries; env declares variable names. ffi/sys are all-or-nothing keys.
-// memories/llm/tts/stt are core-module permissions enforced by the module
-// broker (not Deno flags); memories splits into read/write access.
+// Wire shape mirroring loca.json permission entries. Cardinality varies by kind:
+// net declares host/ports, read/write paths, run binaries, env variable names,
+// and ffi/sys are all-or-nothing. memories/llm/tts/stt are core-module
+// permissions enforced by the module broker, not Deno flags.
 export type PermissionDecl =
   | {
       kind: "net";
@@ -148,11 +146,9 @@ export interface Grant {
 export type ToolProviderKind = "extension" | "mcp";
 
 // Platforms a tool can declare it works on. `linux` matches any Linux session;
-// `linux_x11` / `linux_wayland` narrow to a display server. Loca resolves the
-// host's tokens centrally (Core reads the display server once) so authors never
-// detect it themselves. A tool whose declared list doesn't intersect the host's
-// resolved tokens is dropped from every listing path: the relevance filter, the
-// model (even with filtering off), and the Tools UI.
+// `linux_x11` / `linux_wayland` narrow to a display server. Core resolves the
+// host's tokens centrally, and a tool whose declared list does not intersect them
+// is dropped from every listing path (relevance filter, model, Tools UI).
 export type ToolPlatform = "darwin" | "windows" | "linux" | "linux_x11" | "linux_wayland";
 
 // True when a tool with the given declared platforms is supported on a host

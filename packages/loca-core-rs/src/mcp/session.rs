@@ -1,18 +1,8 @@
 //! One live MCP conversation, and the seam that opens it.
 //!
-//! The manager is written against [`Session`] and [`Connector`] rather than
-//! against a transport type, for the reason the TypeScript had a
-//! `setTransportFactory` seam: a test needs a client linked to a real MCP
-//! server without spawning a process or reaching a URL.
-//!
-//! # Cancellation is dropping the future
-//!
-//! The TypeScript threads the turn's `AbortSignal` into every request so a hung
-//! server cannot stall a turn. In Rust the same guarantee is structural: drop
-//! the future and the await is gone. So these methods take no signal, and a
-//! caller that needs to abort selects over its own cancellation instead. Every
-//! request additionally carries [`REQUEST_TIMEOUT`], which is the bound that
-//! does not depend on a caller remembering.
+//! Cancellation is dropping the future: no request takes an abort signal, a
+//! caller selects over its own cancellation. Every request also carries
+//! [`REQUEST_TIMEOUT`] so a hung server cannot stall a turn.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -34,41 +24,24 @@ use crate::error::{AppError, ErrorCode, Result};
 use super::registry::ServerConfig;
 use crate::contract::api::McpPromptArg;
 
-/// A single MCP request must not hang a turn forever if a server accepts the
-/// connection and then never answers. Callers fold the failure into a failed
-/// tool result or a dropped token rather than failing the turn.
+/// Bound on a single MCP request.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The `initialize` exchange is a request like any other and needs the same
-/// kind of bound, but it is the one request that does not go through
-/// [`PeerSession::bounded`], because there is no peer until it finishes.
-///
-/// Nothing underneath supplies a bound: rmcp's `expect_response` loops on the
-/// transport with no timeout, and the remote transport's `reqwest::Client` is
-/// built without one. So an endpoint that accepts the TCP connection and never
-/// answers, or a child process that starts and never speaks, would hold the
-/// connect open for the life of the process.
-///
-/// 60s rather than [`REQUEST_TIMEOUT`] because that is what the specification
-/// applies: `client.connect(transport)` in `packages/loca-core/src/mcp/manager.ts`
-/// passes no options, so the MCP SDK falls back to its
-/// `DEFAULT_REQUEST_TIMEOUT_MSEC` (`shared/protocol.js:8,712`).
+/// Bound on the `initialize` exchange, which cannot go through
+/// [`PeerSession::bounded`] because there is no peer until it finishes. Nothing
+/// underneath supplies one: rmcp's `expect_response` and the `reqwest::Client`
+/// both have no timeout.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What a bounded handshake produced.
 pub enum Handshake<T, E> {
     Ready(T),
-    /// The transport or the server refused, in its own words.
     Failed(E),
-    /// Nothing came back in time.
     TimedOut,
 }
 
-/// Run a transport's handshake under a bound.
-///
-/// The bound is a parameter rather than read from [`HANDSHAKE_TIMEOUT`]
-/// directly so a test can drive a real black-holed socket to the timeout
-/// without waiting a real minute for it.
+/// Run a transport's handshake under a bound (a parameter so a test can drive
+/// a black-holed socket to the timeout quickly).
 pub async fn handshake<F, T, E>(timeout: Duration, future: F) -> Handshake<T, E>
 where
     F: std::future::Future<Output = std::result::Result<T, E>>,
@@ -80,9 +53,7 @@ where
     }
 }
 
-/// What the user is told when a server takes the connection and then says
-/// nothing. Deliberately distinguishes "did not answer" from "refused", because
-/// the two need different things done about them.
+/// Distinguishes "did not answer" from "refused", which need different fixes.
 pub fn handshake_timeout_message(timeout: Duration) -> String {
     format!(
         "The server did not finish the MCP handshake within {}s.",
@@ -90,7 +61,6 @@ pub fn handshake_timeout_message(timeout: Duration) -> String {
     )
 }
 
-/// A tool as the server describes it.
 #[derive(Clone, Debug)]
 pub struct ToolDef {
     pub name: String,
@@ -98,7 +68,6 @@ pub struct ToolDef {
     pub input_schema: Map<String, Value>,
 }
 
-/// A prompt as the server describes it.
 #[derive(Clone, Debug)]
 pub struct PromptDef {
     pub name: String,
@@ -106,7 +75,6 @@ pub struct PromptDef {
     pub arguments: Vec<McpPromptArg>,
 }
 
-/// A resource as the server describes it.
 #[derive(Clone, Debug)]
 pub struct ResourceDef {
     pub uri: String,
@@ -115,15 +83,13 @@ pub struct ResourceDef {
     pub mime_type: Option<String>,
 }
 
-/// One piece of a resource read. A blob carries no text, and the resolver says
-/// so rather than inlining base64 into a prompt.
+/// One piece of a resource read. A blob carries no text.
 #[derive(Clone, Debug)]
 pub struct ResourceChunk {
     pub text: Option<String>,
     pub is_blob: bool,
 }
 
-/// Which capability list a server said had changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Capability {
     Tools,
@@ -131,14 +97,11 @@ pub enum Capability {
     Resources,
 }
 
-/// Something a connection reported on its own, rather than in answer to a
-/// request.
+/// Something a connection reported on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionEvent {
-    /// Re-fetch this one list.
     ListChanged(Capability),
-    /// The service loop ended. Intentional or not: the manager decides, by
-    /// checking whether this is still the active connection.
+    /// The service loop ended; the manager decides whether it was intentional.
     Closed,
 }
 
@@ -155,46 +118,39 @@ pub trait Session: Send + Sync {
         args: BTreeMap<String, String>,
     ) -> Result<Vec<PromptMessage>>;
     async fn read_resource(&self, uri: &str) -> Result<Vec<ResourceChunk>>;
-    /// End the conversation. Idempotent, and best effort: a server that has
-    /// already gone away is not an error to close.
+    /// Idempotent and best effort.
     fn close(&self);
 }
 
-/// One message of a prompt's expansion, flattened to what the injector needs.
 #[derive(Clone, Debug)]
 pub struct PromptMessage {
     pub text: String,
 }
 
-/// A freshly opened connection: the session, plus the stream of things it will
-/// report on its own.
+/// A freshly opened connection: the session plus its unsolicited events.
 pub struct Connected {
     pub session: Arc<dyn Session>,
     pub events: mpsc::UnboundedReceiver<SessionEvent>,
 }
 
-/// How the manager opens a connection. The production implementation dispatches
-/// on the server's transport; a test substitutes an in-process server.
+/// How the manager opens a connection.
 #[async_trait]
 pub trait Connector: Send + Sync {
     async fn connect(&self, server: &ServerConfig) -> Result<Connected>;
-    /// Whether this connector can run a local subprocess. Mobile cannot, so an
-    /// stdio server is refused before anything is spawned, and M3's
-    /// `capabilities.stdioMcp` reports this same value.
+    /// Mobile cannot run a subprocess, so an stdio server is refused before
+    /// anything is spawned.
     fn stdio_supported(&self) -> bool;
 }
 
 /// What Core calls itself during the MCP handshake.
 pub fn client_info() -> ClientInfo {
-    // `ClientInfo` is `#[non_exhaustive]`, so it is built from its default and
-    // then adjusted rather than written as a literal.
+    // `ClientInfo` is `#[non_exhaustive]`.
     let mut info = ClientInfo::default();
     info.client_info = Implementation::new("Loca", CORE_VERSION);
     info
 }
 
-/// The `ClientHandler` half: it exists to turn a server's `list_changed`
-/// notifications into [`SessionEvent`]s the manager can act on.
+/// The `ClientHandler` half: turns `list_changed` notifications into events.
 #[derive(Clone)]
 pub struct EventHandler {
     tx: mpsc::UnboundedSender<SessionEvent>,
@@ -202,8 +158,7 @@ pub struct EventHandler {
 
 impl EventHandler {
     fn send(&self, event: SessionEvent) {
-        // An error here means the manager dropped the receiver, which happens
-        // when the connection is already being torn down. Nothing to do.
+        // A send error means the connection is already being torn down.
         let _ = self.tx.send(event);
     }
 }
@@ -226,14 +181,9 @@ impl ClientHandler for EventHandler {
     }
 }
 
-/// Take ownership of a started service and hand back the two halves the
-/// manager wants: a [`Session`] to make requests through, and the event stream.
-///
-/// The `RunningService` is moved into a task that awaits its termination, which
-/// is what turns a dropped connection into a [`SessionEvent::Closed`]. It has
-/// to be a task because `waiting()` consumes the service; the `Peer` is a
-/// cheap clonable handle over the same loop, so requests keep working from the
-/// outside while the task holds the service.
+/// Wrap a started service as a [`Session`]. The service is moved into a task
+/// awaiting its termination (`waiting()` consumes it), which is what turns a
+/// dropped connection into [`SessionEvent::Closed`].
 pub fn adopt<S>(
     service: RunningService<RoleClient, S>,
     tx: mpsc::UnboundedSender<SessionEvent>,
@@ -255,10 +205,8 @@ where
     })
 }
 
-/// What a transport needs run once the protocol close is done, and what it
-/// needs kept alive until then. A stdio connection passes the child handle in
-/// here: the closure owns it, so the process lives exactly as long as the
-/// session.
+/// Run once after the protocol close. A stdio connection passes the child
+/// handle in here so the process lives exactly as long as the session.
 pub type Teardown = Box<dyn FnOnce() + Send + Sync>;
 
 /// Build the handler and the channel the manager reads.
@@ -267,13 +215,11 @@ pub fn event_channel() -> (EventHandler, mpsc::UnboundedReceiver<SessionEvent>) 
     (EventHandler { tx: tx.clone() }, rx)
 }
 
-/// The sender half again, for [`adopt`], which needs to report the close on the
-/// same channel the handler reports list changes on.
+/// The sender half again, for [`adopt`].
 pub fn sender(handler: &EventHandler) -> mpsc::UnboundedSender<SessionEvent> {
     handler.tx.clone()
 }
 
-/// A [`Session`] over an rmcp peer.
 struct PeerSession {
     peer: Peer<RoleClient>,
     /// Taken by the first `close`, so cancelling twice is not an error.
@@ -282,8 +228,6 @@ struct PeerSession {
 }
 
 impl PeerSession {
-    /// Every request goes through here, so the timeout cannot be forgotten at
-    /// one call site.
     async fn bounded<F, T>(what: &str, future: F) -> Result<T>
     where
         F: std::future::Future<Output = std::result::Result<T, rmcp::service::ServiceError>>,
@@ -402,9 +346,7 @@ impl Session for PeerSession {
                     text: Some(text),
                     is_blob: false,
                 },
-                // A blob, or a content kind a later protocol version adds:
-                // either way there is no text to inject, and saying so is
-                // better than inlining base64 into a prompt.
+                // A blob or a future content kind: no text to inject.
                 _ => ResourceChunk {
                     text: None,
                     is_blob: true,

@@ -1,19 +1,7 @@
 //! Dual-model routing: which endpoint a turn runs on when the client did not
-//! pin one.
-//!
-//! Ports `core-engine/src/services/chat-complexity-router.ts` in full.
-//!
-//! # This path is live, and was not
-//!
-//! In the shipping TypeScript this classifier has never run once. `route` on the
-//! `chat.start` schema carried a `.default("default")`, Zod applied it during
-//! parse, and the orchestrator's gate is `!frame.route`, so the branch was dead
-//! for every frame ever sent (D-058). The user's ruling (D-066) was to drop the
-//! default rather than delete the feature, so `route` is genuinely optional in
-//! both cores and an absent field reaches here.
-//!
-//! It is therefore wired as reachable and tested as reachable. Nothing else
-//! about the turn changes: a client that pins a route still gets it verbatim.
+//! pin one. `route` on the `chat.start` schema must stay genuinely optional, or
+//! the gate here (`!frame.route`) is dead for every frame ever sent. A client
+//! that pins a route still gets it verbatim.
 
 use tokio_util::sync::CancellationToken;
 
@@ -25,15 +13,11 @@ use crate::settings::SettingsRecord;
 /// classifier is asked for one word, so this is deliberately tiny.
 const CLASSIFIER_MAX_TOKENS: u32 = 16;
 
-/// Which endpoint this request should run on.
-///
-/// Anything the model says that is not unambiguously "complex" routes to the
-/// default, so a confused or empty answer degrades to the normal model rather
-/// than to the expensive one. That asymmetry is the TypeScript's and is kept:
-/// the failure that costs the user money is the one worth biasing against.
-/// `settings` is the RESOLVED record, so the prompt and the budget carry their
-/// schema defaults; `endpoint_settings` is the sparse one, because the endpoint
-/// resolver's fallbacks are its own. See `turn.rs` for why the two differ.
+/// Which endpoint this request should run on. Anything not unambiguously
+/// "complex" routes to the default, so a confused or empty answer degrades to
+/// the normal model rather than the expensive one. `settings` is the RESOLVED
+/// record so the prompt and budget carry their schema defaults;
+/// `endpoint_settings` is the sparse one. See `turn.rs` for why they differ.
 pub async fn classify_complexity(
     llm: &Llm,
     settings: &SettingsRecord,
@@ -63,10 +47,8 @@ pub async fn classify_complexity(
             ..Overrides::default()
         },
     });
-    // An interrupt during classification is a turn that is already over. The
-    // TypeScript's catch treats an aborted classifier as a failure and falls
-    // back, and the caller checks the token again before hop 0, so returning the
-    // default here loses nothing.
+    // An interrupt during classification is a turn that is already over, and
+    // the caller checks the token again before hop 0.
     let answer = tokio::select! {
         biased;
         _ = cancel.cancelled() => return LlmRoute::Default,

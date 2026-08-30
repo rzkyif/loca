@@ -48,7 +48,7 @@ export const downloadsModalSamples = {
         key: "e1",
         status: "Error",
         icon: "i-material-symbols-download-rounded",
-        filename: "loca-core-speech",
+        filename: "kokoro-v1.0.onnx",
         title: "Network error: connection reset",
         sizeText: "38 MB",
         progress: 0,

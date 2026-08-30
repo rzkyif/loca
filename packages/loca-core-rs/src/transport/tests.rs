@@ -2,11 +2,9 @@
 //!
 //! The centrepiece is [`the_same_assertions_hold_over_tls_and_in_process`]: one
 //! table of request and expectation, run twice, once through a real TLS socket
-//! and once through [`Core::call`] with no listener at all. If the seam is real
-//! both runs pass with the same expectations. If someone puts routing, auth or
-//! error handling in `server.rs` where it belongs in the router, the
-//! in-process run fails and says so, which is the only automated guard on the
-//! premise that mobile embeds the real core.
+//! and once through [`Core::call`] with no listener. It is the only automated
+//! guard on the premise that mobile embeds the real core, so routing, auth or
+//! error handling drifting into `server.rs` fails the in-process run.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -30,10 +28,8 @@ fn core() -> Arc<Core> {
             .with_admin_token("admin-secret")
             .with_admin_password(),
     );
-    // The transport assertions all run against the StubAuth in the context; the
-    // real `Auth` is here only because the pairing slice the router mounts
-    // needs the concrete handle. It shares this context's database and paths,
-    // so it stays a unit-test fixture.
+    // The assertions run against the StubAuth in the context; the real `Auth`
+    // is here only because the pairing slice needs the concrete handle.
     let ctx = context_with(auth);
     let real = Arc::new(crate::auth::Auth::new(
         ctx.db.clone(),
@@ -166,8 +162,7 @@ async fn a_wire_request_cannot_forge_the_in_process_identity() {
     let core = core();
     let server = Server::start(Arc::clone(&core)).await;
 
-    // A header named after the extension does nothing: extensions are not
-    // reachable from the wire at all.
+    // Extensions are not reachable from the wire at all.
     let mut headers = HashMap::new();
     headers.insert("x-client-identity".to_string(), CLIENT.to_string());
     let (status, _, body) = server
@@ -276,36 +271,25 @@ async fn revoking_a_client_cuts_its_live_socket() {
 
 // --- the heartbeat, end to end over a real socket -------------------------
 
-/// The two tests below run the shipping heartbeat loop over a real TLS socket
-/// on the real clock, with the intervals scaled down so they finish in under a
-/// second. Production keeps 25s and 10s; only the ratio is preserved here.
+/// The two tests below run the shipping heartbeat loop over a real TLS socket on
+/// the real clock, scaled down; only the ratio to production is preserved.
 ///
-/// **Not `#[tokio::test(start_paused = true)]`, and this is the trap.** Virtual
-/// time is the obvious way to assert 25s and 10s exactly, and it cannot see a
-/// socket. Tokio auto-advances the clock whenever every task in the runtime is
-/// parked, and a task parked in epoll waiting for bytes that are already in the
-/// kernel is indistinguishable from an idle runtime. The clock then jumps past
-/// the pong deadline while the client's pong is in flight, the server closes a
-/// socket that did answer, and the next read is a broken pipe. Any test that
-/// pairs a virtual clock with real I/O has that race whether or not it has
-/// surfaced yet. `ws::tests` asserts the same frame handling with no socket at
-/// all, where a virtual clock would be sound.
+/// **Not `start_paused = true`.** Tokio auto-advances virtual time whenever
+/// every task is parked, and a task parked in epoll on bytes already in the
+/// kernel looks idle: the clock jumps past the pong deadline while the pong is
+/// in flight. A virtual clock is sound in `ws::tests`, which has no socket.
 const HEARTBEAT: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// Shorter than [`HEARTBEAT`], exactly as the shipping 10s is shorter than 25s.
-/// The ordering is load bearing rather than cosmetic:
-/// [`answering_a_ping_keeps_the_socket_open`] proves the pong disarmed the
-/// deadline by watching the NEXT ping arrive, which is only evidence if an
+/// Shorter than [`HEARTBEAT`], as production's 10s is shorter than 25s. Load
+/// bearing: [`answering_a_ping_keeps_the_socket_open`] proves the pong disarmed
+/// the deadline by watching the next ping arrive, which is only evidence if an
 /// armed deadline would have fired first.
 const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// A listener serving the WS routes alone, on the compressed heartbeat.
-///
-/// The routes are mounted directly rather than through `router::build`, which
-/// takes no heartbeat, and nothing here depends on a router-level layer (D-034).
-/// The upgrade through the fully assembled router is covered by
-/// [`a_client_mints_a_ticket_upgrades_and_talks`], which exchanges a ping and a
-/// pong over it.
+/// Mounted directly because `router::build` takes no heartbeat; the upgrade
+/// through the assembled router is covered by
+/// [`a_client_mints_a_ticket_upgrades_and_talks`].
 async fn heartbeat_server(core: &Arc<Core>) -> Server {
     let router =
         crate::transport::ws::routes_with_heartbeat(core.context(), HEARTBEAT, PONG_TIMEOUT);
@@ -348,11 +332,9 @@ async fn answering_a_ping_keeps_the_socket_open() {
         .await
         .unwrap();
 
-    // The pong disarmed the deadline, so the next thing to arrive is the
-    // following ping rather than a close one timeout after the first ping. The
-    // close is called out by name because it is the regression this test
-    // exists for: a pong that stops clearing the deadline closes a socket that
-    // answered, and "expected text, got Err(BrokenPipe)" would not say so.
+    // The pong disarmed the deadline, so the next arrival is the following
+    // ping. The close arm is named so the regression reads as itself rather
+    // than as "expected text, got Err(BrokenPipe)".
     match ws.next().await {
         Some(Ok(Message::Text(text))) => assert_eq!(text.as_str(), r#"{"kind":"ping"}"#),
         Some(Ok(Message::Close(frame))) => panic!(
@@ -365,8 +347,8 @@ async fn answering_a_ping_keeps_the_socket_open() {
     server.stop().await;
 }
 
-/// A connection registered before the socket exists is what the mobile
-/// frontend does. The bus cannot tell the two apart, which is the point.
+/// A connection registered before any socket exists is what the mobile frontend
+/// does, and the bus cannot tell the two apart.
 #[tokio::test]
 async fn an_in_process_connection_receives_the_same_broadcasts() {
     let core = core();
@@ -391,10 +373,8 @@ async fn an_in_process_connection_receives_the_same_broadcasts() {
 
 // --- TLS ------------------------------------------------------------------
 
-/// The pin the client will compute, computed the way the client computes it:
-/// parse the presented certificate, take its SubjectPublicKeyInfo, hash, encode.
-/// Asserting against our own idea of the pin would prove nothing; this asserts
-/// against the consumer's.
+/// The pin computed the way the client computes it: parse the presented
+/// certificate, take its SubjectPublicKeyInfo, hash, encode.
 #[tokio::test]
 async fn the_served_certificate_hashes_to_the_pin_the_core_reports() {
     use base64::engine::general_purpose::STANDARD as B64;
@@ -442,8 +422,7 @@ impl Server {
         Self::start_with_router(core, router).await
     }
 
-    /// The same listener over a caller-supplied router, for a test that needs a
-    /// route mounted differently from the way `router::build` mounts it.
+    /// The same listener over a caller-supplied router.
     async fn start_with_router(core: Arc<Core>, router: axum::Router) -> Self {
         let (material, _) = tls::ensure(None, "127.0.0.1").unwrap();
         let pin = material.pin.clone();
@@ -510,11 +489,9 @@ impl Server {
         tls.write_all(&body).await.unwrap();
         tls.flush().await.unwrap();
 
-        // Read to EOF, tolerating a peer that drops the connection without a
-        // TLS close_notify. rustls reports that as `UnexpectedEof`, and it is
-        // what a `Connection: close` response looks like when the server has
-        // said everything it intends to. Production never sees this: hyper
-        // frames responses by content length rather than by EOF.
+        // Read to EOF, tolerating a `Connection: close` response ending
+        // without a TLS close_notify, which rustls reports as
+        // `UnexpectedEof`.
         let mut raw = Vec::new();
         let mut chunk = [0u8; 8192];
         loop {
@@ -600,10 +577,8 @@ fn parse_response(raw: &[u8]) -> (u16, HashMap<String, String>, Vec<u8>) {
     (status, headers, body)
 }
 
-/// Minimal chunked decoding. Every response the router produces today carries a
-/// content length, but which framing hyper picks is its choice, not ours, and a
-/// test that silently compares a chunk header against JSON would be a confusing
-/// failure the first time that changed.
+/// Minimal chunked decoding: which framing hyper picks is its choice, and a
+/// test comparing a chunk header against JSON would fail confusingly.
 fn dechunk(mut body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     while let Some(eol) = body.windows(2).position(|w| w == b"\r\n") {
@@ -639,8 +614,8 @@ async fn next_text(ws: &mut TestWs) -> String {
     }
 }
 
-/// Accepts any certificate and records it, which is exactly what the client's
-/// pairing probe does before the PAKE binds the pin.
+/// Accepts any certificate and records it, as the client's pairing probe does
+/// before the PAKE binds the pin.
 #[derive(Debug)]
 struct CaptureVerifier {
     captured: Arc<std::sync::Mutex<Option<Vec<u8>>>>,

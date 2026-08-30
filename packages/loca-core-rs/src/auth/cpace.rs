@@ -12,25 +12,17 @@
 //! for the public key material, and the full value is reachable only from the
 //! tests so the appendix vector reproduces byte for byte.
 //!
-//! # This is a byte-exact parity surface
+//! **Byte-exact.** The Client runs the initiator, so this conforms to
+//! `packages/loca-shared/src/crypto/pake.ts`. Draft conformance is necessary and
+//! not sufficient: the one appendix vector never reaches multi-byte LEB128, the
+//! generator-string zero-pad clamp, or the confirmation tag, which is where two
+//! conforming-looking implementations diverge. `testdata/pake-vectors.json`
+//! closes that gap.
 //!
-//! The Client runs the initiator and is not being ported, so this conforms to
-//! `packages/loca-shared/src/crypto/pake.ts` rather than the other way round.
-//! Conformance to the draft is necessary and not sufficient: the draft's one
-//! appendix vector never reaches multi-byte LEB128, the generator-string zero-pad
-//! clamp, or the confirmation tag, which is where two conforming-looking
-//! implementations diverge. `testdata/pake-vectors.json` closes that gap with
-//! outputs taken from the TypeScript itself. See the test module.
-//!
-//! # Why this is hand-written
-//!
-//! No published Rust crate implements this construction. `pake-cpace` and
-//! `pake-cpace-embedded` port libsodium's CPace: DSI strings
-//! `CPaceRistretto255-1` / `-2`, no `lv_cat` framing, and an ISK split from one
-//! SHA-512 over `(K, Ya, Yb)`. `cpace` (hdevalence) derives its generator and key
-//! through HKDF-SHA512 under a `cpace-r255` label. Both predate the draft's
-//! framing entirely, so neither can be made to agree with the Client.
-//! `curve25519-dalek` supplies the group and nothing above it.
+//! Hand-written because no published crate implements this construction:
+//! `pake-cpace` and `cpace` both predate the draft's framing (different DSI
+//! strings, no `lv_cat`, a different ISK), so neither can agree with the
+//! Client. `curve25519-dalek` supplies the group and nothing above it.
 
 use std::fmt;
 
@@ -84,10 +76,8 @@ pub(crate) enum CpaceError {
 
 /// The derived key: the first 32 bytes of the draft's raw ISK.
 ///
-/// Wrapped rather than passed as a bare array so it wipes on drop and cannot be
-/// printed. The `Debug` is hand-written for exactly that reason: a derived
-/// `Debug` would put the key into any `{:?}`, including one inside a panic
-/// message added by a later refactor.
+/// Wrapped so it wipes on drop, with a hand-written `Debug` so it cannot reach
+/// a `{:?}`.
 #[derive(Clone)]
 pub(crate) struct Isk(Zeroizing<[u8; 32]>);
 
@@ -130,9 +120,8 @@ impl Role {
 
 /// `prepend_len`: an LEB128 length prefix, then the data.
 ///
-/// The multi-byte branch starts at 128 bytes. Production never reaches it (the
-/// PRS is 6 digits and the channel identifier is a 44-character pin), which is
-/// precisely why it is the branch worth a fixture.
+/// The multi-byte branch starts at 128 bytes. Production never reaches it,
+/// which is why it is the branch worth a fixture.
 fn push_prepend_len(data: &[u8], out: &mut Vec<u8>) {
     let mut len = data.len();
     loop {
@@ -214,10 +203,8 @@ pub(crate) fn clamp_scalar_le(mut bytes: [u8; GROUP_SIZE_BYTES]) -> Scalar {
 
 /// `sample_scalar`, recommended form: `group_size_bytes` random bytes, clamped.
 ///
-/// Resamples a zero scalar. The odds are `2^-252`, and the reason is parity
-/// rather than security: `@noble/curves` rejects a zero scalar by throwing while
-/// dalek multiplies happily to the identity, so without this the two sides
-/// disagree about whether that draw is an error.
+/// Resamples a zero scalar. Parity rather than security, at `2^-252` odds:
+/// `@noble/curves` throws on one where dalek multiplies to the identity.
 pub(crate) fn sample_scalar() -> Result<Scalar, CpaceError> {
     loop {
         let mut bytes = [0u8; GROUP_SIZE_BYTES];
@@ -237,9 +224,8 @@ pub(crate) fn sample_scalar() -> Result<Scalar, CpaceError> {
 pub(crate) fn scalar_mult_vfy(y: &Scalar, encoded_x: &[u8]) -> Result<[u8; 32], CpaceError> {
     let compressed = CompressedRistretto::from_slice(encoded_x).map_err(|_| CpaceError::Decode)?;
     let x = compressed.decompress().ok_or(CpaceError::Decode)?;
-    // All-zero bytes are the canonical encoding of the identity, so decoding
-    // succeeds and this is the only thing standing between a peer sending 32
-    // zeros and a shared "secret" everybody can compute.
+    // All-zero bytes decode as the canonical identity, so without this a peer
+    // sending 32 zeros gets a shared "secret" everybody can compute.
     if bool::from(x.ct_eq(&RistrettoPoint::identity())) {
         return Err(CpaceError::Identity);
     }
@@ -352,10 +338,9 @@ fn push_lv2(data: &[u8], out: &mut Vec<u8>) -> Result<(), CpaceError> {
 
 /// `HMAC-SHA256(isk, role || lv2(msgA) || lv2(msgB) || lv2(utf8(pin)))`.
 ///
-/// `pin` is the value each side observed for the channel. Folding it in is what
-/// detects a man in the middle that re-terminates TLS with its own certificate
-/// while faithfully relaying the PAKE messages: the relayed handshake succeeds
-/// and the confirmation does not.
+/// `pin` is the value each side observed for the channel, folded in to detect a
+/// man in the middle that re-terminates TLS while faithfully relaying the PAKE
+/// messages: the handshake succeeds and the confirmation does not.
 pub(crate) fn confirm_tag(
     isk: &Isk,
     role: Role,
@@ -372,8 +357,7 @@ pub(crate) fn confirm_tag(
 
 /// Constant-time verification of a confirmation tag.
 ///
-/// `verify_slice` rejects a wrong length and a wrong value alike, matching the
-/// TypeScript's length check followed by an XOR-accumulate compare.
+/// `verify_slice` rejects a wrong length and a wrong value alike.
 pub(crate) fn verify_confirm(
     tag: &[u8],
     isk: &Isk,
@@ -414,10 +398,8 @@ fn new_mac(isk: &Isk) -> HmacSha256 {
 
 // --- the initiator, which production never runs -----------------------------
 //
-// The Client is the initiator and is not being ported, so Core has no reason to
-// carry this outside tests. It exists so the appendix vector can be reproduced
-// end to end and so a round trip is testable at all, which is exactly why
-// `pake.ts` keeps its `__test` seam. Compiled out of every shipping build.
+// The Client is the initiator, so Core carries this only so the appendix vector
+// can be reproduced end to end and a round trip is testable at all.
 
 #[cfg(test)]
 pub(crate) struct Initiator {
@@ -484,8 +466,7 @@ mod tests {
     //
     // draft-irtf-cfrg-cpace-21, Appendix B.3 (ristretto255 / SHA-512),
     // initiator/responder mode (B.3.5). Every intermediate is asserted
-    // separately, so a failure names the step that broke rather than only the
-    // final key.
+    // separately, so a failure names the step that broke.
 
     struct Vec3;
     impl Vec3 {
@@ -648,14 +629,10 @@ mod tests {
         confirm_s: String,
     }
 
-    /// Replays every output the TypeScript produced.
-    ///
-    /// This is the test that matters. The appendix vector proves conformance to
-    /// the draft; this proves conformance to the implementation the Client
-    /// actually runs, across the cases the draft never reaches: the LEB128
-    /// boundary at 127/128, the `len_zpad` clamp, `lv2`'s 2-byte prefix, the
-    /// empty channel identifier used behind a proxy, and multi-byte UTF-8 in the
-    /// password and the pin.
+    /// Conformance to the implementation the Client actually runs, across the
+    /// cases the draft's appendix vector never reaches: the LEB128 boundary at
+    /// 127/128, the `len_zpad` clamp, `lv2`'s 2-byte prefix, the empty channel
+    /// identifier used behind a proxy, and multi-byte UTF-8.
     #[test]
     fn typescript_fixtures_replay_exactly() {
         let fixture: Fixture =

@@ -1,44 +1,14 @@
 //! Memories, embeddings, and relevance-based injection.
 //!
-//! Work package **D5** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
+//! Markdown under `<root>/memories/` is the source of truth (`<slug>.md` for
+//! knowledge, `<slug>/SKILL.md` for skills); SQLite holds metadata plus the
+//! background-generated summary and embedding, reconciled by content hash.
+//! Extension-shipped memories are read-only and live under the extension's
+//! install directory.
 //!
-//! # What is where
-//!
-//! Reference *knowledge* (a `<slug>.md` file) and procedural *skills* (a
-//! `<slug>/` folder holding `SKILL.md` plus optional bundled files) under
-//! `<root>/memories/` are **the source of truth**. SQLite carries the metadata
-//! plus the background-generated summary and embedding, and [`store`]'s
-//! `rescan` reconciles the two by content hash, so a memory edited or dropped in
-//! by hand becomes first-class on the next scan. A memory shipped by an
-//! extension lives under that extension's install directory, is read-only, and
-//! is registered through [`store::MemoriesStore::register_extension_memories`].
-//!
-//! | module        | what                                                            |
-//! | ------------- | --------------------------------------------------------------- |
-//! | [`store`]     | CRUD, rescan, extension memories, index bookkeeping             |
-//! | [`content`]   | the on-disk layout: paths, slugs, titles, atomic writes         |
-//! | [`skill`]     | the `SKILL.md` frontmatter grammar                              |
-//! | [`relevance`] | cosine, top-K, the staleness hash, the embed-text builders      |
-//! | [`embedding`] | the embedding service and the local-engine seam                 |
-//! | [`injection`] | what a chat turn injects: relevant summaries and `@token` bodies |
-//! | [`indexer`]   | the background pass that fills `summary` and `embedding`        |
-//! | [`routes`]    | `/api/v1/memories`                                              |
-//! | [`seams`]     | what the extension supervisor reaches all of the above through  |
-//!
-//! # Two things that are easy to break invisibly
-//!
-//! **The arithmetic.** Cosine and L2 normalisation are defined by the exact
-//! numbers they produce, not by their shape; an `f32` accumulator where
-//! JavaScript uses `f64` changes rankings without changing anything a shape
-//! assertion would catch. [`relevance`] says how, and the fixture that pins it
-//! refuses to be compared approximately.
-//!
-//! **The embedding model's identity.** It is hashed into every stored
-//! `embedding_source_hash`, so a core that spells it differently reads an
-//! existing install's entire vector store as stale and silently stops injecting
-//! memories until a full reindex completes. [`embedding::EMBED_REPO`] is that
-//! string, and a test pins it.
+//! Two invisible breakages: relevance arithmetic must accumulate in `f64`
+//! (see [`relevance`]), and [`embedding::EMBED_REPO`] is hashed into every
+//! stored `embedding_source_hash`, so respelling it marks every vector stale.
 
 pub mod content;
 pub mod embedding;

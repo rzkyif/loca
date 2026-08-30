@@ -1,48 +1,31 @@
 //! Host-side validation of the LLM's tool arguments against the tool author's
 //! declared JSON Schema, with default-filling.
 //!
-//! Ports `packages/loca-core/src/extensions/validate-args.ts`.
-//!
 //! Without this step `argumentsJson` reaches the worker verbatim, so a tool
-//! stops receiving the "normalized args with defaults applied" its author
-//! declared, and malformed model output reaches tool code uncaught.
+//! never sees the defaults its author declared and malformed model output
+//! reaches tool code uncaught.
 //!
-//! # The fail-open is deliberate and stays deliberate
+//! # The fail-open is deliberate
 //!
 //! A schema the validator cannot compile means NO validation, and the raw
-//! arguments pass through. That is the specification's choice and it is the
-//! right one: refusing to run a tool whose author wrote slightly wrong JSON
-//! Schema turns an author's mistake into a user's broken tool, and the schema
-//! is advisory (the sandbox, not the schema, is what contains a tool). It is
-//! written here rather than left implicit because it reads like a bug to
-//! anybody who meets it cold.
+//! arguments pass through: refusing to run a tool whose author wrote slightly
+//! wrong JSON Schema turns an author's mistake into a user's broken tool, and
+//! the sandbox rather than the schema is what contains a tool.
 //!
-//! # The ReDoS guard does not port, and TWO different things replace it
+//! # A tool author's `pattern` cannot pin a thread
 //!
-//! Ajv compiles a tool author's `pattern` regexes and runs them synchronously
-//! on the core's single event loop, so a catastrophic-backtracking pattern
-//! freezes every client. `validate-args.ts` spends half its length stripping
-//! such patterns out of the schema before compiling, using `safe-regex`.
-//!
-//! The engine under `jsonschema` is `fancy_regex`, and it defends this in two
-//! separate ways that are easy to mistake for one. Both were measured rather
-//! than read out of a README, because a claim about another library's
-//! behaviour is a claim and not a fact (D-050):
+//! Two separate mechanisms, easy to mistake for one, both measured:
 //!
 //! - **A pattern with no lookaround and no backreference is DELEGATED to the
-//!   `regex` crate**, which is a linear-time automaton with no backtracking at
-//!   all. That covers the textbook exponential cases, `(a+)+$` included: it
-//!   answers in microseconds and `PATTERN_BACKTRACK_LIMIT` never comes into it.
-//!   This, not the limit, is what makes the common case safe.
+//!   `regex` crate**, a linear-time automaton. That covers the textbook
+//!   exponential cases, `(a+)+$` included, in microseconds, and is what makes
+//!   the common case safe.
 //! - **A pattern that cannot be delegated runs on the backtracking engine**,
-//!   and there the limit is what bounds it: `^(a|a)+$(?<!q)` against 30 `a`s
-//!   spends 80ms and then ERRORS, where an unbounded run is about a minute and
-//!   a longer input is unbounded in the way that matters.
+//!   where `PATTERN_BACKTRACK_LIMIT` bounds it: `^(a|a)+$(?<!q)` against 30
+//!   `a`s spends 80ms and then ERRORS, against about a minute unbounded.
 //!
-//! Hitting the limit fails the arguments, where Ajv would have dropped the
-//! constraint and passed them. Fail-closed on a constraint nobody could
-//! evaluate is the better of the two, and it is a divergence rather than a
-//! port, so both halves have a test.
+//! Hitting the limit FAILS the arguments rather than dropping the constraint,
+//! which is the safe direction, so both halves have a test.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard};
@@ -56,20 +39,12 @@ use crate::error::{AppError, ErrorCode, Result};
 const MAX_VALIDATORS: usize = 256;
 
 /// Backtrack steps one `pattern` may spend on one string before the match is
-/// abandoned.
-///
-/// Only reachable for a pattern `fancy_regex` cannot delegate to the
-/// linear-time engine, which means one carrying a lookaround or a
-/// backreference; see the module header. `fancy_regex`'s own default today,
-/// set explicitly so a change to that default is a decision made here rather
-/// than a silent widening of how long a tool author's regex may pin a thread.
+/// abandoned. `fancy_regex`'s own default, set explicitly so a change to it is
+/// a decision made here.
 const PATTERN_BACKTRACK_LIMIT: usize = 1_000_000;
 
-/// The compiled-validator cache.
-///
-/// A handle rather than a module-level static, per D-010: the pool owns one and
-/// threads it, so two cores in one test process cannot share a cache and a test
-/// needs no reset hook.
+/// The compiled-validator cache. A handle rather than a static, so two cores in
+/// one process cannot share one.
 #[derive(Default)]
 pub struct ArgValidators {
     inner: Mutex<Cache>,
@@ -83,13 +58,11 @@ struct Cache {
 }
 
 struct Entry {
-    /// The schema this entry was built from. A tool's parameters can change
-    /// across a re-install under the same id, and a cache that did not notice
-    /// would validate new arguments against the old contract.
+    /// A tool's parameters can change across a re-install under the same id,
+    /// and a cache that did not notice would use the old contract.
     schema_json: String,
-    /// `None` for a schema that would not compile: the fail-open above. Cached
-    /// rather than recomputed so an unusable schema is diagnosed once per
-    /// install instead of once per tool call.
+    /// `None` for a schema that would not compile: the fail-open above, cached
+    /// so it is diagnosed once per install rather than once per call.
     validator: Option<jsonschema::Validator>,
 }
 
@@ -99,11 +72,8 @@ impl ArgValidators {
     }
 
     /// Validate `arguments_json` against `parameters` and return a normalized
-    /// JSON string with the schema's defaults applied.
-    ///
-    /// `Err` is a `validation_error` for arguments that are not JSON or that
-    /// violate the schema. A schema that will not compile yields the raw
-    /// arguments unchanged; see the module header.
+    /// JSON string with the schema's defaults applied. A schema that will not
+    /// compile yields the raw arguments unchanged; see the module header.
     pub fn validate_and_normalize(
         &self,
         tool_id: &str,
@@ -133,10 +103,7 @@ impl ArgValidators {
             return Ok(arguments_json.to_string());
         };
 
-        // Defaults BEFORE validation, so a property with a default satisfies
-        // `required`. Ajv's `useDefaults` fills during validation and reaches
-        // the same outcome; doing it as an explicit pass is what makes it
-        // testable rather than a library flag taken on trust.
+        // BEFORE validation, so a property with a default satisfies `required`.
         apply_defaults(&schema, &mut parsed);
 
         let errors: Vec<String> = validator
@@ -206,20 +173,16 @@ fn compile(schema: &Value) -> Option<jsonschema::Validator> {
         .with_pattern_options(
             jsonschema::PatternOptions::fancy_regex().backtrack_limit(PATTERN_BACKTRACK_LIMIT),
         )
-        // No format assertions: `format` is annotation-only in modern JSON
-        // Schema, tool authors use it loosely, and turning it into a constraint
-        // would reject arguments the author's own runtime accepts.
+        // `format` is annotation-only in modern JSON Schema and authors use it
+        // loosely; asserting it would reject arguments their runtime accepts.
         .should_validate_formats(false)
         .build(schema)
         .ok()
 }
 
-/// Fill in `default` for properties the model omitted.
-///
-/// Recurses only into subschemas whose value is actually PRESENT, which is what
-/// keeps this from inventing whole objects the author did not ask for: a
-/// missing object with defaulted children stays missing unless it has a
-/// `default` of its own.
+/// Fill in `default` for properties the model omitted. Recurses only into
+/// subschemas whose value is PRESENT, so a missing object with defaulted
+/// children stays missing unless it has a `default` of its own.
 fn apply_defaults(schema: &Value, instance: &mut Value) {
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
         return;
@@ -241,10 +204,8 @@ fn apply_defaults(schema: &Value, instance: &mut Value) {
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    // A poisoned cache is still a cache: the data behind it is a compiled
-    // schema and a string, neither of which can be left half-updated by a
-    // panicking validator. Refusing every later tool call over it would be a
-    // strictly worse outcome than using it.
+    // A poisoned cache is still a cache: a compiled schema and a string,
+    // neither of which a panicking validator can leave half-updated.
     m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
@@ -267,9 +228,6 @@ mod tests {
 
     #[test]
     fn a_declared_default_reaches_the_tool() {
-        // The whole reason this module exists: without it the tool receives the
-        // model's arguments verbatim and never sees the default its author
-        // declared.
         let v = ArgValidators::new();
         let out = run(
             &v,
@@ -291,8 +249,7 @@ mod tests {
 
     #[test]
     fn a_default_satisfies_required_so_the_model_need_not_repeat_it() {
-        // Order matters: defaults are filled before validation. Validating
-        // first rejects arguments the author explicitly made optional by
+        // Validating first would reject arguments the author made optional by
         // giving them a default.
         let v = ArgValidators::new();
         let out = run(
@@ -338,9 +295,8 @@ mod tests {
         let out = run(&v, params.clone(), r#"{"opts":{}}"#).unwrap();
         assert_eq!(object(&out), serde_json::json!({ "opts": { "深": 2 } }));
 
-        // And an absent parent stays absent: filling it in would hand the tool
-        // an options object its caller never asked for, which reads to the tool
-        // as an explicit choice.
+        // An absent parent stays absent: filling it in reads to the tool as an
+        // explicit choice its caller never made.
         let out = run(&v, params, "{}").unwrap();
         assert_eq!(object(&out), serde_json::json!({}));
     }
@@ -377,8 +333,7 @@ mod tests {
 
     #[test]
     fn an_empty_argument_string_is_an_empty_object_not_an_error() {
-        // Models emit `""` for a no-argument tool call routinely. Treating it
-        // as malformed would fail every such call.
+        // Models emit `""` for a no-argument tool call routinely.
         let v = ArgValidators::new();
         for args in ["", "   ", "\n"] {
             let out = run(
@@ -396,9 +351,8 @@ mod tests {
 
     #[test]
     fn an_unusable_author_schema_passes_the_arguments_through_untouched() {
-        // The deliberate fail-open. The raw string, not a re-serialization: a
-        // schema nothing could compile is a schema whose defaults nothing has
-        // vouched for either.
+        // The raw string, not a re-serialization: nothing vouched for the
+        // defaults in a schema nothing could compile.
         let v = ArgValidators::new();
         let raw = r#"{ "query" :  "cats" }"#;
         let out = run(
@@ -412,10 +366,8 @@ mod tests {
 
     #[test]
     fn a_schema_pointing_at_a_remote_ref_neither_fetches_nor_validates() {
-        // The absolute rule: no outbound request without a user action, and a
-        // tool author's schema is not a user action. `resolve-http` is off, so
-        // the compile fails and the call takes the fail-open path rather than
-        // reaching for the network at tool-call time.
+        // A tool author's schema is not a user action. `resolve-http` is off,
+        // so the compile fails and the call takes the fail-open path.
         let v = ArgValidators::new();
         let raw = r#"{"anything":true}"#;
         let out = run(
@@ -430,12 +382,9 @@ mod tests {
         assert_eq!(out, raw);
     }
 
-    /// Validate on its own thread and refuse to wait past `secs`.
-    ///
-    /// A stopwatch AROUND the call cannot see a hang: it only reports a
-    /// duration once the call returns, so a test written that way hangs the
-    /// suite rather than failing it, and the hang then reads as broken
-    /// infrastructure instead of as this bug.
+    /// Validate on its own thread and refuse to wait past `secs`. A stopwatch
+    /// AROUND the call cannot see a hang: it reports only once the call
+    /// returns, so the suite hangs rather than fails.
     fn bounded(params: Value, args: String, secs: u64) -> Result<String> {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -450,13 +399,10 @@ mod tests {
 
     #[test]
     fn a_textbook_exponential_pattern_is_answered_by_the_linear_time_engine() {
-        // `(a+)+$` carries no lookaround and no backreference, so fancy_regex
-        // hands it to the `regex` crate, which has no backtracking to blow up.
-        // Measured: microseconds, and a CORRECT answer rather than an error.
-        //
-        // Named separately from the bounded case below because the two are
-        // protected by different mechanisms, and a single test over one pattern
-        // would credit whichever mechanism the reader assumed.
+        // `(a+)+$` has no lookaround and no backreference, so it goes to the
+        // `regex` crate: microseconds, and a CORRECT answer rather than an
+        // error. Separate from the bounded case below, which is a different
+        // mechanism.
         let params = serde_json::json!({
             "type": "object",
             "properties": { "q": { "type": "string", "pattern": "(a+)+$" } },
@@ -474,15 +420,10 @@ mod tests {
 
     #[test]
     fn a_pattern_the_linear_engine_cannot_take_is_bounded_and_then_refused() {
-        // The lookbehind is what forces the backtracking engine, and this is
-        // the only shape where PATTERN_BACKTRACK_LIMIT is reachable at all.
-        // Measured: about 80ms to hit the limit at 10^6, against roughly a
-        // minute to complete unbounded, so a limit that has been lifted shows
-        // up here as a hang and nowhere else.
-        //
-        // And the outcome must be a REFUSAL. Ajv's answer was to drop a
-        // constraint it could not evaluate and pass the arguments; this fails
-        // them, which is the safe direction and a deliberate divergence.
+        // The lookbehind forces the backtracking engine, the only shape where
+        // PATTERN_BACKTRACK_LIMIT is reachable: 80ms to hit the limit against
+        // about a minute unbounded, so a lifted limit shows up here as a hang.
+        // The outcome must be a REFUSAL rather than a dropped constraint.
         let params = serde_json::json!({
             "type": "object",
             "properties": { "q": { "type": "string", "pattern": "^(a|a)+$(?<!q)" } },
@@ -497,9 +438,8 @@ mod tests {
 
     #[test]
     fn a_reinstall_that_changes_the_schema_invalidates_the_cached_validator() {
-        // Same tool id, new contract. A cache keyed on id alone validates the
-        // new arguments against the old schema, which is a silently wrong
-        // answer rather than a visible failure.
+        // A cache keyed on id alone answers against the old schema, which is
+        // silently wrong rather than visibly failing.
         let v = ArgValidators::new();
         let v1 = serde_json::json!({
             "type": "object",
@@ -524,8 +464,8 @@ mod tests {
 
     #[test]
     fn the_validator_cache_is_bounded_at_two_hundred_and_fifty_six() {
-        // Literal counts, not arithmetic on MAX_VALIDATORS: a fixture derived
-        // from the bound scales with any mutation of it and cannot see it move.
+        // Literal counts, not arithmetic on MAX_VALIDATORS, which would move
+        // with it.
         let v = ArgValidators::new();
         let params = schema(serde_json::json!({ "type": "object" }));
         for i in 0..256 {
@@ -539,9 +479,8 @@ mod tests {
         }
         assert_eq!(v.cached(), 256, "the cache grew past its bound");
 
-        // FIFO: the oldest tools are the ones gone, the newest are the ones
-        // kept. Without this the test passes for a cache that evicts at random,
-        // or one that clears itself wholesale at the bound.
+        // FIFO: without this the test passes for a cache that evicts at random
+        // or clears itself wholesale at the bound.
         let inner = lock(&v.inner);
         assert!(!inner.entries.contains_key("tool-0"));
         assert!(inner.entries.contains_key("tool-299"));
@@ -549,8 +488,7 @@ mod tests {
 
     #[test]
     fn an_empty_parameters_schema_accepts_anything() {
-        // `loca.json` requires `parameters`, but an author may leave it `{}`,
-        // and that must mean "no constraints" rather than "no properties".
+        // `{}` must mean "no constraints" rather than "no properties".
         let v = ArgValidators::new();
         let out = run(&v, serde_json::json!({}), r#"{"whatever":[1,2]}"#).unwrap();
         assert_eq!(object(&out), serde_json::json!({ "whatever": [1, 2] }));

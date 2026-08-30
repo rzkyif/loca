@@ -56,8 +56,72 @@ const bundle = JSON.parse(new TextDecoder().decode(result.stdout)) as Node;
 delete bundle.$ref;
 const definitions = (bundle.definitions ?? {}) as Node;
 
+// Types the api surface exports but no Rust code reads: the WS frame unions
+// typify mangles (inbound frames are parsed from the Zod half instead), the
+// per-role message shapes, and request/response newtypes nothing constructs.
+// Dropped by name so a reference from a surviving type is a hard error.
+const DROP = new Set([
+  "AppendMessageRequest",
+  "ClientToServerFrame",
+  "CreateSessionResponse",
+  "DisplayMessage",
+  "DownloadModelsRequest",
+  "ErrorMessage",
+  "GetCoreSettingsResponse",
+  "GetRequirementsResponse",
+  "GetSessionResponse",
+  "GetStorageResponse",
+  "ListDownloadsResponse",
+  "ListModelsResponse",
+  "ListSessionsResponse",
+  "MemoryFilterMessage",
+  "ModelSpec",
+  "PatchCoreSettingsRequest",
+  "PatchCoreSettingsResponse",
+  "PatchMessageRequest",
+  "ProbeBinariesRequest",
+  "ProbeModelsRequest",
+  "ProbeModelsResponse",
+  "ReasoningMessage",
+  "StorageFile",
+  "StorageFolder",
+  "StorageNodeBase",
+  "SystemMessage",
+  "ToolFilterMessage",
+  "ToolMessage",
+  "UserMessage",
+  "WsFrame",
+]);
+
+function pruneUnused(bundle: Node, defs: Node): void {
+  for (const name of DROP) {
+    if (!(name in defs)) {
+      console.error(`emit-ts: DROP names ${name}, which the bundle no longer defines`);
+      Deno.exit(1);
+    }
+    delete defs[name];
+  }
+  const dangling = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    const ref = (node as Node).$ref;
+    if (typeof ref === "string") {
+      const name = ref.replace("#/definitions/", "");
+      if (DROP.has(name)) dangling.add(name);
+    }
+    Object.values(node).forEach(walk);
+  };
+  walk(bundle);
+  if (dangling.size) {
+    console.error(`emit-ts: dropped types still referenced: ${[...dangling].join(", ")}`);
+    Deno.exit(1);
+  }
+}
+
 const stats = normalise(bundle, definitions, "#/definitions/");
 const warnings = audit(bundle, definitions);
+pruneUnused(bundle, definitions);
 
 await Deno.writeTextFile(out, JSON.stringify(bundle, null, 2));
 console.log(

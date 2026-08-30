@@ -1,23 +1,13 @@
-//! Speech: the STT and TTS routes, the external speech providers, and the
-//! trait a local engine implements.
-//!
-//! Work package **D15** (`docs/rust-port/registry.md`), which owns the routes,
-//! the external providers, and the trait a local engine implements. The
-//! sherpa-backed local engine is N3's, in [`local`].
+//! Speech: the STT and TTS routes, the external speech providers, and the trait
+//! a local engine implements (the sherpa-backed one is in [`local`]).
 //!
 //! One service in front of two providers. Which one answers is a settings
-//! question (`stt.provider`, `tts.provider`) that neither the HTTP handlers nor
-//! the extension broker's speech ops have to ask, which is what lets both entry
-//! points share one code path.
+//! question neither the HTTP handlers nor the extension broker's speech ops
+//! have to ask, so both entry points share one code path.
 //!
-//! # Where the bounds are enforced
-//!
-//! The two input bounds live on [`SpeechService`] rather than in the handlers.
-//! The TypeScript checks them at every entry point (the routes and the broker's
-//! stdio ops) and says so; putting them one layer down covers both by
-//! construction, so a second entry point cannot arrive without them. The
-//! handlers keep only what is genuinely about the HTTP request, which is the
-//! shape of the multipart body.
+//! The two input bounds live on [`SpeechService`] rather than in the handlers,
+//! so a second entry point cannot arrive without them. The handlers keep only
+//! what is genuinely about the HTTP request.
 
 pub mod engine;
 pub mod external;
@@ -44,21 +34,15 @@ pub use seams::ToolSpeechService;
 
 use external::{Endpoint, ExternalSpeech};
 
-/// Max characters per synthesis call: synthesis time scales with length, and
-/// the audio is buffered whole before it is returned.
-///
-/// Counted in UTF-16 code units, which is what the TypeScript's
-/// `text.length` measures. Bytes and `char`s both agree with it for ASCII and
-/// disagree above the basic plane, so the unit is part of the bound rather than
-/// an implementation detail.
+/// Max characters per synthesis call: synthesis time scales with length and the
+/// audio is buffered whole. Counted in UTF-16 code units; bytes and `char`s
+/// agree for ASCII and disagree above the basic plane, so the unit is part of
+/// the bound rather than an implementation detail.
 pub const TTS_MAX_TEXT_UNITS: usize = 2_000;
 
 /// Max bytes for a single audio upload: the file is read fully into memory (and
-/// base64 encoded across the broker's stdio pipe).
-///
-/// The bound is exclusive, so a clip of exactly this size is accepted, and the
-/// rejection message names the number rather than repeating it as a literal: a
-/// wrong constant then reads as a wrong message instead of a right-looking one.
+/// base64 encoded across the broker's stdio pipe). Exclusive, so a clip of
+/// exactly this size is accepted, and the rejection message names the number.
 pub const STT_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 
 /// The clientId internal callers key the local queue's fairness with. The
@@ -67,12 +51,8 @@ pub const STT_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 pub const INTERNAL_CLIENT_ID: &str = "core";
 
 /// Speech-to-text and text-to-speech, over whichever provider the settings
-/// select.
-///
-/// Cheap to clone; every clone shares one HTTP client and therefore one
-/// connection pool. It holds no state of its own: the state that has to be
-/// single per core (the subsystem registry, and the local engine with its model
-/// memory and its queue) is threaded in rather than constructed here.
+/// select. Cheap to clone; every clone shares one HTTP client. It holds no
+/// state of its own: what has to be single per core is threaded in.
 #[derive(Clone)]
 pub struct SpeechService {
     inner: Arc<Inner>,
@@ -83,16 +63,14 @@ struct Inner {
     vault: Vault,
     sidecars: Arc<Manager>,
     local: Arc<dyn LocalSpeech>,
-    /// Separate from `local` on purpose: voices are a catalog fact, not an
-    /// engine fact, so the dropdown fills on a core with no local engine
-    /// (D-039).
+    /// Separate from `local`: voices are a catalog fact, so the dropdown fills
+    /// on a core with no local engine.
     voices: Arc<dyn TtsVoiceSource>,
     external: ExternalSpeech,
 }
 
 /// Which of the two providers a lookup is for. The settings keys and the
-/// rejection messages differ only by this, and spelling it out once is what
-/// keeps the two halves from drifting apart.
+/// rejection messages differ only by this.
 #[derive(Clone, Copy)]
 enum Kind {
     Stt,
@@ -252,13 +230,9 @@ impl SpeechService {
         })
     }
 
-    /// `(running, loading)` from the subsystem registry, which is where the
-    /// engine publishes its state.
-    ///
-    /// Read rather than duplicated: a second copy here could disagree with the
-    /// core status bar, and the client renders both at once. A kind nobody has
-    /// published reads as `Disabled`, which is the same answer the TypeScript
-    /// gives for a sidecar that was never started.
+    /// `(running, loading)` from the subsystem registry, where the engine
+    /// publishes its state. Read rather than duplicated: a second copy could
+    /// disagree with the core status bar, which the client renders alongside.
     fn lifecycle(&self) -> (bool, bool) {
         let status = self.inner.sidecars.status(SidecarKind::Speech).status;
         (
@@ -268,12 +242,9 @@ impl SpeechService {
     }
 
     /// Resolve the configured external endpoint, or say which part is missing.
-    ///
-    /// The vault is authoritative for the key and a plaintext value in
-    /// `settings.json` is the fallback; a keyless loopback gateway resolves to a
-    /// placeholder. Both speech paths treat a non-loopback host with no key as a
-    /// misconfiguration and reject it up front, where the chat path reports the
-    /// same state more gently.
+    /// The vault is authoritative for the key, with a plaintext settings value
+    /// as fallback and a placeholder for a keyless loopback gateway. Both
+    /// speech paths reject a non-loopback host with no key up front.
     async fn endpoint(&self, settings: &SettingsRecord, kind: Kind) -> Result<Endpoint> {
         let (prefix, label) = (kind.prefix(), kind.label());
         let base_url = str_setting(settings, &format!("{prefix}.external.baseUrl"), "");

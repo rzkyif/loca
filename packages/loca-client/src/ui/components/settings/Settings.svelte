@@ -18,7 +18,7 @@
   import { defaultExpandedSections } from "@loca/shared";
   import { capabilitiesState, downloadsState, settingsState, viewState } from "../../state";
   import { connectionState } from "$stores/connection.svelte";
-  import { confirmState } from "$stores/confirm.svelte";
+  import { confirmState } from "$stores/overlays.svelte";
   import { useSettingsForm } from "$composables/use-settings-form.svelte";
   import { useSettingsSearch } from "$composables/use-settings-search.svelte";
   import { useSettingsScroll } from "$composables/use-settings-scroll.svelte";

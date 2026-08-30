@@ -1,42 +1,12 @@
-//! Resolving a binary's download to a concrete URL plus sha256.
+//! Resolving a binary's download to a concrete URL plus sha256: a PINNED entry
+//! already carries both, a RESOLVER entry names a GitHub repo plus per-triple
+//! asset patterns resolved here against the release's published digest.
 //!
-//! Two sources, matching the two published entry shapes (see
-//! [`super::manifest`]): a PINNED entry already carries the URL and the hash the
-//! release resolved, and a RESOLVER entry names a GitHub repo plus per-triple
-//! asset patterns that are resolved here at runtime against the release's own
-//! published digest.
-//!
-//! # Pinned tags only, and the loud refusal that keeps that true
-//!
-//! `deno` pins `pinnedTag`, so the resolver branch fetches exactly one release
-//! by tag. The unpinned branch of the oracle (list recent releases, filter
-//! drafts and prereleases, scan newest-first for the first complete asset) is
-//! dropped with the rest of plan section 4.2.
-//!
-//! That branch is dead **only because of a data value in another package**. If
-//! `pinnedTag` is removed from the `deno` entry, a core with the scan deleted
-//! resolves nothing, the tool workers never install, and there is no compile
-//! error anywhere to say so. So an entry with no pinned tag is refused here with
-//! a message naming [`PINNED_DENO_TAG`], which is the cheap mitigation the plan
-//! chose over keeping 120 lines of newest-first scanning alive for a case that
-//! must not happen.
-//!
-//! # An unusable asset is `None`, not an error
-//!
-//! Absent, still uploading, or lacking a sha256 digest all resolve to `None` so
-//! the caller can say "not available yet" rather than failing the whole install.
-//! **An undigested asset is never returned**: without the digest the download
-//! cannot be verified, and an unverifiable binary is not installable.
-//!
-//! # The GitHub host is overridable
-//!
-//! `https://api.github.com` was hardcoded in both cores, so
-//! `/api/v1/binaries/{check,probe}` reached the real internet during a
-//! conformance run, contradicting `tests/conformance/harness/upstream.ts:6-9`,
-//! which states that every base URL points at 127.0.0.1 precisely so a core that
-//! escapes fails its cases instead of quietly succeeding. `LOCA_GITHUB_API_BASE_URL`
-//! closes that, next to the `LOCA_HF_BASE_URL` and `LOCA_STORAGE_BASE_URL` that
-//! already existed.
+//! Only pinned tags are resolved. The unpinned newest-first scan is dead solely
+//! because the `deno` entry pins `pinnedTag` in another package, so an entry
+//! without one is refused loudly rather than silently resolving nothing.
+//! An absent, still-uploading, or undigested asset is `None`, never an error;
+//! an undigested asset is never returned because the bytes could not be verified.
 
 use std::collections::BTreeMap;
 
@@ -50,7 +20,8 @@ use crate::sidecars::deno::PINNED_DENO_TAG;
 
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 
-/// The GitHub API host, overridable so a test harness can serve it locally.
+/// The GitHub API host, overridable via `LOCA_GITHUB_API_BASE_URL` so a test
+/// harness can serve it locally.
 pub fn github_api_base_url() -> String {
     std::env::var("LOCA_GITHUB_API_BASE_URL")
         .ok()
@@ -80,13 +51,10 @@ pub struct UpstreamResolver {
 }
 
 /// A triple's asset config: a bare pattern (single-variant, read as `cpu`) or a
-/// per-variant map. Normalised through [`TripleAsset::variant`], which is
-/// `assetVariants` (`domain/model.ts:136-148`).
+/// per-variant map.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TripleAsset {
-    /// A bare pattern. Read as the single `cpu` variant, which is what makes
-    /// `deno` and the macOS llama builds need no special case anywhere.
     One(VariantAsset),
     Variants(BTreeMap<String, VariantAsset>),
 }
@@ -101,7 +69,7 @@ impl TripleAsset {
 }
 
 /// One downloadable artifact: a primary asset-name pattern plus optional
-/// companion archives (the Windows CUDA `cudart` runtime is the live example).
+/// companion archives.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum VariantAsset {
@@ -130,10 +98,7 @@ impl VariantAsset {
 }
 
 /// Resolve a manifest entry to a concrete download for this host's `cpu` build.
-///
-/// `None` when this entry does not cover the triple or the upstream asset is not
-/// installable yet, which is `resolveBinaryEntry` (`upstream-resolver.ts:235`)
-/// plus `platformVariants`/`assetVariants` normalisation.
+/// `None` when the entry does not cover the triple or the asset is not installable yet.
 pub async fn resolve_entry(
     net: &Net,
     entry: &BinaryManifestEntry,
@@ -149,17 +114,13 @@ pub async fn resolve_entry(
                 version: version.clone(),
                 url: target.url.clone(),
                 sha256: target.sha256.clone(),
-                // A pinned entry publishes no size; the caller HEADs for one
-                // when it needs to show a number (`manager.ts:396`).
+                // A pinned entry publishes no size; the caller HEADs for one.
                 size_bytes: None,
             }))
         }
         BinaryManifestEntry::Resolver { resolver } => {
             resolve_upstream(net, resolver, triple, cancel).await
         }
-        // Neither published shape. See the manifest module docs: this is the
-        // same answer the oracle gives for a triple an entry does not cover,
-        // rather than an error that would take the whole route down.
         BinaryManifestEntry::Unknown(_) => Ok(None),
     }
 }
@@ -172,14 +133,10 @@ pub async fn resolve_upstream(
     cancel: &CancellationToken,
 ) -> Result<Option<ResolvedBinary>> {
     let Some(pattern) = asset_pattern(resolver, triple) else {
-        // Upstream does not publish this triple, so it is unavailable rather
-        // than missing (`upstream-resolver.ts:216-217`).
         return Ok(None);
     };
     let tag = resolver.pinned_tag.as_deref().filter(|t| !t.is_empty());
     let Some(tag) = tag else {
-        // See the module docs: this is the tripwire for a data change in
-        // another package that would otherwise fail silently.
         return Err(AppError::new(
             ErrorCode::ValidationError,
             format!(
@@ -243,13 +200,10 @@ struct GitHubAsset {
 fn resolve_asset_in_release(release: &GitHubRelease, pattern: &str) -> Option<ResolvedBinary> {
     let wanted = pattern.replace("{tag}", &release.tag_name);
     let asset = release.assets.iter().find(|a| a.name == wanted)?;
-    // An in-progress upload ("starter"/"new") is not resolvable yet. Absent
-    // state means an older release that predates the field, which is fine.
+    // Absent state is an older release that predates the field, which is fine.
     if asset.state.as_deref().is_some_and(|s| s != "uploaded") {
         return None;
     }
-    // No sha256 digest means nothing can verify the bytes, so there is no
-    // version of this that is safe to install.
     let digest = asset.digest.as_deref()?.strip_prefix("sha256:")?;
     Some(ResolvedBinary {
         version: release.tag_name.clone(),
@@ -265,11 +219,8 @@ fn resolve_asset_in_release(release: &GitHubRelease, pattern: &str) -> Option<Re
 pub mod test_github {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Sets `LOCA_GITHUB_API_BASE_URL` for the life of the guard.
-    ///
-    /// Serialised on a mutex because the environment is process-global and
-    /// cargo runs tests in threads: two of these racing would make each read
-    /// the other's host, which is a flake that looks like a resolver bug.
+    /// Sets `LOCA_GITHUB_API_BASE_URL` for the life of the guard. Serialised on
+    /// a mutex because the environment is process-global and tests run in threads.
     pub struct GithubHost(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 
     impl GithubHost {
@@ -301,17 +252,13 @@ mod tests {
     use crate::downloads::binaries::manifest::parse_manifest;
     use crate::downloads::testing::{bounded, published_latest_manifest, Serve, Upstream};
 
-    fn make_release(assets: serde_json::Value) -> GitHubRelease {
-        serde_json::from_value(serde_json::json!({
-            "tag_name": "v2.8.2",
-            "assets": assets,
-        }))
-        .unwrap()
-    }
+    const PATTERN: &str = "deno-aarch64-apple-darwin.zip";
 
-    fn asset(extra: serde_json::Value) -> serde_json::Value {
+    /// Resolve `PATTERN` against a one-asset v2.8.2 release whose asset is the
+    /// complete default overridden by `extra` (a `null` value removes the key).
+    fn resolve_with(extra: serde_json::Value) -> Option<ResolvedBinary> {
         let mut base = serde_json::json!({
-            "name": "deno-aarch64-apple-darwin.zip",
+            "name": PATTERN,
             "browser_download_url": "https://example.invalid/deno.zip",
             "state": "uploaded",
             "digest": "sha256:abc123",
@@ -324,10 +271,11 @@ mod tests {
                 base[key] = value.clone();
             }
         }
-        base
+        let release: GitHubRelease =
+            serde_json::from_value(serde_json::json!({ "tag_name": "v2.8.2", "assets": [base] }))
+                .unwrap();
+        resolve_asset_in_release(&release, PATTERN)
     }
-
-    const PATTERN: &str = "deno-aarch64-apple-darwin.zip";
 
     fn resolver(triple: &str, pattern: &str, pinned: Option<&str>) -> UpstreamResolver {
         let mut assets = BTreeMap::new();
@@ -344,9 +292,7 @@ mod tests {
 
     #[test]
     fn a_complete_asset_resolves_with_its_digest_and_size() {
-        let release = make_release(serde_json::json!([asset(serde_json::json!({}))]));
-
-        let resolved = resolve_asset_in_release(&release, PATTERN).unwrap();
+        let resolved = resolve_with(serde_json::json!({})).unwrap();
 
         assert_eq!(resolved.version, "v2.8.2");
         assert_eq!(resolved.sha256, "abc123");
@@ -356,58 +302,56 @@ mod tests {
 
     #[test]
     fn an_asset_with_no_sha256_digest_is_refused() {
-        // Without a digest nothing can verify the bytes, so there is no version
-        // of installing this that is safe.
-        let release = make_release(serde_json::json!([asset(
-            serde_json::json!({ "digest": null })
-        )]));
-        assert_eq!(resolve_asset_in_release(&release, PATTERN), None);
-
-        // A digest in another algorithm is not a sha256 and is refused too.
-        let release = make_release(serde_json::json!([asset(
-            serde_json::json!({ "digest": "sha512:abc123" })
-        )]));
-        assert_eq!(resolve_asset_in_release(&release, PATTERN), None);
+        assert_eq!(resolve_with(serde_json::json!({ "digest": null })), None);
+        assert_eq!(
+            resolve_with(serde_json::json!({ "digest": "sha512:abc123" })),
+            None
+        );
     }
 
     #[test]
     fn an_asset_still_uploading_is_not_resolvable() {
         for state in ["starter", "new"] {
-            let release = make_release(serde_json::json!([asset(
-                serde_json::json!({ "state": state })
-            )]));
-            assert_eq!(resolve_asset_in_release(&release, PATTERN), None, "{state}");
+            assert_eq!(
+                resolve_with(serde_json::json!({ "state": state })),
+                None,
+                "{state}"
+            );
         }
     }
 
     #[test]
     fn an_absent_state_field_is_an_older_release_rather_than_an_incomplete_one() {
-        let release = make_release(serde_json::json!([asset(
-            serde_json::json!({ "state": null })
-        )]));
-        assert!(resolve_asset_in_release(&release, PATTERN).is_some());
+        assert!(resolve_with(serde_json::json!({ "state": null })).is_some());
     }
 
     #[test]
     fn an_asset_that_is_not_in_the_release_is_none() {
-        let release = make_release(serde_json::json!([asset(
-            serde_json::json!({ "name": "deno-x86_64-pc-windows-msvc.zip" })
-        )]));
-        assert_eq!(resolve_asset_in_release(&release, PATTERN), None);
+        assert_eq!(
+            resolve_with(serde_json::json!({ "name": "deno-x86_64-pc-windows-msvc.zip" })),
+            None
+        );
     }
 
     #[test]
     fn the_tag_placeholder_is_substituted_into_the_asset_name() {
-        let release = make_release(serde_json::json!([asset(
-            serde_json::json!({ "name": "deno-v2.8.2.zip" })
-        )]));
+        let release: GitHubRelease = serde_json::from_value(serde_json::json!({
+            "tag_name": "v2.8.2",
+            "assets": [{
+                "name": "deno-v2.8.2.zip",
+                "browser_download_url": "https://example.invalid/deno.zip",
+                "state": "uploaded",
+                "digest": "sha256:abc123",
+                "size": 4096,
+            }],
+        }))
+        .unwrap();
 
         assert!(resolve_asset_in_release(&release, "deno-{tag}.zip").is_some());
     }
 
     #[test]
     fn the_cpu_pattern_is_read_from_either_asset_shape() {
-        // A bare string is the cpu variant; a per-variant map is read by key.
         let bare = resolver("aarch64-apple-darwin", "deno.zip", Some("v1"));
         assert_eq!(
             asset_pattern(&bare, "aarch64-apple-darwin").as_deref(),
@@ -443,9 +387,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_resolver_with_no_pinned_tag_is_refused_loudly() {
-        // The whole reason this refusal exists: the unpinned scan is dead only
-        // because of a data value in ANOTHER package, so removing that value
-        // must fail here rather than silently resolve nothing.
         let net = Net::new().unwrap();
         let cancel = CancellationToken::new();
         let triple = crate::config::host_triple();
@@ -469,9 +410,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_triple_upstream_does_not_publish_is_unavailable_rather_than_a_refusal() {
-        // Checked BEFORE the pinned-tag refusal, matching
-        // `upstream-resolver.ts:216-217`: a triple the resolver omits is
-        // "upstream does not build this", not a misconfiguration.
         let net = Net::new().unwrap();
         let cancel = CancellationToken::new();
         let resolver = resolver("aarch64-apple-darwin", "deno.zip", None);
@@ -486,8 +424,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_pinned_entry_resolves_off_the_manifest_with_no_network() {
-        // The stable channel's whole point: the release already resolved every
-        // URL and hash, so installing needs no third party at all.
         let mut document = crate::downloads::testing::published_stable_manifest();
         document["signature"] = serde_json::json!("x");
         let manifest = parse_manifest(&document).unwrap();
@@ -517,9 +453,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_resolver_entry_resolves_against_the_overridable_github_host() {
-        // The `latest` half of the same route, and the proof that the hardcoded
-        // api.github.com is gone: this test's release lives on 127.0.0.1 and it
-        // would be unreachable if the host were still baked in.
         let triple = crate::config::host_triple();
         let release = serde_json::json!({
             "tag_name": "v2.8.2",
@@ -563,8 +496,7 @@ mod tests {
             assert_eq!(github_api_base_url(), "https://api.github.com");
         }
         {
-            // Scoped separately: the guard holds the serialising lock, so
-            // taking a second one while the first is alive would deadlock.
+            // Scoped separately: two live guards would deadlock on the lock.
             let _guard = GithubHost::set("http://127.0.0.1:9/");
             assert_eq!(github_api_base_url(), "http://127.0.0.1:9");
         }

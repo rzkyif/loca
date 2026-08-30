@@ -3,39 +3,30 @@
 // `SHERPA_ONNX_LIB_DIR` at so the `local-speech` feature links on Android and
 // iOS.
 //
-// # Why this script exists at all
+// # Why this script exists
 //
-// `sherpa-onnx-sys` downloads its own prebuilt archive, so desktop needs
-// nothing here. But its target table covers linux, macos and windows only, and
-// it PANICS on anything else ("Unsupported target for sherpa-onnx prebuilt
-// libs"). That table is the whole reason mobile shipped without local speech:
-// Stage 3 took sherpa as a crate dependency and the crate's table quietly
-// decided the mobile scope.
-//
-// Upstream publishes mobile artifacts at the exact same version. The crate's
-// `SHERPA_ONNX_LIB_DIR` short-circuits both the download AND the target match
-// (`build.rs:100-110`), so pointing it at an extracted directory is all it takes.
+// `sherpa-onnx-sys` downloads its own prebuilt archive, so desktop needs nothing
+// here, but its target table covers linux, macos and windows only and PANICS on
+// anything else. Upstream publishes mobile artifacts at the same version, and
+// the crate's `SHERPA_ONNX_LIB_DIR` short-circuits both the download and the
+// target match, so pointing it at an extracted directory is all it takes.
 //
 // # Pinned by CONTENT, not by tag
 //
-// llama.cpp is pinned by commit SHA because it is a git clone. These are release
-// tarballs, so the pin is a sha256 of the archive itself, verified on every
-// fetch. A release asset can in principle be replaced in place; the digest is
-// what makes that loud rather than silent, which matters more here than for a
-// source tree because these are BINARIES that end up inside a signed app.
-//
-// The version is pinned to `=1.13.3` in the crate dependency as well, so the
-// headers the crate binds and the libraries staged here are one version. Bumping
-// is a ritual: change VERSION, re-run with --force, record the new digests, and
-// rebuild both mobile triples.
+// These are release tarballs, so the pin is a sha256 of the archive itself,
+// verified on every fetch: a release asset can be replaced in place, and the
+// digest makes that loud rather than silent for BINARIES that end up inside a
+// signed app. The version is also pinned in the crate dependency, so the headers
+// the crate binds and the libraries staged here are one version. Bumping means
+// changing VERSION, re-running with --force, recording the new digests, and
+// rebuilding both mobile triples.
 //
 // # This is a build-time fetch, not a product fetch
 //
-// The repo's absolute rule is that the INSTALLED, RUNNING product makes no
-// non-consented network request. This runs on a developer or CI machine, before
-// any artifact exists, and nothing it produces fetches anything at runtime: the
-// libraries end up inside the APK/IPA. Same standing as `vendor-llama.ts` and as
-// the crate's own download that it replaces.
+// The no-non-consented-network rule covers the INSTALLED, RUNNING product. This
+// runs on a developer or CI machine before any artifact exists, and the
+// libraries it stages end up inside the APK/IPA. Same standing as
+// `vendor-llama.ts` and the crate's own download that it replaces.
 //
 //   deno run -A scripts/vendor-sherpa.ts           verify, fetch if absent
 //   deno run -A scripts/vendor-sherpa.ts --check   verify only, never write

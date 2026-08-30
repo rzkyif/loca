@@ -1,18 +1,12 @@
 //! The per-worker loopback control channel.
 //!
-//! Ports `packages/loca-core/src/extensions/control-socket.ts`.
-//!
-//! # Why this exists, and why absorbing the helper did not remove it
+//! # Why this exists
 //!
 //! On Windows a tool worker runs under a ConPTY so Deno can show its interactive
 //! permission prompt, which needs stdin and stderr to be console handles. A
 //! pseudoconsole binds all three std handles and reflows what passes through, so
 //! the byte-exact NDJSON protocol cannot ride stdout. The worker connects back
-//! here instead and speaks the protocol over loopback, leaving the pseudoconsole
-//! carrying only the prompt.
-//!
-//! That is a property of ConPTY, not of the old helper binary, so absorbing the
-//! helper changes nothing about it.
+//! here instead, leaving the pseudoconsole carrying only the prompt.
 //!
 //! # The four security properties
 //!
@@ -27,9 +21,6 @@
 //!    connection that opens and says nothing cannot stall the accept loop for
 //!    the whole outer budget. Keeping only the outer bound is a trivial local
 //!    denial of service.
-//!
-//! The token comparison is constant-time here where the TypeScript's was a plain
-//! `!==`. That is a strengthening rather than a port, and it is free.
 
 use std::time::Duration;
 
@@ -39,15 +30,12 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::error::{internal, Result};
 
-/// A worker that never connects (it crashed before boot, or was spawned with
-/// flags that deny it the port) must not leave the accept awaiting forever. The
-/// pool's boot timeout is 10s, so this is a little less and lets the boot
-/// timeout report the real failure.
+/// A worker that never connects must not leave the accept awaiting forever.
+/// Under the pool's 10s boot timeout, so this failure is reported as itself.
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// Per-connection budget for the token line. A stray probe of the loopback port
-/// that opens and sends nothing must not stall the accept loop for the whole
-/// [`ACCEPT_TIMEOUT`].
+/// Per-connection budget for the token line, so a probe that opens and sends
+/// nothing cannot stall the accept loop for the whole [`ACCEPT_TIMEOUT`].
 const TOKEN_READ_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Bound on the token line. A real one is 64 hex characters and a newline;
@@ -69,11 +57,8 @@ pub struct ControlChannel {
 
 /// The inbound half: the worker's protocol frames.
 pub struct ControlReader {
-    /// A `BufReader` rather than the raw half, and that is what keeps the
-    /// worker's first frame: the token line and the frame after it routinely
-    /// arrive in ONE read, so a handshake that consumed the whole buffer and
-    /// kept only the token would silently drop that frame. Here the unread
-    /// remainder simply stays in the buffer.
+    /// A `BufReader` rather than the raw half, so the frame that arrives in
+    /// the same read as the token line stays buffered rather than being lost.
     reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
 }
 
@@ -91,10 +76,8 @@ impl ControlListener {
         let addr = listener
             .local_addr()
             .map_err(|e| internal(format!("control socket has no address: {e}")))?;
-        // The platform CSPRNG, which is the same source `auth::secretgen` draws
-        // every other secret from. Called directly because that module is
-        // private to `auth`; a failure means the OS could not supply entropy,
-        // which is not something to paper over with a weaker source.
+        // The platform CSPRNG, called directly because `auth::secretgen` is
+        // private; a failure means the OS could not supply entropy.
         let mut bytes = [0u8; 32];
         getrandom::fill(&mut bytes)
             .map_err(|e| internal(format!("failed to read from the CSPRNG: {e}")))?;
@@ -117,20 +100,15 @@ impl ControlListener {
         self.listener.local_addr().map(|a| a.port()).unwrap_or(0)
     }
 
-    /// Accept connections until one presents the correct token.
-    ///
-    /// Consumes the listener: it is one-shot by type, so the socket is released
-    /// whether the handshake succeeded or timed out.
+    /// Accept connections until one presents the correct token. Consumes the
+    /// listener, so the socket is released either way.
     pub async fn accept(self) -> Result<ControlChannel> {
         self.accept_within(ACCEPT_TIMEOUT).await
     }
 
-    /// [`ControlListener::accept`] with an explicit budget.
-    ///
-    /// Exists so the give-up path can be tested in milliseconds. The bound is
-    /// real I/O on a real socket, so a paused clock cannot drive it (D-036), and
-    /// an eight-second test to prove a timeout fires is eight seconds every
-    /// contributor pays on every run.
+    /// [`ControlListener::accept`] with an explicit budget, so the give-up path
+    /// can be tested in milliseconds: the bound is real I/O on a real socket,
+    /// which a paused clock cannot drive.
     pub async fn accept_within(self, budget: Duration) -> Result<ControlChannel> {
         tokio::time::timeout(budget, self.accept_loop())
             .await
@@ -148,9 +126,8 @@ impl ControlListener {
             };
             match authenticate(stream, &self.token).await {
                 Some(channel) => return Ok(channel),
-                // Wrong or missing token: drop this connection and KEEP
-                // LISTENING. Returning here would let a racing local probe lock
-                // out the real worker just by connecting first.
+                // Drop this connection and KEEP LISTENING, or a racing local
+                // probe locks out the real worker by connecting first.
                 None => {
                     tracing::warn!(
                         target: "loca::extensions",
@@ -191,9 +168,7 @@ async fn authenticate(stream: TcpStream, token: &str) -> Option<ControlChannel> 
 }
 
 /// Read up to and including one `\n`, refusing at `max` bytes.
-///
-/// `AsyncBufReadExt::read_until` would buffer without limit, which is the whole
-/// thing the bound exists to prevent.
+/// `AsyncBufReadExt::read_until` would buffer without limit.
 async fn read_line_bounded<R>(reader: &mut R, out: &mut Vec<u8>, max: usize) -> bool
 where
     R: AsyncBufReadExt + Unpin,
@@ -237,12 +212,8 @@ impl ControlChannel {
     }
 
     /// Take the two halves apart, so one task can pump inbound frames while
-    /// another writes outbound ones.
-    ///
-    /// Both sides need `&mut self`, so a single task cannot hold the channel
-    /// and `select!` over a read and a write: the borrow checker refuses, and
-    /// serialising them behind one lock would mean an outbound frame waits for
-    /// the next inbound line, which for a worker that is thinking is forever.
+    /// another writes outbound ones. Both need `&mut self`, and serialising
+    /// them would make an outbound frame wait for the next inbound line.
     pub fn split(self) -> (ControlReader, ControlWriter) {
         (self.reader, self.writer)
     }
@@ -250,9 +221,8 @@ impl ControlChannel {
 
 impl ControlReader {
     /// The next NDJSON line from the worker, or `None` at end of stream.
-    ///
-    /// Bounded by `max_bytes` for the same reason the token line is: the worker
-    /// is untrusted and a line with no newline must not grow Core's heap.
+    /// Bounded, because an untrusted worker's unterminated line must not grow
+    /// Core's heap.
     pub async fn read_line(&mut self, max_bytes: usize) -> Option<String> {
         let mut line = Vec::new();
         read_line_bounded(&mut self.reader, &mut line, max_bytes)
@@ -281,34 +251,41 @@ mod tests {
 
     use super::*;
 
-    /// Every test here is time-bounded. The failures this module can have are
-    /// hangs, so an unbounded test would reproduce the bug rather than report
-    /// it.
+    /// Every test here is time-bounded: this module's failures are hangs, so an
+    /// unbounded test would reproduce the bug rather than report it.
     const BUDGET: Duration = Duration::from_secs(15);
 
     async fn connect(addr: &str) -> TcpStream {
         TcpStream::connect(addr).await.unwrap()
     }
 
-    #[tokio::test]
-    async fn the_right_token_authenticates_and_the_protocol_flows_both_ways() {
-        // The positive control for every refusal below. Without it, a listener
-        // that rejected everything would pass the whole rest of this file.
+    /// Bind a listener and take its address and token.
+    async fn listener() -> (ControlListener, String, String) {
         let listener = ControlListener::bind().await.unwrap();
         let addr = listener.addr().to_string();
         let token = listener.token().to_string();
+        (listener, addr, token)
+    }
+
+    /// A connection that writes `payload` once and then stays open, so the
+    /// channel never sees EOF.
+    fn speaker(addr: String, payload: String) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut stream = connect(&addr).await;
+            stream.write_all(payload.as_bytes()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        })
+    }
+
+    #[tokio::test]
+    async fn the_right_token_authenticates_and_the_protocol_flows_both_ways() {
+        // The positive control: a listener that rejected everything would pass
+        // the whole rest of this file.
+        let (listener, addr, token) = listener().await;
         assert_eq!(token.len(), 64, "a 256-bit token in hex");
         assert!(addr.starts_with("127.0.0.1:"), "loopback only: {addr}");
 
-        let worker = tokio::spawn(async move {
-            let mut stream = connect(&addr).await;
-            stream
-                .write_all(format!("{token}\n{{\"kind\":\"ready\"}}\n").as_bytes())
-                .await
-                .unwrap();
-            // Hold the connection open so the channel does not see EOF.
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        let worker = speaker(addr, format!("{token}\n{{\"kind\":\"ready\"}}\n"));
 
         let mut channel = tokio::time::timeout(BUDGET, listener.accept())
             .await
@@ -327,19 +304,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_frame_sharing_the_handshake_packet_is_not_lost() {
-        // The worker writes its token and its first frame together, which is
-        // what a single eager write produces. A handshake that read a whole
-        // buffer and kept only the token line would silently drop that frame,
-        // and the symptom is one tool call in a thousand hanging at boot.
-        let listener = ControlListener::bind().await.unwrap();
-        let addr = listener.addr().to_string();
-        let token = listener.token().to_string();
-        let worker = tokio::spawn(async move {
-            let mut stream = connect(&addr).await;
-            let payload = format!("{token}\n{{\"kind\":\"booted\",\"extensionId\":\"demo\"}}\n");
-            stream.write_all(payload.as_bytes()).await.unwrap();
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        // A single eager write puts the token and the first frame in one
+        // packet, and dropping the frame hangs one tool call in a thousand.
+        let (listener, addr, token) = listener().await;
+        let worker = speaker(
+            addr,
+            format!("{token}\n{{\"kind\":\"booted\",\"extensionId\":\"demo\"}}\n"),
+        );
         let mut channel = tokio::time::timeout(BUDGET, listener.accept())
             .await
             .expect("accept timed out")
@@ -356,31 +327,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_wrong_token_does_not_lock_out_the_real_worker() {
-        // The listener is one-shot; the accept LOOP is not. A local probe that
-        // connects first and guesses wrong must be dropped while the listener
-        // keeps accepting, or anything on the machine can deny every tool call
-        // by racing to connect.
-        let listener = ControlListener::bind().await.unwrap();
-        let addr = listener.addr().to_string();
-        let token = listener.token().to_string();
-
-        let probe_addr = addr.clone();
-        let probe = tokio::spawn(async move {
-            let mut stream = connect(&probe_addr).await;
-            stream.write_all(b"not-the-token\n").await.unwrap();
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        // The listener is one-shot; the accept LOOP is not. Otherwise anything
+        // on the machine denies every tool call by racing to connect.
+        let (listener, addr, token) = listener().await;
+        let probe = speaker(addr.clone(), "not-the-token\n".to_string());
         // Give the probe a head start, so it really is first in the queue.
         tokio::time::sleep(Duration::from_millis(50)).await;
-
-        let worker = tokio::spawn(async move {
-            let mut stream = connect(&addr).await;
-            stream
-                .write_all(format!("{token}\n{{\"kind\":\"ready\"}}\n").as_bytes())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        let worker = speaker(addr, format!("{token}\n{{\"kind\":\"ready\"}}\n"));
 
         let mut channel = tokio::time::timeout(BUDGET, listener.accept())
             .await
@@ -396,14 +349,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_split_halves_carry_the_protocol_in_both_directions_and_the_reader_stays_bounded() {
-        // Under a ConPTY this channel IS the worker protocol, in both
-        // directions, and the two halves are driven by two tasks. A split that
-        // dropped either one leaves a worker that can be spoken to and never
-        // answers, or answers and is never spoken to, and neither shows up as
-        // an error anywhere.
-        let listener = ControlListener::bind().await.unwrap();
-        let addr = listener.addr().to_string();
-        let token = listener.token().to_string();
+        // Under a ConPTY this channel IS the worker protocol in both
+        // directions, driven by two tasks, and a dropped half shows up as no
+        // error anywhere.
+        let (listener, addr, token) = listener().await;
 
         let worker = tokio::spawn(async move {
             let stream = connect(&addr).await;
@@ -412,8 +361,8 @@ mod tests {
                 .write_all(format!("{token}\n{{\"kind\":\"ready\"}}\n").as_bytes())
                 .await
                 .unwrap();
-            // Blocks until Core's frame actually arrives, so the flood below is
-            // proof that the write half delivered rather than a race.
+            // Blocks until Core's frame arrives, so the flood below is proof
+            // the write half delivered rather than a race.
             let mut reader = BufReader::new(read_half);
             let mut line = String::new();
             reader.read_line(&mut line).await.unwrap();
@@ -439,8 +388,6 @@ mod tests {
             .expect("the write hung")
             .expect("the write failed");
 
-        // The bound is what stops an untrusted worker growing Core's heap with
-        // a frame it never terminates.
         let flooded = tokio::time::timeout(BUDGET, reader.read_line(1_024))
             .await
             .expect("the bounded read hung");
@@ -450,37 +397,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_silent_connection_does_not_stall_the_accept_loop() {
-        // The per-connection budget. With only the outer 8s bound, one
-        // connection that opens and says nothing delays the real worker past
-        // the pool's boot timeout, which is a local denial of service costing
-        // one TCP connection.
-        let listener = ControlListener::bind().await.unwrap();
-        let addr = listener.addr().to_string();
-        let token = listener.token().to_string();
-
-        let silent_addr = addr.clone();
-        let silent = tokio::spawn(async move {
-            let _stream = connect(&silent_addr).await;
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        // With only the outer 8s bound, one silent connection delays the real
+        // worker past the pool's boot timeout for the cost of one TCP socket.
+        let (listener, addr, token) = listener().await;
+        let silent = speaker(addr.clone(), String::new());
         tokio::time::sleep(Duration::from_millis(50)).await;
-
-        let worker = tokio::spawn(async move {
-            let mut stream = connect(&addr).await;
-            stream
-                .write_all(format!("{token}\n").as_bytes())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        let worker = speaker(addr, format!("{token}\n"));
 
         let started = std::time::Instant::now();
         let accepted = tokio::time::timeout(BUDGET, listener.accept()).await;
         assert!(accepted.is_ok(), "the silent connection stalled the accept");
         assert!(accepted.unwrap().is_ok());
-        // The real assertion: it took about one token-read budget, not the
-        // whole outer one. Generous, because CI machines are slow; tight enough
-        // that removing the per-connection timeout fails it.
+        // About one token-read budget, not the whole outer one. Generous
+        // because CI is slow, tight enough that removing the timeout fails it.
         let elapsed = started.elapsed();
         assert!(
             elapsed < ACCEPT_TIMEOUT - Duration::from_secs(2),
@@ -492,12 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unbounded_token_line_is_refused_rather_than_buffered() {
-        // Without the bound, a connection can stream forever with no newline and
-        // Core buffers all of it.
-        let listener = ControlListener::bind().await.unwrap();
-        let addr = listener.addr().to_string();
-        let token = listener.token().to_string();
-
+        let (listener, addr, token) = listener().await;
         let flood_addr = addr.clone();
         let flood = tokio::spawn(async move {
             let mut stream = connect(&flood_addr).await;
@@ -512,14 +436,7 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let worker = tokio::spawn(async move {
-            let mut stream = connect(&addr).await;
-            stream
-                .write_all(format!("{token}\n").as_bytes())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        });
+        let worker = speaker(addr, format!("{token}\n"));
 
         let accepted = tokio::time::timeout(BUDGET, listener.accept()).await;
         assert!(
@@ -532,9 +449,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_worker_that_never_connects_gives_up_rather_than_hanging() {
-        // The mechanism, at a budget the suite can afford. Without it the accept
-        // waits forever and the pool's boot timeout is the only thing that ever
-        // reports the failure, ten seconds later and naming the wrong cause.
+        // Without it the pool's boot timeout is the only thing that reports the
+        // failure, later and naming the wrong cause.
         let listener = ControlListener::bind().await.unwrap();
         let budget = Duration::from_millis(300);
         let started = std::time::Instant::now();
@@ -546,14 +462,9 @@ mod tests {
 
     #[tokio::test]
     async fn the_line_bound_stops_reading_rather_than_buffering() {
-        // Asserted directly, because from the outside the per-connection
-        // timeout masks it: a flood is dropped after a second either way, and
-        // the difference is only how many megabytes were buffered first. That
-        // makes the accept-loop test unable to see this bound, so it gets one.
-        // A SMALL buffer over a LARGE flood, so the bound is what stops the
-        // read rather than the end of the input. Over a finite slice the loop
-        // stops at EOF whatever the bound does, which is why the obvious
-        // version of this test cannot fail.
+        // Asserted directly, because from outside the per-connection timeout
+        // masks it. A SMALL buffer over a LARGE flood, so the bound rather than
+        // EOF is what stops the read.
         let flood = vec![b'x'; 1_000_000];
         let mut reader = BufReader::with_capacity(64, &flood[..]);
         let mut out = Vec::new();
@@ -565,8 +476,7 @@ mod tests {
             out.len(),
         );
 
-        // The positive control: a line inside the bound is read whole, so the
-        // refusal above is about the bound and not about reading being broken.
+        // The positive control, so the refusal above is about the bound.
         let mut reader = BufReader::new(&b"short line\nrest"[..]);
         let mut out = Vec::new();
         assert!(read_line_bounded(&mut reader, &mut out, 256).await);
@@ -575,12 +485,9 @@ mod tests {
 
     #[test]
     fn the_accept_budget_stays_under_the_boot_timeout() {
-        // The only thing the VALUE of ACCEPT_TIMEOUT has to satisfy, and the one
-        // way it can be wrong: if it exceeded the pool's boot timeout, a worker
-        // that never connects would be reported as a boot timeout rather than as
-        // the control-socket failure it is, and the log would name the wrong
-        // subsystem. Asserted as a relationship rather than as a number, because
-        // a test that reads the constant back is not a test.
+        // Over the boot timeout, a worker that never connects is reported as a
+        // boot timeout and the log names the wrong subsystem. A relationship
+        // rather than a number, because reading the constant back is not a test.
         assert!(ACCEPT_TIMEOUT < super::super::worker::BOOT_TIMEOUT);
         assert!(TOKEN_READ_TIMEOUT < ACCEPT_TIMEOUT);
     }

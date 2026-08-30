@@ -1,15 +1,8 @@
 //! What the extension supervisor reads settings through.
 //!
-//! [`BrokerSettings`] is DECLARED by `extensions::broker` and implemented here.
-//! The broker reads exactly two keys, `tts.enabled` and `stt.enabled`, and both
-//! are the user's own switch: a tool must not be able to start the speech stack
-//! by asking for it after the user turned it off.
-//!
-//! The SPARSE record is what the broker gets, and that is deliberate. Both keys
-//! are read with a `false` default, so an absent key is off; resolving the
-//! schema defaults underneath would make the answer depend on what the schema
-//! happens to default to rather than on what the user chose. There is also no
-//! client on a tool call, so there is no overlay to apply.
+//! The broker gets the SPARSE record on purpose: it reads `tts.enabled` and
+//! `stt.enabled` with a `false` default, so an absent key is off regardless of
+//! the schema default, and a tool call has no client, so no overlay applies.
 
 use async_trait::async_trait;
 
@@ -18,7 +11,6 @@ use crate::extensions::broker::BrokerSettings;
 
 use super::{Settings, SettingsRecord};
 
-/// The core settings, as the module broker reads them.
 #[derive(Clone)]
 pub struct BrokerSettingsStore {
     settings: Settings,
@@ -78,9 +70,6 @@ mod tests {
         );
     }
 
-    /// The record is the SPARSE store, not the resolved one. Both would answer
-    /// the two speech keys the same way today, so the discriminator is a key the
-    /// schema defaults to something non-empty: it must be ABSENT here.
     #[tokio::test]
     async fn the_broker_reads_what_the_user_set_rather_than_the_schema_defaults() {
         let snapshot = seam(&[("tts.enabled", json!(true))])

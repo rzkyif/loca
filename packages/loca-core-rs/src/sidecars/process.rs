@@ -18,7 +18,7 @@ use crate::error::{internal, Result};
 
 use super::jobctl::JobObject;
 
-/// SIGTERM to SIGKILL, matching the Deno core's window.
+/// SIGTERM to SIGKILL.
 const GRACEFUL_SHUTDOWN: Duration = Duration::from_secs(5);
 /// How long SIGKILL gets before we give up and let the drop backstop have it. A
 /// process wedged in an uninterruptible syscall can outlast even this.
@@ -28,18 +28,15 @@ const DRAIN_GRACE: Duration = Duration::from_secs(2);
 /// Lines kept for the exit message.
 const RECENT_LOG_LINES: usize = 10;
 /// A child that emits no newline must not grow the core's buffer without bound.
-/// Far above any real log line; a caller parsing a protocol off the pipe takes
-/// [`Output::Piped`] and applies its own limit.
+/// A caller parsing a protocol off the pipe takes [`Output::Piped`] instead.
 pub(super) const MAX_LINE_BYTES: usize = 1_000_000;
 
 /// Environment a child may legitimately need: a search path, a home, a temp
 /// dir, a locale.
 ///
-/// It is an allowlist because the core process can hold an operator's
-/// `GITHUB_TOKEN` or `OPENAI_API_KEY`, and a downloaded binary or a sandboxed
-/// tool has no business seeing either. The keys stay the caller's choice
-/// (D12's worker list is deliberately narrower and adds `DENO_DIR`); what is
-/// shared is the clear-then-add-exactly-these mechanism in [`Spawn`].
+/// An allowlist because the core process can hold an operator's `GITHUB_TOKEN`
+/// or `OPENAI_API_KEY`. The keys stay the caller's choice; what is shared is
+/// [`Spawn`]'s clear-then-add-exactly-these mechanism.
 pub const OPERATIONAL_ENV_KEYS: &[&str] = &[
     "PATH",
     "HOME",
@@ -193,8 +190,8 @@ pub struct Child {
     label: String,
     pid: u32,
     /// `Some` until the child is reaped. Every signal is sent while this is
-    /// held, which is what makes the pid safe to use: an un-awaited child is a
-    /// zombie at worst, and its pid cannot be reused until it is reaped.
+    /// held, which makes the pid safe to use: an un-awaited child is a zombie
+    /// at worst, and a zombie's pid cannot be reused.
     child: Option<tokio::process::Child>,
     stdin: Option<ChildStdin>,
     stdout: Option<ChildStdout>,
@@ -248,8 +245,7 @@ impl Child {
 
     /// Stop the child: SIGTERM, a grace window, then SIGKILL. Idempotent.
     ///
-    /// On Windows there is no SIGTERM, so this is a TerminateProcess straight
-    /// away, exactly as the Deno core did.
+    /// On Windows there is no SIGTERM, so this is a TerminateProcess.
     pub async fn terminate(&mut self) -> Exit {
         if let Some(exit) = &self.exit {
             return exit.clone();
@@ -258,14 +254,12 @@ impl Child {
             return self.settle_missing().await;
         };
 
-        // The observed exit, if we manage to reap it. Threaded through both
-        // branches rather than returned from one: dropping it on the graceful
-        // path would report a clean shutdown as an exit of unknown cause.
+        // Threaded through both branches: dropping it on the graceful path
+        // would report a clean shutdown as an exit of unknown cause.
         let mut reaped = None;
 
         let escalated = match soft_signal(&mut child, self.pid) {
-            // Windows, or a signal that could not be sent because the process
-            // is already gone. Either way there is nothing to escalate to.
+            // Windows, or a process already gone: nothing to escalate to.
             SoftSignal::Terminal => true,
             SoftSignal::Sent => match tokio::time::timeout(GRACEFUL_SHUTDOWN, child.wait()).await {
                 Ok(status) => {
@@ -290,9 +284,8 @@ impl Child {
             match tokio::time::timeout(KILL_GRACE, child.wait()).await {
                 Ok(status) => reaped = status.ok(),
                 Err(_) => {
-                    // Uninterruptible sleep, or a Windows handle that will not
-                    // close. The drop backstop owns it from here; blocking
-                    // shutdown on it would be worse than leaking it.
+                    // Uninterruptible sleep, or a handle that will not close:
+                    // the drop backstop owns it from here.
                     tracing::warn!(
                         target: "loca::sidecars",
                         "{}: still alive after SIGKILL (pid {}); abandoning it",
@@ -311,9 +304,8 @@ impl Child {
 
     /// Compose the exit, after the output pumps have finished.
     ///
-    /// The join is the point. The pipes can still hold the last thing the child
-    /// wrote when `wait` returns, and that last line is usually the panic that
-    /// explains the exit. Reading the ring first would drop it.
+    /// The join is the point: the pipes can still hold the last thing the child
+    /// wrote when `wait` returns, which is usually the panic that explains it.
     async fn settle(&mut self, status: std::process::ExitStatus) -> Exit {
         self.drain_out().await;
         let recent = self.recent_output();
@@ -356,15 +348,13 @@ impl Child {
 
     /// Let the output pumps finish, then stop waiting on them.
     ///
-    /// One budget for all of them, not one each: a child's stdout and stderr
-    /// end at the same moment, so serialising the waits would multiply the
-    /// worst case by the number of pipes and then by the number of children at
-    /// shutdown.
+    /// One budget for all of them: the streams end at the same moment, so
+    /// serialising the waits would multiply the worst case per pipe and then
+    /// per child at shutdown.
     ///
-    /// The abort is not decoration. A grandchild that inherited the pipes keeps
-    /// them open after the child is gone, so EOF never arrives and the pump
-    /// would otherwise sit in a live task for the rest of the process's life.
-    /// Dropping a `JoinHandle` does not cancel the task; only `abort` does.
+    /// The abort matters: a grandchild that inherited the pipes keeps them open
+    /// after the child is gone, so EOF never arrives, and dropping a
+    /// `JoinHandle` does not cancel the task.
     async fn drain_out(&mut self) {
         let handles = std::mem::take(&mut self.drains);
         if handles.is_empty() {
@@ -398,33 +388,25 @@ fn soft_signal(child: &mut tokio::process::Child, pid: u32) -> SoftSignal {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
 
-    // Signalling the pid rather than the process group is deliberate, and the
-    // reverse of what the textbook says. Orphan cleanup on unix is delegated to
-    // the service supervisor: systemd kills the unit's cgroup and launchd kills
-    // THE JOB'S PROCESS GROUP. Putting a child in its own group with
-    // `Command::process_group(0)` would let us kill its whole tree, and would
-    // defeat launchd's cleanup exactly, on the platform most users run. So
-    // children stay in the core's group, and a grandchild (a `run`-granted
-    // tool's own subprocess) is not covered by this signal. That gap is
-    // inherited from the Deno core rather than introduced here; Windows covers
-    // it with the Job Object.
+    // The pid, not the process group, and deliberately so: unix orphan cleanup
+    // is the supervisor's job, and launchd kills THE JOB'S PROCESS GROUP, so
+    // `Command::process_group(0)` would defeat it exactly. Children stay in the
+    // core's group, leaving a grandchild uncovered here; Windows covers that
+    // with the Job Object.
     //
-    // The pid is safe to use because `child` is un-awaited: an exited child is
-    // a zombie until reaped, and a zombie's pid cannot be reused. Holding the
-    // borrow is what makes that a compiler-checked claim rather than a comment.
+    // The pid is safe because `child` is un-awaited: a zombie's pid cannot be
+    // reused, and holding the borrow makes that compiler-checked.
     let _held = child;
     match kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
         Ok(()) => SoftSignal::Sent,
-        // ESRCH: already gone. Anything else is not going to improve with a
-        // second attempt either.
+        // ESRCH is already gone; nothing else improves on a retry.
         Err(_) => SoftSignal::Terminal,
     }
 }
 
 #[cfg(not(unix))]
 fn soft_signal(child: &mut tokio::process::Child, _pid: u32) -> SoftSignal {
-    // Windows has no SIGTERM. `start_kill` is TerminateProcess, which is what
-    // the Deno core sent there too.
+    // Windows has no SIGTERM; `start_kill` is TerminateProcess.
     let _ = child.start_kill();
     SoftSignal::Terminal
 }
@@ -441,15 +423,13 @@ fn exit_signal(_status: &std::process::ExitStatus) -> Option<i32> {
 
 /// Start the child described by `spec`, tracked by `jobs`.
 ///
-/// Not public: every spawn goes through [`super::Manager::spawn`], so the
-/// Windows Job Object membership and the shutdown registration cannot be
-/// forgotten at a call site.
+/// Not public: every spawn goes through [`super::Manager::spawn`], so Job
+/// Object membership and shutdown registration cannot be forgotten.
 pub(super) fn spawn(spec: Spawn, jobs: &JobObject) -> Result<Child> {
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args);
-    // Clear first. `.envs()` on an inherited environment would leave every
-    // secret the core holds visible to the child, and the allowlist would be
-    // decoration rather than a boundary.
+    // Clear first: `.envs()` over an inherited environment would leave every
+    // secret the core holds visible, making the allowlist decoration.
     cmd.env_clear();
     cmd.envs(&spec.env);
     if let Some(cwd) = &spec.cwd {
@@ -462,18 +442,13 @@ pub(super) fn spawn(spec: Spawn, jobs: &JobObject) -> Result<Child> {
     // Both output modes need a pipe; they differ only in who reads it.
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
-    // The backstop for a task that panics between spawn and terminate. The
-    // graceful path always reaps before dropping, so this only ever fires on
-    // the abnormal one.
+    // The backstop for a task that panics between spawn and terminate; the
+    // graceful path always reaps before dropping.
     cmd.kill_on_drop(true);
     #[cfg(windows)]
     {
-        // A console-subsystem child with no console to inherit ALLOCATES ONE,
-        // and its window is visible. The Deno core could not set this flag
-        // (`Deno.Command` has no such option) and worked around it by
-        // allocating a console for the core itself and hiding the window with
-        // user32 FFI. Setting the flag per child is the fix that hack stood in
-        // for, so the hack is not ported.
+        // A console-subsystem child with no console to inherit allocates one,
+        // and its window is visible.
         use std::os::windows::process::CommandExt as _;
         cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     }
@@ -534,10 +509,9 @@ pub(super) fn spawn(spec: Spawn, jobs: &JobObject) -> Result<Child> {
 
 /// Pump one output stream into the ring buffer and the log.
 ///
-/// Spawned immediately, before anything awaits the child, because an undrained
-/// pipe fills at ~64 KB and then blocks the child's next write forever. The
-/// child never exits, so `wait` never returns, and the core looks hung with
-/// nothing in the log to say why.
+/// Spawned immediately, before anything awaits the child: an undrained pipe
+/// fills at ~64 KB and blocks the child's next write forever, so `wait` never
+/// returns and the core looks hung with nothing in the log.
 fn relay<R>(
     mut reader: R,
     label: String,
@@ -550,9 +524,8 @@ where
     tokio::spawn(async move {
         let mut chunk = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
-        // Set when `pending` hit the cap: the rest of that line is discarded
-        // rather than buffered, so a child emitting megabytes without a newline
-        // costs us one capped line and not the heap.
+        // Set when `pending` hit the cap: the rest of the line is discarded,
+        // so a child emitting megabytes without a newline costs one line.
         let mut overflowed = false;
         loop {
             let n = match reader.read(&mut chunk).await {
@@ -571,8 +544,7 @@ where
                 }
             }
         }
-        // A final line with no trailing newline is still a line, and on a crash
-        // it is often the only one that matters.
+        // A final line with no trailing newline is still a line.
         if !pending.is_empty() {
             emit(&label, tag, &pending, overflowed, &recent);
         }
@@ -596,10 +568,8 @@ fn emit(
     } else {
         text.to_string()
     };
-    // DEBUG, which `log.rs` drops for this scope: a child's chatter would
-    // drown the console and fill core.log. Crash context is not lost, because
-    // the ring below becomes the exit message, which is logged at WARN by
-    // whoever owns the child.
+    // DEBUG, which `log.rs` drops for this scope: a child's chatter would fill
+    // core.log. The ring below still becomes the exit message.
     tracing::debug!(target: "loca::sidecars", "[{label}/{tag}] {text}");
     let mut ring = lock(recent);
     if ring.len() == RECENT_LOG_LINES {

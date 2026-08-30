@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import gsap from "gsap";
-  import { getDefaultSettings, SETTINGS_SCHEMA } from "@loca/shared/domain/settings/engine";
+  import { getDefaultSettings } from "@loca/shared/domain/settings/engine";
   import type { SettingField } from "@loca/shared/domain/settings/types";
   import { scheduledPromptDetailSamples } from "@loca/shared/ui/samples";
   import SettingsShellView from "@loca/shared/ui/components/settings/SettingsShellView.svelte";
@@ -13,16 +13,10 @@
   import ObjectDetailScrollView from "@loca/shared/ui/components/objects/ObjectDetailScrollView.svelte";
   import SettingsDemoFooter from "../demos/SettingsDemoFooter.svelte";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, settingsShowcaseGroups as groups, type StageProps } from "../../lib/showcase";
 
-  let { register }: { register: (h: { timeline: Timeline; reset: () => void }) => void } = $props();
+  let { register }: StageProps = $props();
 
-  const groups = SETTINGS_SCHEMA.filter((g) => !g.hidden).map((g) => ({
-    id: g.id,
-    name: g.name,
-    icon: g.icon,
-    iconInactive: g.iconInactive ?? g.icon,
-  }));
   const values = getDefaultSettings();
 
   type Shell = { reset: () => void };

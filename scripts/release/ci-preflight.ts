@@ -11,11 +11,9 @@
 //   native=true|false   a matrix-built item (core / desktop client / android)
 //                        differs -> the expensive per-triple build matrix runs.
 //
-// The platform-independent items (extension, catalog, schemas,
-// the landing page) carry no per-triple artifact and build directly on the
-// publish coordinator, so a push that touches ONLY them (e.g. a website-only
-// change) publishes without spinning up a single build runner: changed=true,
-// native=false, build skipped, publish runs just the changed items.
+// The platform-independent items carry no per-triple artifact and build on the
+// publish coordinator, so a push touching ONLY them publishes without spinning up
+// a single build runner.
 //
 // Reads only the public R2 cursor + live manifests, so it needs no deploy
 // credentials; envFromProcess just wants the (non-secret) Ed25519 PUBLIC key.
@@ -43,10 +41,9 @@ import { iosItem } from "./ios.ts";
 import { schemasItem } from "./schemas.ts";
 import { websiteItem } from "./website.ts";
 
-// Matrix-built items: each needs a native build runner, so any change here
-// requires the build matrix. This is the set the `build` job gates on. iOS is
-// here even though it stages no artifact: its .ipa is built + uploaded to App
-// Store Connect by the macOS runner, so an iOS-only change still needs the
+// Matrix-built items: each needs a native build runner, so this is the set the
+// `build` job gates on. iOS is here even though it stages no artifact: the macOS
+// runner builds and uploads its .ipa, so an iOS-only change still needs the
 // matrix.
 const NATIVE_ITEMS: ReleaseItem[] = [coreItem, clientItem, androidItem, iosItem];
 

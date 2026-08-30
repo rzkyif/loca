@@ -1,15 +1,10 @@
-//! One hop's worth of streaming state.
+//! One hop's worth of streaming state: the born-on-first-delta skeletons, the
+//! delta coalescer, the reasoning-before-content finalize ordering, tool-call
+//! assembly with stream-namespaced call ids, and the usage and truncation
+//! accounting.
 //!
-//! Ports `core-engine/src/services/chat-stream-muxer.ts` in full: the
-//! born-on-first-delta skeletons, the delta coalescer, the
-//! reasoning-before-content finalize ordering, tool-call assembly with
-//! stream-namespaced call ids, and the usage and truncation accounting.
-//!
-//! # Five orderings that are invariants, not style
-//!
-//! The TypeScript header says "do not reorder" and lists them. They are repeated
-//! here because each one, broken, produces a transcript that is wrong in a way
-//! no single-frame assertion notices:
+//! Five orderings are invariants rather than style. Each one, broken, produces
+//! a transcript that is wrong in a way no single-frame assertion notices:
 //!
 //! 1. **Reasoning finalizes at the FIRST content delta**, not after the stream,
 //!    so the thought bubble closes with its duration while the reply is still
@@ -27,14 +22,11 @@
 //!    in-flight map, and a collision makes every askUser, permission and cancel
 //!    forward fail its owner check and hang both prompts.
 //!
-//! # The live-content lag is deliberate
-//!
-//! A live message's `content` advances to the last FLUSHED position, never to
+//! The live-content lag is deliberate: a live message's `content` advances to
+//! the last FLUSHED position, never to
 //! the bleeding edge. A mid-stream `chat.subscribe` replays the live snapshot
 //! and then resumes deltas, so a snapshot carrying the not-yet-flushed tail
-//! would be followed by a `chat.delta` repeating it, and the client would show
-//! the fragment twice. Between flushes the live object lags by one coalesce
-//! window, and that is the correct amount.
+//! would be followed by a `chat.delta` repeating it.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -53,12 +45,10 @@ use crate::transport::FrameBus;
 use super::stream::ActiveStream;
 use super::writer::{LiveRef, TurnWriter};
 
-/// One `chat.delta` frame per window instead of one per token.
-///
-/// A fast local model emits many small tokens, and a `serde_json::to_string`
-/// plus a socket write each dominates the cost and grows the send buffer under a
-/// slow consumer. Every token is still accumulated synchronously, so this is
-/// lossless: only the wire frames are batched.
+/// One `chat.delta` frame per window instead of one per token: a
+/// `serde_json::to_string` plus a socket write per token dominates the cost and
+/// grows the send buffer under a slow consumer. Lossless, since every token is
+/// still accumulated synchronously.
 const COALESCE: Duration = Duration::from_millis(30);
 
 /// A tool call the model asked for, resolved against the enabled catalog.
@@ -85,10 +75,9 @@ pub struct TurnResult {
     pub interrupted: bool,
     pub truncated: bool,
     pub error: Option<AppError>,
-    /// What this hop reported, for the caller to PERSIST. Broadcasting it is
-    /// not enough on its own: the client renders the context gauge from the
-    /// session document on load, so a usage that only ever rode a live frame is
-    /// gone the moment the session is reopened.
+    /// What this hop reported, for the caller to PERSIST: the client renders
+    /// the context gauge from the session document on load, so a usage that
+    /// only ever rode a live frame is gone the moment the session is reopened.
     pub usage: Option<TokenUsage>,
 }
 
@@ -97,12 +86,10 @@ pub struct ResolvedTool {
     pub extension_id: String,
 }
 
-/// Assembles one tool call across the chunks that carry it.
-///
-/// Keyed by the provider's `index`, in a `BTreeMap` rather than a `HashMap`
-/// because the index is also the namespace component of the call id and the
-/// resolution order has to be stable: a `HashMap` would give two runs of the
-/// same stream different call ids for the same calls.
+/// Assembles one tool call across the chunks that carry it. Keyed by the
+/// provider's `index` in a `BTreeMap`: that index is also the namespace
+/// component of the call id, so a `HashMap` would give two runs of the same
+/// stream different call ids for the same calls.
 #[derive(Default)]
 struct Assembler {
     call_id: Option<String>,
@@ -123,13 +110,9 @@ struct Turn {
     reasoning_text: String,
     assistant: Option<LiveRef>,
     reasoning: Option<LiveRef>,
-    /// Set on the first reasoning chunk and the first content chunk. The pair is
-    /// what gives "Thought for Xs" without recomputing from timestamps.
-    ///
-    /// `tokio::time::Instant`, not `std::time::Instant`: a paused test runtime
-    /// advances only tokio's clock, so a duration measured with `std::time`
-    /// cannot move under one and a test of it passes whatever the code does.
-    /// D-038 is the worked example.
+    /// Set on the first reasoning chunk and the first content chunk, which is
+    /// what gives "Thought for Xs". `tokio::time::Instant`, not `std::time`: a
+    /// paused test runtime advances only tokio's clock.
     reasoning_started: Option<Instant>,
     content_started: Option<Instant>,
     pending_content: String,
@@ -149,10 +132,8 @@ impl StreamMuxer {
         }
     }
 
-    /// Drive one hop to completion.
-    ///
-    /// `resolve` maps a tool name to its owner, and is the enabled-and-exposable
-    /// catalog collapsed to one lookup. A name it does not know becomes an
+    /// Drive one hop to completion. `resolve` is the enabled-and-exposable
+    /// catalog collapsed to one lookup; a name it does not know becomes an
     /// `unknown` call rather than being dropped, so the model learns why.
     pub async fn run(
         &self,
@@ -167,11 +148,9 @@ impl StreamMuxer {
 
         loop {
             let next = if let Some(due) = flush_due {
-                // A pending batch is waiting on the clock as well as on the
-                // provider, so the select has three arms rather than two. The
-                // sleep is what bounds latency for a model that goes quiet
-                // mid-sentence: without it the tail would sit unsent until the
-                // next token, which on a stalled provider is never.
+                // A pending batch waits on the clock as well as the provider,
+                // so the sleep bounds latency for a model that goes quiet
+                // mid-sentence: the tail would otherwise sit unsent.
                 tokio::select! {
                     biased;
                     _ = cancel.cancelled() => break,
@@ -208,9 +187,8 @@ impl StreamMuxer {
             for chunk in &delta.tool_calls {
                 let asm = turn.assemblers.entry(chunk.index).or_default();
                 // `id` and `name` may arrive on the first fragment only, or be
-                // repeated. A later fragment that carries either overwrites,
-                // matching the TypeScript; one that carries neither extends the
-                // arguments and nothing else.
+                // repeated. A later fragment carrying either overwrites; one
+                // carrying neither extends the arguments and nothing else.
                 if let Some(id) = &chunk.id {
                     asm.call_id = Some(id.clone());
                 }
@@ -286,10 +264,9 @@ impl StreamMuxer {
         let resolved = self.resolve_calls(&turn, resolve);
 
         // A tool-call-only hop still needs an assistant message: the persisted
-        // `toolCalls` are what lets a later transcript rebuild replay them, and
-        // without it every following `tool` message is orphaned. It never
-        // streamed content, so it was never born, and its finalize IS its first
-        // emission.
+        // `toolCalls` let a transcript rebuild replay them, and without it every
+        // following `tool` message is orphaned. It never streamed content, so
+        // its finalize IS its first emission.
         if turn.assistant.is_none() && !resolved.is_empty() {
             turn.assistant = Some(new_message(&self.route, "assistant"));
         }
@@ -298,12 +275,11 @@ impl StreamMuxer {
         }
         self.settle(&mut turn, writer, false).await;
 
-        // The model hit the context window on a non-tool hop, so the reply is
-        // cut off. When thinking consumed the whole window there is no content
-        // at all, and an empty assistant is synthesised to carry the note: the
-        // client renders "cut off" from this flag, and with no message there is
-        // nothing to render it on. A tool hop finishes `tool_calls`, not
-        // `length`, which is why the emptiness of `resolved` is part of the test.
+        // The model hit the context window on a non-tool hop. When thinking
+        // consumed the whole window there is no content at all, so an empty
+        // assistant is synthesised to carry the flag the client renders "cut
+        // off" from. A tool hop finishes `tool_calls`, not `length`, which is
+        // why the emptiness of `resolved` is part of the test.
         let truncated = turn.last_finish_reason.as_deref() == Some("length") && resolved.is_empty();
         if truncated {
             let assistant = turn
@@ -332,11 +308,10 @@ impl StreamMuxer {
         }
     }
 
-    /// Emit whatever has accumulated since the last flush, and advance each live
-    /// object to exactly what has now been EMITTED.
-    ///
-    /// The advance belongs here and not at the append, and the reason is the
-    /// resubscribe path rather than efficiency: see the module header.
+    /// Emit whatever has accumulated since the last flush, and advance each
+    /// live object to exactly what has now been EMITTED. The advance belongs
+    /// here rather than at the append for the resubscribe path's sake: see the
+    /// module header.
     fn flush(&self, turn: &mut Turn) {
         if !turn.pending_reasoning.is_empty() {
             if let Some(message) = turn.reasoning.as_ref() {
@@ -415,11 +390,9 @@ impl StreamMuxer {
         }
     }
 
-    /// Fill the streamed text into both skeletons on the way out.
-    ///
-    /// Runs on EVERY exit path, so a partial message from an interrupt or a
-    /// provider failure comes back for the caller to finalize rather than being
-    /// dropped. That is what makes "live equals reload" true after an interrupt.
+    /// Fill the streamed text into both skeletons on the way out. Runs on EVERY
+    /// exit path, so a partial message from an interrupt or a provider failure
+    /// comes back for the caller to finalize rather than being dropped.
     async fn settle(&self, turn: &mut Turn, writer: &mut TurnWriter, interrupted: bool) {
         self.finalize_reasoning(turn, writer, interrupted).await;
         if let Some(assistant) = turn.assistant.as_ref() {
@@ -439,8 +412,8 @@ impl StreamMuxer {
             .iter()
             .map(|(index, asm)| {
                 // Invariant 5. The model only needs `tool_calls[].id` and the
-                // result's `tool_call_id` to match EACH OTHER within a request,
-                // and they still do: both carry this same value.
+                // result's `tool_call_id` to match each other, and both carry
+                // this same value.
                 let model_id = asm
                     .call_id
                     .clone()
@@ -460,8 +433,8 @@ impl StreamMuxer {
                         unknown: false,
                     },
                     // Not dropped: the model gets a tool message saying the tool
-                    // was unavailable, which it can act on. Dropping it would
-                    // leave the model waiting for a result that never comes.
+                    // was unavailable rather than waiting for a result that
+                    // never comes.
                     None => PendingCall {
                         call_id,
                         extension_id: "unknown".to_string(),

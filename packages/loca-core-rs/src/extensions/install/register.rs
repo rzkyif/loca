@@ -1,18 +1,9 @@
 //! `loca.json` to registry rows: the permission flattening and the
 //! no-dependencies shortcut.
 //!
-//! Ports `packages/loca-core/src/extensions/installer-register.ts`.
-//!
-//! # The flattening is where a permission becomes a grant key
-//!
-//! `loca.json` groups a tool's permissions by kind (`net: [...]`, `read: [...]`).
-//! The registry stores them as one flat list, and
-//! [`super::super::sandbox::permission_key`] derives a grant key from each
-//! entry. So a declaration lost here is a permission the user is never asked
-//! about, and one gained is a grant row for something the author never
-//! declared. Every kind is enumerated explicitly rather than being iterated
-//! generically, because a missing arm is then a compile error rather than a
-//! silently dropped kind.
+//! Every permission kind is enumerated explicitly: a declaration lost here is
+//! a permission the user is never asked about, so a missing arm must be a
+//! compile error rather than a silently dropped kind.
 
 use crate::contract::api::{
     PermissionDecl, PermissionDeclAccess, PermissionDeclPortsItem, PermissionDeclPortsItemVariant1,
@@ -104,12 +95,8 @@ pub fn flatten_permissions(perms: &LocaJsonToolPermissions) -> Vec<PermissionDec
     out
 }
 
-/// A declared port, from the `loca.json` spelling to the stored one.
-///
-/// Two generated enums for one concept, because the two schemas describe it
-/// separately: the manifest's numeric member is a `NonZeroU64` and the stored
-/// one is an `i64`. Mapped explicitly, so a member added to either side is a
-/// compile error rather than a port silently becoming the wildcard.
+/// A declared port, from the `loca.json` spelling to the stored one. Mapped
+/// explicitly so a new member is a compile error, not a silent wildcard.
 fn port_decl(port: &LocaJsonToolPermissionsNetItemPortsItem) -> PermissionDeclPortsItem {
     match port {
         LocaJsonToolPermissionsNetItemPortsItem::Variant0(number) => {
@@ -121,11 +108,8 @@ fn port_decl(port: &LocaJsonToolPermissionsNetItemPortsItem) -> PermissionDeclPo
     }
 }
 
-/// The platform token a declared platform is stored as.
-///
-/// An explicit match rather than a serde round trip: these strings are compared
-/// against the host's tokens by `registry::tool_platform_supported`, so a
-/// spelling that drifts makes a tool invisible on the platform it declared.
+/// The platform token a declared platform is stored as; compared against
+/// `registry::host_platforms()` by spelling alone.
 fn platform_token(platform: &ToolPlatformsItem) -> String {
     match platform {
         ToolPlatformsItem::Darwin => "darwin",
@@ -137,11 +121,6 @@ fn platform_token(platform: &ToolPlatformsItem) -> String {
     .to_string()
 }
 
-/// The manifest's memories access, as the stored declaration spells it.
-///
-/// Two enums with the same two members, one from the `loca.json` schema and one
-/// from the API schema. Mapped explicitly rather than by string, so a member
-/// added to either is a compile error here.
 fn memories_access(
     access: &crate::contract::inbound::LocaJsonToolPermissionsMemoriesItemAccess,
 ) -> PermissionDeclAccess {
@@ -152,12 +131,7 @@ fn memories_access(
     }
 }
 
-/// The tool rows a manifest declares.
-///
-/// `tools` is `Option<Vec<_>>` in the generated contract where the Zod schema
-/// declares `.default([])`, so absent and empty are two spellings of the same
-/// thing here (filed with F2). Flattening through `iter().flatten()` treats
-/// them identically, which is the behaviour the specification has.
+/// The tool rows a manifest declares (absent and empty `tools` are the same).
 pub fn tool_rows(manifest: &ExtensionManifest) -> Vec<ToolInsert> {
     manifest
         .tools
@@ -187,12 +161,8 @@ pub fn flatten_npm_name(name: &str) -> String {
     name.replacen('/', "__", 1)
 }
 
-/// A local-install slug becomes a path segment under the extensions directory.
-///
-/// Constrained to a safe identifier charset so it cannot contain `.`, `..`, or
-/// a separator. This is defence in depth rather than the only guard: the
-/// download also checks that the resolved install path stays inside the
-/// extensions directory.
+/// A local-install slug becomes a directory name, so it is limited to a safe
+/// identifier charset (the download also checks the resolved path stays inside).
 pub fn valid_local_slug(slug: &str) -> bool {
     !slug.is_empty()
         && slug.len() <= 64
@@ -241,10 +211,6 @@ mod tests {
 
     #[test]
     fn every_declared_permission_kind_survives_the_flattening() {
-        // A kind lost here is a permission the user is never asked about, and
-        // the tool then hits a runtime prompt for something its manifest said
-        // it needed. A kind gained is a grant row for something the author
-        // never declared.
         let rows = tool_rows(&manifest(EVERY_KIND));
         assert_eq!(rows.len(), 1);
         let kinds: Vec<PermissionKind> = rows[0]
@@ -273,9 +239,6 @@ mod tests {
 
     #[test]
     fn each_flattened_declaration_carries_the_fields_its_grant_key_is_built_from() {
-        // The key is what a grant row is stored under and what the sandbox
-        // matches a runtime prompt against, so a field lost in the flattening
-        // silently widens or narrows the grant.
         let rows = tool_rows(&manifest(EVERY_KIND));
         let keys: Vec<String> = rows[0]
             .required_permissions
@@ -290,8 +253,7 @@ mod tests {
         assert!(keys.iter().any(|k| k.contains("ffmpeg")), "{keys:?}");
         assert!(keys.iter().any(|k| k.contains("EDITOR")), "{keys:?}");
         assert!(keys.iter().any(|k| k.contains("hostname")), "{keys:?}");
-        // And every key is distinct, or two declarations would share one grant
-        // row and approving either would approve both.
+        // Every key is distinct, or two declarations would share a grant row.
         let mut unique = keys.clone();
         unique.sort();
         unique.dedup();
@@ -309,10 +271,6 @@ mod tests {
             PermissionDecl::Net { host, ports, .. } => {
                 assert_eq!(host, "api.example.com");
                 assert_eq!(ports.len(), 1, "the declared port was dropped");
-                // The VALUE, not just the count. A numeric port turning into
-                // the wildcard is a widening: `api.example.com:443` becomes
-                // every port on that host, and the grant key moves with it, so
-                // an approval the user gave for one port covers all of them.
                 assert!(
                     matches!(ports[0], PermissionDeclPortsItem::Variant0(443)),
                     "a declared port changed value or became the wildcard: {:?}",
@@ -322,12 +280,7 @@ mod tests {
             other => panic!("expected the net declaration first, got {other:?}"),
         }
 
-        // A net declaration with NO ports is refused by the schema
-        // (`ports: z.array(portSchema).min(1)`), which is the stricter and
-        // better shape: an author cannot ask for a host without saying which
-        // ports, so there is no "every port" case for the sandbox to widen to.
-        // Pinned here because the flattening would happily produce an empty
-        // list, and an empty list is what a wildcard would look like.
+        // A net declaration with NO ports is refused by the schema.
         assert!(
             serde_json::from_str::<ExtensionManifest>(
                 r#"{"name":"f","displayName":"F","description":"d","tools":[{
@@ -337,15 +290,9 @@ mod tests {
             .is_err(),
             "a net declaration with no ports parsed"
         );
-        // An EMPTY `ports` list is a KNOWN DIVERGENCE, filed with F2: Zod's
-        // `.min(1)` is not compiled into the generated `Deserialize`, so the
-        // Deno core refuses this manifest and the Rust core accepts it.
-        //
-        // It is benign, and this is the assertion that makes it benign rather
-        // than the assumption that it is: an empty list contributes NO entry to
-        // the flag set, so the declaration grants nothing. The dangerous
-        // reading would be "no ports means every port", and a later change to
-        // the sandbox that took it would be caught here.
+        // An EMPTY `ports` list parses (Zod's `.min(1)` is not in the generated
+        // `Deserialize`, filed with F2); benign only because it grants nothing,
+        // which is what this pins.
         let empty_ports: ExtensionManifest = serde_json::from_str(
             r#"{"name":"f","displayName":"F","description":"d","tools":[{
                 "name":"t","description":"d","function":"f","parameters":{},
@@ -405,7 +352,6 @@ mod tests {
                 "name":"t","description":"d","function":"f","parameters":{}}]}"#,
         ));
         assert!(rows[0].required_permissions.is_empty());
-        // And the per-tool defaults the manifest omits.
         assert!(!rows[0].always_available);
         assert!(rows[0].triggers.is_empty());
         assert!(
@@ -416,8 +362,6 @@ mod tests {
 
     #[test]
     fn a_manifest_with_no_tools_registers_no_tools() {
-        // `tools` is `Option<Vec<_>>` where the Zod schema says `.default([])`,
-        // so absent and empty must be one behaviour here.
         assert!(tool_rows(&manifest(
             r#"{"name":"f","displayName":"F","description":"d"}"#
         ))
@@ -430,9 +374,6 @@ mod tests {
 
     #[test]
     fn the_memories_access_is_carried_across_and_not_defaulted() {
-        // Read and write are two different grants, and `write` covers a read
-        // while the reverse does not. Defaulting either way would hand a tool
-        // the wrong half of the memories API.
         for (declared, expected) in [
             ("read", PermissionDeclAccess::Read),
             ("write", PermissionDeclAccess::Write),
@@ -451,9 +392,6 @@ mod tests {
 
     #[test]
     fn optional_is_carried_through_because_it_decides_whether_a_tool_is_exposed() {
-        // A tool is LLM-exposed only while no non-optional declared permission
-        // is denied. Losing `optional` in the flattening turns an optional
-        // permission the user declined into a tool that vanishes.
         let rows = tool_rows(&manifest(
             r#"{"name":"f","displayName":"F","description":"d","tools":[{
                 "name":"t","description":"d","function":"f","parameters":{},
@@ -472,10 +410,6 @@ mod tests {
 
     #[test]
     fn the_platform_tokens_are_the_ones_the_host_resolver_produces() {
-        // These strings are one half of a comparison whose other half is
-        // `registry::host_platforms()`. Nothing connects them but the spelling,
-        // so a drift on either side makes a tool invisible on exactly the
-        // platform it declared, with no error and no log.
         assert_eq!(platform_token(&ToolPlatformsItem::Darwin), "darwin");
         assert_eq!(platform_token(&ToolPlatformsItem::Windows), "windows");
         assert_eq!(platform_token(&ToolPlatformsItem::Linux), "linux");
@@ -485,8 +419,7 @@ mod tests {
             "linux_wayland"
         );
 
-        // And the cross-check that catches a drift on the OTHER side: whatever
-        // this host resolves to must be a token some declaration could name.
+        // Whatever this host resolves to must be a token some declaration could name.
         let host = super::super::super::registry::host_platforms();
         let declarable: Vec<String> = [
             ToolPlatformsItem::Darwin,
@@ -511,20 +444,14 @@ mod tests {
 
     #[test]
     fn a_scoped_npm_name_flattens_to_one_folder() {
-        // `@scope/name` would otherwise create a `@scope` directory with the
-        // extension nested inside it, and every path derived from the id would
-        // point at the wrong place.
         assert_eq!(flatten_npm_name("@acme/loca-thing"), "@acme__loca-thing");
         assert_eq!(flatten_npm_name("plain-thing"), "plain-thing");
-        // Only the FIRST slash: an npm name has at most one, and replacing all
-        // of them would quietly accept a name with a path in it.
+        // Only the first slash.
         assert_eq!(flatten_npm_name("@a/b/c"), "@a__b/c");
     }
 
     #[test]
     fn a_local_slug_cannot_be_a_path() {
-        // The slug becomes a directory name under the extensions dir, so
-        // anything separator-shaped or dot-shaped is a way out of it.
         for bad in [
             "",
             "..",

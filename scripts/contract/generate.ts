@@ -634,6 +634,37 @@ pub mod reject_null {
 `;
 }
 
+// typify embeds the full JSON schema of every type as a `<details>` doc block.
+// The schema already lives in @loca/shared; drop the copy.
+function stripSchemaDocs(source: string, count: { n: number }): string {
+  return source.replace(
+    /\n\/\/\/ <details><summary>JSON schema<\/summary>\n(?:\/\/\/.*\n)*?\/\/\/ <\/details>/g,
+    () => {
+      count.n++;
+      return "";
+    },
+  );
+}
+
+// `impl From<&T> for T { value.clone() }` exists for typify's builder pattern,
+// which is off, and the `TryFrom<&String>` / `TryFrom<String>` enum shims only
+// delegate to `parse()`. Nothing calls either. Runs on rustfmt output, where a
+// top-level impl always ends at the first `\n}\n`.
+function stripCloneAndStringShims(source: string, count: { n: number }): string {
+  const block = (head: string) =>
+    new RegExp(`^impl ::std::convert::${head} for \\w+ \\{\\n(?:.*\\n)*?\\}\\n`, "gm");
+  const drop = (re: RegExp, body: string) => (text: string) =>
+    text.replace(re, (m) => {
+      if (!m.includes(body)) return m;
+      count.n++;
+      return "";
+    });
+  return drop(
+    block("TryFrom<&?::std::string::String>"),
+    "value.parse()",
+  )(drop(block("From<&(?:Self|\\w+)>"), "value.clone()")(source));
+}
+
 function snake(name: string): string {
   return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
@@ -687,6 +718,8 @@ try {
   const redacted = new Set<string>();
   const relaxed = new Set<string>();
   const optionalCollections = { n: 0 };
+  const stripped = { n: 0 };
+  const shims = { n: 0 };
   const nullRejecting = { n: 0, skipped: new Set<string>() };
 
   // Fixtures ride along with the generated types: they are emitted from the
@@ -808,13 +841,17 @@ try {
     ]);
     assertSecretsCovered(raw);
     collectUntagged(raw, untagged);
-    const redactedSource = redactSecretFields(redactSecrets(raw, redacted), redacted);
+    const slim = stripSchemaDocs(raw, stripped);
+    const redactedSource = redactSecretFields(redactSecrets(slim, redacted), redacted);
     const collections = distinguishAbsentFromEmpty(
       target.relaxRequests ? relaxRequestBodies(redactedSource, relaxed) : redactedSource,
       optionalCollections,
     );
-    const generated = await rustfmt(
-      target.rejectNull ? rejectExplicitNull(collections, nullRejecting) : collections,
+    const generated = stripCloneAndStringShims(
+      await rustfmt(
+        target.rejectNull ? rejectExplicitNull(collections, nullRejecting) : collections,
+      ),
+      shims,
     );
 
     const path = join(OUT_DIR, target.name);
@@ -847,6 +884,17 @@ try {
     Deno.exit(1);
   }
   console.log(`ok   ${optionalCollections.n} optional collection(s) kept distinct from empty`);
+
+  // Same guard: a typify rendering change would leave the schema docs and the
+  // conversion shims in place, doubling the file with nothing going red.
+  if (!stripped.n || !shims.n) {
+    console.error(
+      "the doc/shim stripping pass rewrote nothing. typify's rendering changed; " +
+        "update stripSchemaDocs / stripCloneAndStringShims in scripts/contract/generate.ts.",
+    );
+    Deno.exit(1);
+  }
+  console.log(`ok   ${stripped.n} schema doc block(s) and ${shims.n} conversion shim(s) stripped`);
 
   // Same hazard, same guard: the rewrite keys off typify's rendering of an
   // optional field, so if that rendering changes the pass silently applies to

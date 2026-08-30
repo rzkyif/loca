@@ -8,20 +8,16 @@
 //
 // Companion to the oxlint `loca/no-tauri-import` family (oxlint can't parse
 // .svelte). Wired into `deno task lint`.
-//
-// Phase 0 ships this in warn mode; Phase 6 flips STRICT to fail the build.
 
 import { walk } from "@std/fs/walk";
 import { fromFileUrl } from "@std/path";
 
 const STRICT = true;
 // Native OS path (fromFileUrl); URL .pathname breaks walk()/readdir on Windows.
-// Scan the WHOLE shared UI subtree, not just components/: the `.ts` modules
-// there (context, tokens, the uno preset, sample bundles) are equally part of the
-// single-source layer and a client/tauri/api import in one of them would break
-// the website's rendering just the same. oxlint's loca/no-tauri-import covers
-// `.ts` too, but only for @tauri-apps; this walker also bans the client aliases +
-// the api layer and is the sole check for `.svelte`.
+// Scans the WHOLE shared UI subtree, not just components/: its `.ts` modules are
+// equally part of the single-source layer. oxlint covers `.ts` but only for
+// @tauri-apps; this walker also bans the client aliases and the api layer, and is
+// the sole check for `.svelte`.
 const ROOT = fromFileUrl(new URL("../../packages/loca-shared/src/ui/", import.meta.url));
 const REL = "packages/loca-shared/src/ui/";
 // Forbidden import sources for a shared presentational component.

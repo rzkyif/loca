@@ -178,9 +178,9 @@ mod tests {
         assert!(decode_master_key("not base64!!").is_err());
     }
 
-    // Parity: a `secrets.enc` written by the Deno core must decrypt here. The
-    // fixture is base64 of the whole file so the diff stays reviewable, and it
-    // was produced by WebCrypto exactly as the Deno core produces one:
+    // Parity: an existing install's `secrets.enc` must decrypt here. The fixture
+    // is base64 of the whole file so the diff stays reviewable, and was produced
+    // by WebCrypto:
     //
     //   deno eval 'const raw = new Uint8Array(32).fill(9);
     //     const k = await crypto.subtle.importKey("raw", raw, {name:"AES-GCM"}, false, ["encrypt"]);

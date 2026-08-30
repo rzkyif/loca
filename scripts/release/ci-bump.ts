@@ -12,26 +12,19 @@
 // this job on the latest branch; this script also no-ops on any other channel).
 //
 // Which items to bump: after ci-publish's write, a just-published item's recorded
-// cursor version equals its local version (the version file has not advanced yet).
-// Every other item was bumped after its last release, so its local version is
-// strictly greater. So "recorded.version === local version" selects exactly the
-// items this release published and left un-bumped. Source hashes are version-BLIND
-// (each item strips its version before hashing) and client/android extraChanged
-// never compares against the LOCAL version (platform fill + live-vs-live installer
-// staleness only), so ci-publish only ever publishes items whose source actually
-// changed (or a genuine same-version fill/refresh) - never a lone version bump.
-// That makes
-// this selection equivalent to the local auto-bump's "sourceChanged only" filter:
-// bumping the just-published items is correct and cannot churn.
+// cursor version equals its local version (the version file has not advanced
+// yet), while every other item was bumped after its last release and so is
+// strictly greater. Source hashes are version-BLIND, so ci-publish only ever
+// publishes items whose source actually changed, which makes
+// "recorded.version === local version" equivalent to the local auto-bump's
+// "sourceChanged only" filter.
 //
-// No re-release loop: the bump lands on `main`, and a lone version bump no longer
-// re-triggers a release, because the version is stripped out of every source hash.
-// The pending bump sits on `main` until a REAL source change lands, then ships
-// bundled with it on the next `main -> latest` promotion (the higher version clears
-// the version-bump gate, which still rejects a source change WITHOUT a bump). This
-// job's push is via GITHUB_TOKEN, which GitHub does not let trigger another
-// workflow. A non-fast-forward pushMain (a genuine concurrent push during the job)
-// still fails loudly.
+// No re-release loop: the bump lands on `main`, and a lone version bump does not
+// re-trigger a release because the version is stripped out of every source hash.
+// It sits on `main` until a REAL source change ships bundled with it on the next
+// promotion, clearing the version-bump gate. This job's push is via
+// GITHUB_TOKEN, which GitHub does not let trigger another workflow; a
+// non-fast-forward push still fails loudly.
 //
 // Flags:
 //   --channel=stable|latest    target channel (the workflow sets it from branch)

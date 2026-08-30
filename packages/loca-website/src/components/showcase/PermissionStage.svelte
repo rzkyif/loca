@@ -9,17 +9,11 @@
   import { bubbleGap, useUiContext } from "@loca/shared/ui/context";
   import type { ToolCallStatus } from "@loca/shared";
   import Cursor from "./Cursor.svelte";
-  import { awaitStableHeight, Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, awaitStableHeight, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // A guarded tool pauses for permission: the composer becomes the permission
   // review (a shield line + the exact command) with Deny / Allow, exactly as in

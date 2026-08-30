@@ -7,8 +7,7 @@
 //! version is behind. This is what lets a self-update ship a schema change:
 //! `CREATE TABLE IF NOT EXISTS` alone never adds a column to an existing table.
 //!
-//! `schema.sql` is an orchestrator-owned surface, so a schema change is a
-//! request-queue entry plus a migration here, not an edit to the base schema.
+//! A schema change is a migration entry here, never an edit to `schema.sql`.
 
 use rusqlite::Connection;
 
@@ -28,8 +27,7 @@ struct Migration {
 /// entry; add a new one. v1's body is the idempotent base schema, so
 /// re-applying it to an existing v1 database is a no-op.
 ///
-/// The schema is inlined rather than read at runtime so that a compiled binary
-/// carries it with no path resolution.
+/// Inlined rather than read at runtime, so a compiled binary carries it.
 const MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     sql: include_str!("../../schema.sql"),
@@ -54,24 +52,18 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
     for m in MIGRATIONS {
         if m.version > current {
-            // Not wrapped in a transaction, for two reasons. `schema.sql` opens
-            // with `PRAGMA journal_mode = WAL`, which cannot run inside one, and
-            // the Deno core does not wrap either, so wrapping would change the
-            // failure mode of a partially applied migration against what an
-            // existing install would have seen.
+            // Not wrapped in a transaction: `schema.sql` opens with
+            // `PRAGMA journal_mode = WAL`, which cannot run inside one.
             //
-            // `PRAGMA journal_mode = WAL` returns a row, and rusqlite's
-            // `Statement::execute` rejects row-returning statements.
-            // `execute_batch` is not built on it: it steps each statement
-            // directly and tolerates a returned row. That is load-bearing here,
-            // and `fresh_migrate_enables_wal` is the tripwire if it ever changes.
+            // That pragma also returns a row, which `Statement::execute`
+            // rejects. `execute_batch` steps each statement directly and
+            // tolerates one, which `fresh_migrate_enables_wal` pins.
             conn.execute_batch(m.sql)?;
         }
     }
 
     if current < CURRENT_SCHEMA_VERSION {
-        // PRAGMA does not accept bound parameters. The value is a compile-time
-        // integer constant, never input.
+        // PRAGMA takes no bound parameters; the value is a constant.
         conn.execute_batch(&format!("PRAGMA user_version = {CURRENT_SCHEMA_VERSION}"))?;
     }
 
@@ -143,42 +135,13 @@ mod tests {
             .join(name)
     }
 
-    // --- parity with the TypeScript core -------------------------------------
+    // --- persistence parity ---------------------------------------------------
 
-    /// `schema.sql` is a verbatim copy, and this is what keeps it one. An edit
-    /// to either file fails here.
-    ///
-    /// The Deno core is deleted at Stage 5 cutover, taking its half of this
-    /// comparison with it. `a_deno_written_database_migrates_to_a_no_op` is the
-    /// guard that survives, because its fixture is a committed database rather
-    /// than part of the TypeScript tree.
-    #[test]
-    fn schema_sql_matches_the_typescript_source() {
-        let ts = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../loca-core/src/db/schema.sql")
-            .canonicalize();
-        let Ok(ts) = ts else {
-            return;
-        };
-        let theirs = std::fs::read_to_string(&ts).unwrap();
-        let ours = include_str!("../../schema.sql");
-        assert_eq!(
-            ours,
-            theirs,
-            "packages/loca-core-rs/schema.sql has drifted from {}",
-            ts.display()
-        );
-    }
-
-    /// The parity proof that matters: a database written by the Deno core opens
-    /// as-is, needs no work, and migrates forward to exactly the schema a fresh
-    /// Rust migrate produces.
-    ///
-    /// The fixture was produced by running the Deno core's `openDb()` +
-    /// `migrate()` + `closeDb()` against a temporary `LOCA_CORE_HOME`, so it is
-    /// a real `core.sqlite` with its WAL folded back in, not a reconstruction.
-    /// It is a v1 database on purpose and never needs regenerating: adding v2
-    /// makes this test prove the v1-to-v2 upgrade instead, which is the point.
+    /// An existing install's `core.sqlite` opens as-is, needs no work, and
+    /// migrates forward to exactly the schema a fresh migrate produces. The
+    /// fixture is a real database with its WAL folded back in, not a
+    /// reconstruction, and never needs regenerating: adding v2 makes this
+    /// prove the v1-to-v2 upgrade instead.
     #[test]
     fn a_deno_written_database_migrates_to_a_no_op() {
         let dir = tempfile::tempdir().unwrap();
@@ -195,7 +158,7 @@ mod tests {
             assert_eq!(
                 after,
                 fresh_dump(),
-                "a Deno-written database and a fresh Rust migrate disagree"
+                "an existing database and a fresh migrate disagree"
             );
             Ok(())
         })

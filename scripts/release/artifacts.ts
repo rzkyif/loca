@@ -1,9 +1,9 @@
 // The serializable contract between a build runner and the publish coordinator.
 //
 // A full release builds each platform NATIVELY on its own CI runner, because the
-// speech sidecar (static sherpa-onnx) and the Tauri installers can't be
-// cross-compiled. Each runner is a dumb artifact producer: it builds into
-// dist/<triple>/… and emits a bundle.json describing what it produced. The
+// Tauri installers can't be cross-compiled. Each runner is a dumb artifact
+// producer: it builds into dist/<triple>/… and emits a bundle.json describing
+// what it produced. The
 // coordinator collects every runner's dist subtree, reads the bundles, and
 // composes + signs + uploads the unified manifests ONCE (composeCoreManifest et
 // al. carry no R2 carry-forward, so the coordinator must hold the full union
@@ -15,14 +15,8 @@
 
 import { dirname, join } from "@std/path";
 import { ensureDir } from "@std/fs/ensure-dir";
-import type { BinaryVariant, Triple } from "../../packages/loca-shared/src/domain/model.ts";
-import type {
-  BuildArtifact,
-  CoreBuildArtifacts,
-  HelperArtifact,
-  SpeechArtifact,
-  WorkerArtifact,
-} from "./core.ts";
+import type { Triple } from "../../packages/loca-shared/src/domain/model.ts";
+import type { BuildArtifact, CoreBuildArtifacts, HelperArtifact, WorkerArtifact } from "./core.ts";
 import { DIST_DIR, fail, sha256File } from "./lib.ts";
 import type { ReleaseChannel } from "./lib.ts";
 import type { InstallerAsset } from "./core-installers.ts";
@@ -31,17 +25,16 @@ export const BUNDLE_FILENAME = "bundle.json";
 
 // One produced file: its kind, the metadata the host's compose step needs, and
 // a dist-relative path to the bytes. `sha256` mirrors the producing build (over
-// the decompressed binary for core/helper, over the .tar.gz archive for speech),
-// so the host never re-hashes; it re-verifies after copying instead.
+// the decompressed binary), so the host never re-hashes; it re-verifies after
+// copying instead.
 export interface ArtifactRecord {
-  kind: "core" | "helper" | "speech";
+  kind: "core" | "helper";
   triple: Triple;
   filename: string;
   relPath: string; // relative to dist/, e.g. "aarch64-apple-darwin/loca-core"
   sha256: string;
   size: number;
   entryName?: string; // helpers only: the channel-suffixed manifest name
-  variant?: BinaryVariant; // speech only: the GPU build variant (cpu default)
 }
 
 // Everything one environment built for one set of triples. `workers` are
@@ -96,17 +89,6 @@ export function bundleCoreArtifacts(
       entryName: h.entryName,
     });
   }
-  for (const s of built.speech) {
-    records.push({
-      kind: "speech",
-      triple: s.triple,
-      filename: s.filename,
-      relPath: distRel(s.triple, s.filename),
-      sha256: s.sha256,
-      size: s.size,
-      variant: s.variant,
-    });
-  }
   return { version, channel, triples, records };
 }
 
@@ -151,7 +133,6 @@ export async function mergeCoreBundles(
 ): Promise<CoreBuildArtifacts> {
   const artifacts: BuildArtifact[] = [];
   const helpers: HelperArtifact[] = [];
-  const speech: SpeechArtifact[] = [];
   for (const bundle of bundles) {
     for (const rec of bundle.records) {
       const path = await reanchor(rec);
@@ -164,7 +145,7 @@ export async function mergeCoreBundles(
           sha256: rec.sha256,
           size: rec.size,
         });
-      } else if (rec.kind === "helper") {
+      } else {
         helpers.push({
           triple: rec.triple,
           entryName: rec.entryName ?? fail(`helper record missing entryName: ${rec.relPath}`),
@@ -173,19 +154,10 @@ export async function mergeCoreBundles(
           sha256: rec.sha256,
           size: rec.size,
         });
-      } else {
-        speech.push({
-          triple: rec.triple,
-          variant: rec.variant ?? "cpu",
-          filename: rec.filename,
-          path,
-          sha256: rec.sha256,
-          size: rec.size,
-        });
       }
     }
   }
-  return { artifacts, helpers, speech, workers };
+  return { artifacts, helpers, workers };
 }
 
 // ---------------------------------------------------------------------------

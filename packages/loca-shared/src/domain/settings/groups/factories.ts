@@ -1,7 +1,5 @@
-/**
- * Shared builders for repeated settings structures, so the group data files
- * stay declarative without copy-pasting near-identical field blocks.
- */
+// Shared builders for repeated settings structures, so the group data files
+// stay declarative without copy-pasting near-identical field blocks.
 
 import type { FieldCondition, SettingField, SettingSection } from "../types.ts";
 import { SECURE_URL_VALIDATION } from "../types.ts";
@@ -29,12 +27,9 @@ export interface ExternalModelSectionOpts {
   language?: boolean;
 }
 
-/** The GPU-acceleration override for the local speech binary. STT and TTS run in
- *  ONE `loca-core-speech` process, so both groups render this SAME field (same
- *  `speech.binaryBackend` id -> one persisted value); each passes its own
- *  `visibleWhen` so it shows under whichever engine is enabled. Auto picks the
- *  best build for the detected GPU; a concrete backend forces it (falling back
- *  to CPU when the platform doesn't offer it). Persisted to the core. */
+/** The GPU-acceleration override for the local speech engine. STT and TTS share
+ *  one engine, so both groups render this SAME field (one `speech.binaryBackend`
+ *  id, one persisted value) with their own `visibleWhen`. */
 export function speechBackendField(visibleWhen: FieldCondition): SettingField {
   return {
     id: "speech.binaryBackend",
@@ -44,8 +39,7 @@ export function speechBackendField(visibleWhen: FieldCondition): SettingField {
       "Which speech build to download and run for on-device voice. Auto picks the best for your GPU; choose CUDA to force the NVIDIA build, or CPU to stay off the GPU. Shared by Speech-to-Text and Text-to-Speech.",
     type: "select",
     defaultValue: "auto",
-    // CUDA is the only GPU speech build (NVIDIA on Linux/Windows); other GPUs run
-    // speech on CPU, so only these three options are offered.
+    // CUDA is the only GPU speech build, so other GPUs run speech on CPU.
     options: [
       { value: "auto", label: "Auto" },
       { value: "cpu", label: "CPU" },
@@ -55,9 +49,8 @@ export function speechBackendField(visibleWhen: FieldCondition): SettingField {
   };
 }
 
-/** The "External Provider" section every external-model group shares: an HTTPS
- *  base URL, a vault-stored API key, and a model name, plus optional context
- *  window / voice fields. Always persisted to the core. */
+/** The "External Provider" section every external-model group shares. Always
+ *  persisted to the core. */
 export function externalModelSection(opts: ExternalModelSectionOpts): SettingSection {
   const fields: SettingField[] = [
     {

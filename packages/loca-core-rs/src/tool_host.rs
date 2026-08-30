@@ -1,19 +1,13 @@
 //! The `ToolHost` adapter: the one type that knows about extensions, MCP and
 //! the LLM at once.
 //!
-//! **Orchestrator-owned, and it has to be.** `chat` declares [`ToolHost`] and
-//! must not import the three subsystems that answer it; none of those three can
-//! name the other two without a dependency edge that does not otherwise exist.
-//! So the join lives here, at the top level, next to [`crate::boot`] which is the
-//! only other place that knows how every package's handle is built. It mirrors
-//! the oracle's `packages/loca-core/src/host/deno-tool-host.ts`, which exists for
-//! the same reason.
+//! `chat` declares [`ToolHost`] and must not import the three subsystems that
+//! answer it, and none of those three can name the other two. So the join lives
+//! here, beside [`crate::boot`].
 //!
-//! There is deliberately **no policy in this file**. Every method is a single
-//! call into the package that owns the decision. If a method here starts
-//! branching, the branch belongs in the owning package: this type is a wiring
-//! harness, and a harness that decides things is a fourth place to look when
-//! behaviour surprises someone.
+//! There is deliberately **no policy in this file**: every method is a single
+//! call into the package that owns the decision. A branch that appears here
+//! belongs in the owning package.
 
 use std::collections::HashMap;
 
@@ -36,10 +30,9 @@ use crate::llm::{LlmEndpointConfig, Overrides, SingleShotOptions};
 pub struct HostedTools {
     extensions: Extensions,
     mcp: crate::mcp::Mcp,
-    /// For the phase-2 relevance pass, and nothing else. It runs on the
-    /// endpoint the turn hands in rather than resolving one, so no settings
-    /// handle is needed here: a second resolution is a second answer waiting to
-    /// happen.
+    /// For the phase-2 relevance pass alone. It runs on the endpoint the turn
+    /// hands in rather than resolving one, since a second resolution is a
+    /// second answer waiting to happen.
     llm: crate::llm::Llm,
 }
 
@@ -56,10 +49,9 @@ impl HostedTools {
 /// Translates one in-flight call from the extension supervisor's vocabulary into
 /// the orchestrator's.
 ///
-/// The two enums are near-identical by design and are still kept apart: `chat`
-/// would otherwise import `extensions::`, and the whole point of the seam is
-/// that the orchestrator runs against a core with no extension supervisor at all
-/// (`NoTools`), which is every mobile build.
+/// The two enums are near-identical and still kept apart, so `chat` never
+/// imports `extensions::` and can run against a core with no extension
+/// supervisor at all (`NoTools`).
 struct ControllerBridge(CallController);
 
 #[async_trait]
@@ -100,11 +92,10 @@ impl ToolCallController for ControllerBridge {
 
 /// The phase-2 completion, on the endpoint the turn is already using.
 ///
-/// Everything about the completion except where it runs was decided by the tool
-/// filter and travels in the request. What this adds is the one thing neither
-/// of the two packages can supply: `extensions::` names no LLM type at all, and
-/// `chat` holds the endpoint but must not know that a tool filter is what wants
-/// it.
+/// Everything except where it runs was decided by the tool filter and travels in
+/// the request. This adds the one thing neither package can supply:
+/// `extensions::` names no LLM type, and `chat` holds the endpoint but must not
+/// know a tool filter wants it.
 struct RoutedCompletion<'a> {
     llm: &'a crate::llm::Llm,
     endpoint: &'a LlmEndpointConfig,
@@ -113,9 +104,8 @@ struct RoutedCompletion<'a> {
 #[async_trait]
 impl Phase2Completion for RoutedCompletion<'_> {
     async fn complete(&self, req: Phase2Request) -> Result<String> {
-        // Unqueued, like every other utility completion. Queued, a filter
-        // deciding which tools a turn may use would wait behind the turn it is
-        // deciding for, which is a deadlock wearing the costume of slowness.
+        // Unqueued: a filter deciding which tools a turn may use would
+        // otherwise wait behind the turn it is deciding for.
         self.llm
             .single_shot(SingleShotOptions {
                 system_prompt: req.system_prompt,
@@ -144,11 +134,10 @@ fn log_level(level: LogLevel) -> ToolLogLevel {
 
 /// `None` for the one event the orchestrator has no shape for.
 ///
-/// [`CallEvent::StderrLog`] is a worker's raw stderr line. It reaches the core
-/// log through the supervisor's own path and is deliberately NOT forwarded into
-/// a chat turn: the orchestrator's `Log` variant is the tool's structured
-/// `tool.log`, which an extension author chose to emit, and putting a Deno stack
-/// trace in the same channel would put unowned text in front of the user.
+/// [`CallEvent::StderrLog`] is a worker's raw stderr line, which reaches the core
+/// log through the supervisor's own path and is not forwarded into a chat turn:
+/// the `Log` variant is the tool's structured `tool.log`, which an author chose
+/// to emit, and a stack trace in that channel is unowned text.
 fn tool_event(event: CallEvent) -> Option<ToolCallEvent> {
     Some(match event {
         CallEvent::Progress {
@@ -221,18 +210,14 @@ impl ToolHost for HostedTools {
     }
 
     async fn is_mcp_server(&self, id: &str) -> bool {
-        // `get` is the registry lookup, matching the oracle's
-        // `mcpRegistry().get(id) !== undefined` (`deno-tool-host.ts:32`). An
-        // error is not "yes": a DB failure must not route a tool call at the MCP
-        // client, which would report a confusing server error instead of running
-        // the extension tool.
+        // An error is not "yes": a database failure must not route a tool call
+        // at the MCP client instead of running the extension tool.
         self.mcp.get(id).await.is_ok()
     }
 
     async fn load_tool_embeddings(&self) -> HashMap<String, ToolEmbedding> {
-        // Two structurally identical types kept apart on purpose: the registry's
-        // is a storage row, the orchestrator's is what ranking consumes. The
-        // conversion is the seam.
+        // Two identical shapes kept apart: a storage row and what ranking
+        // consumes.
         self.extensions
             .registry()
             .load_all_embeddings()
@@ -254,10 +239,8 @@ impl ToolHost for HostedTools {
     // --- relevance -----------------------------------------------------------
 
     async fn filter_phase1(&self, query_vector: &[f32], options: Phase1Options) -> Phase1Result {
-        // `phase1_with` rather than `phase1`, because the always-available
-        // bypass is the caller's decision and the orchestrator carries it on
-        // `Phase1Options`. Using `phase1` would hard-code `true` and silently
-        // ignore the field.
+        // `phase1_with`, not `phase1`: the always-available bypass rides on
+        // `Phase1Options`, and `phase1` would hard-code it.
         let response = self
             .extensions
             .phase1_with(
@@ -267,8 +250,7 @@ impl ToolHost for HostedTools {
                 options.include_always_available,
             )
             .await;
-        // Ranking that fails is "nothing ranked", never "everything exposed":
-        // an error here must not widen the tool surface of a turn.
+        // Ranking that fails is "nothing ranked", never "everything exposed".
         match response {
             Ok(response) => Phase1Result {
                 candidates: response.candidates,
@@ -289,8 +271,7 @@ impl ToolHost for HostedTools {
         endpoint: &crate::llm::LlmEndpointConfig,
         reasoning_budget: u32,
     ) -> Vec<ToolDescriptor> {
-        // The LLM stops here: what crosses into `extensions::` is a prompt and
-        // an allowance, both of which the filter itself decided.
+        // The LLM stops here: a prompt and an allowance cross, nothing else.
         crate::extensions::tool_filter::phase2(
             &RoutedCompletion {
                 llm: &self.llm,
@@ -318,26 +299,23 @@ impl ToolHost for HostedTools {
         spec: ToolCallSpec,
         events: mpsc::UnboundedSender<ToolCallEvent>,
     ) -> Result<Box<dyn ToolCallController>> {
-        // The supervisor speaks `CallEvent`; the orchestrator speaks
-        // `ToolCallEvent`. A forwarding task rather than a shared channel type,
-        // so neither module has to name the other's enum.
+        // A forwarding task rather than a shared channel type, so neither
+        // module names the other's enum.
         let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<CallEvent>();
         tokio::spawn(async move {
             while let Some(event) = raw_rx.recv().await {
                 if let Some(mapped) = tool_event(event) {
-                    // The receiver going away means the turn ended; stop
-                    // forwarding rather than accumulating for nobody.
+                    // The receiver going away means the turn ended.
                     if events.send(mapped).is_err() {
                         break;
                     }
                 }
             }
         });
-        // `ToolCallSpec` carries the whole `Tool` because the orchestrator has
-        // it in hand; the supervisor wants the two fields it dispatches on and
-        // the chat context. The rest of the row is the supervisor's own, read
-        // from its registry, so passing it here would be handing the
-        // orchestrator's copy authority over what runs.
+        // The supervisor wants the two fields it dispatches on plus the chat
+        // context; the rest of the row is its own, read from its registry, so
+        // passing the orchestrator's copy would give it authority over what
+        // runs.
         let controller = self
             .extensions
             .start_tool_call(
@@ -370,8 +348,7 @@ impl ToolHost for HostedTools {
     // --- tokens --------------------------------------------------------------
 
     async fn resolve_mcp_tokens(&self, text: &str) -> McpTokens {
-        // Two identical shapes kept apart so `chat` names no `mcp::` type; the
-        // orchestrator's own doc on `McpTokens` says so.
+        // Two identical shapes kept apart so `chat` names no `mcp::` type.
         let resolved = self.mcp.resolve_tokens(text).await;
         McpTokens {
             block: resolved.block,
@@ -397,10 +374,9 @@ mod tests {
 
     #[test]
     fn every_call_event_reaches_the_turn_as_its_counterpart() {
-        // The compiler proves the match is exhaustive over the SOURCE and
-        // nothing proves each arm picked the right target. A `Progress` mapped
-        // to `Log` would compile, and would show a user a log line every time a
-        // tool reported progress.
+        // The compiler proves the match is exhaustive over the source and
+        // nothing proves each arm picked the right target: `Progress` mapped to
+        // `Log` compiles.
         assert!(matches!(
             tool_event(progress()),
             Some(ToolCallEvent::Progress {
@@ -458,9 +434,8 @@ mod tests {
 
     #[test]
     fn a_workers_raw_stderr_does_not_become_a_chat_log_line() {
-        // The one event with no counterpart. Forwarding it would put a Deno
-        // stack trace in the channel an extension author's own `tool.log`
-        // messages arrive on, in front of the user.
+        // The one event with no counterpart: forwarding it would put a stack
+        // trace in the channel an author's own `tool.log` arrives on.
         assert!(tool_event(CallEvent::StderrLog {
             line: "error: Uncaught (in promise) NotCapable".to_string(),
         })
@@ -469,8 +444,7 @@ mod tests {
 
     #[test]
     fn the_four_log_levels_keep_their_meaning() {
-        // A wire value, so a swap here mislabels every tool log line rather
-        // than failing anything.
+        // A wire value, so a swap mislabels every tool log line silently.
         assert_eq!(log_level(LogLevel::Debug), ToolLogLevel::Debug);
         assert_eq!(log_level(LogLevel::Info), ToolLogLevel::Info);
         assert_eq!(log_level(LogLevel::Warn), ToolLogLevel::Warn);

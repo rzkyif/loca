@@ -1,10 +1,8 @@
 //! Child-process behaviour cannot be asserted without a child, so this suite
 //! spawns real ones.
 //!
-//! Every test below was watched go red against the mutation named in its
-//! comment before being trusted (D-015). Several of them look like they assert
-//! a language default and do not: `env_clear` and the output pumps are both
-//! things whose absence produces a plausible-looking pass elsewhere.
+//! Each test names the mutation it was watched go red against. Several look
+//! like they assert a language default and do not.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -43,6 +41,22 @@ fn snapshot(kind: SidecarKind, status: SidecarStatus) -> SidecarSnapshot {
     }
 }
 
+/// `GET /api/v1/sidecars/status` through the real slice, optionally bearing a
+/// token the context's `StubAuth` knows.
+async fn status_route(manager: Arc<Manager>, bearer: Option<&str>) -> axum::response::Response {
+    let ctx = crate::transport::testing::context_with(Arc::new(
+        crate::transport::testing::StubAuth::new().with_client("t0ken", "client-a"),
+    ));
+    let mut request = Request::builder().uri("/api/v1/sidecars/status");
+    if let Some(token) = bearer {
+        request = request.header("authorization", format!("Bearer {token}"));
+    }
+    super::routes::routes(&ctx, manager)
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
+
 /// Fails the test rather than hanging the suite: every wait here is supposed to
 /// return promptly, and an undrained pipe is exactly the bug that would make
 /// one never return.
@@ -55,12 +69,8 @@ async fn within<T>(what: &str, secs: u64, f: impl std::future::Future<Output = T
 
 // --- process -----------------------------------------------------------------
 
-/// Mutation: delete `env_clear()` in `process::spawn`. The child then inherits
-/// the whole environment and the first assertion fails, naming the leaked key.
-///
-/// Unix only because it needs a program that prints its environment and adds
-/// nothing of its own; `cmd.exe` seeds several variables by itself. The
-/// mechanism under test is `env_clear`, which is not platform-specific.
+/// Mutation: delete `env_clear()` in `process::spawn`. Unix only because it
+/// needs a program that prints its environment and adds nothing of its own.
 #[cfg(unix)]
 #[tokio::test]
 async fn the_parent_environment_is_not_inherited() {
@@ -77,8 +87,7 @@ async fn the_parent_environment_is_not_inherited() {
         "the child saw the core's environment: {leaked:?}",
     );
 
-    // And what IS named arrives, so the first assertion is not passing because
-    // the spawn silently produced nothing.
+    // And what IS named arrives, so the assertion above is not vacuous.
     let child = manager
         .spawn(Spawn::new("env-named", "/usr/bin/env").env("LOCA_TEST_MARKER", "present"))
         .unwrap();
@@ -87,12 +96,8 @@ async fn the_parent_environment_is_not_inherited() {
     assert_eq!(child.recent_output(), vec!["LOCA_TEST_MARKER=present"]);
 }
 
-/// The pipe-deadlock guard, and the reason the output pumps are spawned before
-/// anything awaits the child.
-///
 /// Mutation: drop the `relay` calls in `process::spawn`. A pipe fills at ~64 KB,
-/// the child blocks on its next write, `wait` never returns, and this fails on
-/// the timeout instead of hanging the suite.
+/// the child blocks on its next write, and `wait` never returns.
 #[tokio::test]
 async fn a_chatty_child_does_not_deadlock_the_wait() {
     let manager = Manager::new();
@@ -109,20 +114,12 @@ async fn a_chatty_child_does_not_deadlock_the_wait() {
     assert_eq!(child.recent_output().len(), 10);
 }
 
-/// The exit message is the child's own last words, not a bare status line.
-///
 /// Mutation: compose the message from an empty ring in `Child::settle`. The
 /// caller then reports "exited with code 3" for a child that said exactly why.
 ///
-/// **What this test does NOT guard**, stated because the comment that claimed
-/// it did would have been worse than none: `settle` joins the output pumps
-/// BEFORE reading the ring, because on a multi-threaded runtime `wait` can
-/// return while another worker still holds the child's final write. Moving the
-/// read back before the join leaves this test green, with a 2 MB backlog ahead
-/// of the marker and across repeated runs: the pump always wins the race on a
-/// current-thread test runtime. Forcing it would mean a `cfg(test)` delay
-/// inside the read loop, which is production code shaped by a test. The
-/// ordering stays because it is correct and free, not because this proves it.
+/// This does NOT guard `settle` joining the pumps before reading the ring:
+/// moving the read earlier stays green here, because the pump always wins that
+/// race on a current-thread runtime.
 #[tokio::test]
 async fn the_exit_message_carries_the_childs_last_line() {
     let manager = Manager::new();
@@ -157,10 +154,8 @@ async fn the_ring_keeps_the_last_ten_lines_in_order() {
     assert_eq!(child.recent_output(), expected);
 }
 
-/// A child that never emits a newline must cost one capped line, not the heap.
-///
 /// Mutation: remove the `MAX_LINE_BYTES` branch in `relay`. The whole 1.5 MB is
-/// buffered and the assertion on the capped length fails.
+/// buffered and the capped-length assertion fails.
 #[tokio::test]
 async fn a_line_with_no_newline_is_capped_rather_than_buffered() {
     let manager = Manager::new();
@@ -181,12 +176,9 @@ async fn a_line_with_no_newline_is_capped_rather_than_buffered() {
     assert_eq!(lines[0].len(), MAX_LINE_BYTES + " [truncated]".len());
 }
 
-/// Mutation: drop the SIGKILL escalation in `Child::terminate` and only send
-/// SIGTERM. The child ignores it and `terminate` waits forever, so this fails on
-/// the harness timeout.
-///
-/// Takes the full five-second grace window by construction: shortening it would
-/// mean making the constant injectable, which is API surface added for a test.
+/// Mutation: drop the SIGKILL escalation in `Child::terminate`. The child
+/// ignores SIGTERM and `terminate` waits forever. Takes the full five-second
+/// grace window: shortening it means API surface added for a test.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_child_that_ignores_sigterm_is_killed() {
@@ -213,10 +205,9 @@ async fn a_child_that_ignores_sigterm_is_killed() {
         elapsed >= Duration::from_secs(5),
         "escalated before the grace window elapsed: {elapsed:?}",
     );
-    // Grace, then the kill, then one shared drain budget. `sleep` inherited the
-    // pipes and outlives the shell, so the pumps never see EOF and always spend
-    // that budget in full: the ceiling here is what proves the budget is shared
-    // across pipes rather than spent per pipe.
+    // Grace, kill, then one shared drain budget. `sleep` inherited the pipes
+    // and outlives the shell, so the pumps always spend it in full: this
+    // ceiling is what proves the budget is shared rather than per pipe.
     assert!(
         elapsed < Duration::from_secs(8),
         "escalation took too long: {elapsed:?}",
@@ -240,9 +231,8 @@ async fn shutdown_stops_a_child_that_is_still_running() {
     assert!(exit.code.is_some() || exit.signal.is_some());
 }
 
-/// The caller can take a stream instead, which is what D12 needs for its
-/// NDJSON protocol. Mutation: return `None` from `take_stdout`, or pipe the
-/// stream into `relay` regardless of the mode.
+/// Mutation: return `None` from `take_stdout`, or pipe the stream into `relay`
+/// regardless of the mode.
 #[tokio::test]
 async fn a_piped_stream_is_handed_over_instead_of_relayed() {
     use tokio::io::AsyncReadExt as _;
@@ -274,17 +264,11 @@ fn inherited_reads_only_the_named_keys() {
 
 // --- registry ----------------------------------------------------------------
 
-/// Mutation: swap the `BTreeMap` in `Inner::states` for a `HashMap`. The order
-/// then depends on the hash seed, `transport::status` compares the subsystem
-/// list positionally, and every recompute looks like a change.
+/// Mutation: swap the `BTreeMap` in `Inner::states` for a `HashMap`. Order then
+/// depends on the hash seed and every recompute looks like a change.
 ///
-/// Repeated over fresh managers, and not because ordering is flaky. A single
-/// three-entry `HashMap` came out in ascending order by coincidence and passed
-/// this test with the guarantee removed, which is precisely the shape D-015
-/// warns about. `RandomState` reseeds per instance, so each iteration is a new
-/// draw: all four kinds inserted in descending order have a 1-in-24 chance of
-/// coming back ascending by luck, and thirty-two independent draws take that to
-/// nothing.
+/// Repeated over fresh managers because `RandomState` reseeds per instance: one
+/// draw can come back ascending by luck, thirty-two cannot.
 #[test]
 fn published_snapshots_come_back_in_kind_order() {
     let ascending = vec![
@@ -320,12 +304,8 @@ fn an_unpublished_kind_reads_disabled_and_occupies_no_row() {
     assert!(manager.statuses().is_empty(), "clear must drop the row");
 }
 
-/// Mutation: remove the `same()` guard in `publish`. The second call then
-/// reports a change and recomputes the aggregate for nothing.
-///
-/// The aggregator dedupes too, so this guard is an optimisation rather than a
-/// correctness property; returning the bool is what makes it assertable instead
-/// of invisible.
+/// Mutation: remove the `same()` guard in `publish`. The aggregator dedupes
+/// too, so this is an optimisation the returned bool makes assertable.
 #[test]
 fn republishing_an_identical_snapshot_is_not_a_change() {
     let manager = Manager::new();
@@ -335,11 +315,8 @@ fn republishing_an_identical_snapshot_is_not_a_change() {
     assert!(manager.publish(snapshot(SidecarKind::Llama, SidecarStatus::Error)));
 }
 
-/// The wiring test: a subsystem change has to reach the aggregate status, or
+/// Mutation: drop the `recompute()` call in `publish`. No frame arrives, so
 /// the core bar never moves off whatever it last showed.
-///
-/// Mutation: drop the `recompute()` call in `publish`. No frame arrives and
-/// this fails on the timeout.
 #[tokio::test]
 async fn a_published_change_recomputes_the_core_status() {
     let manager = Arc::new(Manager::new());
@@ -361,15 +338,13 @@ async fn a_published_change_recomputes_the_core_status() {
 
 // --- metrics -----------------------------------------------------------------
 
-/// Mutation: report a zeroed sample for a pid that is gone instead of omitting
-/// it. One dead child then shows a row claiming it uses no memory, which reads
-/// as "running and idle" rather than "not running".
+/// Mutation: report a zeroed sample for a pid that is gone. A dead child then
+/// reads as "running and idle" rather than "not running".
 #[test]
 fn metrics_sample_this_process_and_skip_a_dead_pid() {
     let manager = Manager::new();
     let me = std::process::id();
-    // Far above any platform's pid ceiling, so it cannot collide with a real
-    // process on the machine running the suite.
+    // Far above any platform's pid ceiling, so it cannot collide.
     let gone = u32::MAX - 1;
     let samples = manager.metrics().sample(&[me, gone]);
 
@@ -384,41 +359,17 @@ fn metrics_sample_this_process_and_skip_a_dead_pid() {
 /// pids and memory figures to an unauthenticated caller.
 #[tokio::test]
 async fn the_status_route_needs_a_bearer() {
-    let ctx = crate::transport::testing::context();
-    let router = super::routes::routes(&ctx, Arc::new(Manager::new()));
-    let response = router
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/sidecars/status")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = status_route(Arc::new(Manager::new()), None).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// Mutation: take the pid set from the request, or drop the metrics merge. The
-/// core row is what the Services field's "Core Service" line reads.
+/// Mutation: take the pid set from the request, or drop the metrics merge.
 #[tokio::test]
 async fn the_status_route_reports_the_core_process_and_the_published_rows() {
-    let ctx = crate::transport::testing::context_with(Arc::new(
-        crate::transport::testing::StubAuth::new().with_client("t0ken", "client-a"),
-    ));
     let manager = Arc::new(Manager::new());
     manager.publish(snapshot(SidecarKind::Tool, SidecarStatus::Running));
 
-    let router = super::routes::routes(&ctx, Arc::clone(&manager));
-    let response = router
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/sidecars/status")
-                .header("authorization", "Bearer t0ken")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = status_route(manager, Some("t0ken")).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();

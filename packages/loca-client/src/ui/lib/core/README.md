@@ -22,7 +22,7 @@ a loopback core than a remote one), and a coarse `ConnectionState` (`connecting`
 plus the current-core pointer live in their own `cores.json` (this module is the
 file's single owner; settings live separately), the bearer tokens in the OS
 keychain. It owns the currently-selected core and rebuilds the `CoreClient` plus
-all per-domain APIs on switch. WS and connection-state listeners are persistent:
+the per-domain API object on switch. WS and connection-state listeners are persistent:
 they survive core switches because `select()` re-binds every registered listener
 onto the freshly-built client. The settings store hooks these notifications to
 load the selected core's settings baseline and follow `settings.updated`
@@ -74,27 +74,21 @@ already-paired core (mint a code, list/revoke/rotate clients) through the pinned
 `CoreClient`; the free functions (`probeCore`, `mintCodeWithAdminToken`,
 `pairWithCode`) cover the unpaired flow where no pin exists yet.
 
-## Per-domain APIs
+## Per-domain APIs ([`api.ts`](api.ts))
 
-| Module                               | Covers                                                                             |
-| ------------------------------------ | ---------------------------------------------------------------------------------- |
-| [`sessions.ts`](sessions.ts)         | Session CRUD, message append/patch.                                                |
-| [`chat.ts`](chat.ts)                 | Stream control: start, interrupt, subscribe (resume), tool response.               |
-| [`models.ts`](models.ts)             | Model catalog, downloads, presets.                                                 |
-| [`binaries.ts`](binaries.ts)         | Binary manifest, check/install/update.                                             |
-| [`requirements.ts`](requirements.ts) | Required files, download missing.                                                  |
-| [`extensions.ts`](extensions.ts)     | Extension search/download/grants, filtering.                                       |
-| [`settings.ts`](settings.ts)         | Sparse core settings load/patch (live-synced via the `settings.updated` WS frame). |
-| [`sidecars.ts`](sidecars.ts)         | Sidecar snapshots plus CPU/RSS sampling.                                           |
-| [`llm.ts`](llm.ts)                   | Autocorrect, transcription merge.                                                  |
-| [`stt.ts`](stt.ts)                   | Speech-to-Text transcription and status.                                           |
-| [`tts.ts`](tts.ts)                   | TTS load/unload, synthesize, voices.                                               |
-| [`update.ts`](update.ts)             | Core self-update check and apply.                                                  |
-| [`storage.ts`](storage.ts)           | Core on-disk storage tree, clear/delete.                                           |
+`buildApi(client)` returns the whole reachable surface in one object, grouped by
+domain: `sessions` (CRUD, message append/patch), `chat` (stream control: start,
+interrupt, subscribe, tool response), `models`, `binaries`, `requirements`,
+`sidecars`, `storage`, `extensions`, `memories`, `mcp`, `scheduledPrompts`,
+`greetings`, `stt`, `tts`, `llm`, `settings` (live-synced via the
+`settings.updated` WS frame), `pairing`, `update`. Each entry is a thin map from
+a call to a REST path or a WS frame, so the whole surface reads in one file.
+`cores().select()` rebuilds it against the new client and `cores().api()` hands
+it out; nothing constructs one itself.
 
 ## Client-side storage ([`client-storage.ts`](client-storage.ts))
 
-Mirrors the core `StorageApi` shape (get / deletePaths / clearCategory) so the
+Mirrors the core `storage` API shape (get / deletePaths / clearCategory) so the
 StorageField component can drive either side. The tree comes from a Tauri
 command; deletes go through the platform layer. The settings "clear" only
 empties `settings.json`: the paired-cores registry (`cores.json`) and snippets

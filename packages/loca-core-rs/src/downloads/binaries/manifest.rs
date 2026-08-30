@@ -1,68 +1,29 @@
 //! `binaries.json`: fetch it, verify its Ed25519 signature, cache it, and refuse
 //! a replay.
 //!
-//! # Two published shapes, and both ship
+//! An entry is **pinned** (`{ version, platforms }`, what STABLE publishes, with
+//! every URL and sha256 resolved at release time) or a **resolver**
+//! (`{ resolver: { repo, assets, pinnedTag? } }`, what LATEST publishes and a
+//! dev core builds in-code, where the concrete release is resolved at runtime
+//! against GitHub's published digest). [`BinaryManifestEntry::Unknown`] catches
+//! anything else, so a future kind with a third shape resolves to "not
+//! available for this host" rather than failing the whole document.
 //!
-//! An entry is one of two things, decided by whether it carries a `resolver`
-//! key (`domain/model.ts:227`, `isResolverEntry`):
+//! **The cache is never a trust anchor.** The signature is re-verified on every
+//! READ, not only on fetch: the file is one any local process can rewrite, and
+//! verifying on the way out makes a tampered cache indistinguishable from none.
 //!
-//! - **Pinned**, `{ version, platforms: { <triple>: <target-or-variant-map> } }`.
-//!   What the STABLE channel publishes: every URL and sha256 resolved at release
-//!   time, so the signed manifest commits to the exact bytes and installing
-//!   needs no third party.
-//! - **Resolver**, `{ resolver: { repo, assets: { <triple>: <pattern-or-map> },
-//!   pinnedTag? } }`. What the LATEST channel publishes, and what a dev core
-//!   builds in-code: the signed manifest commits to the repo and the patterns,
-//!   and the concrete release is resolved at runtime against GitHub's published
-//!   sha256 digest.
+//! **The signature covers the BYTES.** Verification canonicalises the parsed
+//! JSON document minus `signature`, never a re-serialisation of
+//! [`BinaryManifest`], which does not model everything a manifest may carry: a
+//! re-encode would drop fields and make schema drift read as an attack.
 //!
-//! Both channels ALSO carry the self-hosted `loca-core-speech` entry in the
-//! pinned shape on every channel (`scripts/release/core.ts:875`), so "latest
-//! means resolver" is not true of a whole document, only of an entry.
+//! **Replay is refused.** A validly-signed OLDER manifest is still validly
+//! signed, so a forced refresh returning a strictly-older `version` keeps the
+//! cache. Same-version is accepted: a re-publish is not a rollback.
 //!
-//! # An entry this core cannot read is not a manifest this core cannot read
-//!
-//! [`BinaryManifestEntry::Unknown`] catches anything that is neither shape. The
-//! oracle validates the document's envelope and never looks inside `binaries`
-//! (`manifest.ts:106-127`), so a future kind with a third shape leaves it
-//! working and would have failed every route here. An unknown entry resolves to
-//! "not available for this host", which is the same answer the oracle gives for
-//! a triple it does not cover.
-//!
-//! # The cache is a performance optimisation, never a trust anchor
-//!
-//! The signature is re-verified on **every read of the cache**, not only on
-//! fetch. A cache that is trusted because it is ours is a file any local process
-//! can rewrite, so verifying only on the way in would make the on-disk copy a
-//! second, weaker trust root. Verifying on the way out means a tampered cache is
-//! indistinguishable from no cache, which is the correct outcome.
-//!
-//! # The signature covers the BYTES, not this struct
-//!
-//! Verification canonicalises the parsed JSON document minus `signature`, never
-//! a re-serialisation of [`BinaryManifest`]. D6 explains why at
-//! `models/catalog.rs:111-117` and it is sharper here: this struct deliberately
-//! does not model everything a manifest may carry, so re-encoding it would drop
-//! fields out of the message and every deployed core would report a schema
-//! addition as `SignatureInvalid`, which reads as an attack rather than as
-//! drift.
-//!
-//! # The replay refusal
-//!
-//! A validly-signed OLDER manifest is still validly signed. Serving one would
-//! roll binaries back to a release with a fixed vulnerability, so a forced
-//! refresh that returns a strictly-older `version` keeps the cached manifest
-//! instead. The signature covers `version`, which is what makes the comparison
-//! meaningful rather than something an attacker can set freely. Same-version is
-//! ACCEPTED (the comparison is `< 0`, matching `manifest.ts:54`): a re-publish
-//! at the same version is a normal republish, not a rollback.
-//!
-//! # Dev builds no manifest and fetches nothing
-//!
-//! A dev core runs from source, so there is no published `manifests/dev/
-//! binaries.json` to fetch or verify. The resolver config compiled into the
-//! build IS the trust anchor there, so the manifest is built in-code, offline.
-//! That is also what keeps the consent rule intact for a dev boot.
+//! A dev core builds its manifest in-code and fetches nothing: it runs from
+//! source, so the resolver config compiled into the build IS the trust anchor.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -81,16 +42,10 @@ use crate::config::SIGNING_PUBLIC_KEY;
 
 const SIG_ALGO_LABEL: &str = "ed25519-base64";
 
-/// The key every verification here uses.
-///
-/// A test can point it at a throwaway keypair, which is what lets the replay
-/// refusal, the cache short-circuit and the tampered-cache refusal be driven
-/// through the REAL [`load_manifest`] rather than through a copy of it that
-/// takes a key parameter. That copy is how the replay refusal came to have no
-/// test at all: the test asserted the comparison the branch is built on and
-/// never called the function containing the branch, so deleting the branch left
-/// the suite green. Compiled out of every production build, so nothing a caller
-/// supplies can reach it.
+/// The key every verification here uses. A test can point it at a throwaway
+/// keypair, so the replay refusal, the cache short-circuit and the
+/// tampered-cache refusal are driven through the REAL [`load_manifest`] rather
+/// than a copy that takes a key. Compiled out of production builds.
 #[cfg(test)]
 static TEST_PUBLIC_KEY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
@@ -106,9 +61,8 @@ fn trusted_public_key() -> String {
     SIGNING_PUBLIC_KEY.to_string()
 }
 
-/// The variant every core installs. GPU builds exist upstream and are selected
-/// by the Deno core from detected hardware; this core installs one kind
-/// (`deno`), which publishes one variant.
+/// The variant every core installs: this core installs one kind (`deno`), which
+/// publishes one variant.
 pub const CPU_VARIANT: &str = "cpu";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -124,8 +78,8 @@ pub struct BinaryManifest {
     pub signature: String,
 }
 
-/// One kind's entry. See the module docs: the two published shapes plus a
-/// catch-all that keeps one unreadable entry from failing the document.
+/// One kind's entry: the two published shapes, plus a catch-all that keeps one
+/// unreadable entry from failing the document.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum BinaryManifestEntry {
@@ -167,8 +121,7 @@ pub enum VariantPlatform {
 }
 
 impl VariantPlatform {
-    /// The target for `variant`, normalising both shapes the way
-    /// `platformVariants` (`domain/model.ts:152-156`) does.
+    /// The target for `variant`, normalising both shapes.
     pub fn variant(&self, variant: &str) -> Option<&PinnedTarget> {
         match self {
             Self::One(target) => (variant == CPU_VARIANT).then_some(target),
@@ -182,9 +135,8 @@ impl BinaryManifestEntry {
     /// resolving anything upstream.
     ///
     /// A pinned entry knows its version; a resolver entry does not until it
-    /// asks GitHub, so it reports the installed one or the literal `latest`,
-    /// which is `manager.ts:293-297`. Reaching out to answer a plain list is
-    /// what the consent rule forbids.
+    /// asks GitHub, so it reports the installed one or the literal `latest`.
+    /// Reaching out to answer a plain list is what the consent rule forbids.
     pub fn version_without_network(&self, installed: Option<&str>) -> String {
         match self {
             Self::Pinned { version, .. } => version.clone(),
@@ -231,7 +183,7 @@ pub async fn load_manifest(
     }
     let (fetched, raw) = fetch_and_verify(net, manifest_url, cancel).await?;
     if let Some(cached) = cached {
-        // Strictly older only. See the module docs on why same-version passes.
+        // Strictly older only: a same-version republish is not a rollback.
         if compare_semver(&fetched.version, &cached.version) == std::cmp::Ordering::Less {
             tracing::warn!(
                 target: "loca::downloads",
@@ -249,13 +201,11 @@ pub async fn load_manifest(
 /// The cached manifest, or `None` for anything that is not a good one.
 ///
 /// Every failure collapses to `None`: missing, unreadable, malformed, or
-/// **failing signature verification**. See the module docs: a tampered cache has
-/// to be indistinguishable from no cache.
+/// **failing signature verification**, so a tampered cache is indistinguishable
+/// from no cache.
 ///
-/// This is also the whole of what `GET /api/v1/binaries` may consult, which is
-/// why it is public: a "cached, or nothing" read cannot be expressed as
-/// `load_manifest(force: false)`, because that falls through to a fetch on every
-/// one of the four ways a cache read returns `None`.
+/// Public because it is the whole of what `GET /api/v1/binaries` may consult:
+/// `load_manifest(force: false)` falls through to a fetch on all four.
 pub async fn cached_manifest(cache_dir: &Path) -> Option<BinaryManifest> {
     let text = tokio::fs::read_to_string(cache_path(cache_dir))
         .await
@@ -330,10 +280,8 @@ pub fn parse_manifest(value: &Value) -> Result<BinaryManifest> {
 /// Parse `raw` and verify its Ed25519 signature over the canonical form of the
 /// document **minus** `signature`.
 ///
-/// The message is built from the parsed JSON, never from [`BinaryManifest`]. See
-/// the module docs: re-encoding the struct would silently drop any field this
-/// core does not model, and a schema addition would then read as a forged
-/// signature on every deployed core.
+/// The message is built from the parsed JSON, never from [`BinaryManifest`],
+/// which would drop any field this core does not model.
 pub fn verify_document(raw: &str, public_key_b64: &str) -> Result<BinaryManifest> {
     let invalid = |what: String| AppError::new(ErrorCode::ManifestFetchFailed, what);
     let mut document: Value = serde_json::from_str(raw)
@@ -361,16 +309,14 @@ async fn write_cached(cache_dir: &Path, raw: &str) -> Result<()> {
     let path = cache_path(cache_dir);
     let tmp = path.with_extension("json.tmp");
     // Written to a sibling and renamed, so a crash mid-write cannot leave a
-    // truncated file that the next boot reads as a tampered cache.
+    // truncated file the next boot reads as a tampered cache.
     tokio::fs::write(&tmp, raw).await?;
     tokio::fs::rename(&tmp, &path).await?;
     Ok(())
 }
 
-/// Signing and trust-root swapping for tests, here rather than in `mod tests`
-/// because the installer's tests need to stage a cache this module's PRODUCTION
-/// verifier accepts. A test that stages one the production path would reject
-/// proves nothing about the production path.
+/// Signing and trust-root swapping for tests, public so the installer's tests
+/// can stage a cache this module's PRODUCTION verifier accepts.
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 pub mod test_trust {
@@ -383,8 +329,7 @@ pub mod test_trust {
     static TRUST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Points [`super::trusted_public_key`] at a throwaway keypair for the life
-    /// of the guard. Serialised, because the key is process-global and cargo
-    /// runs tests in threads.
+    /// of the guard. Serialised, since the key is process-global.
     pub struct Trusted {
         signing: SigningKey,
         _guard: std::sync::MutexGuard<'static, ()>,
@@ -409,8 +354,8 @@ pub mod test_trust {
             }
         }
 
-        /// Sign `document` the way the release build does: Ed25519 over the
-        /// canonical form of everything except `signature`.
+        /// Sign `document` as the release build does: Ed25519 over the
+        /// canonical form of everything but `signature`.
         pub fn sign(&self, document: Value) -> String {
             sign_with(&self.signing, document)
         }
@@ -447,7 +392,7 @@ mod tests {
     };
 
     /// A throwaway keypair, so the tests exercise the real verification path
-    /// rather than a stub, without needing the production private key.
+    /// without the production private key.
     fn keypair() -> (SigningKey, String) {
         let signing = SigningKey::from_bytes(&[7u8; 32]);
         let public =
@@ -471,11 +416,10 @@ mod tests {
 
     #[test]
     fn the_documents_the_release_actually_publishes_parse() {
-        // The review's worst finding: every earlier test hand-built the shape
-        // the parser already expected, so none of them could see that neither
-        // SHIPPING channel publishes it. Stable publishes `{ version,
-        // platforms }` with no `resolver` key at all, and latest publishes
-        // `assets` as a per-triple MAP.
+        // The two shapes as PUBLISHED: stable is `{ version, platforms }` with
+        // no `resolver` key at all, and latest publishes `assets` as a
+        // per-triple map. A fixture built from the parser's expectations could
+        // not see either being wrong.
         for (channel, document) in [
             ("stable", published_stable_manifest()),
             ("latest", published_latest_manifest()),
@@ -527,12 +471,11 @@ mod tests {
 
     #[test]
     fn the_gpu_variant_matrix_survives_both_shapes() {
-        // `llama-server` is the entry that exercises every corner of the schema:
-        // a bare string for a single-variant triple, a per-variant map
-        // otherwise, and `{ asset, extra }` / `extras` for the companion
-        // archives a cuda build needs. This core installs none of it, and it
-        // still has to PARSE, because one unreadable entry must not fail the
-        // document that also carries `deno`.
+        // `llama-server` exercises every corner of the schema: a bare string
+        // for a single-variant triple, a per-variant map otherwise, and
+        // `{ asset, extra }` / `extras` for a cuda build's companions. This
+        // core installs none of it and must still PARSE it, or one unreadable
+        // entry fails the document that also carries `deno`.
         let mut latest = published_latest_manifest();
         latest["signature"] = serde_json::json!("x");
         let latest = parse_manifest(&latest).unwrap();
@@ -574,10 +517,8 @@ mod tests {
 
     #[test]
     fn an_entry_in_neither_shape_does_not_fail_the_document() {
-        // The oracle never looks inside `binaries` (`manifest.ts:106-127`), so
-        // a kind published in a third shape leaves it working. Failing the
-        // whole load here would take `deno` down with it and stop every tool
-        // worker on a core that had no reason to care.
+        // Failing the whole load over a third-shape kind would take `deno`
+        // down with it and stop every tool worker.
         let mut document = published_stable_manifest();
         document["signature"] = serde_json::json!("x");
         document["binaries"]["something-new"] = serde_json::json!({ "channels": ["beta"] });
@@ -647,8 +588,7 @@ mod tests {
     #[test]
     fn the_signed_version_is_authenticated_alongside_the_binaries() {
         // The signature covers `version`, which is what makes the replay
-        // comparison meaningful: an attacker who could edit the version freely
-        // could defeat the refusal by claiming to be newer.
+        // comparison meaningful rather than freely editable.
         let (signing, public) = keypair();
         let raw = signed(stable_at("1.2.3"), &signing);
         let mut document: Value = serde_json::from_str(&raw).unwrap();
@@ -670,10 +610,9 @@ mod tests {
 
     #[test]
     fn a_field_this_core_does_not_model_still_verifies() {
-        // The finding this fixes: canonicalising a re-serialisation of the
-        // struct drops whatever the struct does not model, so the FIRST field a
-        // future release adds breaks verification on every deployed core and
-        // reads as an attack rather than as schema drift.
+        // Canonicalising a re-serialisation of the struct drops whatever it
+        // does not model, so the first field a future release adds would read
+        // as an attack rather than as schema drift.
         let (signing, public) = keypair();
         let mut document = stable_at("1.2.3");
         document["publishedAtMs"] = serde_json::json!(1_770_000_000_000i64);
@@ -709,8 +648,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_dev_core_builds_its_manifest_with_no_network() {
-        // The consent rule at the manifest layer: a dev boot resolves from the
-        // config compiled into it and must not reach out at all.
+        // A dev boot resolves from the config compiled into it and must not
+        // reach out at all.
         let net = Net::new().unwrap();
         let cancel = CancellationToken::new();
         let dir = tempfile::tempdir().unwrap();
@@ -768,8 +707,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_tampered_cache_is_ignored() {
-        // The cache is re-verified on every READ. A cache trusted because it is
-        // ours is a file any local process can rewrite.
+        // Re-verified on every READ: the file is one any local process can
+        // rewrite.
         let _trust = Trusted::new();
         let dir = tempfile::tempdir().unwrap();
         let raw = _trust.sign(stable_at("1.2.3"));
@@ -801,12 +740,9 @@ mod tests {
     #[tokio::test]
     async fn an_older_signed_manifest_is_refused_and_the_cache_kept() {
         // A validly-signed OLDER manifest is still validly signed, so serving
-        // it would roll binaries back to a release with a fixed vulnerability.
-        //
-        // Driven end to end through the real `load_manifest`. The previous
-        // version of this test asserted `compare_semver` directly and never
-        // called the function whose refusal it named, so the branch could be
-        // deleted with `if false &&` and the suite stayed green (mutation 46).
+        // it rolls binaries back to a release with a fixed vulnerability.
+        // Driven end to end through the real `load_manifest`: asserting
+        // `compare_semver` alone never reaches the branch that refuses.
         let _trust = Trusted::new();
         let dir = tempfile::tempdir().unwrap();
         write_cached(dir.path(), &_trust.sign(stable_at("1.10.0")))
@@ -842,9 +778,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_same_version_manifest_is_accepted_rather_than_refused() {
-        // The comparison is `< 0`, not `<= 0` (`manifest.ts:54`). A re-publish
-        // at the same version is a republish, not a rollback, and refusing it
-        // would pin a core to whatever it happened to cache first.
+        // The comparison is `< 0`, not `<= 0`: a same-version republish is not
+        // a rollback, and refusing it would pin a core to its first cache.
         let _trust = Trusted::new();
         let dir = tempfile::tempdir().unwrap();
         write_cached(dir.path(), &_trust.sign(stable_at("1.2.3")))

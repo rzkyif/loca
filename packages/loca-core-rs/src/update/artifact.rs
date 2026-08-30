@@ -1,37 +1,12 @@
 //! Download an artifact, decompress it, hash it as it streams, and place it.
+//! Shared by the update path and the fresh-install path so both run one trust path.
 //!
-//! `downloadAndVerify` (`self-updater.ts:507-549`), which the fresh-install
-//! path deliberately shares (`install/fetch-verify.ts:1-8`) so a first install
-//! and an update run one audited trust path rather than two.
-//!
-//! # The digest is over the DECOMPRESSED bytes
-//!
-//! Core artifacts ship gzip-compressed (`.gz` URLs) and the manifest's `sha256`
-//! is over the file that comes OUT (`scripts/release/core.ts:606-609`). So the
-//! decompression happens before the hash, not after the verify, and hashing the
-//! bytes off the wire would fail every artifact on every release. It is a
-//! one-line ordering with no local symptom, which is why it has a test of its
-//! own rather than being covered incidentally by the happy path.
-//!
-//! The built-in extension tarball is the exception and hashes as-is
-//! (`bootstrap.ts:153-159`), which is why [`Decompress`] is a parameter rather
-//! than a constant.
-//!
-//! # Nothing is held in memory
-//!
-//! The core binary is around 100 MB. The decoder is drained per chunk and the
-//! digest is incremental, so peak memory is one chunk plus whatever one chunk
-//! inflates to, not the artifact.
-//!
-//! # The fixed `.tmp`
-//!
-//! `<out>.tmp`, matching the oracle, and not the unique suffix `files::write_*`
-//! uses. The reason that rule exists is concurrent writers racing their renames
-//! into a spurious `ENOENT`, and there are none here: an apply clears the whole
-//! staging directory before it writes anything (`self-updater.ts:131`), the
-//! names inside it carry the version, and only one apply can be in flight
-//! because the first one exits the process. A named temp is also what lets a
-//! failed update leave something a human can look at.
+//! The manifest `sha256` is over the DECOMPRESSED bytes, so decompression
+//! happens before hashing; the built-in extension tarball hashes as served,
+//! which is why [`Decompress`] is a parameter. Nothing is held in memory: the
+//! decoder is drained per chunk and the digest is incremental.
+//! The temp name is a fixed `<out>.tmp`: only one apply is ever in flight (the
+//! first exits the process) and staging is cleared before any write.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -53,11 +28,7 @@ pub enum Decompress {
 }
 
 /// Stream `url` to `out_path`, returning the lowercase-hex sha256 of what was
-/// written.
-///
-/// The caller compares. Split out because the two callers differ: the update
-/// path verifies against a manifest digest, and the extension plant compares
-/// against a manifest it has already read and then renames the file itself.
+/// written. The caller compares.
 pub async fn stream_to_file(
     net: &Net,
     url: &str,
@@ -70,10 +41,7 @@ pub async fn stream_to_file(
     let mut stream = net.stream(url).await?;
     let mut file = tokio::fs::File::create(out_path).await?;
     let mut hasher = Sha256::new();
-    // `write::GzDecoder` over a `Vec` rather than a reader over the stream: the
-    // body arrives as awaited chunks, so the data is pushed in rather than
-    // pulled, and the buffer is drained after every chunk so it never grows to
-    // the size of the artifact.
+    // Push-based decoder over a Vec that is drained after every chunk.
     let mut decoder = flate2::write::GzDecoder::new(Vec::new());
 
     while let Some(chunk) = stream.next_chunk().await {
@@ -95,9 +63,8 @@ pub async fn stream_to_file(
     }
 
     if decompress == Decompress::Gzip {
-        // Without this the last deflate block and the gzip trailer check are
-        // both skipped, so a truncated archive would be written out short and
-        // then reported only as a digest mismatch, which names the wrong cause.
+        // Without this a truncated archive is written short and reported only
+        // as a digest mismatch, which names the wrong cause.
         decoder.try_finish().map_err(corrupt_gzip(url))?;
         let inflated = std::mem::take(decoder.get_mut());
         if !inflated.is_empty() {
@@ -107,17 +74,13 @@ pub async fn stream_to_file(
     }
 
     file.flush().await?;
-    // Closed before the digest is compared, so the caller's rename cannot race
-    // an unflushed handle on Windows.
+    // Closed before the caller's rename, which cannot race an unflushed handle on Windows.
     drop(file);
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// Download `url` to `out_path` and verify it against `sha256`.
-///
-/// On a mismatch the partial is destroyed and nothing is placed. Leaving it
-/// would put a file at a staging path that a later step reads by name, so the
-/// next attempt could resume onto bytes that already failed verification.
+/// Download `url` to `out_path` and verify it against `sha256`. On any failure
+/// the partial is destroyed so a later step cannot read refused bytes by name.
 pub async fn download_and_verify(
     net: &Net,
     url: &str,
@@ -129,16 +92,11 @@ pub async fn download_and_verify(
     let digest = match stream_to_file(net, url, &tmp, decompress).await {
         Ok(digest) => digest,
         Err(err) => {
-            // A transport failure leaves no partial either, for the same
-            // reason. Best-effort: the download already failed and a failure to
-            // clean up must not replace its message with a less useful one.
             let _ = tokio::fs::remove_file(&tmp).await;
             return Err(err);
         }
     };
-    // Case-insensitively, matching `sha256.toLowerCase()` at
-    // `self-updater.ts:537`. A manifest published with an uppercase digest is
-    // otherwise rejected as tampered, which is unfalsifiable from a support log.
+    // Case-insensitive: a manifest published with an uppercase digest is not tampered.
     if digest != sha256.to_lowercase() {
         let _ = tokio::fs::remove_file(&tmp).await;
         return Err(AppError::new(
@@ -157,12 +115,8 @@ fn tmp_path(out_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// `chmod 0755`, on unix only (`self-updater.ts:546-548`).
-///
-/// Best-effort by design: every artifact this places is executable or is a
-/// script the core spawns, and a placement that succeeded but could not be
-/// chmod-ed is still better than a failed update. A non-executable core binary
-/// surfaces at the next launch, which the rollback anchor covers.
+/// `chmod 0755`, unix only. Best-effort: a placed-but-not-executable binary
+/// surfaces at next launch, which the rollback anchor covers.
 async fn set_executable(path: &Path) {
     #[cfg(unix)]
     {
@@ -196,162 +150,98 @@ mod tests {
     use super::*;
     use crate::update::testing::{bounded, gzipped, sha256_hex, Serve, Upstream};
 
+    /// Bigger than one chunk and compressible, so the decoder is driven across
+    /// several writes.
     fn payload() -> Vec<u8> {
-        // Bigger than one chunk of anything, and compressible, so the decoder
-        // is genuinely driven across several writes rather than satisfied by
-        // one.
         b"#!/bin/sh\necho loca-core\n".repeat(4096)
+    }
+
+    /// Serve `body` and `download_and_verify` it (gzip) to `<tempdir>/<name>`.
+    async fn fetch(
+        body: Serve,
+        sha256: &str,
+        name: &str,
+    ) -> (tempfile::TempDir, PathBuf, Result<()>) {
+        let up = Upstream::start(body).await;
+        let net = Net::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join(name);
+        let res = bounded(download_and_verify(
+            &net,
+            &up.url("/loca-core.gz"),
+            &out,
+            sha256,
+            Decompress::Gzip,
+        ))
+        .await;
+        (dir, out, res)
     }
 
     #[tokio::test]
     async fn the_digest_is_over_the_decompressed_artifact() {
-        // The ordering with no local symptom: hashing the bytes off the wire
-        // compiles, runs, writes the right file, and fails every artifact on
-        // every release. The fixture's two digests differ, which is what makes
-        // this test able to tell them apart.
         let plain = payload();
         let compressed = gzipped(&plain);
         let plain_digest = sha256_hex(&plain);
-        let wire_digest = sha256_hex(&compressed);
-        assert_ne!(plain_digest, wire_digest);
+        assert_ne!(plain_digest, sha256_hex(&compressed));
 
-        let up = Upstream::start(Serve::Body(compressed)).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
-            &plain_digest,
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap();
-
+        let (_d, out, res) = fetch(Serve::Body(compressed), &plain_digest, "loca-core").await;
+        res.unwrap();
         assert_eq!(tokio::fs::read(&out).await.unwrap(), plain);
     }
 
     #[tokio::test]
     async fn an_uppercase_manifest_digest_still_matches() {
         let plain = payload();
-        let up = Upstream::start(Serve::Body(gzipped(&plain))).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
-            &sha256_hex(&plain).to_uppercase(),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap();
+        let digest = sha256_hex(&plain).to_uppercase();
+        let (_d, out, res) = fetch(Serve::Body(gzipped(&plain)), &digest, "loca-core").await;
+        res.unwrap();
         assert!(out.exists());
     }
 
     #[tokio::test]
     async fn a_mismatched_artifact_leaves_no_partial_behind() {
-        let up = Upstream::start(Serve::Body(gzipped(&payload()))).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        let err = bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
+        let (_d, out, res) = fetch(
+            Serve::Body(gzipped(&payload())),
             &"0".repeat(64),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap_err();
-
+            "loca-core",
+        )
+        .await;
+        let err = res.unwrap_err();
         assert_eq!(err.code, ErrorCode::ChecksumMismatch);
         assert!(!out.exists(), "nothing is placed on a mismatch");
-        assert!(
-            !tmp_path(&out).exists(),
-            "and the partial that failed verification is destroyed, so a later \
-             step cannot read bytes that were already refused"
-        );
+        assert!(!tmp_path(&out).exists(), "the refused partial is destroyed");
     }
 
     #[tokio::test]
     async fn a_transport_failure_leaves_no_partial_behind() {
-        let up = Upstream::start(Serve::Status(500)).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
-            &"0".repeat(64),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap_err();
-
+        let (_d, out, res) = fetch(Serve::Status(500), &"0".repeat(64), "loca-core").await;
+        res.unwrap_err();
         assert!(!out.exists());
         assert!(!tmp_path(&out).exists());
     }
 
     #[tokio::test]
     async fn a_body_that_is_not_gzip_fails_as_a_corrupt_archive() {
-        // Named rather than surfacing as a digest mismatch, because the two
-        // have different causes and different fixes: one is a broken mirror,
-        // the other is a manifest that disagrees with its artifact.
-        let up = Upstream::start(Serve::Body(payload())).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        let err = bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
-            &sha256_hex(&payload()),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap_err();
+        let (_d, out, res) =
+            fetch(Serve::Body(payload()), &sha256_hex(&payload()), "loca-core").await;
+        let err = res.unwrap_err();
         assert!(err.message.contains("gzip"), "{}", err.message);
         assert!(!out.exists());
     }
 
     #[tokio::test]
     async fn a_truncated_archive_is_refused_rather_than_written_short() {
-        // Without the finish, a body cut mid-stream writes whatever inflated so
-        // far and reports only a digest mismatch, which names the wrong cause.
         let compressed = gzipped(&payload());
         let truncated = compressed[..compressed.len() / 2].to_vec();
-        let up = Upstream::start(Serve::Body(truncated)).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        let err = bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
-            &sha256_hex(&payload()),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap_err();
+        let (_d, out, res) =
+            fetch(Serve::Body(truncated), &sha256_hex(&payload()), "loca-core").await;
+        let err = res.unwrap_err();
         assert!(err.message.contains("gzip"), "{}", err.message);
         assert!(!out.exists());
     }
 
     #[tokio::test]
     async fn an_uncompressed_artifact_is_hashed_as_served() {
-        // The built-in extension tarball's path: its published digest is over
-        // the file as served, so running it through the decoder would fail
-        // every plant.
         let tarball = payload();
         let up = Upstream::start(Serve::Body(tarball.clone())).await;
         let net = Net::new().unwrap();
@@ -376,44 +266,27 @@ mod tests {
     async fn a_placed_artifact_is_executable() {
         use std::os::unix::fs::PermissionsExt as _;
         let plain = payload();
-        let up = Upstream::start(Serve::Body(gzipped(&plain))).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("loca-core");
-
-        bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
+        let (_d, out, res) = fetch(
+            Serve::Body(gzipped(&plain)),
             &sha256_hex(&plain),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap();
-
+            "loca-core",
+        )
+        .await;
+        res.unwrap();
         let mode = std::fs::metadata(&out).unwrap().permissions().mode();
         assert_eq!(mode & 0o111, 0o111, "mode was {mode:o}");
     }
 
     #[tokio::test]
     async fn a_parent_directory_that_does_not_exist_yet_is_created() {
-        // The staging directory is removed and recreated per apply, and the
-        // helper destinations may be a bin dir a fresh install has not made.
         let plain = payload();
-        let up = Upstream::start(Serve::Body(gzipped(&plain))).await;
-        let net = Net::new().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("staging").join("deep").join("loca-core");
-
-        bounded(download_and_verify(
-            &net,
-            &up.url("/loca-core.gz"),
-            &out,
+        let (_d, out, res) = fetch(
+            Serve::Body(gzipped(&plain)),
             &sha256_hex(&plain),
-            Decompress::Gzip,
-        ))
-        .await
-        .unwrap();
+            "staging/deep/loca-core",
+        )
+        .await;
+        res.unwrap();
         assert!(out.exists());
     }
 }

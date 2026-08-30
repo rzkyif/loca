@@ -5,20 +5,18 @@
 //! exhaust memory. WebSocket frames are not affected: they have their own cap
 //! in `super::super::ws`.
 //!
-//! Two halves, because a body can arrive either way. A declared
-//! `Content-Length` over the cap is refused before the body is read at all. A
+//! Two halves, because a body can arrive either way: a declared
+//! `Content-Length` over the cap is refused before the body is read, and a
 //! chunked body that declares nothing is capped by `DefaultBodyLimit` at
-//! extraction time, and the [`super::super::http::Json`] extractor turns that
-//! rejection into the same response. Without the first half a hostile client
-//! could announce a gigabyte and have us start reading it; without the second
-//! it could simply omit the header.
+//! extraction time. Without the first a client could announce a gigabyte and
+//! have us start reading it; without the second it could omit the header.
 
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::header;
 use axum::middleware::Next;
 use axum::response::Response;
 
-/// 100 MiB, matching what ships today.
+/// 100 MiB.
 pub const MAX_BODY_BYTES: usize = 100 * 1024 * 1024;
 
 /// The `DefaultBodyLimit` half, applied once to the whole router.
@@ -93,8 +91,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_length_that_is_not_a_number_does_not_bypass_the_cap() {
-        // An unparseable header reads as "undeclared", which the extraction-time
-        // limit still covers.
+        // Unparseable reads as "undeclared", still covered at extraction.
         let res = app()
             .oneshot(
                 Request::builder()

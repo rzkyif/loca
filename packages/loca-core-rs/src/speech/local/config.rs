@@ -1,25 +1,15 @@
-//! What the settings say the engine should be holding.
-//!
-//! The sidecar carried this across a process boundary as tagged JSON, so it had
-//! a second pair of family enums and a serde tag to match. In process the
-//! catalog's own [`SttFamily`] and [`TtsFamily`] are the families, and what is
-//! left is the part that was always the real work: turning
+//! What the settings say the engine should be holding: turning
 //! `{modelType, modelFiles}` into a set of resolved, existing file paths, or
 //! into "not loaded" when anything is missing.
 //!
-//! # Not loaded is a normal state, not an error
+//! Not loaded is a normal state rather than an error. An enabled engine whose
+//! weights have not finished downloading resolves to `None` so the OTHER engine
+//! keeps serving, and the download-completion hook re-derives once the files
+//! land.
 //!
-//! An enabled engine whose weights have not finished downloading resolves to
-//! `None` so the OTHER engine keeps serving, and the download-completion hook
-//! re-derives once the files land. Returning an error here would take
-//! transcription down because synthesis is mid-download.
-//!
-//! # Role validation is containment
-//!
-//! Every family needs a specific set of file roles, and handing sherpa a config
-//! with a role missing is one of the inputs that can terminate the process
-//! rather than fail (see the module header of [`super`]). The required roles are
-//! checked here, where a mismatch is a log line and an unloaded engine.
+//! Role validation is containment: handing sherpa a config with a role missing
+//! is one of the inputs that can terminate the process rather than fail, so the
+//! required roles are checked here, where a mismatch is a log line.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -38,14 +28,9 @@ const THREADS_KEY: &str = "stt.threads";
 const DEFAULT_THREADS: f64 = 4.0;
 
 /// The settings that change what the engine should hold. A change to anything
-/// outside this set does not touch the models.
-///
-/// **`stt.modelType` and `stt.modelFiles` are in this set and are not in the
-/// TypeScript's** (`sidecar-boot.ts:66-75`, which lists the TTS pair and omits
-/// the STT one). That omission means selecting an STT model writes
-/// `stt.modelFiles` and the running engine keeps the old weights until something
-/// unrelated happens to reconcile, so the user's choice silently does nothing.
-/// Fixed in both cores; see D-139.
+/// outside this set does not touch the models. Both the STT and the TTS model
+/// pairs belong here: omitting one leaves the running engine on the old weights
+/// until something unrelated reconciles.
 pub const SPEECH_KEYS: &[&str] = &[
     "stt.enabled",
     "stt.provider",
@@ -131,12 +116,10 @@ fn tts_family(raw: &str) -> Option<TtsFamily> {
     serde_json::from_value(serde_json::Value::String(raw.to_string())).ok()
 }
 
-/// Resolve the desired engine state from `settings`.
-///
-/// `resolve` turns an `@user/repo/branch/file` spec into an on-disk path, and
-/// `exists` answers whether that path is a readable file. Both are injected
-/// rather than reached for so the derivation is testable without a models
-/// directory, and so this module never touches the filesystem itself.
+/// Resolve the desired engine state from `settings`. `resolve` turns an
+/// `@user/repo/branch/file` spec into an on-disk path and `exists` answers
+/// whether it is a readable file; both are injected so this module never
+/// touches the filesystem.
 pub fn desired(
     settings: &SettingsRecord,
     espeak_data_dir: &Path,
@@ -145,8 +128,7 @@ pub fn desired(
 ) -> Desired {
     let threads = num_setting(settings, THREADS_KEY, DEFAULT_THREADS);
     // Clamped rather than trusted: sherpa takes this straight into the ONNX
-    // session, and a zero or negative thread count is not a configuration it
-    // handles gracefully.
+    // session, which does not handle a zero or negative thread count.
     let threads = (threads as i64).clamp(1, 64) as i32;
 
     let stt = stt_uses_local(settings)
@@ -354,10 +336,8 @@ mod tests {
 
     #[test]
     fn every_family_declares_the_roles_its_catalog_bundles_carry() {
-        // The catalog is the source of what a bundle contains, so the required
-        // set is checked against it rather than against itself. A family whose
-        // required roles are wrong would refuse to load a model the user can
-        // legitimately select.
+        // Checked against the catalog rather than against itself: a family
+        // whose required roles are wrong refuses a model the user can select.
         const DEV_CATALOG: &str = include_str!("../../models/catalog.dev.json");
         let file: serde_json::Value =
             serde_json::from_str(DEV_CATALOG).expect("the dev catalog parses");
@@ -455,9 +435,8 @@ mod tests {
 
     #[test]
     fn the_watched_key_set_covers_every_key_the_derivation_reads() {
-        // The bug this pins is the one being fixed in both cores: a key the
-        // derivation reads but the watcher ignores means a user's choice does
-        // nothing until an unrelated change reconciles.
+        // A key the derivation reads but the watcher ignores means a user's
+        // choice does nothing until an unrelated change reconciles.
         for key in [
             "stt.enabled",
             "stt.provider",

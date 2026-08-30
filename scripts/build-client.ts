@@ -37,18 +37,12 @@ if (!["stable", "dev", "latest"].includes(channel)) {
 // file is the deterministic source the compile reads (see build.rs).
 await Deno.writeTextFile(join(ROOT, "packages/loca-client/src/tauri/channel"), channel);
 
-// Windows-only: `workerd` (the website's Cloudflare Worker runtime, a workspace
-// dep the client never uses) ships NO win-arm64 binary, so its lifecycle script
-// aborts `deno install` mid frontend build on the win-arm64 CI runner. Drop
-// workerd from that EPHEMERAL runner checkout's allowScripts so the install skips
-// it (a harmless "ignored build script" warning) and proceeds. macOS/Linux builds
-// are untouched, and a runner's checkout is fresh every run so this never
-// persists.
-// Strip line-based, not via JSON.parse: deno.json is JSONC and the CI pre-strip
-// (release.yml drops workerd before the first deno command, see its "Strip
-// workerd" step) can leave a trailing comma that a strict JSON.parse rejects.
-// deno itself tolerates it, so filtering the workerd line and writing the text
-// back verbatim is enough (and idempotent when the pre-strip already removed it).
+// Windows-only: `workerd` (a website dep the client never uses) ships NO
+// win-arm64 binary, so its lifecycle script aborts `deno install` mid frontend
+// build on that runner. Drop it from the EPHEMERAL runner checkout's allowScripts
+// so the install skips it with a harmless warning; macOS/Linux are untouched.
+// Stripped line-based, not via JSON.parse: deno.json is JSONC and the CI
+// pre-strip can leave a trailing comma a strict parse rejects.
 if (Deno.build.os === "windows") {
   const confPath = join(ROOT, "deno.json");
   const conf = await Deno.readTextFile(confPath);
@@ -60,11 +54,10 @@ if (Deno.build.os === "windows") {
 }
 
 // Non-stable channels get a distinct app identity so they install alongside
-// stable instead of overwriting it. And a plain local build (no updater signing
-// key in the env) turns off updater-artifact creation so Tauri doesn't try to
-// sign the bundle and abort; the release path sets TAURI_SIGNING_PRIVATE_KEY and
-// so keeps createUpdaterArtifacts on, still emitting the signed .sig client.json
-// needs. Tauri deep-merges this over tauri.conf.json.
+// stable. A plain local build (no updater signing key in the env) also turns off
+// updater-artifact creation so Tauri does not try to sign the bundle and abort;
+// the release path sets TAURI_SIGNING_PRIVATE_KEY and keeps it on. Tauri
+// deep-merges this over tauri.conf.json.
 const override: Record<string, unknown> = {};
 if (channel !== "stable") {
   override.productName = `Loca (${channel})`;
@@ -79,12 +72,10 @@ if (!Deno.env.get("TAURI_SIGNING_PRIVATE_KEY")) {
   override.bundle = { createUpdaterArtifacts: false };
 }
 
-// The `--config` override must reach the Tauri CLI itself (it accepts inline
-// JSON). We invoke the CLI directly rather than via `deno task build`: routing
-// through `deno task build -- --config <json>` makes Tauri treat `--config`
-// as a cargo passthrough (everything after `--`), and cargo parses it as a TOML
-// dotted-key expression and fails. Calling the CLI directly also sidesteps
-// `deno task`'s own `--config` flag.
+// The `--config` override must reach the Tauri CLI itself, so invoke the CLI
+// directly: through `deno task build -- --config <json>` Tauri treats it as a
+// cargo passthrough and cargo fails parsing it as a TOML dotted key. Calling the
+// CLI directly also sidesteps `deno task`'s own `--config` flag.
 const tauriArgs = ["run", "-A", "npm:@tauri-apps/cli@^2", "build"];
 if (Object.keys(override).length > 0) {
   tauriArgs.push("--config", JSON.stringify(override));

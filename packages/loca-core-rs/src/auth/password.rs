@@ -6,23 +6,18 @@
 //! per-install random salt: a leaked hash file resists offline cracking, and
 //! each online guess costs real work.
 //!
-//! The verify path in [`super::Auth::verify_admin_password`] rate-limits
-//! **before** calling here, so argon2id cannot be turned into a CPU denial of
-//! service by a compromised but rate-limited client.
+//! The verify path rate-limits **before** calling here, so argon2id cannot be
+//! turned into a CPU denial of service.
 //!
-//! # The on-disk format is not PHC
+//! The on-disk format is not PHC:
 //!
 //! ```text
 //! argon2id$m=<KiB>,t=<iters>,p=<lanes>$<saltBase64>$<hashBase64>
 //! ```
 //!
-//! Standard-alphabet base64 **with** padding, no `v=` field, and no leading `$`.
-//! PHC would be `$argon2id$v=19$m=...` with unpadded base64, so the `argon2`
-//! crate's `PasswordHash` parser cannot read this and must not be reached for:
-//! an existing install's `.admin-password` has to keep verifying.
-//!
-//! Parameters are read from the stored string rather than from the constants
-//! below, for the same reason. The constants apply only when writing a new hash.
+//! Standard-alphabet base64 **with** padding, no `v=` field, and no leading `$`,
+//! so the `argon2` crate's `PasswordHash` parser cannot read it. Parameters come
+//! from the stored string; the constants below apply only to a new hash.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD;
@@ -33,9 +28,7 @@ use zeroize::Zeroizing;
 use super::secretgen::fill_random;
 use crate::error::{internal, Result};
 
-/// OWASP's minimum argon2id profile (the second-choice one): 19 MiB, 2
-/// iterations, 1 lane. Cheap enough for an interactive set or verify, expensive
-/// enough that a gated, rate-limited online attacker makes no headway.
+/// OWASP's minimum argon2id profile: 19 MiB, 2 iterations, 1 lane.
 const ARGON_M_KIB: u32 = 19 * 1024;
 const ARGON_T: u32 = 2;
 const ARGON_P: u32 = 1;
@@ -43,8 +36,7 @@ const HASH_LEN: usize = 32;
 const SALT_LEN: usize = 16;
 
 /// argon2id, RFC 9106 version 0x13, no secret key and no associated data, which
-/// is what `@noble/hashes` uses by default and therefore what every stored hash
-/// was produced with.
+/// is what every stored hash was produced with.
 fn derive(
     password: &str,
     salt: &[u8],
@@ -64,9 +56,8 @@ pub(crate) fn hash_admin_password(password: &str) -> Result<String> {
     let mut salt = [0u8; SALT_LEN];
     fill_random(&mut salt)?;
     let hash = derive(password, &salt, ARGON_M_KIB, ARGON_T, ARGON_P)
-        // The error carries only the parameter that was out of range, never the
-        // password, but it is mapped rather than forwarded so that stays true if
-        // the crate's Display ever changes.
+        // Mapped rather than forwarded so the password can never reach the
+        // message if the crate's Display changes.
         .map_err(|_| internal("failed to hash the admin password"))?;
     Ok(format!(
         "argon2id$m={ARGON_M_KIB},t={ARGON_T},p={ARGON_P}${}${}",
@@ -77,9 +68,8 @@ pub(crate) fn hash_admin_password(password: &str) -> Result<String> {
 
 /// Verify a password against a stored format string.
 ///
-/// Total: returns false on any parse failure or mismatch and never errors, so a
-/// corrupt file locks the password path rather than turning into a 500. The
-/// final comparison is constant time over the derived bytes.
+/// Total: false on any parse failure or mismatch, so a corrupt file locks the
+/// password path rather than turning into a 500. Constant-time comparison.
 pub(crate) fn verify_admin_password(password: &str, stored: &str) -> bool {
     let parts: Vec<&str> = stored.trim().split('$').collect();
     if parts.len() != 4 || parts[0] != "argon2id" {
@@ -144,8 +134,7 @@ mod tests {
         assert_eq!(parts.len(), 4);
         assert_eq!(parts[0], "argon2id");
         assert_eq!(parts[1], "m=19456,t=2,p=1");
-        // Padded standard base64, which is what `@std/encoding`'s encodeBase64
-        // emits and what the TypeScript parser decodes.
+        // Padded standard base64, as the stored format uses.
         assert_eq!(STANDARD.decode(parts[2]).unwrap().len(), SALT_LEN);
         assert_eq!(STANDARD.decode(parts[3]).unwrap().len(), HASH_LEN);
         assert!(!stored.starts_with('$'), "PHC would; this format does not");
@@ -161,9 +150,8 @@ mod tests {
         assert!(verify_admin_password("same-password", &b));
     }
 
-    /// Parameters come from the stored string, not from the constants, so a hash
-    /// written under a different profile still opens. This is what keeps an
-    /// existing install working if the profile is ever raised.
+    /// Parameters come from the stored string, so a hash written under a
+    /// different profile still opens if the profile is ever raised.
     #[test]
     fn parameters_are_read_from_the_stored_string() {
         let salt = [0x11u8; SALT_LEN];
@@ -196,8 +184,7 @@ mod tests {
             &format!("argon2id$=19456,t=2,p=1${salt}${hash}"),
             &format!("argon2id$m=19456,t=2,p=1$not!base64${hash}"),
             &format!("argon2id$m=19456,t=2,p=1${salt}$c2hvcnQ="),
-            // A salt below argon2's 8-byte floor: the KDF refuses and this
-            // reports false rather than propagating an error.
+            // Below argon2's 8-byte salt floor: false, not an error.
             &format!("argon2id$m=19456,t=2,p=1$AAAA${hash}"),
         ] {
             assert!(!verify_admin_password("pw", bad), "accepted {bad:?}");
@@ -235,9 +222,8 @@ mod tests {
         stored: String,
     }
 
-    /// Hashes produced by the TypeScript `hashAdminPassword`, which is what is
-    /// sitting in `.admin-password` on every install that has set one. If this
-    /// fails, upgrading locks the user out of the remote-pairing path.
+    /// The hashes sitting in `.admin-password` on every install that has set
+    /// one. If this fails, upgrading locks the user out of remote pairing.
     #[test]
     fn typescript_hashes_still_verify() {
         let fixture: PasswordFixture =

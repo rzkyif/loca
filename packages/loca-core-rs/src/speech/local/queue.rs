@@ -1,25 +1,16 @@
 //! The fair-share queue in front of the single speech engine.
 //!
-//! One engine, one slot: speech-to-text and text-to-speech share the model's
-//! threads, so a second concurrent call would thrash the same ONNX session
-//! rather than doubling throughput. Everything past that slot queues, and the
-//! queue is per client so one client streaming dictation cannot starve another.
+//! One engine, one slot: STT and TTS share the model's threads, so a second
+//! concurrent call would thrash the same ONNX session. Everything past that
+//! slot queues, per client, so one client streaming dictation cannot starve
+//! another.
 //!
-//! # The drop obligation is the whole reason this is not a bare semaphore
-//!
-//! axum drops the handler future when a client disconnects, and that is the only
-//! signal an abandoned request gives. Two states have to survive it:
-//!
-//! - A caller **holding** the slot must release it, or the engine is idle
-//!   forever with callers queued behind it. That is [`Permit`]'s `Drop`.
-//! - A caller **waiting** for the slot must leave the queue, or the round robin
-//!   eventually hands the slot to a receiver that has gone away, and the engine
-//!   sits idle for one full rotation with work waiting. That is [`Ticket`]'s
-//!   `Drop`, and it is the half that is easy to miss: the bug it prevents looks
-//!   like an intermittent stall rather than a leak.
-//!
-//! Both are RAII rather than an explicit `release()` call, because an explicit
-//! call is exactly what a dropped future does not make.
+//! Not a bare semaphore because of the drop obligation: axum drops the handler
+//! future when a client disconnects, and two states have to survive it. A
+//! caller HOLDING the slot must release it ([`Permit`]'s `Drop`), or the engine
+//! idles forever; a caller WAITING must leave the queue ([`Ticket`]'s `Drop`),
+//! or the rotation hands the slot to a receiver that has gone away. Both are
+//! RAII, because an explicit `release()` is what a dropped future never makes.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -39,10 +30,8 @@ pub const PARALLEL_SLOTS: usize = 1;
 /// growing an unbounded backlog of requests whose callers have given up.
 pub const QUEUE_DEPTH_MULTIPLIER: usize = 4;
 
-/// Told whenever the queue moves, so the aggregate core status can render it.
-/// Implemented over `CoreStatusService::note_speech_queue`; a queue with no
-/// observer is still a correct queue, which is what keeps the tests free of the
-/// whole status subsystem.
+/// Told whenever the queue moves, so the aggregate core status can render it. A
+/// queue with no observer is still a correct queue.
 pub trait QueueObserver: Send + Sync {
     fn note(&self, active: u32, queued: u32);
 }
@@ -73,14 +62,10 @@ struct State {
     next_id: u64,
 }
 
-/// One caller waiting for the slot.
-///
-/// **The `id` is what makes a withdrawal precise, and it is load-bearing.**
-/// Without it the only way to remove a waiter is positionally, and a client with
-/// TWO calls in flight (the client synthesising two chat segments back to back,
-/// or `INTERNAL_CLIENT_ID` running two broker ops) would have the wrong one
-/// removed: dropping the second would close the FIRST one's channel and answer a
-/// live, still-connected caller with `server_unavailable`.
+/// One caller waiting for the slot. The `id` is what makes a withdrawal
+/// precise: removing positionally instead would, for a client with two calls in
+/// flight, close the wrong channel and answer a live caller
+/// `server_unavailable`.
 struct Waiter {
     id: u64,
     tx: oneshot::Sender<()>,
@@ -148,24 +133,16 @@ impl Queue {
     }
 
     /// Dispatch to the next client in rotation, if the slot is free and anyone
-    /// is waiting.
-    ///
-    /// The rotation point is kept stable across the removal of an emptied
-    /// client, which is the part that is easy to get subtly wrong: advancing
-    /// past the removed index would skip whichever client shifted into it, and
-    /// with three clients that reads as "mostly fair" rather than as a bug.
+    /// is waiting. The rotation point stays stable across the removal of an
+    /// emptied client: advancing past the removed index would skip whichever
+    /// client shifted into it.
     fn dispatch(&self, state: &mut State) {
-        // **The outer loop exists because the map can SHRINK inside the inner
-        // one**, and, like the guard that drives it, it is unreachable while
-        // `abandon` removes by id under this lock. It is here for the same
-        // reason: the state it handles is one `abandon` bug away, and that bug
-        // has existed once. Admitting a waiter that turns out to be gone removes its client
-        // from `waiting`, which invalidates the `len` the inner scan was written
-        // against: continuing with a stale `len` walks off the end, finds
-        // `None`, and falls out of the loop having admitted nobody, leaving the
-        // engine idle with callers still queued. Re-reading `len` per pass is
-        // what keeps "the slot is free" and "somebody is waiting" from being
-        // true at the same time.
+        // The outer loop exists because the map can SHRINK inside the inner
+        // one. It is unreachable while `abandon` removes by id under this lock,
+        // and stays for the same reason the guard below does: admitting a
+        // waiter that turns out to be gone invalidates the `len` the inner scan
+        // was written against, and continuing with a stale one leaves the
+        // engine idle with callers still queued.
         'rescan: while state.active < self.slots && !state.waiting.is_empty() {
             let len = state.waiting.len();
             let start = state.next % len;
@@ -188,27 +165,14 @@ impl Queue {
                 }
                 state.active += 1;
                 // A receiver that has gone away means the waiter was dropped
-                // between being chosen and being woken. The slot it was just
-                // granted goes back, and the scan restarts because the map may
-                // have just shrunk.
+                // between being chosen and being woken. The slot goes back, and
+                // the scan restarts because the map may have just shrunk.
                 //
-                // **Whether this branch is reachable depends on `abandon`, and
-                // that dependency is the whole reason it stays.** It is
-                // unreachable ONLY while `abandon` removes this ticket's own
-                // waiter, by id, under this same lock. Both halves matter: when
-                // `abandon` removed positionally instead, a client with two
-                // calls in flight left its own sender in the deque to be
-                // granted here, and deleting this guard turned that into a
-                // permanent leak of the only slot.
-                //
-                // That is not hypothetical. It is what the code did until the
-                // review found it, and `a_client_with_two_calls_in_flight_can_abandon_one`
-                // is the test that drives it: stage positional removal and it
-                // fails; stage positional removal AND delete this guard and it
-                // fails with the engine wedged rather than merely stalled.
-                //
-                // So its mutation surviving today is a statement about
-                // `abandon`, not about this branch being dead code.
+                // Reachable only if `abandon` stops removing this ticket's own
+                // waiter by id under this same lock: positional removal leaves
+                // a client with two calls in flight granting a slot to its own
+                // dead sender, and without this guard that leaks the only slot
+                // permanently.
                 if waiter.tx.send(()).is_err() {
                     state.active -= 1;
                     continue 'rescan;
@@ -229,23 +193,13 @@ impl Queue {
 
     /// Undo a ticket that is being dropped before it became a [`Permit`].
     ///
-    /// **The two cases must be distinguished under the lock, and getting that
-    /// wrong wedges the engine permanently.** A caller that disconnects can be
-    /// dropped at either of two moments:
-    ///
-    /// - still queued, in which case its waiter has to leave the queue;
-    /// - already CHOSEN by [`Self::dispatch`], which incremented `active` and
-    ///   sent the grant, but dropped before it could receive that grant and turn
-    ///   it into a permit.
-    ///
-    /// The second case sends successfully, so the "receiver went away" guard in
-    /// `dispatch` does not see it, and the slot is charged to a caller that will
-    /// never release it. With one slot that is the whole engine, lost for the
-    /// life of the process, and every later call queues behind it forever.
-    ///
-    /// `try_recv` under the state lock is what separates them: `dispatch` can
-    /// only send while holding this same lock, so an empty channel here means no
-    /// grant is in flight and cannot become one before the waiter is removed.
+    /// Two cases, and they must be distinguished under the lock: still queued
+    /// (its waiter leaves the queue), or already CHOSEN by [`Self::dispatch`],
+    /// which incremented `active` and sent the grant that will never be
+    /// received. The second sends successfully, so `dispatch`'s own guard does
+    /// not see it and the only slot is charged to a caller that will never
+    /// release it. `try_recv` under the state lock separates them: `dispatch`
+    /// can only send while holding the same lock.
     fn abandon(&self, client_id: &str, id: u64, rx: &mut oneshot::Receiver<()>) {
         let mut state = lock(&self.state);
         match rx.try_recv() {
@@ -254,14 +208,9 @@ impl Queue {
                 state.active = state.active.saturating_sub(1);
                 self.dispatch(&mut state);
             }
-            // Still queued: take OUR waiter out, found by id.
-            //
-            // **By id, never positionally.** One client can have several calls
-            // in flight, so the front of its deque is somebody else's waiter,
-            // and removing that one closes a live caller's channel: it is
-            // answered `server_unavailable` while still connected, and this
-            // ticket's own sender stays in the queue to be granted a slot
-            // nobody will ever release.
+            // Still queued: take OUR waiter out, found by id and never
+            // positionally. One client can have several calls in flight, so the
+            // front of its deque is somebody else's waiter.
             Err(oneshot::error::TryRecvError::Empty) => {
                 if let Some(waiters) = state.waiting.get_mut(client_id) {
                     waiters.retain(|waiter| waiter.id != id);
@@ -354,16 +303,10 @@ mod tests {
 
     use super::*;
 
-    /// Await with a deadline, and EVERY admission wait in this module goes
-    /// through it.
-    ///
-    /// The failure mode of every dispatch bug in this queue is a wedge, not a
-    /// wrong value, so an unbounded `.await` turns a caught mutation into a hung
-    /// test binary that holds the cargo build lock against the whole fleet
-    /// (D-070) rather than into a failure. This package has produced that
-    /// outcome three times: the `Ticket::drop` fix, the runtime-blocking test,
-    /// and the depth-bound mutation, which parked here for eleven minutes before
-    /// anyone looked.
+    /// Await with a deadline, and every admission wait in this module goes
+    /// through it: the failure mode of a dispatch bug here is a wedge rather
+    /// than a wrong value, so an unbounded `.await` turns a caught regression
+    /// into a hung test binary holding the build lock.
     async fn bounded<T>(what: &str, fut: impl Future<Output = T>) -> T {
         match tokio::time::timeout(Duration::from_secs(5), fut).await {
             Ok(value) => value,
@@ -372,15 +315,9 @@ mod tests {
     }
 
     /// Spin until the queue's `(active, queued)` satisfies `want`, with a
-    /// deadline.
-    ///
-    /// **The same rule as [`bounded`], one level down, and missing it is how
-    /// D-149 recurred inside the fix for it.** Every `while queue.snapshot()...`
-    /// loop is a wait, and a state that never arrives is the normal failure mode
-    /// of every bug in this module, so a bare spin wedges the binary where a
-    /// deadline would name the state it got stuck at. The F1 test parked for 30
-    /// seconds under a neighbouring mutation for exactly this reason: its two
-    /// admission awaits were bounded and its state waits were not.
+    /// deadline. The same rule as [`bounded`], one level down: a state that
+    /// never arrives is the normal failure mode here, so a bare spin wedges the
+    /// binary where a deadline names the state it got stuck at.
     async fn until(what: &str, queue: &Arc<Queue>, want: impl Fn((usize, usize)) -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
@@ -399,8 +336,7 @@ mod tests {
     }
 
     /// Records every `(active, queued)` the queue announced, so a test can
-    /// assert what the core status bar would have shown rather than only what
-    /// the queue's own snapshot says.
+    /// assert what the core status bar would have shown.
     #[derive(Default)]
     struct Recorder {
         seen: Mutex<Vec<(u32, u32)>>,
@@ -588,11 +524,9 @@ mod tests {
         abandoned.abort();
         drop(held);
 
-        // The live waiter still gets in, which is only true if the slot granted
-        // to the abandoned caller was handed back. Bounded rather than a bare
-        // await: the regression here is a permanent wedge, and an unbounded
-        // await would turn it into a hung test binary that blocks the whole
-        // fleet's build lock rather than a failure (D-070).
+        // The live waiter still gets in, which is only true if the slot
+        // granted to the abandoned caller was handed back. Bounded: the
+        // regression here is a permanent wedge.
         let admitted = bounded(
             "the live waiter (the abandoned grant leaked the slot)",
             live,
@@ -602,22 +536,11 @@ mod tests {
         let _ = abandoned.await;
     }
 
-    /// The case the rest of the suite could not see: **one client with two calls
-    /// in flight**, abandoning the second.
-    ///
-    /// Every other drop test queues at most one waiter per client, which is
-    /// exactly the shape where removing "the front of the client's deque"
-    /// happens to be correct. It is not correct in general, and the two failures
-    /// it produced are different in kind:
-    ///
-    /// 1. the client's OTHER call, still waiting and still connected, had its
-    ///    channel closed and was answered `server_unavailable`;
-    /// 2. the abandoned sender survived to be granted the slot, `dispatch` fell
-    ///    off a stale `len`, and the engine idled with another client queued.
-    ///
-    /// It is also the input that reaches the dead-receiver guard in `dispatch`,
-    /// which was previously documented as unreachable. With that guard removed
-    /// the stall below becomes a permanent leak of the only slot.
+    /// One client with two calls in flight, abandoning the second: the shape
+    /// where removing "the front of the client's deque" is wrong. It closes the
+    /// other, still-connected call's channel, and leaves the abandoned sender
+    /// to be granted the slot. It is also the input that reaches the
+    /// dead-receiver guard in `dispatch`.
     #[tokio::test]
     async fn a_client_with_two_calls_in_flight_can_abandon_one() {
         let (queue, _) = queue();

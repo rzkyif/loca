@@ -1,32 +1,12 @@
 //! The signed seeded-extension manifest: shape, Ed25519 signature, cache, and
 //! the rollback refusal.
 //!
-//! Ports `packages/loca-core/src/extensions/seeded-manifest.ts`.
-//!
-//! A "seeded" extension is one Loca ships: the built-in, which is distributed
-//! from the CDN and never from npm, and the dev-only samples showcase. This
-//! module answers one question, "which version, and which tarball bytes", and
-//! the answer is only ever trusted because it is signed.
-//!
-//! # Three refusals, and why each is a control rather than tidiness
-//!
-//! - **The signature is verified over `canonicalize(manifest minus signature)`**,
-//!   against the key committed into the binary. Nothing here trusts a manifest
-//!   it has not verified, including one it wrote to its own cache.
-//! - **An id mismatch is refused.** The production endpoint is the built-in's,
-//!   and installing its bytes under another extension's folder would plant code
-//!   the user never asked for under a name they did.
-//! - **A strictly OLDER manifest than the cached one is refused.** Every past
-//!   release was validly signed, so without this a replayed old manifest rolls
-//!   the extension back to a version whose bug was fixed. `version` is inside
-//!   the signature, which is what makes the comparison meaningful.
-//!
-//! # The cache is a cache, not a trust anchor
-//!
-//! It is re-verified on EVERY read, not only when it was written. A cache file
-//! is on disk where anything running as the user can edit it, so a cache that
-//! is trusted because it was once verified is a signature check with a
-//! writable bypass.
+//! Three refusals: the signature is verified over `canonicalize(manifest minus
+//! signature)` against the committed key; an id mismatch is refused (the bytes
+//! would land under another extension's folder); a strictly OLDER manifest
+//! than the cached one is refused (every past release was validly signed, so a
+//! replay would roll back a fixed bug). The cache is re-verified on EVERY read:
+//! it lives where anything running as the user can rewrite it.
 
 use std::path::{Path, PathBuf};
 
@@ -41,12 +21,9 @@ use crate::config::SIGNING_PUBLIC_KEY;
 
 const SIG_ALGO_LABEL: &str = "ed25519-base64";
 
-/// TODO(F2): `BuiltinExtensionManifest` (`domain/model.ts:409`) has no
-/// generated counterpart, so this is an interim hand-written shape under
-/// D-031's precedent. It is the whole document: a field this core does not
-/// model would be dropped by a re-encode, which is why the signature is checked
-/// against the PARSED JSON rather than against this struct (see
-/// [`verify_document`]).
+/// TODO(F2): no generated counterpart yet, so hand-written. The signature is
+/// checked against the PARSED JSON, not a re-encode of this struct, so a field
+/// this core does not model still survives into the signed message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededManifest {
     #[serde(rename = "schemaVersion")]
@@ -63,21 +40,11 @@ fn fetch_failed(message: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::ManifestFetchFailed, message)
 }
 
-/// Parse a manifest document.
-///
-/// `schemaVersion` must be exactly 1. A core that met a version 2 document and
-/// read the fields it recognised would be guessing about the ones it did not,
-/// and one of those could be what makes the signature mean something different.
-/// That check is the only hand-written one here; the rest is the deserializer's.
+/// Parse a manifest document. `schemaVersion` must be exactly 1, checked by
+/// hand because the struct types it `i64`; the deserializer refuses the rest.
 pub fn parse_manifest(raw: &str) -> Result<SeededManifest> {
     let document: Value = serde_json::from_str(raw)
         .map_err(|err| fetch_failed(format!("invalid manifest JSON: {err}")))?;
-    // `schemaVersion` is checked BY HAND because the struct types it `i64`, so
-    // deserializing accepts a version 2 document without comment. Every other
-    // field is a required `String` there, so `from_value` refuses a missing or
-    // mistyped one first: the specification's per-field loop exists because
-    // TypeScript has no deserializer, and carrying it across would be a guard
-    // that cannot fire.
     if document.get("schemaVersion") != Some(&Value::from(1)) {
         return Err(fetch_failed(format!(
             "unsupported schemaVersion: {}",
@@ -88,25 +55,13 @@ pub fn parse_manifest(raw: &str) -> Result<SeededManifest> {
         .map_err(|err| fetch_failed(format!("invalid manifest shape: {err}")))
 }
 
-/// Parse and verify one manifest document.
-///
-/// The signed message is built from the PARSED JSON with `signature` removed,
-/// never by re-encoding [`SeededManifest`]. Re-encoding would silently drop any
-/// field this core does not model, so a schema addition would read as a forged
-/// signature on every already-deployed core.
+/// Parse and verify one manifest document against the committed key.
 pub fn verify_document(raw: &str) -> Result<SeededManifest> {
     verify_document_with(raw, SIGNING_PUBLIC_KEY)
 }
 
-/// The verification itself, with the trusted key as a parameter.
-///
-/// The key is injected rather than read from the constant so that TESTS DRIVE
-/// THIS FUNCTION rather than a copy of it. That is not a stylistic preference:
-/// an earlier version of this module kept a key-injected duplicate in its test
-/// module, and a mutation replacing the signed message with a re-encode of the
-/// parsed struct survived the whole suite, because the only test that could
-/// have seen it was looking at the duplicate. Every other manifest verifier in
-/// this crate already takes its key this way.
+/// The verification itself, with the key injected so tests drive this function
+/// rather than a copy. The signed message is the parsed JSON minus `signature`.
 pub fn verify_document_with(raw: &str, public_key_b64: &str) -> Result<SeededManifest> {
     let manifest = parse_manifest(raw)?;
     let mut document: Value = serde_json::from_str(raw)
@@ -128,14 +83,9 @@ pub fn verify_document_with(raw: &str, public_key_b64: &str) -> Result<SeededMan
     Ok(manifest)
 }
 
-/// Read a manifest the installer planted on disk and verify it OFFLINE.
-///
-/// `None` for absent, malformed, or unverifiable, with no distinction between
-/// them: this is boot, the caller's only decision is "seed or defer to the
-/// user", and a missing plant and a tampered plant lead to the same place.
-///
-/// **Nothing in this function can reach the network**, which is the property
-/// the whole first-boot path rests on.
+/// Read a manifest the installer planted on disk and verify it OFFLINE. `None`
+/// for absent, malformed, or unverifiable alike: boot's only decision is
+/// seed-or-defer.
 pub async fn read_planted(path: &Path) -> Option<SeededManifest> {
     let raw = tokio::fs::read_to_string(path).await.ok()?;
     verify_document(&raw).ok()
@@ -146,10 +96,7 @@ pub fn cache_path(cache_dir: &Path, extension_id: &str) -> PathBuf {
     cache_dir.join(format!("{extension_id}-manifest.json"))
 }
 
-/// The cached manifest, re-verified.
-///
-/// Re-verified on every read rather than trusted because it was verified once:
-/// the file lives where anything running as the user can rewrite it.
+/// The cached manifest, re-verified on every read.
 pub async fn read_cached(cache_dir: &Path, extension_id: &str) -> Option<SeededManifest> {
     let raw = tokio::fs::read_to_string(cache_path(cache_dir, extension_id))
         .await
@@ -157,10 +104,7 @@ pub async fn read_cached(cache_dir: &Path, extension_id: &str) -> Option<SeededM
     verify_document(&raw).ok()
 }
 
-/// Write a verified manifest to the cache, via a sibling temp file.
-///
-/// Renamed rather than written in place, so a crash mid-write cannot leave a
-/// truncated document that the next read would reject and re-fetch forever.
+/// Write a verified manifest to the cache via a sibling temp file + rename.
 pub async fn write_cached(cache_dir: &Path, extension_id: &str, raw: &str) -> Result<()> {
     tokio::fs::create_dir_all(cache_dir).await?;
     let path = cache_path(cache_dir, extension_id);
@@ -170,11 +114,8 @@ pub async fn write_cached(cache_dir: &Path, extension_id: &str, raw: &str) -> Re
     Ok(())
 }
 
-/// Decide between a freshly fetched manifest and the cached one.
-///
-/// Split out from any I/O so the rollback rule is a pure function over two
-/// versions. Returns the manifest to USE, and whether the fetched one should be
-/// cached.
+/// Decide between a freshly fetched manifest and the cached one: the manifest
+/// to use, and whether the fetched one should be cached.
 pub fn choose(
     fetched: SeededManifest,
     cached: Option<&SeededManifest>,
@@ -208,8 +149,7 @@ pub fn choose(
 #[derive(Debug, Clone)]
 pub struct Chosen {
     pub manifest: SeededManifest,
-    /// False when the fetched manifest was refused, so a rolled-back document
-    /// never reaches the cache and cannot win on the next boot by being there.
+    /// False when the fetched manifest was refused, so it never reaches the cache.
     pub store: bool,
 }
 
@@ -220,12 +160,8 @@ mod tests {
 
     use ed25519_dalek::{Signer, SigningKey};
 
-    /// A manifest signed with the REAL committed key cannot be produced here,
-    /// so the tests that need a valid signature sign with a throwaway key and
-    /// pass it to [`verify_document_with`], which IS the production function
-    /// with its key as a parameter. There is deliberately no second copy of the
-    /// verification in this module: a copy is a reimplementation, and a mutation
-    /// of the real one sails past every test that only drives the copy.
+    /// Signs with a throwaway key for [`verify_document_with`]; deliberately no
+    /// second copy of the verification here.
     fn signed_with(key: &SigningKey, mut document: serde_json::Map<String, Value>) -> String {
         document.remove("signature");
         let message = canonicalize(&Value::Object(document.clone()));
@@ -274,8 +210,6 @@ mod tests {
 
     #[test]
     fn a_manifest_signed_by_the_wrong_key_is_refused() {
-        // Through the PRODUCTION function, against the real committed key. A
-        // throwaway keypair is by construction not it.
         let (key, _) = keypair();
         let raw = signed_with(&key, document("1.0.0", "loca-extension-builtin"));
         let err = verify_document(&raw).unwrap_err();
@@ -291,11 +225,6 @@ mod tests {
             "1.2.3"
         );
 
-        // Every field is inside the signature. Moving any one of them has to
-        // break it, or the signature is decorative: `sha256` is what anchors
-        // the tarball, `tarballUrl` is where the bytes come from, `version` is
-        // what the rollback rule compares, and `id` is which folder they land
-        // in.
         for field in ["version", "id", "tarballUrl", "sha256"] {
             let mut document: Value = serde_json::from_str(&raw).unwrap();
             document[field] = Value::String("tampered".to_string());
@@ -309,11 +238,6 @@ mod tests {
 
     #[test]
     fn the_signed_message_is_the_document_and_not_the_struct() {
-        // A field this core does not model must survive into the signed
-        // message. Re-encoding the parsed struct would drop it, and every
-        // already-deployed core would then read a schema addition as a forged
-        // signature: the manifest verifies for the publisher and fails for
-        // every user at once.
         let (key, public) = keypair();
         let mut document = document("1.0.0", "loca-extension-builtin");
         document.insert("futureField".to_string(), Value::String("kept".to_string()));
@@ -339,11 +263,6 @@ mod tests {
 
     #[test]
     fn a_complete_document_of_another_schema_version_is_still_refused() {
-        // The schemaVersion pin is the only hand-written screen left, and it is
-        // observable ONLY against a document that is otherwise valid: fed one
-        // that is also missing every other field, the deserializer refuses it
-        // whatever the version check does, and the pin could be deleted with
-        // nothing turning red. It survived a mutation for exactly that reason.
         let mut doc = document("1.0.0", "loca-extension-builtin");
         assert!(
             parse_manifest(&serde_json::to_string(&Value::Object(doc.clone())).unwrap()).is_ok(),
@@ -365,8 +284,6 @@ mod tests {
 
     #[test]
     fn a_manifest_for_another_extension_is_refused() {
-        // The production endpoint is the built-in's. Accepting a mismatched id
-        // would plant its bytes under a folder named for something else.
         let err = choose(
             manifest("1.0.0", "loca-extension-samples"),
             None,
@@ -379,10 +296,6 @@ mod tests {
 
     #[test]
     fn a_strictly_older_manifest_is_refused_and_never_cached() {
-        // Every past release was validly signed, so a replay is a legitimate
-        // document; the version comparison is the only thing standing between
-        // a replayed old manifest and a rollback to a version whose bug was
-        // fixed.
         let cached = manifest("2.0.0", "builtin");
         let chosen = choose(manifest("1.9.9", "builtin"), Some(&cached), "builtin").unwrap();
         assert_eq!(chosen.manifest.version, "2.0.0");
@@ -391,8 +304,7 @@ mod tests {
             "a refused older manifest was written to the cache, where it would win next boot"
         );
 
-        // Equal is not older: a re-fetch of the SAME version must still be
-        // usable, or a cache wipe leaves the extension permanently unresolvable.
+        // Equal is not older.
         let same = choose(manifest("2.0.0", "builtin"), Some(&cached), "builtin").unwrap();
         assert_eq!(same.manifest.version, "2.0.0");
         assert!(same.store);
@@ -404,7 +316,6 @@ mod tests {
 
     #[test]
     fn with_no_cache_anything_signed_is_accepted() {
-        // There is nothing to roll back from on a first install.
         let chosen = choose(manifest("0.0.1", "builtin"), None, "builtin").unwrap();
         assert_eq!(chosen.manifest.version, "0.0.1");
         assert!(chosen.store);
@@ -416,8 +327,6 @@ mod tests {
         let path = dir.path().join(".builtin.json");
         let (key, _) = keypair();
 
-        // Signed by a throwaway key, so it does NOT verify against the
-        // committed one: the boot path sees "no usable plant" and defers.
         tokio::fs::write(&path, signed_with(&key, document("1.0.0", "builtin")))
             .await
             .unwrap();
@@ -426,8 +335,6 @@ mod tests {
             "an unverifiable plant was used"
         );
 
-        // Absent, malformed and unverifiable are deliberately the same answer:
-        // boot's only decision is seed-or-defer.
         tokio::fs::write(&path, "{ not json").await.unwrap();
         assert!(read_planted(&path).await.is_none());
         tokio::fs::remove_file(&path).await.unwrap();
@@ -436,9 +343,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_cache_is_re_verified_on_every_read_rather_than_trusted() {
-        // The file is on disk where anything running as the user can rewrite
-        // it. A cache trusted because it was verified once is a signature check
-        // with a writable bypass.
         let dir = tempfile::tempdir().unwrap();
         let (key, _) = keypair();
         let raw = signed_with(&key, document("1.0.0", "builtin"));

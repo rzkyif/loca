@@ -1,35 +1,21 @@
-//! The chat orchestrator: turn assembly, streaming, the tool loop, title generation.
+//! The chat orchestrator: turn assembly, streaming, the tool loop, title
+//! generation.
 //!
-//! Work package **D4** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
+//! Three things live here. The turn: one `chat.start` WS frame becomes a task
+//! that builds a provider request, streams it, dispatches tool calls, loops,
+//! and emits `chat.*` / `tool.*` frames. Two seams other modules declared:
+//! [`sessions::ChatEngine`](crate::sessions::ChatEngine) backs the SSE fallback
+//! and the title-regenerate route, and
+//! [`memories::MemoryIndexer`](crate::memories::MemoryIndexer) is how a memory
+//! mutation asks for a re-index. And the idle gate, whose "is anything busy?"
+//! predicate is chat's own active-stream count.
 //!
-//! # What lives here
+//! There is no `routes.rs`: every HTTP route reaches chat through
+//! `ChatEngine`, so the only wire surface here is the WebSocket.
 //!
-//! Three things, separated because they fail differently.
-//!
-//! 1. **The turn.** One `chat.start` WS frame becomes a task that builds a
-//!    provider request, streams it, dispatches the tool calls the model asks
-//!    for, loops, and emits `chat.*` / `tool.*` frames. Stateful, and the bulk.
-//! 2. **Two seams other packages declared and left waiting.**
-//!    [`sessions::ChatEngine`](crate::sessions::ChatEngine) backs the SSE
-//!    fallback and the title-regenerate route;
-//!    [`memories::MemoryIndexer`](crate::memories::MemoryIndexer) is how a
-//!    memory mutation asks for a re-index.
-//! 3. **The idle gate.** The background queue is D4's because its "is anything
-//!    busy?" predicate is chat's own active-stream count.
-//!
-//! # What does NOT live here
-//!
-//! There is no `routes.rs`. Every HTTP route that reaches chat is D2's and goes
-//! through `ChatEngine`, so D4's only wire surface is the WebSocket, reached
-//! through F6's [`InboundHandler`](crate::transport::InboundHandler).
-//!
-//! # A turn outlives its client's connection
-//!
-//! The turn runs on its own task, not on the WS reader's, so a disconnect
-//! cannot cancel it. That is stated as an invariant in `chat.ts:15-22` and the
-//! Client depends on it: a transport drop detaches rather than interrupting,
-//! which is what makes a core swap transparent. The catch-up buffers on
+//! A turn outlives its client's connection. It runs on its own task rather than
+//! the WS reader's, so a transport drop detaches instead of interrupting, which
+//! is what makes a core swap transparent; the catch-up buffers on
 //! [`ActiveStream`] are what a reconnecting client replays.
 
 pub mod automated;
@@ -89,24 +75,19 @@ use crate::settings::access::str_setting;
 use crate::settings::Settings;
 use crate::transport::{FrameBus, InboundHandler};
 
-/// The orchestrator. One per core.
-///
-/// A second instance would give `chat.interrupt` a map that does not contain
-/// the stream `chat.start` created, and every interrupt, askUser answer and
-/// permission response would silently do nothing. Cheap to clone; every clone
-/// shares one active-stream map, one in-flight controller map and one queue.
+/// The orchestrator, one per core: a second instance would give
+/// `chat.interrupt` a map without the stream `chat.start` created, and every
+/// control frame would silently do nothing. Cheap to clone; every clone shares
+/// one active-stream map, one in-flight controller map and one queue.
 #[derive(Clone)]
 pub struct Chat {
     inner: Arc<ChatInner>,
 }
 
 impl Chat {
-    /// Whether the tool host THIS chat holds can offer tools.
-    ///
-    /// A read port for the boot-seam suite (D-165). Deliberately asks the chat
-    /// object rather than boot's local variable: the first version of that test
-    /// read the `OnceLock` boot filled and stayed green when the shim was never
-    /// handed to chat, which is half the wiring and the half that matters.
+    /// Whether the tool host THIS chat holds can offer tools. Deliberately asks
+    /// the chat object rather than boot's local variable: a host boot built and
+    /// never handed over is the half of the wiring that matters.
     pub fn tools_live(&self) -> bool {
         self.inner.deps.tools.is_live()
     }
@@ -133,9 +114,7 @@ pub(crate) struct ChatInner {
     tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
-/// What `Chat::new` needs. A struct rather than fourteen positional arguments,
-/// so `boot` reads as a list of names and a later addition does not renumber
-/// every call site.
+/// What `Chat::new` needs, as a struct so `boot` reads as a list of names.
 pub struct ChatConfig {
     pub sessions: SessionsStore,
     pub memories: MemoriesStore,
@@ -164,8 +143,7 @@ impl Chat {
             Arc::clone(&config.frames),
         );
         // The idle gate: background work runs only while no session has a turn
-        // in flight. The predicate reads the same map the turns register in, so
-        // there is no second source of truth to drift.
+        // in flight, read from the same map the turns register in.
         let gate = Arc::clone(&streams);
         let queue = BackgroundQueue::new(Arc::new(move || !gate.is_empty()));
         Self {
@@ -199,12 +177,10 @@ impl Chat {
         self.inner.streams.attach_status(status);
     }
 
-    /// Cancel every turn, stop the queue, and WAIT for the turns to finish.
-    ///
-    /// The wait is the point. A turn with a tool call in flight holds an MCP
-    /// session or an extension worker, and reaping those first turns a clean
-    /// cancel into a mid-call failure the user sees as a broken tool. Called
-    /// before `mcp.shutdown()` and `sidecars.shutdown()` for that reason.
+    /// Cancel every turn, stop the queue, and WAIT for the turns to finish. The
+    /// wait is the point: a turn with a tool call in flight holds an MCP session
+    /// or an extension worker, so this is called before `mcp.shutdown()` and
+    /// `sidecars.shutdown()`.
     pub async fn shutdown(&self) {
         self.inner.streams.cancel_all();
         self.inner.queue.dispose();
@@ -218,8 +194,8 @@ impl Chat {
     pub async fn start(&self, client_id: &str, frame: ChatStartWs) {
         let stream_id = frame.stream_id.to_string();
         let session_id = frame.session_id.to_string();
-        // An unknown session is logged and dropped with no frame, matching the
-        // oracle: the id came from a client that should not have it.
+        // An unknown session is logged and dropped with no frame: the id came
+        // from a client that should not have it.
         let session = match self
             .inner
             .sessions
@@ -236,9 +212,8 @@ impl Chat {
             }
         };
         // Claimed under one lock, so two frames arriving together cannot both
-        // register. The predicate is (client, session), NOT session alone: two
-        // different clients CAN run turns on the same session, and every frame
-        // is scoped to its owner.
+        // register. The predicate is (client, session), not session alone: two
+        // clients CAN run turns on one session, each frame scoped to its owner.
         let Some(guard) = self.inner.streams.claim(&stream_id, &session.id, client_id) else {
             self.inner.frames.broadcast_to_client(
                 client_id,
@@ -253,10 +228,9 @@ impl Chat {
 
         let inner = Arc::clone(&self.inner);
         let task = tokio::spawn(async move {
-            // The guard is moved in, so its `Drop` deregisters the stream on
-            // every exit including a cancel at shutdown. A leaked entry would
-            // make `active_session_ids` never go empty, wedging the background
-            // queue's idle gate forever with nothing in the log.
+            // The guard is moved in, so its `Drop` deregisters on every exit
+            // including a cancel at shutdown. A leaked entry wedges the
+            // background queue's idle gate forever with nothing in the log.
             let guard = guard;
             let stream = Arc::clone(guard.stream());
             if let Err(err) = turn::run(&inner, Arc::clone(&stream), frame).await {
@@ -288,12 +262,10 @@ impl Chat {
         }
     }
 
-    /// Re-attach a client to a session it just opened or reconnected to.
-    ///
-    /// Replays this turn's born-but-not-yet-finalized messages in birth order
-    /// with the `after_id` each was born at, then re-sends every open tool
-    /// prompt. A no-op when nothing is in flight, and invisible to a client that
-    /// does not own the stream.
+    /// Re-attach a client to a session it just opened or reconnected to,
+    /// replaying this turn's born-but-not-finalized messages in birth order with
+    /// the `after_id` each was born at, then every open tool prompt. A no-op
+    /// when nothing is in flight, and invisible to a non-owner.
     pub fn resubscribe(&self, client_id: &str, session_id: &str) {
         let Some(stream) = self.inner.streams.owned_on_session(client_id, session_id) else {
             return;
@@ -357,16 +329,10 @@ impl Chat {
         controller.respond_permission(request_id, allow);
     }
 
-    /// Settle a schedule confirm.
-    ///
-    /// Two guards rather than one, and the second is what makes this
-    /// idempotent: a response whose `request_id` is not the OPEN confirm (stale,
-    /// replayed, or forged) must not persist anything, because the insert would
-    /// otherwise run once per replay.
-    ///
-    /// The persist happens BEFORE the tool is unblocked, so a storage failure
-    /// answers the tool `false` and the tool never reports "scheduled" for
-    /// something that was not stored.
+    /// Settle a schedule confirm. The second guard is what makes this
+    /// idempotent: a `request_id` that is not the OPEN confirm must persist
+    /// nothing, or the insert runs once per replay. The persist happens BEFORE
+    /// the tool is unblocked, so a storage failure answers the tool `false`.
     pub fn forward_schedule(
         &self,
         call_id: &str,
@@ -425,13 +391,9 @@ impl ChatInner {
 }
 
 impl InboundHandler for Chat {
-    /// Seven kinds, each deserialised into its `contract::inbound` type, which
-    /// is where the validation lives: deserialising IS the validation, so there
-    /// is no second hand-written check after it.
-    ///
-    /// A frame that fails to deserialise is logged and dropped with nothing sent
-    /// back, matching the oracle's hub. An unrecognised kind lands here rather
-    /// than in the transport, which forwards unknown kinds deliberately.
+    /// Seven kinds, each deserialised into its `contract::inbound` type:
+    /// deserialising IS the validation, so there is no second check after it. A
+    /// frame that fails is logged and dropped with nothing sent back.
     fn handle(&self, client_id: &str, kind: &str, frame: Value) {
         let chat = self.clone();
         let client_id = client_id.to_string();
@@ -458,9 +420,8 @@ impl InboundHandler for Chat {
                 let Some(parsed) = parse::<ToolAskUserResponse>(kind, &frame) else {
                     return;
                 };
-                // Validated as the inbound shape above; re-read as the API shape
-                // the controller takes, from the same bytes. The two are
-                // generated from one source, so this cannot lose a field.
+                // Re-read from the same bytes as the API shape the controller
+                // takes. Both are generated from one source.
                 let Some(answers) = field::<Vec<AskUserAnswer>>(&frame, "answers") else {
                     return;
                 };
@@ -523,12 +484,9 @@ impl ChatEngine for Chat {
     }
 }
 
-/// The storage screen's view of the sessions on disk.
-///
-/// On `Chat` rather than on `SessionsStore`, because the seam asks two
-/// questions and only one of them is the store's: which sessions have an agent
-/// mid-turn is this module's fact, and the alternative is boot assembling a
-/// pair-holding adapter that would then be the only place the two are joined.
+/// The storage screen's view of the sessions on disk. On `Chat` rather than on
+/// `SessionsStore` because which sessions have an agent mid-turn is this
+/// module's fact.
 #[async_trait::async_trait]
 impl crate::storage::deps::SessionsSource for Chat {
     async fn list(&self) -> Result<Vec<crate::storage::deps::SessionSummary>> {
@@ -557,10 +515,8 @@ impl crate::storage::deps::SessionsSource for Chat {
         if let Some(deleted) = self.inner.sessions.delete_by_id(session_id).await {
             for path in deleted.attachment_paths {
                 // Removing the session directory already took the attachments
-                // stored inside it, so a missing file is the normal case. Same
-                // handling as the delete route (`sessions/routes.rs:180-193`),
-                // where a real failure is worth a warning and never fails the
-                // delete.
+                // inside it, so a missing file is the normal case and a real
+                // failure is worth a warning but never fails the delete.
                 match crate::sessions::store::remove_file(path.clone()).await {
                     Ok(()) => {}
                     Err(err) if err.code == crate::error::ErrorCode::NotFound => {}
@@ -593,11 +549,9 @@ impl MemoryIndexer for Chat {
     }
 }
 
-/// One memory's pass, re-armed when the embedding step could not run.
-///
-/// A boxed future rather than an `async fn`, because it re-enqueues ITSELF on
-/// the deferred path and an `impl Future` that appears in its own body has no
-/// nameable type for the compiler to prove `Send` of.
+/// One memory's pass, re-armed when the embedding step could not run. A boxed
+/// future rather than an `async fn` because it re-enqueues itself, and an `impl
+/// Future` appearing in its own body has no nameable type.
 fn index_one(inner: Arc<ChatInner>, id: String) -> BoxFuture<'static, Result<()>> {
     Box::pin(async move {
         let outcome = index_memory(
@@ -609,9 +563,8 @@ fn index_one(inner: Arc<ChatInner>, id: String) -> BoxFuture<'static, Result<()>
         )
         .await?;
         if outcome.embedding_deferred {
-            // The embedding model is not downloaded yet. Re-arm rather than
-            // drop, so the vector lands once it is rather than waiting for the
-            // next unrelated mutation.
+            // The embedding model is not downloaded yet: re-arm, so the vector
+            // lands without waiting for the next unrelated mutation.
             let queue = Arc::clone(&inner.queue);
             let key = format!("memory-index:{id}");
             queue.enqueue_deferred(BackgroundJob::new(key, move || index_one(inner, id)));
@@ -633,11 +586,9 @@ fn index_all(inner: Arc<ChatInner>) -> BoxFuture<'static, Result<()>> {
     })
 }
 
-/// The SSE fallback's completion: text in, deltas out, and no store writes.
-///
-/// No tools, no reasoning trace, no multiplexing; the WebSocket path covers all
-/// three. The system prompt is `prompts.defaultSystemPrompt` read from the
-/// SPARSE core record, which is what the route reads today.
+/// The SSE fallback's completion: text in, deltas out, no store writes, and no
+/// tools, reasoning trace or multiplexing. The system prompt is
+/// `prompts.defaultSystemPrompt` from the SPARSE core record.
 async fn one_shot(
     inner: Arc<ChatInner>,
     req: OneShotRequest,

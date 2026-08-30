@@ -1,10 +1,6 @@
-//! Which download-queue movements can change `missing`.
-//!
-//! Ports `ws/hub.ts:50-64` and `:453-465`. The queue emits a whole snapshot on
-//! every progress tick, and recomputing on each one would rebuild the model and
-//! binary sets and broadcast to every client several times a second for a bar
-//! that moved. So the boot subscription keeps the previous status per row and
-//! recomputes only on the transitions that can actually flip a requirement.
+//! Which download-queue movements can change `missing`. The queue snapshots on
+//! every progress tick, so recompute only on transitions that can flip a
+//! requirement.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -22,13 +18,9 @@ impl DownloadEdges {
         Self::default()
     }
 
-    /// Record `entries` and answer whether anything in it should trigger a
-    /// requirements recompute.
-    ///
-    /// Two things count. A row ENTERING a terminal state, per
-    /// [`is_recompute_edge`]. And a tracked row DISAPPEARING: the user clearing
-    /// a completed download can re-expose a model file as missing, and no
-    /// per-row transition describes a row that is simply gone.
+    /// Record `entries` and answer whether a recompute is due: a row entering a
+    /// terminal state ([`is_recompute_edge`]), or a tracked row disappearing
+    /// (clearing a completed download can re-expose a model file as missing).
     pub fn note(&self, entries: &[DownloadEntry]) -> bool {
         let mut last = lock(&self.last);
         let mut changed = false;
@@ -45,20 +37,10 @@ impl DownloadEdges {
     }
 }
 
-/// Whether one row's status transition should trigger a recompute.
-///
-/// MODEL rows recompute on entering a terminal state: `Completed` means the
-/// file is now present, and `Error` means the snapshot should surface the
-/// failure as retryable.
-///
-/// **BINARY rows never recompute here, and dropping that guard reintroduces a
-/// race.** A binaries row reaches `Completed` when its ARCHIVE has landed,
-/// which is before extraction and before the installed version is recorded
-/// (`downloads/binaries/installer.rs`, where `finish` extracts and records after
-/// the queue hands the archive back). Recomputing there would broadcast a
-/// "still missing" snapshot that races the real, post-extract answer, and
-/// whichever arrived last would win. Binary readiness comes only from the
-/// install lifecycle.
+/// Whether one row's status transition should trigger a recompute: model rows
+/// entering a terminal state. Binary rows never do, since `Completed` means the
+/// archive landed but not yet extracted, and a "still missing" broadcast would
+/// race the post-extract answer; binary readiness comes from the install lifecycle.
 pub fn is_recompute_edge(
     destination: DownloadEntryDestination,
     previous: Option<DownloadStatus>,

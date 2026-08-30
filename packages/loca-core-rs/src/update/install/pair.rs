@@ -1,38 +1,22 @@
 //! Mint a first pairing code from the freshly started core.
 //!
-//! Ports `install/pair.ts`. Runs on the core host after `install-service`: it
-//! waits for the daemon to bind its port, then mints a pairing code
-//! authenticated by the on-disk admin token. The result is one JSON line on
-//! stdout so a headless setup script can parse it; a human just reads the code.
+//! Runs on the core host after `install-service`: it waits for the daemon to
+//! bind its port, then mints a pairing code authenticated by the on-disk admin
+//! token, printing one JSON line a headless setup script can parse.
 //!
-//! # The CA of one, and why verification stays on
+//! Trust comes from the certificate the core writes to `tls-cert.pem`, handed
+//! to `reqwest` as the only root this client trusts. Disabling verification
+//! would make the mint accept any listener on the port, on the one request in
+//! this package that carries the admin token.
 //!
-//! Trust for the self-signed loopback API comes from the certificate the core
-//! writes to `tls-cert.pem` at boot, handed to `reqwest` as the only root this
-//! client trusts. Disabling verification instead would be one line shorter and
-//! would make the mint accept **any** listener that answered on the port, on
-//! the one request in this package that carries the admin token.
+//! **The certificate is resolved INSIDE the health-wait loop**, because core
+//! writes it asynchronously during boot while this short-lived CLI polls.
+//! Reading it once up front leaves the client unbuilt, every probe then fails
+//! verification, and the verb reports a core that never became healthy when it
+//! was fine. A resolver hoisted out of the loop passes every other test here.
 //!
-//! # The race this file exists to lose gracefully
-//!
-//! Core writes `tls-cert.pem` ASYNCHRONOUSLY during boot, and this is a
-//! short-lived CLI started immediately after `install-service`. So the
-//! certificate is resolved **inside** the health-wait loop, retried until it
-//! lands (`pair.ts:86-100`). Reading it once up front leaves the client
-//! unbuilt, and then every probe fails verification for the whole wait and the
-//! verb reports a core that never became healthy when in fact it was fine.
-//!
-//! That is the single most important property here and it is the one a test
-//! must stage deliberately, because a resolver hoisted out of the loop passes
-//! every other test in this file.
-//!
-//! # The timings are parameters
-//!
-//! 30 health attempts plus 5 mint attempts at one second each is 35 seconds of
-//! sleeping, which no test should pay. [`MintTimings`] is the seam, and the
-//! SHIPPING values are asserted separately against distinct non-zero arguments
-//! so the production wiring is not left covered by nothing. Same shape as
-//! `Net::with_bounds`.
+//! [`MintTimings`] is the seam over the 35 seconds of sleeping the shipping
+//! budget implies; the shipping values are asserted separately.
 
 use std::time::Duration;
 
@@ -42,7 +26,7 @@ use crate::paths::Paths;
 use crate::update::install::io::{mint_code_result, Io};
 use crate::update::net::Net;
 
-/// The retry budget. `pair.ts:13-19`.
+/// The retry budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MintTimings {
     /// How many times to wait a beat for the core to answer `/health`.
@@ -51,10 +35,7 @@ pub struct MintTimings {
     /// budget because the pairing route can lag the bind on a cold start, so
     /// "the port is open" does not yet mean "the route is mounted".
     pub mint_attempts: u32,
-    /// Per-probe deadline. The core answers over loopback in milliseconds, so a
-    /// probe that has not returned in a few seconds is a stalled connection and
-    /// not a slow one; bounding it is what stops a single hung request wedging
-    /// an otherwise bounded retry loop.
+    /// Per-probe deadline, so one hung request cannot wedge the retry loop.
     pub probe_timeout: Duration,
     /// The beat between attempts.
     pub retry_delay: Duration,
@@ -93,8 +74,8 @@ pub async fn mint_code(
     let port = config.port;
     let base = format!("https://127.0.0.1:{port}");
 
-    // The client comes back from the wait rather than being built before it,
-    // because building it needs a certificate that may not exist yet.
+    // The client comes back from the wait: building it needs a certificate
+    // that may not exist yet.
     let net = wait_for_health(paths, io, &base, timings).await?;
 
     let admin = tokio::fs::read_to_string(paths.admin_token_file())
@@ -111,9 +92,7 @@ pub async fn mint_code(
 
     let url = format!("{base}/api/v1/pairing/codes");
     for attempt in 0..timings.mint_attempts {
-        // A transport error and a non-2xx are both retried: the port is bound
-        // (health passed) but the pairing route can lag the bind on a cold
-        // start.
+        // Both retried: health passed, but the pairing route can lag the bind.
         if let Ok(Some(body)) = net
             .post_json(&url, &[("X-Admin-Token", admin.as_str())], "{}")
             .await
@@ -137,10 +116,8 @@ pub async fn mint_code(
     ))
 }
 
-/// Wait for `/health`, resolving the CA of one on the way.
-///
-/// The certificate read is retried INSIDE the loop. See the module docs: this
-/// is the whole reason the function returns the client rather than taking one.
+/// Wait for `/health`, resolving the CA of one on the way. The certificate read
+/// is retried INSIDE the loop, which is why this returns the client.
 async fn wait_for_health(
     paths: &Paths,
     io: &dyn Io,
@@ -164,8 +141,7 @@ async fn wait_for_health(
         }
         if let Some(client) = &net {
             if client.probe_ok(&url).await {
-                // Moved out rather than rebuilt, so the mint reuses the
-                // connection and the same trust root.
+                // Moved out, so the mint reuses the connection and root.
                 return net.ok_or_else(|| internal("unreachable: the client was just used"));
             }
         }
@@ -186,18 +162,15 @@ async fn loopback_client(paths: &Paths, probe_timeout: Duration) -> Option<Net> 
         .await
         .ok()?;
     if pem.trim().is_empty() {
-        // A zero-length file is what a half-written cert looks like, and it is
-        // reachable: the core writes this during boot while this CLI polls.
+        // A half-written cert, reachable while the core boots and this polls.
         return None;
     }
     Net::with_root_certificate(&pem, probe_timeout).ok()
 }
 
-/// The `code` from a pairing response, or `None`.
-///
-/// Tolerant on purpose: a 2xx whose body is not what this expects is retried
-/// like any other not-ready answer rather than being an error, because the
-/// route can be mounted a moment before it is fully wired.
+/// The `code` from a pairing response, or `None`. A 2xx whose body is not what
+/// this expects is retried rather than erroring: the route can be mounted a
+/// moment before it is fully wired.
 fn read_code(body: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let code = value.get("code")?.as_str()?;
@@ -257,30 +230,24 @@ mod tests {
     }
 
     #[test]
-    fn the_shipping_budget_is_the_oracles() {
-        // The tests run a fast budget, which is exactly how a shipping constant
-        // ends up asserted by nothing. Checked here against `pair.ts:13-19`.
+    fn the_shipping_budget_is_the_one_that_ships() {
+        // The tests run a fast budget, which is how a shipping constant ends
+        // up asserted by nothing.
         let s = MintTimings::SHIPPING;
         assert_eq!(s.health_attempts, 30);
         assert_eq!(s.mint_attempts, 5);
         assert_eq!(s.probe_timeout, Duration::from_secs(5));
         assert_eq!(s.retry_delay, Duration::from_secs(1));
         assert_eq!(MintTimings::default(), s, "the default IS the shipping set");
-        // Distinct non-zero values, so a transposition is visible rather than
-        // hidden behind two fields that happen to agree.
+        // Distinct non-zero values, so a transposition is visible.
         assert_ne!(s.health_attempts, s.mint_attempts);
     }
 
     #[tokio::test]
     async fn the_certificate_is_resolved_inside_the_loop_not_before_it() {
-        // THE test of this file. Core writes tls-cert.pem asynchronously during
-        // boot and this CLI starts immediately after install-service, so the
-        // file is genuinely absent for the first attempts. A resolver hoisted
-        // out of the loop reads `None` once and never retries, and then every
-        // probe fails for the whole wait.
-        //
-        // Staged with the cert appearing LATE. It cannot be written after the
-        // fact: with the cert present from the start, both shapes pass.
+        // THE test of this file. The cert appears LATE, which is the only
+        // staging that separates an in-loop resolver from a hoisted one: with
+        // it present from the start, both shapes pass.
         let e = env(1);
         let cert = e.paths.tls_cert_file();
         assert!(!cert.exists(), "the cert must start absent");
@@ -294,16 +261,13 @@ mod tests {
             let cert = cert.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(20)).await;
-                // A real PEM, so the failure under test is the RETRY and not a
-                // parse error that would fail either way.
+                // A real PEM, so the failure under test is the RETRY.
                 std::fs::write(&cert, TEST_CERT_PEM).unwrap();
             })
         };
 
-        // Port 1 answers nothing, so this still fails; what is asserted is
-        // WHICH failure. Reaching "did not become healthy" means the client was
-        // eventually built, so the read was retried. A hoisted read reports the
-        // same message, so the discriminator is the progress line below.
+        // Port 1 answers nothing, so this still fails; WHICH failure is the
+        // assertion, discriminated by the progress line below.
         let err = bounded(mint_code(&e.config, &e.paths, &e.io, timings))
             .await
             .unwrap_err();
@@ -315,10 +279,8 @@ mod tests {
             "the wait must NOTICE the absent cert and say so: {}",
             e.err.text()
         );
-        // And it must have stopped saying it: the warning is emitted once, when
-        // the cert is missing, and the loop then moves on to probing. A resolver
-        // that never retried would keep taking the missing-cert branch for every
-        // remaining attempt.
+        // And it must have stopped saying it: a resolver that never retried
+        // would take the missing-cert branch for every remaining attempt.
         assert_eq!(
             e.err.text().matches("waiting for core's TLS cert").count(),
             1,
@@ -329,10 +291,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_certificate_file_is_treated_as_absent() {
-        // A zero-length file is what a half-written cert looks like, and it is
-        // reachable: the core writes it while this CLI polls. Building a client
-        // from it fails, so treating "exists" as "ready" would burn the whole
-        // health budget on a file that was one write from being usable.
+        // A half-written cert. Treating "exists" as "ready" would burn the
+        // whole health budget on a file one write from being usable.
         let e = env(1);
         std::fs::write(e.paths.tls_cert_file(), "   \n").unwrap();
 
@@ -343,8 +303,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_core_that_never_answers_is_bounded_rather_than_waited_on_forever() {
-        // Port 1 accepts nothing. The budget is what turns this into a failure
-        // instead of a hang, and a hang here wedges an install script.
+        // The budget turns this into a failure instead of a hang, and a hang
+        // here wedges an install script.
         let e = env(1);
         std::fs::write(e.paths.tls_cert_file(), TEST_CERT_PEM).unwrap();
         std::fs::write(e.paths.admin_token_file(), "deadbeef").unwrap();
@@ -363,15 +323,13 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_admin_token_is_refused_by_name() {
-        // The token authorises minting a pairing code. An empty one produces a
-        // 401 loop that reads as "the core never answered", so it is refused
-        // with the path in the message instead.
+        // An empty token produces a 401 loop that reads as "the core never
+        // answered", so it is refused with the path in the message.
         let e = env(1);
         std::fs::write(e.paths.tls_cert_file(), TEST_CERT_PEM).unwrap();
         std::fs::write(e.paths.admin_token_file(), "   \n").unwrap();
 
-        // Health has to pass first, so drive the reader directly: the file
-        // check is what is under test and the network is not.
+        // Driven directly: the file check is under test, not the network.
         let raw = tokio::fs::read_to_string(e.paths.admin_token_file())
             .await
             .unwrap();
@@ -385,9 +343,8 @@ mod tests {
             read_code(r#"{"code":"ABCD-EFGH"}"#),
             Some("ABCD-EFGH".into())
         );
-        // Absent, wrong type, empty, and unparseable all mean "not ready", which
-        // the caller retries. Returning an empty code would have the setup
-        // script print a code nobody can pair with.
+        // All mean "not ready" and are retried; an empty code would have the
+        // setup script print something nobody can pair with.
         for body in [
             r#"{}"#,
             r#"{"code":null}"#,
@@ -402,8 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_result_line_is_the_only_thing_on_stdout() {
-        // The shape headless setup parses. Driven through the real emitter
-        // rather than constructed, so the keys are the ones a verb would send.
+        // Driven through the real emitter, so the keys are a verb's.
         let e = env(8787);
         e.io.progress("waiting for the core");
         e.io.emit_json(&mint_code_result(
@@ -418,8 +374,8 @@ mod tests {
         assert_eq!(e.out.text().lines().count(), 1);
     }
 
-    /// A syntactically valid self-signed certificate, so the tests that stage a
-    /// PRESENT cert exercise the retry and the probe rather than a parse error.
+    /// A valid self-signed certificate, so a test staging a PRESENT cert
+    /// exercises the retry and the probe rather than a parse error.
     const TEST_CERT_PEM: &str = "-----BEGIN CERTIFICATE-----
 MIIBezCCASGgAwIBAgIUJ4Zd8YXBEBTgSJKWNCUKMmZAFTAwCgYIKoZIzj0EAwIw
 FDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI1MDEwMTAwMDAwMFoXDTM1MDEwMTAw

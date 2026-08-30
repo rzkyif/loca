@@ -25,10 +25,8 @@ pub struct CoreInfo {
     pub root: PathBuf,
 }
 
-/// A core running in this process, with no listener.
-///
-/// Holds the whole [`Booted`] rather than just its [`Core`], because the rest of
-/// it is what keeps the subsystems alive: dropping `Booted` would take the MCP
+/// A core running in this process, with no listener. Holds the whole [`Booted`]
+/// rather than just its [`Core`]: dropping the rest would take the MCP
 /// connections, the sidecar registry and the download queue with it.
 pub struct LocalCore {
     booted: Booted,
@@ -47,32 +45,20 @@ impl LocalCore {
     /// usable environment), so the embedded core lands in the same channel as
     /// the app that hosts it rather than defaulting to stable.
     ///
-    /// The port is set from the channel even though nothing binds it: it is
-    /// what the local inference server's channel-adjusted port derives from
-    /// (D-078), so leaving it at whatever the empty environment produced would
-    /// be a silent mismatch rather than an unused field.
+    /// The port is set from the channel even though nothing binds it: the local
+    /// inference server's channel-adjusted port derives from it.
     /// Boot a core in process with the vault's secure store supplied by the
     /// frontend.
     ///
-    /// **There is deliberately no no-store variant.** There was one, and the
-    /// adversarial review's F-E showed why it is a hazard: swapping
-    /// `start_with_store(root, ch, vault_store(&root))` for `start(root, ch)` at
-    /// the Client's single call site put the embedded Core's master key back in
-    /// plaintext with every test and clippy green, defeated only by a
-    /// source-reading guard that a doc comment satisfied. Deleting the
-    /// convenience constructor turns that whole class of regression into a
-    /// compile error, which is the one guard that cannot be talked around.
+    /// **There is deliberately no no-store variant.** Dropping back to one at
+    /// the Client's single call site would put the embedded Core's master key
+    /// in plaintext with every test green; having no such constructor makes
+    /// that a compile error instead.
     ///
-    /// **This is the only way the Android sealing is reachable.** On Android
-    /// there is no OS credential store, so `secrets::store::select` falls back
-    /// to a plaintext dotfile; the sealed store needs an AndroidKeyStore key,
-    /// which is reachable only through the JVM, so only the frontend can build
-    /// one. Passing `None` is correct everywhere else: iOS has
-    /// `apple-native-keyring-store` and desktop has a real keychain, and in both
-    /// cases `select` picks better than a caller could.
-    ///
-    /// Kept separate from `start` rather than added to it so no existing caller
-    /// moves, matching how `boot_with_store` sits beside `boot_with`.
+    /// **This is the only way the Android sealing is reachable.** Android has no
+    /// OS credential store, so `secrets::store::select` falls back to a
+    /// plaintext dotfile, and the sealed store needs an AndroidKeyStore key only
+    /// the JVM frontend can build. `None` is correct everywhere else.
     pub async fn start_with_store(
         root: impl Into<PathBuf>,
         channel: &str,
@@ -91,9 +77,8 @@ impl LocalCore {
             store,
         )
         .await?;
-        // Cannot happen: `Frontend::Embedded` is what fills this. Stated rather
-        // than unwrapped, because the alternative to a clear message here is a
-        // panic inside the app with no context.
+        // Cannot happen: `Frontend::Embedded` fills this. Stated rather than
+        // unwrapped, so the app never panics without context.
         let client = booted
             .local_client
             .clone()
@@ -101,10 +86,8 @@ impl LocalCore {
         Ok(Self::new(booted, client))
     }
 
-    /// Wrap an already-booted core.
-    ///
-    /// Separate from [`LocalCore::start_with_store`] so a caller that booted for
-    /// itself, such as a test, reaches the same object.
+    /// Wrap an already-booted core, so a caller that booted for itself reaches
+    /// the same object.
     pub fn new(booted: Booted, client: ClientIdentity) -> Self {
         Self {
             booted,
@@ -153,20 +136,14 @@ impl LocalCore {
 }
 
 /// A value built at most once, on first use, by a fallible async initializer.
+/// Generic over `T` so the cell is testable without booting a core.
 ///
-/// Generic over `T` for one reason: it makes the cell testable without booting a
-/// core. The three properties below are the cell's own, not the core's, and a
-/// version welded to `LocalCore` could only be exercised by a full boot, which
-/// is how this kind of logic ends up untested.
-///
-/// - **At most one.** A second core would mean a second database handle, a
-///   second download queue and a second settings cache over one file, which is
-///   the lost update the settings write lock exists to prevent.
+/// - **At most one.** A second core means a second database handle, download
+///   queue and settings cache over one file.
 /// - **Concurrent callers get the same one**, because the lock is held across
 ///   the initializer rather than only around the read.
-/// - **A failure is NOT cached.** A boot that failed on a transient condition
-///   must be retryable, or a single bad start bricks the app until the user
-///   kills it. This is why it is not a `OnceCell`.
+/// - **A failure is NOT cached**, so a transient bad boot does not brick the app
+///   until the user kills it. This is why it is not a `OnceCell`.
 pub struct StartOnce<T>(Mutex<Option<Arc<T>>>);
 
 impl<T> Default for StartOnce<T> {
@@ -210,11 +187,10 @@ mod tests {
 
     // --- the embedded boot ---------------------------------------------------
     //
-    // These are the only tests that reach `LocalCore`'s own methods, because
-    // building one needs a real `Booted`. Without them the four delegations
-    // below `start` are complete, unit-tested nowhere, and unreachable, which is
-    // the D-100 shape: `ws_open` passes `&self.client.id`, and a wrong argument
-    // there would be invisible.
+    // The only tests that reach `LocalCore`'s own methods, because building one
+    // needs a real `Booted`. Without them the four delegations below `start`
+    // are unit-tested nowhere: `ws_open` passes `&self.client.id`, and a wrong
+    // argument there would be invisible.
 
     async fn started(dir: &tempfile::TempDir) -> LocalCore {
         LocalCore::start_with_store(dir.path(), "stable", None)
@@ -224,22 +200,15 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_service_boot_creates_no_reserved_client_row() {
-        // The converse of every embedded test here, and the one structural
-        // property standing between a network-reachable core and a permanently
-        // pre-authenticated client row. The match in `boot_with_store` is the
-        // only thing enforcing it, and collapsing that match left the entire
-        // repo green (review.md C1).
+        // The one structural property between a network-reachable core and a
+        // permanently pre-authenticated client row, enforced only by the match
+        // in `boot_with_store`. A `Service` core with that row would show it in
+        // `GET /api/v1/pairing/clients`, could neither revoke nor rotate it, and
+        // would be one lost `token_hash` invariant away from a working
+        // pre-authenticated identity on a listener bound to 0.0.0.0.
         //
-        // What a `Service` core would gain from that row: it appears in
-        // `GET /api/v1/pairing/clients` as "This device" to every paired client,
-        // it can be neither revoked nor rotated, it accumulates
-        // `client_settings` nobody can clear, and it is one lost `token_hash`
-        // invariant away from being a working pre-authenticated identity on a
-        // listener bound to 0.0.0.0.
-        //
-        // The `MemoryStore` is not a convenience: a real `Service` boot runs
-        // `tls::ensure` then `vault.set`, which on a developer machine writes an
-        // entry into the login keychain. That is why `boot_with_store` exists.
+        // The `MemoryStore` keeps a real `Service` boot from sealing its TLS key
+        // into the developer's login keychain.
         let dir = tempfile::tempdir().unwrap();
         let booted = loca_core::boot::boot_with_store(
             Config {
@@ -256,11 +225,8 @@ mod tests {
 
         assert!(booted.local_client.is_none());
 
-        // **This is the assertion that makes the test worth having.** The line
-        // above only checks what boot REPORTED; this checks what it DID. A
-        // future edit that created the row and simply did not report it would
-        // pass the first and fail here, and the row is what carries every
-        // consequence listed above.
+        // The line above checks what boot REPORTED; this checks what it DID. An
+        // edit that created the row and did not report it passes the first.
         let row = booted
             .core
             .context()
@@ -279,22 +245,17 @@ mod tests {
         assert_eq!(row, 0, "a Service boot created the reserved client row");
     }
 
-    /// The reserved id, spelled here rather than imported: `auth::LOCAL_CLIENT_ID`
-    /// is the value under test, so a test that read it would follow the constant
-    /// if someone changed it and assert nothing (the D-084 lens problem).
+    /// The reserved id, spelled here rather than imported: it is the value
+    /// under test, so reading the constant would assert nothing.
     const RESERVED_ID: &str = "local";
 
     #[tokio::test(flavor = "multi_thread")]
     async fn an_embedded_boot_writes_no_certificate() {
-        // **This test is the entire argument for `Frontend` being a value
-        // rather than a `cfg`.** A cfg-gated skip could not be exercised on any
-        // machine anyone develops on, which is precisely how D-117 happened: the
-        // mobile half of this project had no host-side coverage at all.
+        // **The argument for `Frontend` being a value rather than a `cfg`:** a
+        // cfg-gated skip could not be exercised on any development machine.
         //
-        // An embedded core has no listener to present a certificate on and no
-        // pairing handshake to bind its pin, so generating one would seal a key
-        // in the vault (a real keychain write on the device) and leave a
-        // certificate on disk that only misleads whoever finds it.
+        // An embedded core has no listener to present a certificate on, so
+        // generating one would seal a key in the vault for nothing.
         let dir = tempfile::tempdir().unwrap();
         let core = started(&dir).await;
 
@@ -310,15 +271,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn an_embedded_boot_does_not_support_stdio_mcp() {
-        // Skip 2 of boot's three embedded differences, and it was unguarded:
-        // forcing `StdioSupport::Available` survived the review's mutation pass
-        // against the whole repo.
-        //
-        // A stdio MCP server is a spawned child running a downloaded
-        // interpreter. On Android that is a W^X violation and on iOS it is App
-        // Store rule 2.5.2, so the store-review symptom of getting this wrong
-        // is a rejected build and the user-facing one is a spawn that fails
-        // mysteriously instead of `plan` refusing with a reason.
+        // Skip 2 of boot's three embedded differences. A stdio MCP server is a
+        // spawned child running a downloaded interpreter, which W^X and App
+        // Store rule 2.5.2 forbid: the symptom of getting this wrong is a
+        // rejected build, and a spawn that fails mysteriously rather than a
+        // `plan` that refuses with a reason.
         let dir = tempfile::tempdir().unwrap();
         let core = started(&dir).await;
         assert!(!core.booted().mcp.stdio_supported());
@@ -326,16 +283,10 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn an_embedded_boot_does_not_arm_the_scheduler() {
-        // Skip 3 of boot's three embedded differences, and the last one that
-        // was unguarded: making `scheduled.start()` unconditional survived the
-        // review's mutation pass against the whole repo.
-        //
-        // The arm loop is the only subsystem that STARTS work rather than
-        // serving it. On a phone it would open sessions and begin LLM turns in
-        // the background of an app the OS suspends and resumes at will.
-        //
-        // The routes still serve, so a prompt already in the table stays
-        // readable and deletable rather than becoming invisible.
+        // Skip 3 of boot's three embedded differences. The arm loop is the only
+        // subsystem that STARTS work rather than serving it, and on a phone it
+        // would begin LLM turns in the background of an app the OS suspends at
+        // will. The routes still serve, so an existing prompt stays readable.
         let dir = tempfile::tempdir().unwrap();
         let core = started(&dir).await;
         assert!(!core.booted().scheduled.is_armed());
@@ -351,9 +302,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn the_root_and_channel_the_frontend_supplied_are_the_ones_used() {
-        // The frontend supplies both because a phone has neither a usable `$HOME`
-        // nor a usable environment. If either were read from the environment
-        // instead, a dev build would quietly share a stable install's state.
+        // The frontend supplies both because a phone has neither a usable
+        // `$HOME` nor a usable environment; reading either from the environment
+        // would make a dev build share a stable install's state.
         let dir = tempfile::tempdir().unwrap();
         let core = LocalCore::start_with_store(dir.path(), "dev", None)
             .await
@@ -366,10 +317,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_request_through_local_core_is_authenticated_as_the_reserved_client() {
-        // Reaches `LocalCore::http`, which is the delegation no other test
-        // touches. A per-client settings write is the sharpest probe available:
-        // it needs the identity AND needs its `clients` row to exist, so a
-        // wrong id here is a foreign-key 500 rather than a silent pass.
+        // Reaches `LocalCore::http`, the delegation no other test touches. A
+        // per-client settings write needs the identity AND its `clients` row,
+        // so a wrong id is a foreign-key 500 rather than a silent pass.
         let dir = tempfile::tempdir().unwrap();
         let core = started(&dir).await;
 
@@ -396,10 +346,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn ws_open_registers_under_the_reserved_client_id() {
-        // The other unreached delegation, and the one where a wrong argument
-        // hides: `ws_open` passes `&self.client.id`, so a connection registered
-        // under any other id would receive no per-client broadcast and nothing
-        // else would notice.
+        // The other unreached delegation: `ws_open` passes `&self.client.id`,
+        // so a connection registered under any other id silently receives no
+        // per-client broadcast.
         let dir = tempfile::tempdir().unwrap();
         let core = started(&dir).await;
 
@@ -476,8 +425,8 @@ mod tests {
             let calls = Arc::clone(&calls);
             tasks.push(tokio::spawn(async move {
                 cell.get_or_init(|| async {
-                    // Yield inside the initializer, so a cell that only locked
-                    // around the read would interleave here and build twice.
+                    // A cell that only locked around the read interleaves here
+                    // and builds twice.
                     tokio::task::yield_now().await;
                     Ok(calls.fetch_add(1, Ordering::SeqCst))
                 })
@@ -498,8 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failure_is_not_cached_and_the_next_caller_retries() {
-        // A boot that failed on a transient condition has to be retryable. A
-        // `OnceCell` would store the failure and brick the app until restart.
+        // A `OnceCell` would store the failure and brick the app.
         let cell: StartOnce<usize> = StartOnce::new();
         let attempts = AtomicUsize::new(0);
         let init = || async {

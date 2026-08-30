@@ -26,9 +26,8 @@ Reading each row:
 ### HuggingFace resolve URL
 
 - **Used for:** every model weight / mmproj / speech-model download.
-- **Code:** [sources.ts:49](packages/loca-core/src/downloads/sources.ts#L49)
-  builds the URL; [manager.ts](packages/loca-core/src/downloads/manager.ts)
-  runs the download.
+- **Code:** [downloads/sources.rs](packages/loca-core-rs/src/downloads/sources.rs) builds the URL;
+  [downloads/transfer.rs](packages/loca-core-rs/src/downloads/transfer.rs) runs the download.
 - **Assumes:**
   `https://huggingface.co/{user}/{repo}/resolve/{branch}/{file}?download=true`
   serves the file (after a 302 to a CDN).
@@ -40,11 +39,9 @@ Reading each row:
 
 - **Used for:** probing a download's size before fetching, and verifying its
   sha256 against HF + TLS.
-- **Code:**
-  [sources.ts:66-122](packages/loca-core/src/downloads/sources.ts#L66-L122)
-  reads `x-linked-size` (falling back to `content-length`);
-  [manager.ts:694-716](packages/loca-core/src/downloads/manager.ts#L694-L716)
-  reads `x-linked-etag` (falling back to `etag`) for the LFS content sha256.
+- **Code:** [downloads/net.rs](packages/loca-core-rs/src/downloads/net.rs) reads `x-linked-size`
+  (falling back to `content-length`) and `x-linked-etag` (falling back to
+  `etag`) for the LFS content sha256.
 - **Assumes:** the resolve endpoint 302-redirects and exposes `x-linked-size` /
   `x-linked-etag` on the HEAD response.
 - **Fails as:** sizes show as 0 / unknown; the published-hash check silently
@@ -119,7 +116,7 @@ Reading each row:
   [model.ts:101-129](packages/loca-shared/src/domain/model.ts#L101-L129)
   (`UPSTREAM_BINARIES`, the single source of truth for repo + per-triple asset
   patterns),
-  [upstream-resolver.ts:100-129](packages/loca-core/src/binaries/upstream-resolver.ts#L100-L129).
+  [downloads/binaries/upstream.rs](packages/loca-core-rs/src/downloads/binaries/upstream.rs).
 - **Assumes:** `api.github.com/repos/ggml-org/llama.cpp/releases/latest` returns
   `{ tag_name, assets[] }`, and the asset is named `llama-{tag}-bin-<platform>`
   per the `assets` map.
@@ -134,47 +131,45 @@ Reading each row:
 - **Assumes:** `releases/tags/v2.8.2` exists with `deno-{triple}.zip` assets.
 - **Fails as:** worker runtime download fails if the tag / assets vanish.
 - **Fix:** bump `pinnedTag` deliberately, then **re-run the live-probe test**
-  ([prompt-live-probe.test.ts](packages/loca-core/src/extensions/prompt-live-probe.test.ts))
+  ([extensions/prompt/live_probe.rs](packages/loca-core-rs/src/extensions/prompt/live_probe.rs))
   because tool-permission prompts are parsed from this version's prompt wording
-  ([prompt-parser.ts](packages/loca-core/src/extensions/prompt-parser.ts)).
+  ([extensions/prompt/parser.rs](packages/loca-core-rs/src/extensions/prompt/parser.rs)).
 
 ### GitHub release JSON shape + rate-limiting
 
 - **Used for:** resolving every upstream sidecar (the two above).
-- **Code:**
-  [upstream-resolver.ts:22-94](packages/loca-core/src/binaries/upstream-resolver.ts#L22-L94).
+- **Code:** [downloads/binaries/upstream.rs](packages/loca-core-rs/src/downloads/binaries/upstream.rs).
 - **Assumes:** the `GitHubRelease` / `GitHubReleaseAsset` shape, and that
   `assets[].digest` is `sha256:...` (required to install on the latest channel).
   Unauthenticated GitHub is rate-limited (~60/hr); `GITHUB_TOKEN` raises it and
   a 5-minute per-repo cache dampens polling.
 - **Fails as:** `manifest_fetch_failed` (rate limit / shape) or
   `checksum_mismatch` (missing digest).
-- **Fix:** update the interfaces / digest handling in `upstream-resolver.ts`;
-  set `GITHUB_TOKEN` if rate-limited.
+- **Fix:** update the shapes / digest handling in `upstream.rs`; set
+  `GITHUB_TOKEN` if rate-limited.
 
 ### espeak-ng-data (mutable rolling tag)
 
-- **Used for:** the text-to-speech phonemizer data packed into
-  `loca-core-speech` at release time.
-- **Code:** `scripts/release/core.ts` (`ESPEAK_DATA_SHA256`).
+- **Used for:** the text-to-speech phonemizer data committed at
+  `packages/loca-core-rs/data/espeak-ng-data.tar.gz` and embedded in the core.
+- **Code:** `scripts/vendor-espeak.ts` (the pinned sha256).
 - **Assumes:**
   `github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2`
   stays reachable and matches the pinned sha256. The `tts-models` tag is
   **mutable**, so the asset can legitimately be republished.
-- **Fails as:** the release build aborts on a sha256 mismatch (by design: no
-  silent propagation of a swapped asset).
-- **Fix:** verify the new upstream asset, then recompute and update
-  `ESPEAK_DATA_SHA256` in the same commit.
+- **Fails as:** `scripts/vendor-espeak.ts` aborts on a sha256 mismatch (by
+  design: no silent propagation of a swapped asset).
+- **Fix:** verify the new upstream asset, then recompute the pin and re-vendor
+  the archive in the same commit.
 
 ### Archive formats
 
 - **Used for:** extracting downloaded sidecars.
-- **Code:** [binaries/manager.ts](packages/loca-core/src/binaries/manager.ts).
-- **Assumes:** `.tar.gz` (llama.cpp, loca-core-speech) and `.zip` (deno,
-  Windows llama) layouts with the executable + shared libs as documented in
-  [sidecars/README.md](packages/loca-core/src/sidecars/README.md).
+- **Code:** [downloads/binaries/extract.rs](packages/loca-core-rs/src/downloads/binaries/extract.rs).
+- **Assumes:** `.tar.gz` (llama.cpp) and `.zip` (deno, Windows llama) layouts
+  with the executable + shared libs.
 - **Fails as:** extraction finds no executable / missing libs after a download.
-- **Fix:** adjust the extraction layout in `binaries/manager.ts`.
+- **Fix:** adjust the extraction layout in `extract.rs`.
 
 ## 3. Loca distribution (Cloudflare R2) + trust root
 
@@ -185,12 +180,12 @@ they belong on the same map.
 ### R2 storage host + manifest paths
 
 - **Used for:** fetching every signed manifest and release artifact.
-- **Code:** [config.ts:17-47](packages/loca-core/src/config.ts#L17-L47).
+- **Code:** [config.rs](packages/loca-core-rs/src/config.rs).
 - **Assumes:**
   `get.loca.rzkyif.com/{manifests/<channel>/}{core,binaries,extension,catalog}.json`
   (stable is bare; latest/dev nest under the channel).
 - **Fails as:** all update / catalog / extension fetches fail.
-- **Fix:** all hardcoded hosts live in `config.ts`; changing them is a one-file
+- **Fix:** all hardcoded hosts live in `config.rs`; changing them is a one-file
   edit. R2 / Cloudflare setup is in the
   [website README](packages/loca-website/README.md).
 
@@ -198,17 +193,16 @@ they belong on the same map.
 
 - **Used for:** verifying every signed manifest and the model catalog.
 - **Code:** public key in
-  [data/signing-keys.json](packages/loca-core/data/signing-keys.json), verified
-  in [self-updater.ts](packages/loca-core/src/update/self-updater.ts),
-  [binaries/manifest.ts](packages/loca-core/src/binaries/manifest.ts),
-  [extensions/seeded-manifest.ts](packages/loca-core/src/extensions/seeded-manifest.ts),
-  and [models/catalog.ts](packages/loca-core/src/models/catalog.ts).
+  [data/signing-keys.json](packages/loca-core-rs/data/signing-keys.json), baked
+  in by `build.rs` and verified in [update/manifest.rs](packages/loca-core-rs/src/update/manifest.rs),
+  [downloads/binaries/manifest.rs](packages/loca-core-rs/src/downloads/binaries/manifest.rs),
+  [extensions/install/manifest.rs](packages/loca-core-rs/src/extensions/install/manifest.rs), and
+  [models/catalog.rs](packages/loca-core-rs/src/models/catalog.rs).
 - **Assumes:** the committed public key matches the private key that signs
   releases; signatures cover the whole payload minus the `signature` field,
   canonicalized.
 - **Fails as:** `signature_invalid` on update / catalog load across the board.
 - **Fix:** the signing flow and trust root are documented in the
-  [update README](packages/loca-core/src/update/README.md) and the
   [website README](packages/loca-website/README.md). Listed here only so the
   cross-cutting verification path is discoverable from one place.
 

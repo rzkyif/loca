@@ -1,14 +1,7 @@
-//! The greeting trigger.
-//!
-//! Ports `http/routes/greetings.ts`. The `greetings.*` settings are
-//! client-on-client, so the CLIENT decides whether a given app start earns a
-//! greeting and POSTs only when it should, carrying the title and instruction it
-//! wants. The core does three things the client cannot do for itself: it mints
-//! the session, it keeps a per-client dedup guard so a crash-looping client
-//! cannot spawn a session per retry, and it holds the turn until the local model
-//! has finished loading.
-//!
-//! The client navigates on the `session.created` frame, not on this response.
+//! The greeting trigger. The client decides whether an app start earns a
+//! greeting; the core mints the session, dedups per client so a crash-looping
+//! client cannot spawn a session per retry, and holds the turn until the local
+//! model has loaded. The client navigates on `session.created`, not on this response.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,35 +14,22 @@ use crate::contract::api::{SessionCreatedFocus, SessionCreatedReason};
 use crate::contract::inbound::GreetingRunBody;
 use crate::settings::schema::schema;
 
-/// The dedup window when the client supplies no cooldown.
-///
-/// A crash-looping client, or a buggy caller, must not mint a session per retry.
-/// A suppressed run still answers 200 with `ran: false`, so an autostarted
-/// launch can still tell that its window is open.
+/// The dedup window when the client supplies no cooldown. A suppressed run
+/// still answers 200 with `ran: false`.
 const MIN_INTERVAL_MS: f64 = 60_000.0;
 
-/// The absolute floor for the dedup window, so a rogue or buggy client cannot
-/// drive its own cooldown to zero and spam sessions.
+/// The floor for the dedup window, so a client cannot drive it to zero.
 const INTERVAL_FLOOR_MS: f64 = 1_000.0;
 
-/// The fallback session title.
-///
-/// A literal, matching `greetings.ts:71`, rather than a schema read: a client
-/// that sends no title is a client that is not using the `greetings.sessionTitle`
-/// setting at all. `the_fallback_title_matches_the_settings_default` pins the
-/// two together so they cannot drift apart unnoticed.
+/// The fallback session title; a test pins it to the settings default.
 const DEFAULT_SESSION_TITLE: &str = "Greeting {datetime}";
 
-/// How long to wait for the local model, and how often to look.
-///
-/// A field rather than two constants so a test can drive the defer path in
-/// milliseconds. The production values are the `Default`, so nothing but a test
-/// can change them and forgetting to set them cannot silently shorten the wait.
+/// How long to wait for the local model, and how often to look. Injectable so
+/// a test can drive the defer path in milliseconds.
 #[derive(Clone, Copy, Debug)]
 pub struct Timing {
-    /// How long to hold the greeting before starting it anyway. Starting it
-    /// surfaces the error IN the session, which still reveals the window; never
-    /// starting it leaves the user with nothing and no explanation.
+    /// How long to hold the greeting before starting it anyway (the error then
+    /// surfaces in the session rather than nowhere).
     pub ready_timeout: Duration,
     pub poll: Duration,
 }
@@ -66,8 +46,7 @@ impl Default for Timing {
 #[derive(Debug, Serialize)]
 pub struct RunResponse {
     pub ran: bool,
-    /// Omitted rather than null when the greeting ran, matching the oracle's
-    /// two distinct object literals.
+    /// Omitted rather than null when the greeting ran.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<&'static str>,
 }
@@ -76,13 +55,11 @@ struct Inner {
     chat: Chat,
     probe: Arc<dyn LoadingProbe>,
     timing: Timing,
-    /// Last greeting per client id, pruned past the dedup window so it cannot
-    /// grow without bound across distinct clients.
+    /// Last greeting per client id, pruned past the dedup window.
     last: Mutex<HashMap<String, i64>>,
 }
 
-/// The greeting service. Cheap to clone; every clone shares one dedup map,
-/// which is the whole point: two would each allow their own greeting per window.
+/// The greeting service. Cheap to clone; every clone shares one dedup map.
 #[derive(Clone)]
 pub struct Greetings {
     inner: Arc<Inner>,
@@ -111,20 +88,8 @@ impl Greetings {
     }
 
     /// Mint a greeting session for `client_id`, unless one already ran inside
-    /// this client's window.
-    ///
-    /// Returns as soon as the deferred runner is spawned. The turn itself waits
-    /// for the model.
-    /// The body is `inbound::GreetingRunBody`, generated from
-    /// `validation/greetings.ts`. `.strict()` survives as `deny_unknown_fields`
-    /// (D-031 settled that the schema decides strictness, not the direction of
-    /// travel), and `cooldownMs` is `f64` because the Zod field is a bare
-    /// `z.number()`: a client may send a fractional cooldown and the oracle
-    /// accepts it.
+    /// this client's window. Returns as soon as the deferred runner is spawned.
     pub fn run(&self, client_id: &str, body: GreetingRunBody) -> RunResponse {
-        // Both bounds matter and for different reasons: the default is the
-        // window when the client sends none, and the floor is what stops a
-        // client asking for a zero-length window.
         let interval = body
             .cooldown_ms
             .unwrap_or(MIN_INTERVAL_MS)
@@ -138,16 +103,13 @@ impl Greetings {
                     reason: Some("recent"),
                 };
             }
-            // Recorded BEFORE the turn is spawned, so a client that crashes
-            // mid-greeting is still deduped on its next attempt.
+            // Recorded before the spawn, so a mid-greeting crash is still deduped.
             last.insert(client_id.to_string(), now);
             let cutoff = now - interval;
             last.retain(|_, t| *t >= cutoff);
         }
 
-        // Trimmed-empty falls back too, not just absent: `"   "` is a client
-        // sending an unset field, and greeting with whitespace is not a
-        // greeting.
+        // Blank falls back too, not just absent.
         let instruction = non_blank(body.instruction).unwrap_or_else(default_instruction);
         let title =
             non_blank(body.session_title).unwrap_or_else(|| DEFAULT_SESSION_TITLE.to_string());
@@ -162,11 +124,8 @@ impl Greetings {
     }
 }
 
-/// Hold the greeting until the local model is up, then open the session.
-///
-/// The connected edge that triggers this POST is exactly when the model begins
-/// loading on boot, so an immediate turn would race the load and error. This is
-/// the same defer the scheduler tick performs, through the same predicate.
+/// Hold the greeting until the local model is up, then open the session: the
+/// POST lands exactly when the boot-time model load begins.
 async fn run_when_ready(inner: Arc<Inner>, owner: String, title: String, instruction: String) {
     let deadline = tokio::time::Instant::now() + inner.timing.ready_timeout;
     while inner.probe.still_loading().await {
@@ -187,8 +146,7 @@ async fn run_when_ready(inner: Arc<Inner>, owner: String, title: String, instruc
             instruction,
             reason: SessionCreatedReason::Greeting,
             scheduled_prompt_id: None,
-            // Navigate silently, reveal the window when the turn finishes: a
-            // greeting must not steal focus the moment the app starts.
+            // A greeting must not steal focus the moment the app starts.
             focus: SessionCreatedFocus::ShowWhenDone,
         },
     )
@@ -198,13 +156,8 @@ async fn run_when_ready(inner: Arc<Inner>, owner: String, title: String, instruc
     }
 }
 
-/// The greeting prompt a client that sent none gets.
-///
-/// Read from the settings schema rather than copied, so there is one string.
-/// The schema's `greetings.instruction` default IS `DEFAULT_GREETING_INSTRUCTION`
-/// (`settings/groups/greetings.ts:74`), and `the_default_instruction_comes_from_
-/// the_schema` fails loudly if that field is ever renamed away, rather than
-/// letting the core greet with an empty prompt.
+/// The greeting prompt a client that sent none gets, read from the settings
+/// schema so there is one string.
 fn default_instruction() -> String {
     schema()
         .field("greetings.instruction")
@@ -234,9 +187,6 @@ mod tests {
     use super::*;
     use crate::chat::TITLE_DATETIME_PLACEHOLDER;
 
-    /// The route's fallback and the setting's default are two copies of one
-    /// string, and the oracle has the same two copies. This is what makes the
-    /// duplication safe rather than a drift waiting to happen.
     #[test]
     fn the_fallback_title_matches_the_settings_default() {
         let default = schema()
@@ -244,14 +194,9 @@ mod tests {
             .and_then(|f| f.default_value.as_ref())
             .and_then(|v| v.as_str());
         assert_eq!(default, Some(DEFAULT_SESSION_TITLE));
-        // And it actually carries the placeholder, so a greeting session is not
-        // titled the literal word "Greeting" over and over.
         assert!(DEFAULT_SESSION_TITLE.contains(TITLE_DATETIME_PLACEHOLDER));
     }
 
-    /// A schema read that silently answered "" would leave every greeting with
-    /// an empty prompt, which the model would answer with something unrelated
-    /// rather than with an error anyone could trace.
     #[test]
     fn the_default_instruction_comes_from_the_schema() {
         let instruction = default_instruction();

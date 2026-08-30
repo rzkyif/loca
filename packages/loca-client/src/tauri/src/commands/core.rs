@@ -1,28 +1,20 @@
-//! The embedded Core: the phone IS a Core, reached in process.
+//! The embedded Core: the phone IS a Core, reached in process. Mobile only; on
+//! desktop the Client talks to a separate `loca-core` process over HTTPS
+//! (`commands::net`).
 //!
-//! Mobile only. On desktop the Client talks to a separate `loca-core` process
-//! over HTTPS (`commands::net`); on a phone there is no such process, so the app
-//! links the real Core as a library and calls it here.
+//! There is deliberately NO loopback listener: `127.0.0.1` is not app-private on
+//! Android, so binding a port would let any installed app reach this Core and
+//! would drag in `usesCleartextTraffic` / `NSAllowsLocalNetworking`. Requests go
+//! straight into the same router, middleware and error mapping the socket uses.
 //!
-//! **There is deliberately no loopback listener, and that is load bearing.**
-//! `127.0.0.1` is not app-private on Android, so binding a port would let any
-//! installed app reach this Core, and it would drag in `usesCleartextTraffic`
-//! and `NSAllowsLocalNetworking`. Requests go straight into the Core's router
-//! instead, which is the same router, the same middleware and the same error
-//! mapping the socket path uses.
+//! This file stays thin: anything with an ordering or a lifetime to get wrong
+//! (the start-once cell, base64 marshalling, the WebSocket pump) lives in
+//! `loca-core-ffi`, where it compiles and is tested on the host. `cfg(mobile)`
+//! code can never be run by the host-target `cargo test`.
 //!
-//! **This file is deliberately thin.** Everything with an ordering or a lifetime
-//! to get wrong (the start-once cell, the base64 marshalling, the WebSocket
-//! pump) lives in `loca-core-ffi`, where it compiles and is tested on the host.
-//! Code that only compiles under `#[cfg(mobile)]` can never be run by
-//! `cargo test`, which is host-target, and a mobile-only path with no coverage
-//! is how the crate silently stopped building for Android and iOS (D-117).
-//!
-//! The commands mirror `net_fetch` / `net_ws_*` so the client-side local
-//! transport is a near-copy of the remote one. `mode`, `pin` and `capturedPin`
-//! are absent rather than ignored: there is no TLS in process, so there is no
-//! trust posture to choose, and accepting a `mode` we did nothing with would let
-//! a caller believe it had pinned something.
+//! The commands mirror `net_fetch` / `net_ws_*`. `mode`, `pin` and `capturedPin`
+//! are absent rather than ignored: there is no TLS in process, and accepting a
+//! `mode` we did nothing with would let a caller believe it had pinned something.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -76,16 +68,11 @@ async fn core(app: &AppHandle, state: &LocalCoreState) -> AppResult<Arc<LocalCor
 /// The secure store the embedded Core seals its vault master key with, or `None`
 /// to let the Core choose.
 ///
-/// **Android is the only platform that answers `Some`, and it has to.** There is
-/// no OS credential store there, so `secrets::store::select` falls back to a
-/// plaintext dotfile holding the key that unseals `secrets.enc`, which contains
-/// the TLS private key every paired client pinned. The sealed store needs an
-/// AndroidKeyStore key, reachable only through the JVM, so this crate is the
-/// only place that can build one.
-///
-/// Everywhere else `None` is not a gap: iOS has `apple-native-keyring-store` and
-/// desktop has a real OS keychain, and `select` picks better than a caller
-/// could.
+/// Android must answer `Some`: it has no OS credential store, so
+/// `secrets::store::select` would fall back to a plaintext dotfile holding the
+/// key that unseals `secrets.enc`. The sealed store needs an AndroidKeyStore
+/// key, reachable only through the JVM, so this crate is the only place that can
+/// build one. Elsewhere `select` picks better than a caller could.
 #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
 fn vault_store(
     root: &std::path::Path,
@@ -149,12 +136,10 @@ pub async fn core_http(
 /// Attach a client connection. Frames arrive as per-id Tauri events, mirroring
 /// `net_ws_open`'s `net://ws/<id>/...`.
 ///
-/// There is no `url` because the wire URL exists to carry `?ticket=`, and the
-/// ticket is what the in-process identity replaces. There is no `error` event
-/// either: registering with the frame bus cannot fail. Note what that does NOT
-/// license on the client side: this command still awaits the Core's boot and
-/// still rejects when it will not start, so the client keeps its backoff and its
-/// give-up limit rather than reporting connected the moment it calls in.
+/// There is no `url` because the wire URL exists to carry `?ticket=`, which the
+/// in-process identity replaces, and no `error` event because registering with
+/// the frame bus cannot fail. It still awaits the Core's boot and rejects when it
+/// will not start, so the client keeps its backoff and its give-up limit.
 #[tauri::command]
 pub async fn core_ws_open(
     app: AppHandle,

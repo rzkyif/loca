@@ -1,12 +1,6 @@
 //! The session transcript, as the provider takes it.
 //!
-//! Ports `core-engine/src/services/chat-attachments.ts`'s `toOpenAiMessages` and
-//! `userContentToOpenAi` over D2's already-ported attachment readers and D5's
-//! `@token` expander. D4 owns it rather than D2 because the assembly composes
-//! D3's [`ChatMessage`] with D5's memory expansion, and D2 depends on neither
-//! (D-057, move 2).
-//!
-//! Three things here are load-bearing and easy to lose in a port:
+//! Three things here are load-bearing:
 //!
 //! 1. **A multipart user message collapses to a plain string when every part is
 //!    text.** Some providers reject a parts array with no `image_url` sibling.
@@ -37,8 +31,7 @@ use crate::sessions::attachments::{
 use crate::sessions::summary::content_to_text;
 use crate::sessions::{SessionsStore, StoredMessage};
 
-/// The stores a transcript build reads from, so the call site passes one value
-/// rather than three and the argument list stays legible.
+/// The stores a transcript build reads from, as one value.
 pub struct TranscriptSources<'a> {
     pub sessions: &'a SessionsStore,
     pub memories: &'a MemoriesStore,
@@ -115,8 +108,7 @@ async fn user_content(
         return UserContent::Text(String::new());
     };
     // A part shape the contract does not know fails the whole deserialize, so
-    // the message degrades to its flattened text rather than being dropped: a
-    // turn that loses its user message answers the wrong question.
+    // the message degrades to its flattened text rather than being dropped.
     let parsed: MessageContent = match serde_json::from_value(value.clone()) {
         Ok(parsed) => parsed,
         Err(_) => return UserContent::Text(content_to_text(content)),
@@ -235,8 +227,7 @@ fn tool_message(message: &StoredMessage) -> Option<ChatMessage> {
     let content = if str_field(map, "status") == Some("completed") {
         serde_json::to_string(map.get("result").unwrap_or(&Value::Null)).ok()?
     } else {
-        // Built rather than `json!` so an absent error serialises as `{}`,
-        // which is what `JSON.stringify({ error: undefined })` produces. A
+        // Built rather than `json!` so an absent error serialises as `{}`: a
         // `{"error":null}` would tell the model the tool reported a null error.
         let mut wrapper = Map::new();
         if let Some(error) = map.get("error").filter(|v| !v.is_null()) {

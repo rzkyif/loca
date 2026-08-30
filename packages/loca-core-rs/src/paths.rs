@@ -12,13 +12,11 @@
 //! `$HOME` to derive one from.
 //!
 //! An existing install's tree is read as-is, so every name below is fixed by
-//! what is already on disk. It is one of the three byte-exact parity surfaces of
-//! the port; changing a filename here silently orphans a user's data.
+//! what is on disk: changing one silently orphans a user's data.
 //!
 //! `Paths` is a plain value the frontend constructs and application state
-//! carries (D-010). There is no process global and no lazily-derived default: a
-//! default would win over the frontend's injected root and leave mobile writing
-//! to a path that does not exist.
+//! carries. No process global and no lazily-derived default, which would win
+//! over the frontend's injected root and leave mobile writing nowhere.
 
 use std::path::{Path, PathBuf};
 
@@ -34,10 +32,9 @@ pub struct Paths {
     workers: PathBuf,
 }
 
-/// The environment values resolution reads, passed in rather than read inside so
-/// every rule is a pure function. Tests cover the rules without touching the
-/// process environment, which they could not do safely anyway: `set_var` is
-/// unsound while other threads run.
+/// The environment values resolution reads, passed in so every rule is a pure
+/// function: `set_var` is unsound while other threads run, so a test could not
+/// safely cover them otherwise.
 struct PathEnv<'a> {
     home: Option<&'a str>,
     core_home: Option<&'a str>,
@@ -46,8 +43,7 @@ struct PathEnv<'a> {
 
 impl Paths {
     /// Desktop resolution: `LOCA_CORE_HOME`, else `~/.loca/<channel>/core`.
-    ///
-    /// `channel` comes from [`crate::config::Config`]. This module never reads
+    /// `channel` comes from [`crate::config::Config`]; this module never reads
     /// `LOCA_CHANNEL` itself.
     pub fn from_env(channel: Channel) -> Result<Self> {
         let home = env_var("HOME").or_else(|| env_var("USERPROFILE"));
@@ -79,25 +75,22 @@ impl Paths {
         let mut paths = match env.core_home {
             Some(root) => Self::rooted(root),
             None => {
-                // The home lookup is deliberately inside this arm: a boot driven
-                // by LOCA_CORE_HOME must work on a host with no home directory
-                // at all, such as a service account or a CI container.
+                // Inside this arm: a boot driven by LOCA_CORE_HOME must work
+                // on a host with no home directory at all.
                 let home = Path::new(env.home.ok_or_else(|| {
                     internal("could not determine home directory (no HOME or USERPROFILE)")
                 })?);
                 let base = home.join(".loca");
                 Self {
                     root: base.join(channel.as_str()).join("core"),
-                    // Shared across channels, so dev and latest reuse the weights
-                    // stable already downloaded.
+                    // Shared, so dev and latest reuse stable's weights.
                     models: base.join("models"),
                     workers: PathBuf::new(),
                 }
             }
         };
-        // The tool worker .ts files ship separately from the compiled binary and
-        // install under <root>/workers. `deno task dev` points LOCA_WORKERS_DIR
-        // at the in-repo sources so editing one takes effect without a reinstall.
+        // The worker .ts files ship separately and install under
+        // <root>/workers; `deno task dev` points LOCA_WORKERS_DIR at the repo.
         paths.workers = match env.workers_dir {
             Some(dir) => PathBuf::from(dir),
             None => paths.root.join("workers"),
@@ -175,10 +168,9 @@ impl Paths {
         self.root.join("extensions")
     }
 
-    /// Parent of every extension's private data dir. Named rather than joined at
-    /// each site because the sandbox denies the whole subtree in one entry: an
-    /// extension reaches its own data only through the module broker, never
-    /// through the filesystem, and never reaches another's at all.
+    /// Parent of every extension's private data dir. Named rather than joined
+    /// per site because the sandbox denies the whole subtree in one entry: an
+    /// extension reaches its own data only through the module broker.
     pub fn extension_data_root(&self) -> PathBuf {
         self.root.join("extension-data")
     }
@@ -195,10 +187,9 @@ impl Paths {
         self.logs_dir().join("core.log")
     }
 
-    /// One line naming the most recent fatal boot failure (port in use, missing
-    /// helper, unwritable database). Written on the fatal path and removed once
-    /// the listener binds, so a supervising client or installer can say why the
-    /// core is down instead of showing an opaque connection timeout.
+    /// One line naming the most recent fatal boot failure, removed once the
+    /// listener binds, so a supervising client can say why the core is down
+    /// instead of showing an opaque connection timeout.
     pub fn boot_error_file(&self) -> PathBuf {
         self.root.join("last-error.txt")
     }
@@ -210,10 +201,9 @@ impl Paths {
         self.root.join("update.pending.json")
     }
 
-    /// The self-signed HTTPS certificate the API is served with, public PEM
-    /// only. Written at boot so co-located tooling on this host can verify the
-    /// loopback API against a CA-of-one instead of disabling TLS verification.
-    /// Clients pin the SPKI at pairing time and do not read this.
+    /// The self-signed HTTPS certificate, public PEM only, so co-located
+    /// tooling can verify the loopback API against a CA-of-one. Clients pin the
+    /// SPKI at pairing time and do not read this.
     pub fn tls_cert_file(&self) -> PathBuf {
         self.root.join("tls-cert.pem")
     }
@@ -236,9 +226,8 @@ impl Paths {
         self.extensions_dir().join(extension_id)
     }
 
-    /// One extension's private data, including the SQLite database the module
-    /// broker hands it. Separate from the install dir so a reinstall or a
-    /// content hash never touches user data.
+    /// One extension's private data, separate from the install dir so a
+    /// reinstall or a content hash never touches it.
     pub fn extension_data_dir(&self, extension_id: &str) -> PathBuf {
         self.extension_data_root().join(extension_id)
     }
@@ -251,11 +240,9 @@ impl Paths {
         self.bin_dir().join(name)
     }
 
-    /// Creates every long-lived directory. Called once at boot, before the
-    /// listener binds.
-    ///
-    /// No explicit mode, matching what the tree already has on disk: these
-    /// inherit the umask.
+    /// Creates every long-lived directory, once at boot before the listener
+    /// binds. No explicit mode: these inherit the umask, as the tree on disk
+    /// already has.
     pub fn ensure_dirs(&self) -> Result<()> {
         for dir in [
             self.root.clone(),
@@ -376,11 +363,9 @@ mod tests {
         );
     }
 
-    /// The table is the recorded output of the TypeScript `paths()` under
-    /// `HOME=/fake/home LOCA_CHANNEL=dev`, not a transcription of it. The
-    /// command that produced it is in `docs/rust-port/packages/F3/plan.md`.
-    /// Asserted on unix only: the separator differs on Windows, and the
-    /// structural cases above already cover composition portably.
+    /// The recorded layout under `HOME=/fake/home LOCA_CHANNEL=dev`. Unix only:
+    /// the separator differs on Windows, and the structural cases above already
+    /// cover composition portably.
     #[test]
     #[cfg(unix)]
     fn every_path_matches_the_recorded_typescript_output() {
@@ -465,8 +450,7 @@ mod tests {
 
     #[test]
     fn from_env_resolves_without_panicking() {
-        // Whatever the developer's environment holds, resolution either yields a
-        // root or reports a missing home; it never panics and never falls back.
+        // Resolution either yields a root or reports a missing home.
         let _ = Paths::from_env(Channel::Stable);
     }
 

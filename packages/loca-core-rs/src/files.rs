@@ -1,17 +1,13 @@
 //! Filesystem helpers, chiefly the atomic write used for every state file.
 //!
-//! Work package **F4** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
 //! Every state file is published by writing a temp file and renaming it over the
 //! target, so a reader never observes a half-written file and a crash mid-write
 //! leaves the previous version intact. Do not open a state file with
 //! `File::create`.
 //!
-//! There are three writers, varying along two independent axes: what the temp
-//! file is named, and what mode it is created with. The temp name is about
-//! concurrent writers, the creation mode is about who can read the file, and
-//! coupling them would force a caller to accept one to get the other.
+//! Three writers, varying along two independent axes: the temp file's name (for
+//! concurrent writers) and its creation mode (for who can read it). Coupling
+//! them would force a caller to accept one to get the other.
 //!
 //! | | temp name | creation mode |
 //! | --- | --- | --- |
@@ -19,10 +15,9 @@
 //! | [`write_owner_atomic`] | unique | `0600` |
 //! | [`write_secret_atomic`] | fixed | `0600` |
 //!
-//! **[`write_atomic`] is the default.** The other two exist for named reasons
-//! spelled out in their own doc comments, and neither is an upgrade to reach for
-//! reflexively: making ordinary state owner-only is how a settings file becomes
-//! unreadable to a support script for no stated reason.
+//! **[`write_atomic`] is the default.** Neither of the others is an upgrade to
+//! reach for reflexively: making ordinary state owner-only is how a settings
+//! file becomes unreadable to a support script for no stated reason.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -30,24 +25,27 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sha2::Digest;
 use uuid::Uuid;
 
 use crate::error::{AppError, ErrorCode, Result};
+
+/// Lowercase-hex sha256 of `bytes`.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(sha2::Sha256::digest(bytes))
+}
 
 // --- atomic writes -----------------------------------------------------------
 
 /// Write `bytes` to `path` atomically. The default writer.
 ///
-/// The temp file gets a unique suffix, so two concurrent writers to the same
-/// path never share one. With a fixed name they interleave: one writer's rename
-/// consumes the shared temp and the other's fails with `ENOENT`, a spurious
-/// error unrelated to what either writer was doing. A distinct temp per writer
-/// means the last rename wins cleanly. That is still a lost update at the
-/// application layer, which is why the session store holds a per-session lock
-/// and the settings store serializes, but it is never a spurious failure.
+/// The temp file gets a unique suffix, so two concurrent writers never share
+/// one: with a fixed name, one writer's rename consumes the shared temp and the
+/// other fails with a spurious `ENOENT`. The last rename still wins, which is
+/// why the session store holds a per-session lock and settings serializes.
 ///
-/// The file is created under the process umask. For state a non-owner has no
-/// business reading, use [`write_owner_atomic`].
+/// Created under the process umask; for state a non-owner has no business
+/// reading, use [`write_owner_atomic`].
 pub async fn write_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
     spawn(move || write_atomic_blocking(&path, &bytes)).await
 }
@@ -61,19 +59,13 @@ pub fn write_atomic_blocking(path: &Path, bytes: &[u8]) -> Result<()> {
 /// Write `bytes` to `path` atomically and owner-only, through a uniquely named
 /// temp file.
 ///
-/// The unique suffix and its concurrency protection are exactly
-/// [`write_atomic`]'s; the difference is `0600` at creation.
+/// [`write_atomic`]'s unique suffix and concurrency protection, with `0600` at
+/// creation. The mode is applied before the rename, so the published file is
+/// never briefly world-readable, and at creation rather than by a later chmod,
+/// so the temp is not either.
 ///
-/// The published file is never world-readable, because the mode is applied
-/// before the rename rather than after it. Chmod-ing a file the caller has
-/// already renamed into place is the shape that leaves a window, and it is the
-/// shape a caller falls into when the writer does not offer this mode. Setting
-/// the mode at creation rather than tightening the temp afterwards narrows it
-/// further: the temp file itself never exists with umask permissions either.
-///
-/// For the core's own credential files (`.admin-token`, `.admin-password`),
-/// which must not be world-readable but do not qualify for the fixed temp name
-/// [`write_secret_atomic`] uses.
+/// For the core's own credential files, which must not be world-readable but do
+/// not qualify for [`write_secret_atomic`]'s fixed temp name.
 pub async fn write_owner_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
     spawn(move || write_owner_atomic_blocking(&path, &bytes)).await
 }
@@ -87,27 +79,18 @@ pub fn write_owner_atomic_blocking(path: &Path, bytes: &[u8]) -> Result<()> {
 /// fixed `<path>.tmp`.
 ///
 /// The fixed name exists so the sandbox deny list can **name** the transient
-/// target. Core passes every sandboxed child (tool workers, and MCP servers run
-/// on the bundled deno) a deny list covering the vault file and its `.tmp`
-/// sibling, and a deny takes precedence over any grant, so it backstops even a
-/// broad one. A random suffix cannot be enumerated, so it cannot be denied, and
-/// a broadly-granted tool worker could read the vault's re-encrypt temp for as
-/// long as it exists.
+/// target: a random suffix cannot be enumerated, so it cannot be denied, and a
+/// broadly-granted tool worker could read the vault's re-encrypt temp.
 ///
-/// Giving up the unique suffix gives up the concurrency protection described on
-/// [`write_atomic`], so a caller qualifies only when both hold:
+/// It gives up [`write_atomic`]'s concurrency protection, so a caller qualifies
+/// only when both hold:
 ///
 /// 1. Its path **and** that path plus `.tmp` are on the sandbox deny list.
-///    Otherwise the fixed name buys nothing and the race is paid for free.
-/// 2. It serializes its own writes, so the race never arises. The secrets vault
-///    does: its mutations are read-modify-write cycles over one blob and are
-///    chained through a lock, because concurrent writers would lose updates
-///    regardless of how the temp file is named.
+/// 2. It serializes its own writes, so the race never arises.
 ///
-/// Today the vault (`secrets.enc`) is the only caller that qualifies.
-/// `.admin-token` and `.admin-password` are on the deny list but their `.tmp`
-/// siblings are not, so they take [`write_owner_atomic`]: owner-only without the
-/// fixed name, which is the whole reason that third writer exists.
+/// The vault (`secrets.enc`) is the only caller that qualifies today.
+/// `.admin-token` and `.admin-password` are denied but their `.tmp` siblings are
+/// not, which is why the owner-only writer exists.
 pub async fn write_secret_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
     spawn(move || write_secret_atomic_blocking(&path, &bytes)).await
 }
@@ -124,9 +107,8 @@ fn write_impl(path: &Path, bytes: &[u8], tmp: &Path, owner_only: bool) -> Result
     match write_then_rename(path, bytes, tmp, owner_only) {
         Ok(()) => Ok(()),
         Err(err) => {
-            // Best-effort cleanup so a failed write never leaks its temp. It
-            // matters most on the unique-suffix branch, where nothing else would
-            // ever reclaim the name.
+            // Best-effort, so a failed write leaks no temp. It matters most on
+            // the unique-suffix branch, where nothing reclaims the name.
             let _ = fs::remove_file(tmp);
             Err(err)
         }
@@ -140,18 +122,16 @@ fn write_then_rename(path: &Path, bytes: &[u8], tmp: &Path, owner_only: bool) ->
     {
         use std::os::unix::fs::OpenOptionsExt;
         if owner_only {
-            // Mode at creation, so the file is never briefly world-readable in
-            // the window a chmod-after would leave open.
+            // Mode at creation: a chmod after would leave a window.
             opts.mode(0o600);
         }
     }
 
     let mut file = opts.open(tmp)?;
     file.write_all(bytes)?;
-    // A rename is only atomic with respect to contents that have actually
-    // reached the disk, so publish nothing that has not been synced. The Deno
-    // core skipped this; the write cadence is per message rather than per
-    // streamed delta, so the cost is small and a torn state file is not.
+    // A rename is only atomic over contents that reached the disk, so publish
+    // nothing unsynced. The write cadence is per message, so the cost is small
+    // and a torn state file is not.
     file.sync_all()?;
     drop(file);
 
@@ -159,9 +139,9 @@ fn write_then_rename(path: &Path, bytes: &[u8], tmp: &Path, owner_only: bool) ->
         tighten_mode(tmp);
     }
 
-    // Replaces an existing destination atomically on POSIX and on Windows
-    // (`MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`). On Windows it fails while
-    // another process holds the destination open without `FILE_SHARE_DELETE`.
+    // Atomic replacement on POSIX and on Windows (`MoveFileEx` with
+    // `MOVEFILE_REPLACE_EXISTING`), though Windows fails while another process
+    // holds the destination open without `FILE_SHARE_DELETE`.
     fs::rename(tmp, path)?;
     sync_parent_dir(path);
     Ok(())
@@ -169,17 +149,13 @@ fn write_then_rename(path: &Path, bytes: &[u8], tmp: &Path, owner_only: bool) ->
 
 /// Flush the directory entry the rename just created.
 ///
-/// `sync_all` on the temp file makes its CONTENTS durable; it says nothing
-/// about the rename, which is a directory modification. Without this, a power
-/// loss between the two can leave the directory entry unwritten, and the
-/// atomic-write guarantee degrades from "old or new" to "old, new, or neither":
-/// the file the caller just wrote is simply absent. For a settings file or a
-/// session that is data loss, not a torn read.
+/// `sync_all` on the temp file makes its CONTENTS durable and says nothing about
+/// the rename, which is a directory modification. Without this a power loss
+/// between the two degrades the guarantee from "old or new" to "old, new, or
+/// neither", which is data loss rather than a torn read.
 ///
-/// Best-effort, and deliberately so. It is a durability improvement on a write
-/// that has already fully succeeded, so a platform that refuses the directory
-/// open (Windows has no equivalent, and some filesystems reject it) must not
-/// turn a completed write into a reported failure.
+/// Best-effort: it improves a write that already succeeded, so a platform that
+/// refuses the directory open must not turn that into a failure.
 fn sync_parent_dir(path: &Path) {
     #[cfg(unix)]
     if let Some(dir) = path.parent() {
@@ -191,13 +167,9 @@ fn sync_parent_dir(path: &Path) {
     let _ = path;
 }
 
-/// Best-effort owner-only permissions. A chmod failure must not fail the write.
-///
-/// Not redundant with the mode at creation: `OpenOptions::mode` applies only
-/// when the file is created, and the fixed-`.tmp` branch can reopen a temp left
-/// behind by a crash, which keeps whatever mode it already had. On the
-/// unique-suffix branch the temp is always newly created, so this is a no-op
-/// there and kept only so both owner-only writers share one path.
+/// Best-effort owner-only permissions. Not redundant with the mode at creation:
+/// `OpenOptions::mode` applies only on creation, and the fixed-`.tmp` branch can
+/// reopen a temp a crash left behind, which keeps the mode it had.
 fn tighten_mode(path: &Path) {
     #[cfg(unix)]
     {
@@ -226,14 +198,10 @@ fn secret_tmp(path: &Path) -> PathBuf {
 
 /// Read and parse a JSON state file.
 ///
-/// A parse failure maps to `internal_error`, not `validation_error`. The blanket
-/// `From<serde_json::Error>` is right for an inbound request body, where bad
-/// JSON is the client's fault, and wrong for a file we wrote ourselves, where it
-/// is ours. Going through this function means `?` does the right thing without
-/// every call site having to remember.
-///
-/// A missing file surfaces as `not_found`, so a caller wanting a default matches
-/// on `err.code`.
+/// A parse failure maps to `internal_error`, not the blanket
+/// `From<serde_json::Error>`'s `validation_error`: bad JSON in a file we wrote
+/// is our bug, not the client's. A missing file is `not_found`, so a caller
+/// wanting a default matches on `err.code`.
 pub async fn read_json<T: DeserializeOwned + Send + 'static>(path: PathBuf) -> Result<T> {
     spawn(move || read_json_blocking(&path)).await
 }
@@ -252,9 +220,8 @@ pub fn read_json_blocking<T: DeserializeOwned>(path: &Path) -> Result<T> {
 /// Serialize `value` as pretty-printed JSON and write it through
 /// [`write_atomic`].
 ///
-/// Pretty because that is what the state files this replaces carry on disk, and
-/// they are meant to be hand-readable. A caller wanting compact bytes, such as a
-/// derived index file, serializes itself and calls [`write_atomic`].
+/// Pretty, because these files are meant to be hand-readable. A caller wanting
+/// compact bytes serializes itself and calls [`write_atomic`].
 pub async fn write_json_atomic<T: Serialize>(path: PathBuf, value: &T) -> Result<()> {
     write_atomic(path, to_pretty_bytes(value)?).await
 }
@@ -275,10 +242,9 @@ fn to_pretty_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 
 // --- shared -------------------------------------------------------------------
 
-/// Run one filesystem sequence on the blocking pool. One `spawn_blocking` for
-/// the whole open, write, sync, rename rather than an await per syscall:
-/// `tokio::fs` is itself a `spawn_blocking` per call, and doing it once is both
-/// cheaper and the only way to keep the failure-cleanup path in one place.
+/// Run one filesystem sequence on the blocking pool: one `spawn_blocking` for
+/// the whole open, write, sync, rename, rather than `tokio::fs`'s one per
+/// syscall, which also keeps the failure cleanup in one place.
 async fn spawn<T, F>(f: F) -> Result<T>
 where
     F: FnOnce() -> Result<T> + Send + 'static,
@@ -334,14 +300,10 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 
-    /// Both owner-only writers, along the creation-mode axis. Verified to fail
-    /// when either writer is wired to the umask instead.
-    ///
-    /// What it does not prove, per D-015: it asserts the published mode, which
-    /// both the creation mode and the pre-rename chmod satisfy, so it does not
-    /// distinguish the two. It also cannot bite under a `0077` umask, where the
-    /// umask alone would produce `0600`. Neither weakens it against the
-    /// regression that matters, which is the owner-only axis being dropped.
+    /// Both owner-only writers, along the creation-mode axis. It asserts the
+    /// published mode, which the creation mode and the pre-rename chmod both
+    /// satisfy, and cannot bite under a `0077` umask; neither weakens it
+    /// against the regression that matters.
     #[cfg(unix)]
     #[test]
     fn the_owner_only_writers_publish_an_owner_only_file() {
@@ -356,9 +318,8 @@ mod tests {
         assert_eq!(mode_of(&admin), 0o600);
     }
 
-    /// The axes are independent, which is the point of the three-way split: the
-    /// owner-only writer must not have inherited the fixed temp name along with
-    /// the mode. Blocking `<path>.tmp` leaves it working.
+    /// The axes are independent: the owner-only writer must not have inherited
+    /// the fixed temp name along with the mode.
     #[test]
     fn the_owner_only_writer_keeps_the_unique_temp_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -367,8 +328,7 @@ mod tests {
 
         write_owner_atomic_blocking(&path, b"token").unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"token");
-        // The blocking directory is the only `.tmp` left: the writer's own temp
-        // was consumed by the rename.
+        // The blocking directory is the only `.tmp` left.
         assert_eq!(leftovers(dir.path()), vec![".admin-token.tmp".to_string()]);
     }
 
@@ -387,14 +347,12 @@ mod tests {
         }
     }
 
-    /// The naming above, observed rather than unit-tested: blocking the fixed
-    /// name stops only the secret writer.
+    /// Blocking the fixed name stops only the secret writer.
     #[test]
     fn only_the_secret_writer_uses_the_fixed_name() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state");
-        // A directory cannot be opened for writing, so whichever writer wants
-        // this exact name fails.
+        // A directory cannot be opened for writing.
         fs::create_dir(dir.path().join("state.tmp")).unwrap();
 
         assert!(write_secret_atomic_blocking(&path, b"x").is_err());
@@ -420,9 +378,8 @@ mod tests {
         assert_eq!(mode_of(&path), 0o600);
     }
 
-    /// What the unique suffix exists for. Every writer must succeed, the file
-    /// must end up as exactly one writer's payload rather than a mix, and no
-    /// temp may survive.
+    /// What the unique suffix exists for: every writer succeeds, the file is
+    /// exactly one writer's payload rather than a mix, and no temp survives.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_writes_to_one_path_never_collide() {
         let dir = tempfile::tempdir().unwrap();
@@ -472,8 +429,7 @@ mod tests {
         assert!(fs::read_to_string(&path).unwrap().contains('\n'));
     }
 
-    /// The reason these helpers exist. Bad JSON in a file we wrote is our bug,
-    /// so it must not surface as the client's `validation_error`.
+    /// Bad JSON in a file we wrote is our bug, not a `validation_error`.
     #[test]
     fn a_corrupt_state_file_is_internal_not_a_validation_error() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,22 +1,15 @@
-/**
- * Model-file helpers for settings that reference downloadable weights: the
- * `*.modelFiles` bundle maps (STT/TTS), the always-present embedding model, and
- * the requirement set the current settings imply. Consumed by both the core
- * (`sourcesForKind` / requirements) and the client.
- */
+// Model-file helpers for settings that reference downloadable weights: the
+// `*.modelFiles` bundle maps (STT/TTS), the embedding model, and the
+// requirement set the current settings imply.
 
 import type { RequiredModelRef } from "../model.ts";
 import { sttUsesLocal, ttsUsesLocal } from "../model.ts";
 
-// A sherpa speech model (STT or TTS) is a bundle of role-tagged files, and the
-// roles differ by family (whisper: encoder/decoder/tokens; sense-voice:
-// model/tokens; kokoro: model/voices/tokens; ...). Rather than guess sibling
-// filenames from one spec, the curated catalog lists every file explicitly and
-// selection bakes the chosen bundle into `stt.modelFiles` / `tts.modelFiles` as
-// a JSON object mapping each sherpa role to its HF spec. The download flow and
-// the speech sidecar read that map; no naming convention is assumed. (espeak-ng
-// phonemizer data is NOT listed here: it ships inside the speech binary's
-// archive and is added by the sidecar for the kokoro/kitten families.)
+// A sherpa speech model is a bundle of role-tagged files whose roles differ by
+// family, so rather than guess sibling filenames, selection bakes the catalog's
+// explicit file list into `stt.modelFiles` / `tts.modelFiles` as a JSON map of
+// sherpa role to HF spec. (espeak-ng phonemizer data is NOT listed: it ships
+// inside the speech binary's archive.)
 export function modelFilesMap(v: unknown): Record<string, string> | null {
   if (typeof v !== "string" || v.trim() === "") return null;
   let parsed: unknown;
@@ -36,18 +29,16 @@ export function modelFilesMap(v: unknown): Record<string, string> | null {
   return out;
 }
 
-/** The list of HF file specs a `*.modelFiles` setting references. Returns [] for
- *  a missing or malformed value; `modelFilesError` is the loud-failure guard for
- *  validating manual edits. */
+/** The HF file specs a `*.modelFiles` setting references, [] when malformed.
+ *  `modelFilesError` is the loud-failure guard for manual edits. */
 export function parseModelFiles(v: unknown): string[] {
   const map = modelFilesMap(v);
   return map ? Object.values(map).filter(isHfSpec) : [];
 }
 
 /** Human-readable error if a `*.modelFiles` value is present but not a JSON
- *  object mapping each role to an `@user/repo/branch/file` spec. null when valid
- *  or empty, so a malformed manual edit is rejected at PATCH time rather than
- *  silently producing an empty bundle the sidecar can't load. */
+ *  object mapping each role to an `@user/repo/branch/file` spec, so a malformed
+ *  manual edit is rejected at PATCH time. null when valid or empty. */
 export function modelFilesError(v: unknown): string | null {
   if (v === undefined || v === null || v === "") return null;
   const map = modelFilesMap(v);
@@ -62,13 +53,9 @@ export function modelFilesError(v: unknown): string | null {
   return null;
 }
 
-// The local embedding model for tool-relevance + memory RAG: an all-MiniLM-L6-v2
-// GGUF served by the llama-embed sidecar over /v1/embeddings. EMBED_REPO is the
-// local model's identity; when embeddings run locally it is folded into the
-// stored-vector staleness hash (services/relevance.ts, via activeEmbedModelId)
-// so changing the model forces a re-embed of every cached vector. (In external
-// mode with a Relevance Model set, embeddings reuse that provider instead and
-// this file isn't downloaded.)
+// The local embedding model for tool-relevance + memory RAG, served by the
+// llama-embed sidecar. EMBED_REPO is folded into the stored-vector staleness
+// hash, so changing the model forces a re-embed of every cached vector.
 export const EMBED_REPO = "@second-state/All-MiniLM-L6-v2-Embedding-GGUF/main";
 export const EMBED_MODEL_FILE = `${EMBED_REPO}/all-MiniLM-L6-v2-Q8_0.gguf`;
 
@@ -77,13 +64,7 @@ function isHfSpec(v: unknown): v is string {
 }
 
 /** Model files (HF specs) the current settings require, tagged with their
- *  requirement group. The single source of truth consumed by both the core
- *  (`sourcesForKind` / requirements) and the client. llm local → modelPath
- *  (+ mmproj if image support); stt enabled+local → every file in its bundle;
- *  tts (when enabled) → every file in its bundle; embed → the MiniLM GGUF unless
- *  embeddings are served by an external Relevance Model. The stt/tts bundles are read from the
- *  `*.modelFiles` map that selection baked from the catalog, so any family's
- *  file set is covered without assuming filenames. */
+ *  requirement group. The single source of truth for both core and client. */
 export function requiredModelRefs(s: Record<string, unknown>): RequiredModelRef[] {
   const out: RequiredModelRef[] = [];
   const llmLocal = s["llm.provider"] !== "external";
@@ -109,9 +90,8 @@ export function requiredModelRefs(s: Record<string, unknown>): RequiredModelRef[
       out.push({ source: spec, group: "tts" });
     }
   }
-  // The local MiniLM embedding model is only required when embeddings run
-  // locally. With llm in external mode and a Relevance Model (embedModel) set,
-  // embeddings reuse that external provider, so the local GGUF isn't needed.
+  // With llm external and a Relevance Model set, embeddings reuse that provider
+  // and the local GGUF isn't needed.
   const externalEmbed =
     s["llm.provider"] === "external" &&
     typeof s["llm.external.embedModel"] === "string" &&

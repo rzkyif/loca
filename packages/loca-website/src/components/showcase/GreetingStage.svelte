@@ -7,17 +7,11 @@
   import AgentMessageView from "@loca/shared/ui/components/chat/messages/AgentMessageView.svelte";
   import { bubbleGap, useUiContext } from "@loca/shared/ui/context";
   import Cursor from "./Cursor.svelte";
-  import { awaitStableHeight, Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, awaitStableHeight, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   const ui = useUiContext();
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // A greeting fires on its own when the app opens: the automated prompt that ran
   // appears (collapsed, like any core-authored message), then the agent's reply

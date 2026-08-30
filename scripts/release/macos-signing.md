@@ -171,7 +171,7 @@ upload` or an `xcodebuild -exportArchive` upload destination (note in
 - **Keychain is iOS-ready:** the Apple native keyring store is cfg-gated for
   `macos` + `ios`
   ([keychain.rs:82](../../packages/loca-client/src/tauri/src/commands/keychain.rs#L82),
-  and the same in the `loca-core-keychain` helper).
+  and the same in the core's keychain module).
 - **`gen/apple` customizations** (hand-applied after `init:ios`, like the Android
   manifest edits): `Info.plist` usage strings (`NSMicrophoneUsageDescription`,
   `NSLocalNetworkUsageDescription`) + an App Transport Security

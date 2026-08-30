@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import type { ComponentProps } from "svelte";
   import gsap from "gsap";
-  import { getDefaultSettings, SETTINGS_SCHEMA } from "@loca/shared/domain/settings/engine";
+  import { getDefaultSettings } from "@loca/shared/domain/settings/engine";
   import type { SettingField } from "@loca/shared/domain/settings/types";
   import { modelPresetFieldSamples } from "@loca/shared/ui/samples";
   import SettingsShellView from "@loca/shared/ui/components/settings/SettingsShellView.svelte";
@@ -11,16 +11,9 @@
   import ModelPresetFieldView from "@loca/shared/ui/components/settings/ModelPresetFieldView.svelte";
   import SettingsDemoFooter from "../demos/SettingsDemoFooter.svelte";
   import Cursor from "./Cursor.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, settingsShowcaseGroups as groups, type StageProps } from "../../lib/showcase";
 
-  let { register }: { register: (h: { timeline: Timeline; reset: () => void }) => void } = $props();
-
-  const groups = SETTINGS_SCHEMA.filter((g) => !g.hidden).map((g) => ({
-    id: g.id,
-    name: g.name,
-    icon: g.icon,
-    iconInactive: g.iconInactive ?? g.icon,
-  }));
+  let { register }: StageProps = $props();
 
   type Shell = {
     selectGroup: (id: string) => void;

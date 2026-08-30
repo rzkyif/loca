@@ -15,18 +15,12 @@
   import json from "highlight.js/lib/languages/json";
   import Cursor from "./Cursor.svelte";
   import BubbleShadow from "./BubbleShadow.svelte";
-  import { Demo, type Timeline } from "../../lib/showcase";
+  import { Demo, type SizedStageProps, type Timeline } from "../../lib/showcase";
 
   hljs.registerLanguage("typescript", typescript);
   hljs.registerLanguage("json", json);
 
-  let {
-    register,
-    reportHeight,
-  }: {
-    register: (h: { timeline: Timeline; reset: () => void }) => void;
-    reportHeight: (h: number) => void;
-  } = $props();
+  let { register, reportHeight }: SizedStageProps = $props();
 
   // Fixed-height stage: the extension editor holds the top half while the chat
   // below scrolls. The chat starts as just the input, vertically centered, and

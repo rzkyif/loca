@@ -1,8 +1,7 @@
 # loca-core-updater
 
-Standalone Rust crate compiled to its own small binary (not a `deno compile`
-entry), so the binary boundary is explicit and the artifact stays a few hundred
-KB. It finishes a self-update from a process outside core. Core swaps the binary
+Standalone Rust crate compiled to its own small binary, so the binary boundary
+is explicit and the artifact stays a few hundred KB. It finishes a self-update from a process outside core. Core swaps the binary
 in place itself (a running binary can be renamed on both Unix and Windows), so
 the updater's job is normally just the restart: on Windows it starts the Task
 Scheduler task once core has exited; in the no-service background mode it respawns
@@ -42,5 +41,4 @@ This crate exposes the standardized verbs as cargo wrappers (its `deno.json`):
 `cd` in and run `deno task <verb>`. It is also compiled as part of
 `deno task build:core` and folded into the repo-wide `deno task lint` / `test`.
 
-Invoked by core's self-updater; see
-[`../loca-core/src/update/README.md`](../loca-core/src/update/README.md).
+Invoked by core's self-updater (`packages/loca-core-rs/src/update/`).

@@ -1,25 +1,18 @@
-// Platform abstraction: every host-only feature the Svelte UI uses goes
-// through this interface so the same code can run under each native shell
-// (`tauri.ts` desktop, `mobile.ts` android) with its own impl, selected at
-// boot by `select.ts` from the running OS.
+// Platform abstraction: every host-only feature the Svelte UI uses goes through
+// this interface, so the same code runs under each native shell (`tauri.ts`
+// desktop, `mobile.ts` android), selected at boot by `select.ts`.
 //
-// IMPORTANT: NOTHING under packages/loca-client/src/ui/ outside of
-// `lib/platform/` may import `@tauri-apps/*`. For components, state stores,
-// and shared modules, all platform-specific calls go through `platform()`.
-// This is enforced by an oxlint rule (see .oxlintrc.json). To add a new
-// platform-specific feature: add the method to the `Platform` interface
-// below, implement it in `tauri.ts` and `mobile.ts` (sharing helpers via
-// `shared.ts`), cover it in the `src/ui/test/platform-stub.ts` fixture, then
-// call `platform().<namespace>.<method>()` from the consumer. There is no web
-// client, so there is no browser implementation.
+// IMPORTANT: nothing under `src/ui/` outside `lib/platform/` may import
+// `@tauri-apps/*` (enforced by an oxlint rule). To add a feature: declare the
+// method on `Platform` below, implement it in `tauri.ts` and `mobile.ts`
+// (sharing helpers via `shared.ts`), cover it in `src/ui/test/platform-stub.ts`,
+// then call `platform().<namespace>.<method>()`.
 
 import type { StorageTree } from "@loca/shared";
 
-// Mirrors the Rust `list_capture_monitors` return shape so the
-// `lib/capture/capture.ts` flow can cast without information loss. Physical
-// pixel bounds (x, y, width, height) let the region-capture flow match the
-// active monitor against Tauri's `currentMonitor()` position without
-// relying on names matching.
+// Mirrors the Rust `list_capture_monitors` shape. The physical-pixel bounds let
+// region capture match the active monitor against Tauri's `currentMonitor()`
+// position rather than relying on names matching.
 export interface MonitorInfo {
   id: string;
   name: string;
@@ -32,8 +25,8 @@ export interface MonitorInfo {
 
 // --- Client files ----------------------------------------------------------
 
-// The fixed-name JSON stores under ~/.loca/<channel>/client/. Values must
-// match the Rust ClientFile serde variants (lowercase) exactly.
+// The fixed-name JSON stores under ~/.loca/<channel>/client/. Must match the
+// Rust ClientFile serde variants (lowercase) exactly.
 export type ClientFileName = "settings" | "cores";
 
 // --- Context menu --------------------------------------------------------
@@ -44,19 +37,15 @@ export type ContextMenuItem =
 
 // --- Updater --------------------------------------------------------------
 
-/** Per-update handle returned by `updater.check()`. The Tauri impl wraps
- *  `@tauri-apps/plugin-updater`'s `Update` class. Its `.downloadAndInstall`
- *  and `.close` are stateful, so the handle is a wrapper, not a plain
- *  value object. Callers MUST `.close()` (or call `downloadAndInstall`,
- *  which closes implicitly) to release the underlying resources. */
+/** Per-update handle from `updater.check()`. Stateful, so callers MUST `.close()`
+ *  (or call `downloadAndInstall`, which closes implicitly). */
 export interface UpdateHandle {
   /** Version available for install (semver). */
   readonly version: string;
   /** Optional changelog / release notes from the manifest. */
   readonly notes?: string;
-  /** Run the actual download + install. Progress callback fires with
-   *  per-chunk byte counts and a total when available. Resolves once the
-   *  staging swap is queued; the OS-level relaunch is separate. */
+  /** Download + install. Resolves once the staging swap is queued; the
+   *  OS-level relaunch is separate. */
   downloadAndInstall(
     onProgress?: (
       event:
@@ -70,36 +59,27 @@ export interface UpdateHandle {
 }
 
 export interface ShortcutBindings {
-  /** Set or clear the OS-level global shortcut binding. Passing null
-   *  unregisters whatever accelerator was previously bound. */
+  /** Set or clear (null) the OS-level global shortcut binding. */
   setBinding(accelerator: string | null): Promise<void>;
-  /** Probe whether an accelerator can be registered without actually keeping
-   *  it. Used by the Settings UI to surface "already taken" before persist. */
+  /** Probe registrability without keeping it, to surface "already taken". */
   validate(accelerator: string): Promise<void>;
-  /** Configure how Rust classifies a window-shortcut press. In push-to-talk
-   *  mode Rust owns the tap-vs-hold timing (a release before `holdMs` emits a
-   *  `tap`, at/after it a `holdStart`/`holdEnd` pair) so the decision doesn't
-   *  depend on the OS release event reaching the (possibly congested) webview
-   *  in time. Call on attach and whenever the mode or hold duration changes. */
+  /** Configure how Rust classifies a window-shortcut press. Rust owns the
+   *  tap-vs-hold timing so it can't depend on the release event reaching a
+   *  congested webview in time. Call on attach and on any mode/duration change. */
   setPttConfig(pushToTalk: boolean, holdMs: number): Promise<void>;
-  /** Subscribe to the window-shortcut events. `onPressed` fires on every press;
-   *  the rest fire only in push-to-talk mode per Rust's tap-vs-hold verdict.
-   *  Returns a cleanup function that detaches all listeners. */
+  /** `onPressed` fires on every press; the rest only in push-to-talk mode, per
+   *  Rust's tap-vs-hold verdict. Returns a detach. */
   subscribeEvents(handlers: {
     onPressed: () => void;
     onTap?: () => void;
     onHoldStart?: () => void;
     onHoldEnd?: () => void;
   }): Promise<() => void>;
-  /** Register window-scoped shortcuts that fire only while the input
-   *  surface is focused. Pass `[]` to clear. The tuples are
-   *  [logical-id, accelerator]; the logical-id is what the matching
-   *  `subscribeInputEvents` callback receives. */
+  /** Register [logical-id, accelerator] shortcuts that fire only while the input
+   *  surface is focused. Pass `[]` to clear. */
   setInputBindings(bindings: Array<[string, string]>): Promise<void>;
-  /** Subscribe to the window-scoped input shortcuts registered via
-   *  `setInputBindings`. The Rust side emits per-id events; we expose a
-   *  typed handler bundle for the three logical actions the UI cares
-   *  about today. Returns a cleanup detach. */
+  /** Subscribe to the shortcuts registered via `setInputBindings`. Returns a
+   *  detach. */
   subscribeInputEvents(handlers: {
     onAttachFile?: () => void;
     onCaptureScreen?: () => void;
@@ -110,17 +90,13 @@ export interface ShortcutBindings {
 // --- Networking ----------------------------------------------------------
 //
 // All traffic to a paired core goes through `platform().net`, which terminates
-// TLS below the webview (a plain webview fetch can't pin a self-signed cert or
-// choose its verifier). The desktop impl does it in Rust (reqwest +
-// tokio-tungstenite + per-request rustls verifiers); mobile reuses the same
-// Rust. Every request states a `TlsMode`; `pin` is base64(SHA-256(SPKI)).
+// TLS below the webview in Rust: a plain webview fetch cannot pin a self-signed
+// cert or choose its verifier. Every request states a `TlsMode`.
 
-/** TLS trust posture for one request, resolved below the webview in Rust.
- *  `pin` enforces the stored SPKI pin (a self-signed core the Client secures
- *  itself); `webpki` does standard public-CA validation (a core behind an HTTPS
+/** TLS trust posture for one request. `pin` enforces the stored SPKI pin (a
+ *  self-signed core); `webpki` does public-CA validation (a core behind an HTTPS
  *  proxy); `capture` accepts any cert and reports its pin, for the unpaired
- *  pairing/discovery probe only. There is no accept-any default: every request
- *  states its mode. */
+ *  pairing/discovery probe ONLY. There is no accept-any default. */
 export type TlsMode = "pin" | "webpki" | "capture";
 
 export interface NetRequest {
@@ -144,9 +120,8 @@ export interface NetResponse {
   capturedPin?: string;
 }
 
-/** A core found on the local network by `net.discoverCores()`. The pin is the
- *  cert SPKI captured during the discovery probe, kept for display only; the
- *  real trust is re-established by the PAKE + pin-binding pairing flow. */
+/** A core found by `net.discoverCores()`. The pin is display-only; real trust is
+ *  established by the PAKE + pin-binding pairing flow. */
 export interface DiscoveredCore {
   baseUrl: string;
   version: string;
@@ -160,8 +135,7 @@ export interface NetSocket {
   onOpen(cb: () => void): void;
   onMessage(cb: (data: string) => void): void;
   onClose(cb: () => void): void;
-  /** `reason` carries the connect-failure message when available (e.g. from the
-   *  Tauri WS error event), so callers can surface it instead of a generic one. */
+  /** `reason` carries the connect-failure message when available. */
   onError(cb: (reason?: string) => void): void;
 }
 
@@ -170,9 +144,8 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 
 // --- The Core inside this app ---------------------------------------------
 
-/** One request into the embedded Core. `url` may be a whole URL or a bare
- *  path+query; the Core accepts either. `bodyB64` is base64 so bytes survive
- *  the IPC hop, matching `net_fetch`. */
+/** One request into the embedded Core. `url` may be whole or a bare path+query;
+ *  `bodyB64` is base64 so bytes survive the IPC hop. */
 export interface LocalCoreRequest {
   url: string;
   method: string;
@@ -181,8 +154,7 @@ export interface LocalCoreRequest {
 }
 
 /** One reply from the embedded Core. An HTTP-level failure (401, 404, 500)
- *  arrives HERE, not as a rejection: the status and the Core's error envelope
- *  come back exactly as they would over a socket. */
+ *  arrives HERE, not as a rejection, exactly as it would over a socket. */
 export interface LocalCoreReply {
   status: number;
   headers: Record<string, string>;
@@ -198,28 +170,24 @@ export interface LocalCoreInfo {
 
 /** The Core compiled into this app, reached in process.
  *
- *  There is deliberately no socket and no TLS: `127.0.0.1` is not app-private
- *  on Android, so binding a port would expose the Core to every installed app.
- *  Requests go straight into the Core's router, so `mode` / `pin` /
- *  `capturedPin` have no meaning here and are absent rather than ignored.
- *
- *  Frames arrive as per-id events, mirroring `net.connectWebSocket`. There is
- *  no `error` event: registering with the frame bus cannot fail. */
+ *  There is deliberately no socket and no TLS: `127.0.0.1` is not app-private on
+ *  Android, so binding a port would expose the Core to every installed app.
+ *  `mode` / `pin` / `capturedPin` are therefore absent rather than ignored, and
+ *  there is no `error` event: registering with the frame bus cannot fail. */
 export interface LocalCore {
-  /** Boot the Core if it is not already running, and report it. Idempotent, and
-   *  a failed start is retryable rather than cached. */
+  /** Boot the Core if it is not running. Idempotent; a failed start is
+   *  retryable rather than cached. */
   start(): Promise<LocalCoreInfo>;
   /** Whether it has been started. Never starts it. */
   running(): Promise<boolean>;
   http(req: LocalCoreRequest): Promise<LocalCoreReply>;
   /** Attach a client connection under `wsId`. Re-using a live id silently
-   *  replaces the previous connection, so callers use a fresh id each time. */
+   *  replaces the previous connection, so callers pass a fresh id. */
   wsOpen(wsId: string): Promise<void>;
   wsSend(wsId: string, data: string): Promise<void>;
   wsClose(wsId: string): Promise<void>;
-  /** Subscribe to one connection's frames. Register BEFORE calling `wsOpen`:
-   *  `open` is emitted before any seed frame, so a late listener loses it.
-   *  Returns a detach. */
+  /** Subscribe to one connection's frames. Register BEFORE `wsOpen`: `open` is
+   *  emitted before any seed frame, so a late listener loses it. */
   subscribeWs(
     wsId: string,
     handlers: { onOpen(): void; onMessage(data: string): void; onClose(): void },
@@ -227,25 +195,19 @@ export interface LocalCore {
 }
 
 export interface Platform {
-  // Network access to a paired core, with TLS certificate pinning enforced
-  // below the webview. See the NetRequest/NetSocket docs above.
+  // Network access to a paired core, TLS pinned below the webview.
   net: {
     fetch(req: NetRequest): Promise<NetResponse>;
     connectWebSocket(
       url: string,
       opts: { mode: "pin" | "webpki"; pin?: string },
     ): Promise<NetSocket>;
-    /** Sweep the local network for reachable cores (the pairing "ping"
-     *  button). Probes each host on this machine's /24(s) plus loopback at the
-     *  known core ports against the unauthenticated /api/v1/health, deduped by
-     *  cert pin. Desktop only; returns [] on mobile. */
+    /** Sweep this machine's /24(s) plus loopback for cores answering
+     *  /api/v1/health, deduped by cert pin. Desktop only; [] on mobile. */
     discoverCores(): Promise<DiscoveredCore[]>;
   };
-  /** The Core compiled into this app, or `null` where the app embeds none.
-   *  Null on desktop, where the Core is a separate process reached over TLS
-   *  through `net`. A single `!== null` is the whole "does this device host a
-   *  Core" predicate, and it is a property of the BUILD, never of the core
-   *  currently selected. */
+  /** The Core compiled into this app, or `null` where the app embeds none (every
+   *  desktop build). A property of the BUILD, never of the selected core. */
   localCore: LocalCore | null;
   // Window control.
   windowing: {
@@ -261,14 +223,11 @@ export interface Platform {
     }): Promise<void>;
     /** True when the main window is currently shown. */
     isVisible(): Promise<boolean>;
-    /** Subscribe to main-window visibility transitions. The callback fires
-     *  whenever the window shows or hides (driven by Rust's tray / hotkey
-     *  handlers, not just the JS-driven show/hide calls). */
+    /** Fires on every show/hide, including Rust's tray / hotkey handlers. */
     subscribeVisibility(cb: (visible: boolean) => void): Promise<() => void>;
     /** Read the main window's current outer size in physical pixels. */
     outerSize(): Promise<{ width: number; height: number }>;
-    /** Read the main window's current outer position in physical pixels
-     *  relative to the primary monitor origin. */
+    /** Outer position in physical pixels, relative to the primary monitor. */
     outerPosition(): Promise<{ x: number; y: number }>;
     /** Set the main window's size in physical pixels. */
     setOuterSize(size: { width: number; height: number }): Promise<void>;
@@ -276,42 +235,33 @@ export interface Platform {
     setOuterPosition(pos: { x: number; y: number }): Promise<void>;
     /** Read the monitor the main window is currently positioned on. */
     currentMonitor(): Promise<MonitorInfo | null>;
-    /** Subscribe to Rust-originated "hide me" requests (tray click,
-     *  hotkey, etc.). Returns a detach. */
+    /** Rust-originated "hide me" requests (tray click, hotkey). Returns a detach. */
     subscribeHideRequested(cb: () => void): Promise<() => void>;
-    /** Subscribe to the monitor-arrangement-changed event (DPI/scale
-     *  change, monitor plugged/unplugged). Returns a detach. */
+    /** Monitor arrangement changed (DPI/scale, plug/unplug). Returns a detach. */
     subscribeMonitorChanged(cb: () => void): Promise<() => void>;
   };
-  // Android hardware / gesture back button. Desktop has no analogue, so the
-  // methods are inert there. `subscribe` fires on every system back press; the
-  // app's back-handler registry (state/back.svelte.ts) decides what each press
-  // does. `exit` leaves the app, the final step of the chat-root
-  // double-back-to-exit chain.
+  // Android hardware / gesture back button, inert on desktop. The back-handler
+  // registry (state/back.svelte.ts) decides what each press does.
   backButton: {
-    /** Fire `cb` on every mobile back gesture (Android's hardware/system back or
-     *  an iOS left-edge swipe). Returns a detach. Inert (never fires) on desktop. */
+    /** Fire on every mobile back gesture. Returns a detach. Inert on desktop. */
     subscribe(cb: () => void): Promise<() => void>;
-    /** Leave the app (background / quit). No-op on desktop and iOS (Apple forbids
-     *  a programmatic exit); Android backgrounds the task. */
+    /** Leave the app. Android backgrounds the task; no-op on desktop and iOS
+     *  (Apple forbids a programmatic exit). */
     exit(): Promise<void>;
-    /** Whether a back gesture at the app root should leave the app. True on
-     *  Android; false on desktop (the stream never fires) and iOS (the OS home
-     *  gesture owns leaving, so a root back is inert instead of a dead double-tap
-     *  exit hint). */
+    /** Whether a root back gesture should leave the app. Android only: on iOS the
+     *  OS home gesture owns leaving, so a root back is inert. */
     canExit(): boolean;
   };
   // OS login entry ("start Loca when I log in").
   autostart: {
     isEnabled(): Promise<boolean>;
     setEnabled(enabled: boolean): Promise<void>;
-    /** True when this app run was launched by the login entry rather than
-     *  the user. Drives the greeting trigger's `launch` report. */
+    /** True when this run was launched by the login entry rather than the user. */
     wasAutostarted(): Promise<boolean>;
   };
-  // Screen capture. Region capture goes through `showRegionOverlay` + a Rust
-  // event (the overlay window draws the selection and emits the cropped PNG);
-  // there is no direct "capture a region" platform call.
+  // Screen capture. Region capture is `showRegionOverlay` + a Rust event (the
+  // overlay draws the selection and emits the cropped PNG); there is no direct
+  // "capture a region" call.
   capture: {
     monitors(): Promise<MonitorInfo[]>;
     captureMonitor(monitorId: string): Promise<string>; // base64 PNG
@@ -319,8 +269,7 @@ export interface Platform {
     getRegionTarget(): Promise<string>;
     showRegionOverlay(): Promise<string>; // returns xcap monitor id
     hideRegionOverlay(): Promise<void>;
-    /** Subscribe to the overlay's result event. `payload` is base64 PNG on
-     *  successful drag, null on ESC / cancel. */
+    /** Overlay result: base64 PNG on a successful drag, null on ESC / cancel. */
     subscribeRegionResult(cb: (payload: string | null) => void): Promise<() => void>;
   };
   // System audio.
@@ -331,33 +280,30 @@ export interface Platform {
   };
   // Installed fonts.
   fonts: { list(): Promise<string[]> };
-  // This (client) process's own resource usage, for the Services field's
-  // "Main Application" row. rssMb = resident memory in MB, cpuPct = CPU %.
+  // This process's own resource usage, for the Services field's "Main
+  // Application" row.
   process: {
     selfMetrics(): Promise<{ pid: number; rssMb: number; cpuPct: number }>;
   };
-  // The local client's on-disk storage tree (settings + logs) for the
-  // "Client → Storage" usage field. Read-only; deletes/clears are done by the
-  // caller via fs.remove + clientFiles.
+  // The client's on-disk storage tree (settings + logs) for the "Client →
+  // Storage" usage field. Read-only; deletes go via fs.remove + clientFiles.
   clientStorage: {
     tree(): Promise<StorageTree>;
-    /** Empty the active client.log in place (logging continues). Rotated
-     *  backups are deleted via fs.remove. */
+    /** Empty the active client.log in place. Rotated backups go via fs.remove. */
     truncateActiveLog(): Promise<void>;
   };
   // Global / input shortcuts.
   shortcuts: ShortcutBindings;
   // Per-concern client JSON stores under ~/.loca/<channel>/client/:
-  // settings.json (sparse settings, owned by settingsState) and cores.json
-  // (paired-cores registry, owned by lib/core/cores.ts). One owner per file,
-  // so no cross-module read-modify-write.
+  // settings.json (settingsState) and cores.json (lib/core/cores.ts). One owner
+  // per file, so no cross-module read-modify-write.
   clientFiles: {
     read(file: ClientFileName): Promise<Record<string, unknown>>;
     write(file: ClientFileName, data: Record<string, unknown>): Promise<void>;
   };
   // Per-snippet JSON files under ~/.loca/<channel>/client/snippets/. The
-  // directory listing is the registry (no index file), so a snippet can be
-  // shared by copying its file into the folder and rescanning.
+  // directory listing IS the registry, so a snippet can be shared by copying its
+  // file into the folder and rescanning.
   snippetFiles: {
     /** Every parseable snippet file, keyed by filename stem. */
     readAll(): Promise<Record<string, Record<string, unknown>>>;
@@ -373,82 +319,62 @@ export interface Platform {
   // Pairing helpers.
   pairing: {
     readAdminToken(): Promise<string | null>;
-    /** The local core's last fatal boot-failure reason (one line), or null when
-     *  the core came up cleanly. The core writes it on a fatal startup path
-     *  (port in use, missing helper, ...) and clears it once it next binds, so
-     *  the pair flow can explain an otherwise-opaque connection failure. */
+    /** The local core's last fatal boot-failure reason, or null when it came up
+     *  cleanly, so the pair flow can explain an opaque connection failure. */
     readLocalCoreBootError(): Promise<string | null>;
-    /** Whether ~/.loca/core/bin/loca-core exists (planted by the native
-     *  installer). Decides both the first-boot silent pair with the
-     *  installer-provided core and whether to spawn it for on-demand mode. */
+    /** Whether the installer planted ~/.loca/core/bin/loca-core. Gates the
+     *  first-boot silent pair and the on-demand spawn. */
     isLocalCoreInstalled(): Promise<boolean>;
-    /** Whether the local core's port is answering. Distinguishes "the core is
-     *  stopped" (offer to start it) from "the core is up but unreachable" (keep
-     *  reconnecting), which is the split the CoreBar's Stopped pill needs. */
+    /** Whether the local core's port answers. Splits "stopped" (offer to start)
+     *  from "up but unreachable" (keep reconnecting) for the Stopped pill. */
     isLocalCoreRunning(): Promise<boolean>;
-    /** Start the local core when it isn't already responding, through whatever
-     *  supervisor owns it. Returns `true` when a new core was started. An
-     *  unsupervised core is recorded and stopped again when the Client quits. */
+    /** Start the local core through whatever supervisor owns it. Returns true
+     *  when one was started; an unsupervised core is stopped again on quit. */
     startLocalCore(): Promise<boolean>;
-    /** Stop the local core, through its supervisor when it has one (a plain kill
-     *  would just be undone by launchd's KeepAlive). Idempotent. */
+    /** Stop the local core through its supervisor when it has one (a plain kill
+     *  would be undone by launchd's KeepAlive). Idempotent. */
     stopLocalCore(): Promise<void>;
-    /** Loopback base URL of this channel's local core, with the channel-aware
-     *  port (stable 7800, latest 7810, …). Used by the local-core pair flow so
-     *  a latest client targets the latest core.
+    /** Loopback base URL of this channel's local core, on the channel-aware port
+     *  (stable 7800, latest 7810, …).
      *
-     *  **Empty string where there is no such URL**, which is every build whose
-     *  Core is embedded (`localCore !== null`): an in-process Core has no
-     *  origin, which is the point of it. Kept as `string` rather than widened
-     *  to `string | null` deliberately: every consumer runs the value through
-     *  `new URL(...)`, which throws on `""` and on `null` alike, so the two are
-     *  indistinguishable downstream and widening the type would only move the
-     *  same check into three more files. */
+     *  EMPTY STRING where there is no such URL, which is every build whose Core
+     *  is embedded: an in-process Core has no origin. Not widened to
+     *  `string | null` because every consumer runs it through `new URL(...)`,
+     *  which throws on `""` and `null` alike. */
     localCoreBaseUrl(): Promise<string>;
-    /** This channel's default local sidecar ports (llama / whisper). Used as
-     *  fallbacks when the paired core hasn't overridden llm.port / stt.port so
-     *  a latest client talks to the latest sidecars (7711/7712), not stable's. */
+    /** This channel's default sidecar ports, used when the paired core has not
+     *  overridden llm.port / stt.port. */
     localSidecarPorts(): Promise<{ llm: number; stt: number }>;
-    /** Optional `--core-url` / `--pairing-code` launch arguments, used to
-     *  prefill the "On another computer" onboarding fields. Doubles as a
-     *  shareable setup command; `deno task dev` passes the dev core URL + code
-     *  this way. Returns null when neither flag was given. */
+    /** Optional `--core-url` / `--pairing-code` launch arguments prefilling the
+     *  "On another computer" onboarding fields. Null when neither was given. */
     launchPrefill(): Promise<{ coreUrl?: string; pairingCode?: string } | null>;
   };
   // File-to-markdown conversion (desktop uses Rust crates).
   fileConvert: {
     toMarkdown(file: File): Promise<string>;
-    /** Convert a file already on disk by absolute path. Used by the paste
-     *  / dialog-pick flows which produce a path directly without going
-     *  through a Blob roundtrip. */
+    /** Convert a file already on disk, for the paste / dialog-pick flows. */
     toMarkdownFromPath(absPath: string): Promise<string>;
   };
   // Path expansion (~ → home).
   resolvePath(path: string): Promise<string>;
   // Default Downloads folder.
   openExternal(url: string): Promise<void>;
-  // Reveal a file in the OS file manager (Finder/Explorer), selecting it.
-  // Only meaningful when the file is on this same device (e.g. a download from
-  // a same-device core); callers gate on that before showing the affordance.
+  // Reveal a file in the OS file manager, selecting it. Only meaningful for a
+  // file on this same device; callers gate on that before offering it.
   revealPath(absPath: string): Promise<void>;
-  // Tauri auto-updater. Wraps @tauri-apps/plugin-updater so UpdateButton
-  // doesn't have to import the plugin directly.
+  // Tauri auto-updater, wrapped so UpdateButton need not import the plugin.
   updater: {
     /** Current installed version (from Tauri's app metadata). */
     getVersion(): Promise<string>;
-    /** Check the configured update endpoint. Returns null when no update
-     *  is available; otherwise an UpdateHandle the caller drives. */
+    /** Check the update endpoint. Null when none is available. */
     check(): Promise<UpdateHandle | null>;
-    /** Whether an available client update can be installed in place. False on a
-     *  non-AppImage Linux install (a distro/third-party repackage or raw binary),
-     *  where the Tauri updater can only replace an AppImage: callers open the
-     *  download page instead of running a self-update that would fail. */
+    /** Whether an update can be installed in place. False on a non-AppImage Linux
+     *  install, where callers open the download page instead. */
     canSelfInstall(): Promise<boolean>;
     /** Relaunch the desktop client process. */
     relaunch(): Promise<void>;
   };
-  // Filesystem ops needed by drag-drop / attachment flows. Async across the
-  // board to match Tauri's plugin shape.
+  // Filesystem ops for the drag-drop / attachment flows.
   fs: {
     readFile(path: string): Promise<Uint8Array>;
     writeFile(path: string, bytes: Uint8Array): Promise<void>;
@@ -456,58 +382,48 @@ export interface Platform {
     tempDir(): Promise<string>;
     join(...segments: string[]): Promise<string>;
   };
-  // Native file-picker dialog. Returns absolute paths chosen by the user,
-  // or an empty array on cancel.
+  // Native file picker. Returns absolute paths, or [] on cancel.
   dialog: {
     openFilePicker(opts?: {
       multiple?: boolean;
       filters?: Array<{ name: string; extensions: string[] }>;
     }): Promise<string[]>;
   };
-  // Cursor introspection + click-through toggling for the floating window.
-  // Used by lib/window/window.ts to make the transparent regions of
-  // the bubble window pass mouse events to whatever's behind.
+  // Cursor introspection + click-through toggling, so the bubble window's
+  // transparent regions pass mouse events to whatever is behind.
   cursor: {
-    /** Current cursor position in physical pixels relative to the primary
-     *  monitor origin. */
+    /** Cursor position in physical pixels, relative to the primary monitor. */
     getPosition(): Promise<{ x: number; y: number }>;
-    /** Toggle click-through on the main window. When true, mouse events
-     *  pass through transparent pixels to the desktop. */
+    /** When true, mouse events pass through transparent pixels to the desktop. */
     setClickthrough(enabled: boolean): Promise<void>;
   };
-  // Native context menu, used for right-click message actions where the
-  // browser menu would obscure the UI.
+  // Native context menu for right-click message actions.
   menu: {
-    /** Show a context menu at the current cursor and resolve with the
-     *  id of the chosen item, or null if dismissed. Separator entries
-     *  carry no id and are skipped when matching the resolved value. */
+    /** Show at the cursor; resolves with the chosen item's id, or null if
+     *  dismissed. */
     showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   };
-  // The status-bar icon's Start / Stop Core item. The tray menu is built once
-  // by the host and mutated from here, so the UI (which already tracks the
-  // local core) pushes its state rather than the host polling for it. The item
-  // only ever emits an intent; the UI performs the start / stop, so the tray
-  // and the CoreBar's Stopped pill run the same code. No tray on mobile.
+  // The status-bar icon's Start / Stop Core item. The UI pushes its state rather
+  // than the host polling, and the item only emits an intent: the UI performs the
+  // start / stop, so the tray and the CoreBar's Stopped pill run the same code.
+  // No tray on mobile.
   tray: {
     /** Enable (`installed`) and label (`running`) the Start / Stop Core item. */
     setCoreState(installed: boolean, running: boolean): Promise<void>;
     /** Listen for a Start / Stop Core click. Resolves to an unsubscribe fn. */
     subscribeCoreAction(cb: (action: "start" | "stop") => void): Promise<() => void>;
   };
-  // Monitor enumeration shared between Settings (pick a monitor) and the
-  // window-position math. Distinct from `capture.monitors` (xcap-based,
-  // used by the screen-capture path). These come from Tauri's window
-  // module and align with `windowing.position`.
+  // Monitor enumeration for Settings + the window-position math. Distinct from
+  // `capture.monitors` (xcap-based): these come from Tauri's window module and
+  // align with `windowing.position`.
   monitors: {
     primary(): Promise<MonitorInfo | null>;
     available(): Promise<MonitorInfo[]>;
   };
-  // Structured logging routed to the Rust backend so lines reach the dev
-  // terminal and the persisted client.log (WARN/ERROR only). Callers use
-  // getLogger(scope) from lib/util/log.ts, not this directly.
+  // Structured logging routed to Rust so lines reach the dev terminal and the
+  // persisted client.log. Callers use getLogger(scope), not this directly.
   logging: {
-    /** Fire-and-forget. `message` is already fully formatted; `scope` is passed
-     *  separately so the backend can render it as the module column. */
+    /** Fire-and-forget. `scope` is separate so Rust renders it as its own column. */
     log(level: LogLevel, scope: string, message: string): void;
   };
 }

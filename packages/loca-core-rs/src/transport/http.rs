@@ -12,10 +12,7 @@
 //! }
 //! ```
 //!
-//! gets the envelope for free and never mentions it. That is deliberate: a
-//! handler that hand-rolls a response has to work harder than one that does
-//! not, which is the only enforcement that survives twenty route slices written
-//! by different packages.
+//! gets the envelope for free and never mentions it.
 
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Request};
@@ -27,10 +24,8 @@ use crate::log::scrub_secrets;
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // Scrub before the message crosses the wire. Log lines are scrubbed by
-        // the logger; response bodies are not, and an `internal_error` can
-        // carry a raw exception string such as an upstream provider error
-        // echoing a URL with a token in it.
+        // Response bodies are not scrubbed by the logger, and an
+        // `internal_error` can echo an upstream URL carrying a token.
         let scrubbed = AppError {
             code: self.code,
             message: scrub_secrets(&self.message),
@@ -42,11 +37,9 @@ impl IntoResponse for AppError {
     }
 }
 
-/// Log a failed request the way the TypeScript's `sendError` does: a handled
-/// error is a warning, an internal one is an error.
-///
-/// Called by the middleware that sees the finished response, so the line
-/// carries the method and path a handler does not have.
+/// A handled error is a warning, an internal one is an error. Called by the
+/// middleware that sees the finished response, so the line carries the method
+/// and path a handler does not have.
 pub(crate) fn log_error(method: &str, path: &str, code: ErrorCode, message: &str) {
     if code == ErrorCode::InternalError {
         tracing::error!(target: "loca::http", "{method} {path} -> {}: {message}", code.as_str());
@@ -55,17 +48,9 @@ pub(crate) fn log_error(method: &str, path: &str, code: ErrorCode, message: &str
     }
 }
 
-/// JSON, both directions.
-///
-/// One type rather than two so a route slice imports one name. As an extractor
-/// it maps a malformed or wrong-typed body to `validation_error` instead of
-/// axum's default plain-text rejection; as a response it is `axum::Json`.
-///
-/// The message keeps serde's text, which names the offending field and line, so
-/// a client author debugging a request body gets something actionable. That is
-/// the same information the Zod-derived `Deserialize` in `contract::inbound`
-/// produces when it rejects a constraint, and it is not sensitive: it describes
-/// the request the caller just sent.
+/// JSON, both directions. As an extractor it maps a malformed body to
+/// `validation_error` instead of axum's plain-text rejection, keeping serde's
+/// message (which names the offending field); as a response it is `axum::Json`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Json<T>(pub T);
 
@@ -91,23 +76,18 @@ impl<T: serde::Serialize> IntoResponse for Json<T> {
 }
 
 fn rejection_to_error(rejection: JsonRejection) -> AppError {
-    // A body that blew the size cap arrives here as a `BytesRejection`
-    // carrying a 413. Preserving that status matters: the client shows a
-    // distinct path for "too large" and would otherwise see a generic 400.
-    // The pair (413, validation_error) is unreachable through `AppError`,
-    // whose status comes from its code, so it is built directly. This is the
-    // one place in the transport that does that, and it is here because the
-    // TypeScript emits exactly that pair and a silent change to 400 would only
-    // surface the first time a user uploaded a large attachment.
+    // A body over the size cap arrives as a `BytesRejection` carrying a 413,
+    // and the client shows a distinct path for it. The pair (413,
+    // validation_error) is unreachable through `AppError`, whose status comes
+    // from its code, so it is built directly.
     if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
         return AppError::new(ErrorCode::ValidationError, "request body too large");
     }
     AppError::new(ErrorCode::ValidationError, rejection.body_text())
 }
 
-/// The oversize-body response, as the TypeScript emits it: status 413 with a
-/// `validation_error` code. See [`rejection_to_error`] for why this is not an
-/// `AppError`.
+/// The oversize-body response: 413 with a `validation_error` code. See
+/// [`rejection_to_error`] for why this is not an `AppError`.
 pub(crate) fn payload_too_large() -> Response {
     let body = AppError::new(ErrorCode::ValidationError, "request body too large").to_body();
     (StatusCode::PAYLOAD_TOO_LARGE, axum::Json(body)).into_response()
@@ -133,9 +113,8 @@ pub async fn not_found() -> Response {
     AppError::new(ErrorCode::NotFound, "no such endpoint").into_response()
 }
 
-/// Matched path, wrong method. `not_found` rather than a distinct code because
-/// the wire contract has no `method_not_allowed`, and inventing one would put a
-/// string on the wire that no client switches on.
+/// Matched path, wrong method. `not_found` because the wire contract has no
+/// `method_not_allowed` code.
 pub async fn method_not_allowed() -> Response {
     (
         StatusCode::METHOD_NOT_ALLOWED,

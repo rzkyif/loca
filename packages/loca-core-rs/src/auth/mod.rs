@@ -1,8 +1,5 @@
 //! Pairing and authentication.
 //!
-//! Work package **F7** (`docs/rust-port/registry.md`). This module is that
-//! package's owned path; nothing outside it writes here.
-//!
 //! # The pairing flow
 //!
 //! 1. The operator, or a client running on the host, calls `POST /pairing/codes`
@@ -23,17 +20,15 @@
 //!
 //! # The budgets
 //!
-//! Per code, five failed confirmations poison it. A wrong code and a substituted
-//! certificate both surface as a failed confirmation, so both are counted. Per
-//! IP, twenty handshake starts per ten-minute sliding window. The admin password
-//! has its own failure budget, charged to the client id and the peer address at
-//! once. Every value is a constant below and none of them is a knob.
+//! Five failed confirmations poison a code, and a wrong code and a substituted
+//! certificate both count as one. Twenty handshake starts per IP per ten-minute
+//! sliding window. The admin password has its own budget, charged to the client
+//! id and the peer address at once. Every value is a constant below.
 
 mod cpace;
 mod middleware;
-// The client-row to transport-identity conversion, re-exported for `boot`, which
-// needs it for the embedded frontend's local client. Crate-visible rather than
-// public: nothing outside the core has an `AuthedClient` to convert.
+// Re-exported for `boot`, which needs it for the embedded frontend's local
+// client. Crate-visible: nothing outside the core has a row to convert.
 pub(crate) use middleware::to_identity;
 mod password;
 mod ratelimit;
@@ -69,8 +64,7 @@ pub use secretgen::SecretString;
 /// Default pairing-code lifetime when the caller requests none.
 const DEFAULT_CODE_TTL_MS: i64 = 10 * 60 * 1000;
 /// Ceiling on a caller-requested lifetime. A larger request is clamped, not
-/// refused, which is what the TypeScript does and what the Zod schema's own
-/// 60-minute maximum already implies.
+/// refused, matching the schema's own 60-minute maximum.
 const MAX_CODE_TTL_MS: i64 = 60 * 60 * 1000;
 /// Failed confirmations before a code is poisoned. This is what throttles a
 /// brute-force run over the 6-digit space to five guesses per minted code.
@@ -84,12 +78,9 @@ const MAX_TRACKED_IPS: usize = 10_000;
 /// request is not also a database write.
 const LAST_SEEN_DEBOUNCE_MS: i64 = 60_000;
 
-// Admin-password verification throttle. A failed guess is counted against the
-// caller's client id AND its peer address, so neither rotating one nor the other
-// buys a fresh budget, plus a global bucket. Past the per-key cap the key is
-// locked for the rest of the window. The password path is already gated behind a
-// valid bearer, so this is defence in depth against a compromised but limited
-// client; argon2id supplies the per-guess cost and runs only AFTER this passes.
+// Admin-password throttle. A failed guess is charged to the caller's client id
+// AND its peer address, plus a global bucket, so rotating either buys nothing.
+// argon2id supplies the per-guess cost and runs only after this passes.
 const PASSWORD_FAIL_WINDOW_MS: i64 = 10 * 60 * 1000;
 const PASSWORD_FAIL_MAX_PER_KEY: usize = 5;
 const PASSWORD_FAIL_MAX_GLOBAL: usize = 50;
@@ -98,25 +89,20 @@ const PASSWORD_FAIL_MAX_GLOBAL: usize = 50;
 const PAKE_SESSION_TTL_MS: i64 = 2 * 60 * 1000;
 const MAX_PAKE_SESSIONS: usize = 64;
 
-// Short-lived, single-use WS upgrade tickets. The long-lived bearer stays in the
-// Authorization header of the mint call; only the ticket travels in the ws:// URL
-// query, so a fronting reverse proxy's access log leaks at most a 30-second
-// single-use token, never the full-privilege bearer.
+// Short-lived, single-use WS upgrade tickets, so a fronting proxy's access log
+// leaks at most a 30-second single-use token rather than the bearer.
 const WS_TICKET_TTL_MS: i64 = 30 * 1000;
 const MAX_WS_TICKETS: usize = 256;
 
 // --- the in-process client ---------------------------------------------------
 
-/// The reserved client id the embedded (mobile) frontend acts as.
-///
-/// Doubles as the row's `token_hash`, which is what makes it unmatchable from
-/// the wire: [`Auth::authenticate`] compares `sha256_hex(bearer)`, always 64
-/// hex characters, so no bearer can ever hash to `local`.
+/// The reserved client id the embedded (mobile) frontend acts as. Doubles as
+/// the row's `token_hash`, which makes it unmatchable from the wire:
+/// [`Auth::authenticate`] compares a 64-character `sha256_hex(bearer)`.
 pub const LOCAL_CLIENT_ID: &str = "local";
 
-/// What the paired-devices list calls the reserved row. It IS a client of this
-/// core, it owns `client_settings` rows, and the list is the factual answer to
-/// who can act here, so it is shown rather than hidden.
+/// What the paired-devices list calls the reserved row, which is shown rather
+/// than hidden: it is a client of this core and owns `client_settings` rows.
 const LOCAL_CLIENT_NAME: &str = "This device";
 
 // --- values ------------------------------------------------------------------
@@ -193,8 +179,7 @@ impl Clock {
 
     pub fn now_ms(&self) -> i64 {
         match self {
-            // A clock before 1970 is not a case worth a fallible signature: it
-            // reads as the epoch and every TTL comparison still behaves.
+            // A clock before 1970 reads as the epoch; every TTL still behaves.
             Clock::System => SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64)
@@ -209,23 +194,18 @@ pub type RevocationHook = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + 
 
 /// The side effects of revoking or re-keying a client.
 ///
-/// Each field is an obligation on a named package, and each defaults to a no-op
-/// that does nothing on purpose rather than to an unset `Option` that might mean
-/// "not wired yet" or "deliberately empty". A hook still at its default is
-/// unimplemented; the package named in its doc comment owes it.
+/// Each field defaults to a deliberate no-op rather than an `Option` that might
+/// mean either "not wired yet" or "deliberately empty".
 #[derive(Clone)]
 pub struct RevocationHooks {
-    /// **Owed by D2 (sessions).** Delete every session owned by the client and
-    /// unlink its attachments. Sessions are JSON files on disk with no foreign
-    /// key to cascade, so nothing else reclaims them.
+    /// Delete every session owned by the client and unlink its attachments.
+    /// Sessions are JSON files with no foreign key to cascade.
     pub gc_sessions: RevocationHook,
-    /// **Owed by D1 (settings).** Drop the client's in-memory settings overlay.
-    /// Its `client_settings` rows cascade with the `clients` row; the cache in
-    /// front of them does not.
+    /// Drop the client's in-memory settings overlay. Its `client_settings` rows
+    /// cascade with the `clients` row; the cache in front of them does not.
     pub drop_settings_cache: RevocationHook,
-    /// **Owed by F6 (transport).** Close every live WebSocket for the client. A
-    /// socket authenticates once, at upgrade, so without this a revoked or
-    /// re-keyed client keeps its existing connection.
+    /// Close every live WebSocket for the client. A socket authenticates once,
+    /// at upgrade, so without this a revoked client keeps its connection.
     pub close_sockets: RevocationHook,
 }
 
@@ -262,8 +242,8 @@ struct PakeSession {
 
 impl fmt::Debug for PakeSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Deliberately hand-written: this holds the derived key and the pairing
-        // code, and a derived Debug would put both into any `{:?}`.
+        // Hand-written: a derived Debug would put the derived key and the
+        // pairing code into any `{:?}`.
         f.write_str("PakeSession(<REDACTED>)")
     }
 }
@@ -314,15 +294,10 @@ impl Auth {
         self
     }
 
-    /// Whether real revocation hooks were installed.
-    ///
-    /// A read port for the boot-seam suite (D-165), set by the ACT of wiring
-    /// rather than restated: the default hooks are no-ops and a no-op is
-    /// indistinguishable from a real hook by calling it, so "did boot wire
-    /// these" cannot be observed through the trait. What it guards is that
-    /// revoking a client actually closes its live sockets, which a WebSocket
-    /// authenticating once at upgrade makes a security property rather than
-    /// tidiness.
+    /// Whether real revocation hooks were installed, for the boot-seam suite.
+    /// Set by the act of wiring, because a default no-op hook is
+    /// indistinguishable from a real one by calling it, and what it guards is
+    /// that revoking a client actually closes its live sockets.
     pub fn hooks_wired(&self) -> bool {
         self.hooks_wired
     }
@@ -341,8 +316,8 @@ impl Auth {
 
     /// Compare a presented `X-Admin-Token` against the one on disk.
     ///
-    /// The token is high-entropy and proves access to the machine's filesystem,
-    /// so there is no rate limit here: guessing it is not the attack.
+    /// High-entropy, and holding it proves filesystem access, so there is no
+    /// rate limit: guessing it is not the attack.
     pub async fn verify_admin_token(&self, provided: Option<&str>) -> Result<()> {
         let Some(provided) = provided else {
             return Err(AppError::new(
@@ -378,13 +353,11 @@ impl Auth {
 
     /// Set or replace the admin password.
     ///
-    /// The caller must already be authorized by the admin token; this does not
-    /// re-check. The length floor is enforced by the generated inbound type, so
-    /// there is no second check here either.
+    /// The caller must already be authorized by the admin token, and the length
+    /// floor is enforced by the generated inbound type.
     pub async fn set_admin_password(&self, password: &str) -> Result<()> {
         let password = password.to_owned();
-        // argon2id at 19 MiB is tens of milliseconds, which is far too long to
-        // hold a runtime worker.
+        // argon2id at 19 MiB is tens of milliseconds off the runtime.
         let encoded = spawn_blocking(move || password::hash_admin_password(&password)).await??;
         write_owner_atomic(self.paths.admin_password_file(), encoded.into_bytes()).await?;
         tracing::info!(target: "loca::auth", "admin password set");
@@ -394,11 +367,10 @@ impl Auth {
     /// Verify the admin password for a bearer-plus-password privileged action:
     /// minting a code, or revoking another device.
     ///
-    /// **The order of the checks is the defence and must not be rearranged.**
-    /// The throttle is cheap and runs first; argon2id is expensive and runs
-    /// last, so a flood of wrong guesses from a compromised client cannot pin a
-    /// CPU. A failure is charged to the client id and the peer address together,
-    /// so rotating either alone buys nothing.
+    /// **The order of the checks is the defence.** The cheap throttle runs
+    /// first and expensive argon2id last, so a flood of wrong guesses cannot pin
+    /// a CPU. A failure is charged to the client id and the peer address at
+    /// once, so rotating either alone buys nothing.
     pub async fn verify_admin_password(
         &self,
         provided: Option<&str>,
@@ -447,8 +419,8 @@ impl Auth {
 
     /// Mint a pairing code, superseding any outstanding one.
     ///
-    /// Only one code is ever live. Any in-flight handshake is dropped with the
-    /// old code, so a handshake can never outlive the code it bound.
+    /// Only one code is live at a time, and any in-flight handshake is dropped
+    /// with the old one.
     pub async fn mint_pairing_code(&self, ttl_sec: Option<u32>) -> Result<PairingCode> {
         let ttl_ms = match ttl_sec {
             Some(secs) if secs > 0 => (i64::from(secs) * 1000).min(MAX_CODE_TTL_MS),
@@ -483,13 +455,9 @@ impl Auth {
     /// session until finish.
     ///
     /// `server_pin` is Core's own certificate pin, folded into the CPace channel
-    /// identifier so the derived key is certificate-bound. It is the empty
-    /// string when Core is behind a terminating HTTPS proxy, where the Client
-    /// validates the proxy's certificate through WebPKI and the two sides have
-    /// no shared value to bind.
-    ///
-    /// This step does not reveal whether the Client used the right code. The
-    /// confirmation at finish decides that.
+    /// identifier so the derived key is certificate-bound. Empty behind a
+    /// terminating HTTPS proxy, where the two sides have no shared value to
+    /// bind. This step does not reveal whether the code was right; finish does.
     pub async fn pake_start(
         &self,
         sid: &[u8],
@@ -518,12 +486,9 @@ impl Auth {
             ));
         }
 
-        // A malformed or identity msgA deliberately does NOT burn an attempt: a
-        // structurally invalid message is not a code guess, and counting it would
-        // let an unpaired peer destroy the legitimate user's active code with
-        // five cheap junk requests. Real wrong guesses are counted at finish,
-        // where the confirmation actually fails, and the per-IP limiter already
-        // bounds the junk.
+        // A malformed or identity msgA burns no attempt: it is not a code
+        // guess, and counting it would let an unpaired peer destroy the user's
+        // active code with five junk requests. The per-IP limiter bounds those.
         let result = cpace::responder(&row.code, sid, msg_a, server_pin.as_bytes())
             .map_err(|_| AppError::new(ErrorCode::InvalidPairingCode, "invalid pairing message"))?;
 
@@ -553,19 +518,17 @@ impl Auth {
     /// Step 2: verify the Client's confirmation, which binds the pin **it**
     /// observed, against Core's own pin.
     ///
-    /// A wrong code and a substituted certificate both fail here, and both are
-    /// counted against the code. On success this mints the token, creates the
-    /// client, claims the code, and returns Core's own confirmation so the
-    /// Client can authenticate Core and confirm the pin.
+    /// A wrong code and a substituted certificate both fail here and are both
+    /// counted. On success this mints the token, creates the client, claims the
+    /// code, and returns Core's own confirmation.
     pub async fn pake_finish(
         &self,
         pake_id: &str,
         confirm_c: &[u8],
         server_pin: &str,
     ) -> Result<PakeFinished> {
-        // Single-use on entry: the session is gone whether or not the rest
-        // succeeds, so a failed confirmation cannot be retried against the same
-        // parked key.
+        // Single-use on entry, so a failed confirmation cannot be retried
+        // against the same parked key.
         let Some(session) = lock(&self.pake_sessions).shift_remove(pake_id) else {
             return Err(AppError::new(
                 ErrorCode::InvalidPairingCode,
@@ -614,8 +577,7 @@ impl Auth {
             ));
         }
 
-        // Confirmed: the Client knew the code AND observed Core's real
-        // certificate. Mint and claim.
+        // The Client knew the code AND saw Core's real certificate.
         let token = secretgen::random_token()?;
         let token_hash = secretgen::sha256_hex(token.expose());
         let client_id = ulid::Ulid::new().to_string();
@@ -674,10 +636,8 @@ impl Auth {
 
     /// Resolve a bearer token to its client.
     ///
-    /// The lookup is an index probe on `sha256(token)` and is therefore not
-    /// constant time. That is deliberate and matches the TypeScript: the value
-    /// compared is already a hash, and a database index probe cannot be made
-    /// constant time anyway.
+    /// An index probe on `sha256(token)`, so not constant time. Deliberate: the
+    /// value compared is already a hash.
     pub async fn authenticate(&self, bearer: Option<&str>) -> Result<AuthedClient> {
         let Some(bearer) = bearer else {
             return Err(AppError::new(
@@ -729,10 +689,8 @@ impl Auth {
     /// Mint a single-use, short-lived ticket for an already-authenticated
     /// client to present on its next WebSocket upgrade.
     ///
-    /// This converts a proven identity into a URL-safe throwaway credential. It
-    /// grants nothing the caller did not already have; its whole purpose is to
-    /// keep the long-lived bearer out of the `ws://` URL, and therefore out of
-    /// any reverse-proxy access log.
+    /// Grants nothing the caller did not already have; its purpose is to keep
+    /// the long-lived bearer out of the `ws://` URL and any proxy access log.
     pub fn mint_ws_ticket(&self, client_id: &str) -> Result<SecretString> {
         let ticket = secretgen::random_token()?;
         lock(&self.ws_tickets).insert(ticket.expose().to_owned(), client_id, self.now());
@@ -748,25 +706,15 @@ impl Auth {
 
     /// Create, or return, the reserved row the embedded frontend acts as.
     ///
-    /// A core running in process inside the app has no bearer token and no
-    /// pairing: `transport::inproc` puts a [`ClientIdentity`] straight into the
-    /// request extensions and `require_client` honours it, which only
-    /// server-side code can do. What that identity cannot be is invented,
-    /// because two tables key off a real row: `client_settings.client_id` and
-    /// `scheduled_prompts.owner_client_id` are both
-    /// `REFERENCES clients(id) ON DELETE CASCADE`, so a synthetic id with no row
-    /// makes every per-client settings write fail on a foreign key.
+    /// An in-process core has no bearer and no pairing, but the identity cannot
+    /// be invented either: `client_settings.client_id` and
+    /// `scheduled_prompts.owner_client_id` both cascade from `clients(id)`, so a
+    /// synthetic id makes every per-client write fail on a foreign key.
     ///
     /// The stored `token_hash` is the literal [`LOCAL_CLIENT_ID`], which
-    /// [`Auth::authenticate`] can never produce: it hashes the bearer with
-    /// `sha256_hex`, and a 64-character hex digest is never the string `local`.
-    /// So the row exists for its foreign keys and is unreachable from the wire
-    /// even on a core that somehow had both a listener and an embedded
-    /// frontend.
-    ///
-    /// Idempotent, and atomically so: [`Db::call`] holds the connection for the
-    /// whole closure, so the read and the insert cannot interleave with a second
-    /// caller's.
+    /// [`Auth::authenticate`] can never produce, so the row is unreachable from
+    /// the wire. Idempotent atomically: [`Db::call`] holds the connection for
+    /// the whole closure.
     pub async fn ensure_local_client(&self) -> Result<AuthedClient> {
         let now = self.now();
         let row = self
@@ -809,15 +757,12 @@ impl Auth {
     /// Remove a paired client and everything that belongs to it.
     ///
     /// The side effects live here rather than in the route so a second caller
-    /// cannot forget one: sessions are garbage collected before the row goes,
-    /// and the settings cache and live sockets are dropped after. The
-    /// `client_settings` and `scheduled_prompts` rows cascade with the `clients`
-    /// row. Returns whether the client existed.
+    /// cannot forget one: sessions are collected before the row goes, and the
+    /// settings cache and live sockets after. Returns whether it existed.
     pub async fn revoke_client(&self, client_id: &str) -> Result<bool> {
-        // The in-process client is not revocable. Deleting the row cascades its
-        // `client_settings` and `scheduled_prompts` away and strands the
-        // identity the embedded frontend already holds, pointing at a row that
-        // is gone, and there is no pairing flow on a phone to make another one.
+        // The in-process client is not revocable: deleting the row strands the
+        // identity the embedded frontend holds, and a phone has no pairing flow
+        // to make another one.
         if client_id == LOCAL_CLIENT_ID {
             return Err(AppError::new(
                 ErrorCode::Forbidden,
@@ -832,8 +777,7 @@ impl Auth {
             .await?;
         if existed {
             (self.hooks.drop_settings_cache)(client_id.to_owned()).await;
-            // A socket authenticates once, at upgrade, so revocation only
-            // actually removes access if the live connections go too.
+            // A socket authenticates once, at upgrade.
             (self.hooks.close_sockets)(client_id.to_owned()).await;
         }
         Ok(existed)
@@ -841,14 +785,13 @@ impl Auth {
 
     /// Issue a fresh bearer token for a client, invalidating the old one.
     ///
-    /// The existing sockets were authenticated with the old token, so they are
-    /// closed here; the Client reconnects with the new one.
+    /// The existing sockets authenticated with the old token, so they are
+    /// closed here and the Client reconnects.
     pub async fn rotate_token(&self, client_id: &str) -> Result<SecretString> {
-        // Refused for the same row as `revoke_client`, and for a sharper reason
-        // than symmetry: rotating would replace the unmatchable `token_hash`
-        // with a real digest, minting a working bearer for the one identity that
-        // is pre-authenticated by construction. Any other paired client could
-        // ask for it by id.
+        // Refused for the same row as `revoke_client`: rotating would replace
+        // the unmatchable `token_hash` with a real digest, minting a working
+        // bearer for the one identity that is pre-authenticated by
+        // construction, which any other paired client could ask for by id.
         if client_id == LOCAL_CLIENT_ID {
             return Err(AppError::new(
                 ErrorCode::Forbidden,
@@ -880,12 +823,10 @@ fn to_authed(row: ClientRow) -> AuthedClient {
 /// Drop expired handshakes, then bound the map so a peer that starts but never
 /// finishes cannot pin memory.
 ///
-/// Over-cap eviction targets the **oldest session of whichever address holds the
-/// most**, so a flood of unauthenticated starts from one peer evicts its own
-/// sessions first and cannot push out another peer's lone legitimate handshake,
-/// which would make that user's finish fail with "unknown or expired". Evicting
-/// the globally oldest instead looks equivalent and hands an attacker exactly
-/// that denial of service.
+/// Over-cap eviction targets the oldest session of whichever address holds the
+/// most, so a flood from one peer evicts its own sessions rather than another
+/// peer's lone legitimate handshake. Evicting the globally oldest instead looks
+/// equivalent and hands an attacker that denial of service.
 fn prune_pake_sessions(sessions: &mut IndexMap<String, PakeSession>, now: i64) {
     sessions.retain(|_, s| now <= s.expires_at_ms);
     while sessions.len() >= MAX_PAKE_SESSIONS {
@@ -912,10 +853,8 @@ fn evict_heaviest_ip_oldest(sessions: &mut IndexMap<String, PakeSession>) -> boo
     true
 }
 
-/// Read a file and trim it, or `None` if it cannot be read.
-///
-/// Every caller treats an unreadable credential file the same as an absent one,
-/// and says so in its own error message.
+/// Read a file and trim it, or `None` if it cannot be read: every caller treats
+/// an unreadable credential file as an absent one.
 async fn read_trimmed(path: &std::path::Path) -> Option<String> {
     let path = path.to_path_buf();
     spawn_blocking(move || std::fs::read_to_string(path).ok())
@@ -925,11 +864,9 @@ async fn read_trimmed(path: &std::path::Path) -> Option<String> {
         .map(|raw| raw.trim().to_owned())
 }
 
-/// Take a lock, recovering from poisoning rather than propagating it.
-///
-/// The guarded state is a plain map or counter, so a panic mid-update leaves it
-/// structurally sound, and the release profile aborts on panic: a poisoned mutex
-/// is only reachable under test.
+/// Take a lock, recovering from poisoning. The guarded state is a plain map or
+/// counter, and the release profile aborts on panic, so a poisoned mutex is
+/// only reachable under test.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

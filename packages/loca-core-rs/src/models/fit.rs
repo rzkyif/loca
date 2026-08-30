@@ -1,43 +1,21 @@
 //! The on-device fit engine.
 //!
 //! Given detected hardware and the signed catalog, pick the best model for each
-//! adaptive preset (Smallest / Half / Full) and decide which models fit, for the
-//! browser. All of it is local arithmetic: only the device knows its own memory.
+//! adaptive preset (Smallest / Half / Full) and decide which models fit. The
+//! budget is TOTAL memory scaled by the catalog's `budgetFraction` less a safety
+//! margin; a footprint is weights plus KV cache plus compute overhead plus the
+//! vision module when the model ships one.
 //!
-//! The budget is TOTAL memory, which is stable, rather than momentary free
-//! memory, scaled by the catalog's `budgetFraction` and reduced by a safety
-//! margin. A footprint is the quant's weights plus the KV cache plus a fixed
-//! compute overhead plus the vision module when the model ships one.
+//! The arithmetic is a bit-exact parity surface, so the operation order matters:
+//! footprints stay `u64` throughout (every term is far below 2^53, and the cast
+//! to the contract's `i64` happens once, where the answer leaves this file),
+//! limits stay `f64` as `budget * fraction - margin`, the fit test is
+//! `footprint as f64 <= limit`, and `quant_rank` is compared for exact equality.
 //!
-//! # Floating point is the parity surface, and it is exact
-//!
-//! The budget arithmetic is fractional, footprints are integral, and the
-//! comparison between them decides which model a user gets. Both languages do
-//! IEEE 754 binary64 with the same rounding, so this is bit-for-bit identical
-//! to `models/fit.ts` provided the same operations happen in the same order:
-//!
-//! - Footprints stay `u64` THROUGH the arithmetic. Every term is an integer far
-//!   below 2^53, so `u64` arithmetic and JavaScript's `f64` arithmetic agree
-//!   exactly. The contract's response types carry `i64` (the D-030 allowlist),
-//!   so the cast to `i64` happens once, where the answer leaves this file.
-//! - Limits stay `f64`, in the source's order: `budget * fraction - margin`.
-//! - The fit test is `footprint as f64 <= limit`, and `u64 -> f64` is exact
-//!   below 2^53.
-//! - `quant_rank` is compared for exact equality, which is what `better()`
-//!   does. Both sides come from the same table lookup plus the same constant,
-//!   so an epsilon would be wrong rather than careful.
-//!
-//! # Policy lives in the catalog, except where the TypeScript keeps it in code
-//!
-//! `FIT_CONFIG` ships inside the catalog so a tuning change needs no core
-//! release, and nothing from it is transcribed here: `budget_fraction`,
-//! `safety_margin_bytes`, `primary_score`, `smallest_quality_floor_ref` and
-//! `tie_breakers` are read off [`FitConfig`] at call time. The constants below
-//! are the ones the TypeScript also keeps in code.
-//!
-//! The three entry points take `&FitConfig` rather than reaching into
-//! `catalog.fit` themselves. That is what M4 needs: a `mobile` profile becomes
-//! a different value passed at the route, and nothing in this file moves.
+//! Tuning lives in the catalog: `budget_fraction`, `safety_margin_bytes`,
+//! `primary_score`, `smallest_quality_floor_ref` and `tie_breakers` are read off
+//! [`FitConfig`] at call time, so a mobile profile is a different value passed
+//! at the route rather than a branch in this file.
 
 use indexmap::IndexSet;
 
@@ -57,14 +35,9 @@ const BYTES_PER_KV_ELEM: u64 = 2;
 const MAX_THREADS: i64 = 8;
 const FULL_IDLE_UNLOAD_SECONDS: i64 = 300;
 
-/// The universal fallback sampling for a model with no catalog tuning,
-/// mirroring `DEFAULT_SAMPLING` in `domain/recommend.ts`. Conservative values
-/// suited to a small instruct model.
-///
-/// Typed as the CATALOG's `Sampling` rather than the response one, so a
-/// model's own tuning and this fallback are the same type and merge field by
-/// field below. [`AppliedModelSettings`] is flat (`extends Sampling` in the
-/// TypeScript), so the merged values are written out one by one.
+/// The fallback sampling for a model with no catalog tuning. Typed as the
+/// CATALOG's `Sampling` so a model's own tuning and this fallback merge field by
+/// field below.
 fn default_sampling() -> Sampling {
     Sampling {
         temperature: 0.7,
@@ -80,11 +53,9 @@ fn default_sampling() -> Sampling {
     }
 }
 
-/// Today's desktop tuning, and the value a catalog that predates these fields
-/// resolves to. `ctxCeiling` in particular arrives as `Option` on the generated
-/// type (typify does not materialise an object default), so the fallback has to
-/// live here rather than in serde, and it must equal what this file used to
-/// hardcode or every desktop recommendation moves.
+/// Desktop tuning, and the value a catalog that omits these fields resolves to.
+/// `ctxCeiling` arrives as `Option` on the generated type, so the fallback lives
+/// here rather than in serde.
 const DESKTOP_COMPUTE_OVERHEAD_BYTES: u64 = 600_000_000;
 const DESKTOP_CTX_CEILING: CtxCeiling = CtxCeiling {
     smallest: 8192,
@@ -93,8 +64,7 @@ const DESKTOP_CTX_CEILING: CtxCeiling = CtxCeiling {
 };
 const DESKTOP_CTX_LADDER: [u64; 4] = [32768, 16384, 8192, 4096];
 
-/// Which device class the engine is fitting for. Mirrors `FitProfile` in
-/// `@loca/shared/domain/catalog.ts`.
+/// Which device class the engine is fitting for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FitProfile {
     Desktop,
@@ -103,11 +73,9 @@ pub enum FitProfile {
 
 /// The profile a Core running on this platform should use.
 ///
-/// A compile-time fact about THIS process, not a field of `HardwareInfo`, which
-/// has none: whether to apply a phone's memory policy is a property of the
-/// machine doing the fitting, and putting it on the wire would let a client
-/// assert it. Not `Frontend::Embedded` either, because a desktop process booted
-/// embedded still has desktop memory (D-144 draws the same line).
+/// A fact about THIS process, not a field of `HardwareInfo`: putting it on the
+/// wire would let a client assert it. Not `Frontend::Embedded` either, because a
+/// desktop process booted embedded still has desktop memory.
 pub fn fit_profile_for_os(os: &str) -> FitProfile {
     match os {
         "android" | "ios" => FitProfile::Mobile,
@@ -151,23 +119,12 @@ pub struct ResolvedFit {
 /// inert on every existing install: there is no desktop branch to get wrong,
 /// because desktop IS the absence of one.
 ///
-/// A ladder is sorted descending and de-duplicated here rather than trusted:
-/// typify drops `minItems` and every numeric bound (D-083, D-095), so the
-/// schema's `.min(1)` is documentation on this side. An empty ladder would make
-/// every model unfittable, so it falls back to the desktop one rather than
-/// silently emptying every bucket.
-/// The compute overhead, with the schema's `nonnegative` bound re-asserted.
-///
-/// Not defensive coding: **typify drops every numeric bound** (D-095), so the
-/// Zod `.nonnegative()` is documentation on this side and nothing stops a
-/// hand-edited or hostile catalog carrying a negative. A negative overhead makes
-/// every footprint smaller than it is, so the biggest model on the shelf "fits"
-/// a phone and the process is killed on load. Falling back to the desktop
-/// constant is the conservative direction: it over-reserves rather than under.
-///
-/// Zero is left alone deliberately. The schema permits it and a catalog author
-/// asking for no slack is making a choice, where a negative is not a choice at
-/// all.
+/// A ladder is sorted descending and de-duplicated here rather than trusted, and
+/// an empty one falls back to the desktop ladder rather than making every model
+/// unfittable.
+/// The compute overhead, with the schema's `nonnegative` bound re-asserted:
+/// typify drops every numeric bound, and a negative overhead would make the
+/// biggest model on the shelf "fit" a phone. Zero is a valid author choice.
 fn non_negative_overhead(value: i64) -> u64 {
     if value < 0 {
         DESKTOP_COMPUTE_OVERHEAD_BYTES
@@ -234,10 +191,9 @@ pub fn resolve_fit_profile(fit: &FitConfig, profile: FitProfile) -> ResolvedFit 
     out
 }
 
-/// Token budget for thinking, scaled to the context window. Bounding `<think>`
-/// is what guarantees the model stops reasoning and answers instead of spending
-/// the whole window thinking: the inference layer injects the end-of-thinking
-/// tag once the budget is hit. Tracks the context buckets.
+/// Token budget for thinking, scaled to the context window. The inference layer
+/// injects the end-of-thinking tag once the budget is hit, which is what stops
+/// the model spending the whole window reasoning.
 fn reasoning_budget_for(ctx: u64) -> i64 {
     if ctx <= 8192 {
         512
@@ -268,13 +224,10 @@ fn quant_bpw(quant: &str) -> f64 {
 
 const QAT_QUALITY_BONUS: f64 = 1.5;
 
-/// Quality rises with bits per weight, but the gains above roughly Q6_K are
-/// negligible (Q8_0 is about +0.03% perplexity against fp16, Q6_K +0.13%,
-/// Q5_K_M +0.39%, Q4_K_M +1.68%) while Q8_0 costs about 30% more memory than
-/// Q6_K. So the RECOMMENDED quant caps here: never suggest a quant above Q6_K
-/// when a smaller one fits. The community sweet spot falls under this ceiling;
-/// Q8_0 is offered in the picker and never recommended. Above the ceiling only
-/// matters as a fallback when nothing at or below it fits.
+/// Gains above roughly Q6_K are negligible (+0.13% perplexity against fp16,
+/// versus +0.03% for Q8_0) while Q8_0 costs about 30% more memory, so the
+/// RECOMMENDED quant caps here. Above the ceiling is a fallback only, for when
+/// nothing at or below it fits.
 const SWEET_SPOT_MAX_BPW: f64 = 6.5;
 
 /// The single memory pool the model has to fit into. Apple unified memory and
@@ -300,19 +253,16 @@ fn gpu_layers_for(hw: &HardwareInfo) -> i64 {
 }
 
 #[allow(clippy::manual_clamp)]
-/// One thread per physical core, capped. Public because the speech selection
-/// applies the same policy, and the TypeScript keeps two copies of it
-/// (`fit.ts:98` and `stt.ts:23`) that could drift apart.
+/// One thread per physical core, capped. Public because speech selection
+/// applies the same policy.
 pub fn threads_for(hw: &HardwareInfo) -> i64 {
-    // A zero core count is the helper's failure mode, not a real machine, and
-    // the TypeScript's `|| 4` catches it before the clamp does.
+    // A zero core count is the detector's failure mode, not a real machine.
     let cores = if hw.cpu_cores_physical == 0 {
         4
     } else {
         hw.cpu_cores_physical
     };
-    // `clamp(1, MAX_THREADS)` reads the same and panics if the bounds ever
-    // invert; this order cannot.
+    // `clamp` would panic if the bounds ever inverted; this order cannot.
     cores.min(MAX_THREADS).max(1)
 }
 
@@ -324,15 +274,10 @@ fn kv_cache_bytes(model: &CatalogModel, ctx: u64) -> u64 {
         * BYTES_PER_KV_ELEM
 }
 
-/// Zero when the profile does not preselect vision. One half of a pair: the
-/// other is `support_images` in [`applied_settings`], and they must move
-/// together. Budgeting for an mmproj a profile does not preselect shrinks what
-/// fits for nothing; preselecting vision without budgeting for it overcommits
-/// memory.
-///
-/// The projector PATH is not part of that pair. It is written either way, so a
-/// profile that starts with images off is a default the user can overturn
-/// rather than a capability the build took away.
+/// Zero when the profile does not preselect vision. Must move together with
+/// `support_images` in [`applied_settings`]. The projector PATH is written
+/// either way, so images-off is a default the user can overturn rather than a
+/// capability the build took away.
 fn vision_bytes(model: &CatalogModel, variant: &CatalogVariant, fit: &ResolvedFit) -> u64 {
     if has_vision(model, variant, fit) {
         variant.mmproj_size_bytes.map_or(0, |n| n.get())
@@ -404,8 +349,7 @@ fn best_ctx(
 /// Within one model: prefer higher quant quality, then the smaller footprint.
 fn better(a: &Choice<'_>, b: &Choice<'_>) -> bool {
     // Exact equality on purpose: both ranks come from the same table lookup
-    // plus the same constant, so any difference is a real difference and an
-    // epsilon would be wrong rather than careful.
+    // plus the same constant, so an epsilon would be wrong rather than careful.
     if a.quant_rank != b.quant_rank {
         return a.quant_rank > b.quant_rank;
     }
@@ -518,9 +462,7 @@ fn config_for_quant<'a>(
 
 /// The bottom rung of the ladder, capped to what the model was trained for.
 fn lowest_ctx(model: &CatalogModel, fit: &ResolvedFit) -> u64 {
-    // The ladder is non-empty by construction: `resolve_fit_profile` falls back
-    // to the desktop one rather than leaving it empty, precisely so this cannot
-    // index out of bounds on a hand-edited catalog.
+    // Non-empty by construction; `resolve_fit_profile` guarantees it.
     fit.ctx_ladder
         .last()
         .copied()
@@ -556,18 +498,14 @@ fn applied_settings(
     fit: &ResolvedFit,
 ) -> AppliedModelSettings {
     let vision = has_vision(c.model, c.variant, fit);
-    // The model's author-recommended sampling, or the universal default,
-    // written to the `llm.*` sampling settings on select so each model gets its
-    // own tuning rather than inheriting the previous model's.
+    // Written to the `llm.*` settings on select so each model gets its own
+    // tuning rather than inheriting the previous model's.
     let sampling = c.model.sampling.clone().unwrap_or_else(default_sampling);
     let defaults = default_sampling();
     AppliedModelSettings {
         model_path: c.quant.model_spec.clone(),
-        // The projector path is a fact about the MODEL, so it is written on
-        // every profile, including one that does not preselect or budget for
-        // vision. A profile skips the flag and the footprint; erasing the path
-        // too would leave `llm.supportImages` a switch wired to nothing, which
-        // is the product deciding for the user rather than defaulting for them.
+        // A fact about the MODEL, so it is written on every profile: erasing it
+        // would leave `llm.supportImages` a switch wired to nothing.
         mmproj_path: if c.model.capabilities.vision {
             c.variant.mmproj_spec.clone()
         } else {
@@ -633,8 +571,7 @@ fn pick_best_model<'a>(
         let Some(config) = config_for(model) else {
             continue;
         };
-        // Exact, for the same reason as `better`: both scores are the same
-        // field of the same catalog read through the same selector.
+        // Exact, for the same reason as `better`.
         let tied = score == winner_score;
         let wins = score > winner_score
             || (tied && winner.as_ref().is_some_and(|w| tie_break(&config, w, fit)));
@@ -702,13 +639,9 @@ pub fn compute_recommendations(
     let half_limit = budget * fit.budget_half - margin;
     let full_limit = budget * fit.budget_full - margin;
 
-    // Smallest and Half apply the recommended (sweet-spot) quant; Half steps
-    // down to a lower quant when the sweet spot does not fit its budget, which
-    // is built into `recommended_config_for_model`. Full maxes out: the biggest
-    // quant that fits.
-    //
-    // Smallest is budgeted against the FULL limit on purpose. It is the
-    // lowest-footprint model that clears the quality floor, not the model for a
+    // Smallest and Half apply the recommended (sweet-spot) quant; Full maxes
+    // out. Smallest is budgeted against the FULL limit on purpose: it is the
+    // lowest-footprint model clearing the quality floor, not the model for a
     // smaller budget, so squeezing its limit would only cost it context.
     let smallest = pick_smallest(&models, fit, floor_score(catalog, fit), |m| {
         recommended_config_for_model(m, full_limit, fit.ctx_ceiling.smallest, fit)
@@ -752,9 +685,7 @@ pub fn build_catalog_views(
         let fitting = recommended_config_for_model(model, full_limit, fit.ctx_ceiling.full, fit);
         let fits = fitting.is_some();
         let Some(config) = fitting.or_else(|| smallest_config(model, fit)) else {
-            // A model with no variants or no quants. The schema forbids it and
-            // `catalog::validate` rejects it, so this is unreachable from a
-            // validated catalog; skipping beats indexing into nothing.
+            // No variants or no quants: unreachable from a validated catalog.
             continue;
         };
 
@@ -773,9 +704,7 @@ pub fn build_catalog_views(
             }
         }
 
-        // A JavaScript `Set` preserves insertion order and this list is a
-        // user-visible badge row, so the dedupe has to preserve it too. A
-        // `HashSet` or a `BTreeSet` would silently reorder the badges.
+        // A user-visible badge row, so the dedupe must preserve insertion order.
         let mut tags: IndexSet<&str> = IndexSet::new();
         for variant in &model.variants {
             for tag in variant.tags.iter().flatten() {
@@ -863,11 +792,9 @@ mod tests {
 
     const GB: i64 = 1024 * 1024 * 1024;
 
-    /// The real dev catalog, which is also what the core serves on the dev
-    /// channel. Parsing it here is load-bearing beyond the fit assertions: the
-    /// generated catalog types carry `deny_unknown_fields`, so a field added to
-    /// `@loca/model-catalog` that this contract does not know about fails this
-    /// call rather than being silently dropped.
+    /// The real dev catalog. Parsing it is load-bearing beyond the fit
+    /// assertions: the generated types carry `deny_unknown_fields`, so a field
+    /// added to `@loca/model-catalog` fails here rather than being dropped.
     fn dev_catalog() -> CatalogPayload {
         let file: serde_json::Value =
             serde_json::from_str(include_str!("catalog.dev.json")).expect("the payload parses");
@@ -912,8 +839,6 @@ mod tests {
             .find(|v| v.id == id)
             .unwrap_or_else(|| panic!("{id} should be in the catalog"))
     }
-
-    // --- the suite ported from models/fit.test.ts ----------------------------
 
     #[test]
     fn every_bucket_resolves_on_a_typical_16gb_device() {
@@ -1058,9 +983,8 @@ mod tests {
     fn full_enables_idle_unload_and_the_others_do_not() {
         let catalog = dev_catalog();
         let rec = recommend(&catalog, &unified(16));
-        // The literal, not the constant. Asserting `== FULL_IDLE_UNLOAD_SECONDS`
-        // is a test that passes with the constant set to anything, which is the
-        // shape D-015 warns about; this was watched surviving that mutation.
+        // The literal, not the constant: `== FULL_IDLE_UNLOAD_SECONDS` would
+        // pass with the constant set to anything.
         assert_eq!(
             rec.buckets.full.expect("full").apply.idle_unload_seconds,
             300
@@ -1076,26 +1000,11 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------
-    // The desktop byte-identical guard.
-    //
-    // The mobile profile moves the compute overhead, the context ceilings and
-    // the context ladder out of this file and into the catalog's FitConfig, so
-    // a phone can override them as data (D-158). That refactor is only safe if
-    // desktop output does not move, and "does not move" is invisible to every
-    // other test here: they assert properties (a bucket resolves, Full maxes
-    // the quant, more memory never lowers the score) that a retuned constant
-    // satisfies unchanged.
-    //
-    // The five rows and every literal are THE SAME ONES `models/fit.test.ts`
-    // pins on the TypeScript side, so this is a parity fixture as well as a
-    // regression one: if the two cores ever disagree about a desktop
-    // recommendation, one of these two tests goes red rather than a user
-    // finding out at cutover.
-    //
-    // Measured off the engine before any of the refactor existed. Deliberately
-    // NOT derived from the constants: a fixture computed from the thing under
-    // test scales with it and the mutation survives (D-050 #5).
+    // The desktop byte-identical guard. Every other test here asserts a
+    // property (a bucket resolves, Full maxes the quant) that a retuned constant
+    // satisfies unchanged, so a move in the ladder, the ceilings or the overhead
+    // is invisible without these literals. Measured off the engine, deliberately
+    // NOT derived from the constants.
 
     /// (model id, quant, ctx, footprint, gpu layers, threads, idle unload,
     /// vision, reasoning budget)
@@ -1143,7 +1052,12 @@ mod tests {
         )
     }
 
-    fn assert_buckets(label: &str, set: &RecommendationSet, want: [Option<Pinned<'_>>; 3]) {
+    fn assert_buckets<'a, P: PartialEq + std::fmt::Debug>(
+        label: &str,
+        set: &'a RecommendationSet,
+        want: [Option<P>; 3],
+        pin: impl Fn(&'a BucketRecommendation) -> P,
+    ) {
         let got = [
             set.buckets.smallest.as_ref(),
             set.buckets.half.as_ref(),
@@ -1157,7 +1071,7 @@ mod tests {
                 (None, None) => {}
                 (Some(_), None) => panic!("{label}/{name}: expected nothing to fit"),
                 (None, Some(_)) => panic!("{label}/{name}: expected a recommendation, got none"),
-                (Some(g), Some(w)) => assert_eq!(pin_of(g), w, "{label}/{name} moved"),
+                (Some(g), Some(w)) => assert_eq!(pin(g), w, "{label}/{name} moved"),
             }
         }
     }
@@ -1165,207 +1079,38 @@ mod tests {
     #[test]
     fn desktop_recommendations_are_byte_identical_to_the_pinned_baseline() {
         let catalog = dev_catalog();
-        let rows: [(&str, HardwareInfo, [Option<Pinned<'_>>; 3]); 5] = [
-            (
-                "unified 16GB",
-                unified(16),
-                [
-                    Some((
-                        "Qwen/Qwen3.5-2B",
-                        "Q4_K_M",
-                        8192,
-                        2951716288,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.5-9B",
-                        "Q3_K_M",
-                        4096,
-                        6728680736,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.5-9B",
-                        "Q8_0",
-                        16384,
-                        13193151776,
-                        999,
-                        8,
-                        300,
-                        true,
-                        1024,
-                    )),
-                ],
-            ),
-            (
-                "unified 32GB",
-                unified(32),
-                [
-                    Some((
-                        "Qwen/Qwen3.5-2B",
-                        "Q4_K_M",
-                        8192,
-                        2951716288,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.6-27B",
-                        "UD-Q2_K_XL",
-                        8192,
-                        15524870432,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.6-27B",
-                        "Q4_K_M",
-                        32768,
-                        26934786336,
-                        999,
-                        8,
-                        300,
-                        true,
-                        2048,
-                    )),
-                ],
-            ),
-            (
-                "unified 64GB",
-                unified(64),
-                [
-                    Some((
-                        "Qwen/Qwen3.5-2B",
-                        "Q4_K_M",
-                        8192,
-                        2951716288,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.6-27B",
-                        "Q4_K_M",
-                        16384,
-                        22639819040,
-                        999,
-                        8,
-                        0,
-                        true,
-                        1024,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.6-27B",
-                        "Q8_0",
-                        32768,
-                        38713305376,
-                        999,
-                        8,
-                        300,
-                        true,
-                        2048,
-                    )),
-                ],
-            ),
-            (
-                "cpu-only 16GB",
-                cpu_only(16),
-                [
-                    Some((
-                        "Qwen/Qwen3.5-2B",
-                        "Q4_K_M",
-                        8192,
-                        2951716288,
-                        0,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.5-9B",
-                        "Q3_K_M",
-                        4096,
-                        6728680736,
-                        0,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.5-9B",
-                        "Q8_0",
-                        16384,
-                        13193151776,
-                        0,
-                        8,
-                        300,
-                        true,
-                        1024,
-                    )),
-                ],
-            ),
-            // The only row where the budget is VRAM rather than system RAM, so
-            // the only one that catches a change to memory_budget_bytes.
-            (
-                "cuda 24GB VRAM in a 64GB box",
-                discrete(64, GpuBackend::Cuda, 24),
-                [
-                    Some((
-                        "Qwen/Qwen3.5-2B",
-                        "Q4_K_M",
-                        8192,
-                        2951716288,
-                        999,
-                        8,
-                        0,
-                        true,
-                        512,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.5-9B",
-                        "Q4_K_M",
-                        16384,
-                        9346172192,
-                        999,
-                        8,
-                        0,
-                        true,
-                        1024,
-                    )),
-                    Some((
-                        "Qwen/Qwen3.6-27B",
-                        "Q4_K_M",
-                        8192,
-                        20492335392,
-                        999,
-                        8,
-                        300,
-                        true,
-                        512,
-                    )),
-                ],
-            ),
+        // The cuda row is the only one budgeted against VRAM rather than system
+        // RAM, so the only one that catches a change to memory_budget_bytes.
+        #[rustfmt::skip]
+        let rows: [(&str, HardwareInfo, [Pinned<'_>; 3]); 5] = [
+            ("unified 16GB", unified(16), [
+                ("Qwen/Qwen3.5-2B", "Q4_K_M",  8192,  2951716288, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.5-9B", "Q3_K_M",  4096,  6728680736, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.5-9B", "Q8_0",   16384, 13193151776, 999, 8, 300, true, 1024),
+            ]),
+            ("unified 32GB", unified(32), [
+                ("Qwen/Qwen3.5-2B", "Q4_K_M",     8192,  2951716288, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.6-27B", "UD-Q2_K_XL", 8192, 15524870432, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.6-27B", "Q4_K_M",    32768, 26934786336, 999, 8, 300, true, 2048),
+            ]),
+            ("unified 64GB", unified(64), [
+                ("Qwen/Qwen3.5-2B", "Q4_K_M",   8192,  2951716288, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.6-27B", "Q4_K_M", 16384, 22639819040, 999, 8,   0, true, 1024),
+                ("Qwen/Qwen3.6-27B", "Q8_0",   32768, 38713305376, 999, 8, 300, true, 2048),
+            ]),
+            ("cpu-only 16GB", cpu_only(16), [
+                ("Qwen/Qwen3.5-2B", "Q4_K_M",  8192,  2951716288, 0, 8,   0, true,  512),
+                ("Qwen/Qwen3.5-9B", "Q3_K_M",  4096,  6728680736, 0, 8,   0, true,  512),
+                ("Qwen/Qwen3.5-9B", "Q8_0",   16384, 13193151776, 0, 8, 300, true, 1024),
+            ]),
+            ("cuda 24GB VRAM in a 64GB box", discrete(64, GpuBackend::Cuda, 24), [
+                ("Qwen/Qwen3.5-2B", "Q4_K_M",   8192,  2951716288, 999, 8,   0, true,  512),
+                ("Qwen/Qwen3.5-9B", "Q4_K_M",  16384,  9346172192, 999, 8,   0, true, 1024),
+                ("Qwen/Qwen3.6-27B", "Q4_K_M",  8192, 20492335392, 999, 8, 300, true,  512),
+            ]),
         ];
         for (label, hw, want) in rows {
-            assert_buckets(label, &recommend(&catalog, &hw), want);
+            assert_buckets(label, &recommend(&catalog, &hw), want.map(Some), pin_of);
         }
     }
 
@@ -1383,11 +1128,7 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------
-    // The mobile profile. The same five device rows and the same literals as
-    // `models/fit.test.ts`, so these are parity fixtures as well as regression
-    // ones: if the two cores ever disagree about a phone recommendation, one of
-    // the two suites goes red instead of a user finding out on a device.
+    // The mobile profile, pinned the same way as the desktop guard above.
 
     fn phone(total_gb: i64) -> HardwareInfo {
         HardwareInfo {
@@ -1429,77 +1170,41 @@ mod tests {
     #[test]
     fn the_mobile_profile_at_2_4_6_8_and_12_gib_empty_buckets_included() {
         let catalog = dev_catalog();
+        // 2 GiB fits nothing at all; 4 GiB leaves Balanced empty while the other
+        // two resolve, which is the case a naive port reports as "no models".
+        #[rustfmt::skip]
         let rows: [(&str, HardwareInfo, [Option<MobilePin<'_>>; 3]); 5] = [
-            // Nothing fits at all: even the smallest quant of the smallest
-            // model at the lowest rung overflows a 0.35 budget.
             ("2 GiB phone", phone(2), [None, None, None]),
-            // Balanced empty while the other two resolve. Reachable on a real
-            // budget phone, and the case a naive port reports as "no models".
-            (
-                "4 GiB phone",
-                phone(4),
-                [
-                    Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
-                    None,
-                    Some(("Qwen/Qwen3.5-2B", "UD-Q2_K_XL", 2048, 1467196672, false)),
-                ],
-            ),
-            // The mainstream phone, and the row the profile is aimed at. Before
-            // the mmproj came out of the footprint this was `half: None`.
-            (
-                "6 GiB phone",
-                phone(6),
-                [
-                    Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
-                    Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 4096, 1133843712, false)),
-                    Some(("Qwen/Qwen3.5-2B", "Q4_K_M", 4096, 1882162432, false)),
-                ],
-            ),
-            (
-                "8 GiB phone",
-                phone(8),
-                [
-                    Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
-                    Some(("Qwen/Qwen3.5-2B", "Q3_K_M", 4096, 1708475648, false)),
-                    Some(("Qwen/Qwen3.5-4B", "Q3_K_M", 2048, 2961823904, false)),
-                ],
-            ),
-            (
-                "12 GiB phone",
-                phone(12),
-                [
-                    Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
-                    Some(("Qwen/Qwen3.5-2B", "Q4_K_M", 4096, 1882162432, false)),
-                    Some(("Qwen/Qwen3.5-4B", "Q4_K_M", 4096, 3677808800, false)),
-                ],
-            ),
+            ("4 GiB phone", phone(4), [
+                Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
+                None,
+                Some(("Qwen/Qwen3.5-2B", "UD-Q2_K_XL", 2048, 1467196672, false)),
+            ]),
+            ("6 GiB phone", phone(6), [
+                Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
+                Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 4096, 1133843712, false)),
+                Some(("Qwen/Qwen3.5-2B", "Q4_K_M", 4096, 1882162432, false)),
+            ]),
+            ("8 GiB phone", phone(8), [
+                Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
+                Some(("Qwen/Qwen3.5-2B", "Q3_K_M", 4096, 1708475648, false)),
+                Some(("Qwen/Qwen3.5-4B", "Q3_K_M", 2048, 2961823904, false)),
+            ]),
+            ("12 GiB phone", phone(12), [
+                Some(("Qwen/Qwen3.5-0.8B", "Q4_K_M", 2048, 1033180416, false)),
+                Some(("Qwen/Qwen3.5-2B", "Q4_K_M", 4096, 1882162432, false)),
+                Some(("Qwen/Qwen3.5-4B", "Q4_K_M", 4096, 3677808800, false)),
+            ]),
         ];
         for (label, hw, want) in rows {
-            let set = recommend_mobile(&catalog, &hw);
-            let got = [
-                set.buckets.smallest.as_ref(),
-                set.buckets.half.as_ref(),
-                set.buckets.full.as_ref(),
-            ];
-            for (name, (got, want)) in ["smallest", "half", "full"]
-                .into_iter()
-                .zip(got.into_iter().zip(want))
-            {
-                match (got, want) {
-                    (None, None) => {}
-                    (Some(_), None) => panic!("{label}/{name}: expected nothing to fit"),
-                    (None, Some(_)) => panic!("{label}/{name}: expected a recommendation"),
-                    (Some(g), Some(w)) => assert_eq!(mobile_pin(g), w, "{label}/{name} moved"),
-                }
-            }
+            assert_buckets(label, &recommend_mobile(&catalog, &hw), want, mobile_pin);
         }
     }
 
     #[test]
     fn the_profile_argument_is_observed_not_decoration() {
-        // D-145: a function with a dominant caller has an unobserved parameter,
-        // and every other test here passes Desktop. Mutating
-        // `resolve_fit_profile` to ignore its argument has to go red somewhere.
+        // Every other test here passes Desktop, so `resolve_fit_profile`
+        // ignoring its argument has to go red somewhere.
         let catalog = dev_catalog();
         let hw = phone(8);
         let desktop = recommend(&catalog, &hw);
@@ -1514,9 +1219,8 @@ mod tests {
 
     #[test]
     fn a_context_below_the_desktop_ladder_floor_is_reachable_on_mobile() {
-        // The direct regression test for D-158. The desktop ladder bottoms out
-        // at 4096, so before the ladder became data no phone-sized context was
-        // reachable at any budget and every bucket came back empty.
+        // The desktop ladder bottoms out at 4096, so no phone-sized context is
+        // reachable unless the ladder is read from the profile.
         let catalog = dev_catalog();
         let smallest = recommend_mobile(&catalog, &phone(6))
             .buckets
@@ -1527,11 +1231,6 @@ mod tests {
 
     #[test]
     fn mobile_defaults_vision_off_without_taking_it_away() {
-        // Three assertions that a half-done implementation splits: dropping the
-        // flag while still budgeting for the mmproj shrinks what fits for a file
-        // the profile does not preselect; budgeting for it while preselecting
-        // vision overcommits memory; and dropping the PATH along with the flag
-        // turns a default into a decision the user cannot overturn.
         let catalog = dev_catalog();
         let hw = phone(6);
         let half = recommend_mobile(&catalog, &hw)
@@ -1545,13 +1244,9 @@ mod tests {
         );
         assert!(!half.vision, "the recommendation must not report vision");
 
-        // The budget half, as an identity against catalog data rather than by
-        // subtracting one profile from the other: the two profiles legitimately
-        // pick different contexts, so a cross-profile subtraction is not a fact
-        // about vision at all. Qwen3.5-0.8B Q4_K_M at 4096:
-        //   weights 532_517_120 + kv 4096 * 49_152 + overhead 400_000_000
-        // The mmproj is 204_987_232, so a footprint still carrying it could not
-        // equal this sum.
+        // An identity against catalog data, not a cross-profile subtraction:
+        // the two profiles legitimately pick different contexts. The mmproj is
+        // 204_987_232, so a footprint still carrying it cannot equal this sum.
         let kv_per_token: i64 = 2 * 24 * 2 * 256 * 2;
         assert_eq!(half.model_id, "Qwen/Qwen3.5-0.8B");
         assert_eq!(half.apply.context_size, 4096);
@@ -1571,13 +1266,8 @@ mod tests {
 
     #[test]
     fn mobile_still_writes_the_projector_path_so_the_setting_can_be_turned_on() {
-        // The other half of the ruling above, and the one with teeth. A phone
-        // that starts with images off must still SELECT a projector, because
-        // `apply_to_patch` writes `llm.mmprojPath` and that path is the only
-        // thing standing between "Image Attachments is off by default" and
-        // "Image Attachments is a switch wired to nothing". Gating the path on
-        // the profile passes every other test in this file, because the only
-        // projector-path assertion is a desktop one.
+        // `apply_to_patch` writes `llm.mmprojPath`, and that path is the only
+        // thing between "images off by default" and "a switch wired to nothing".
         let catalog = dev_catalog();
         let all = build_catalog_views(&catalog, &catalog.fit, &phone(12), FitProfile::Mobile);
         let qwen = view(&all, "Qwen/Qwen3.5-4B");
@@ -1593,10 +1283,8 @@ mod tests {
 
     #[test]
     fn fit_profile_for_os_maps_the_two_phone_platforms_and_nothing_else() {
-        // Found by mutation on the TypeScript side, not by design: making this
-        // return Desktop unconditionally left every other test green, because
-        // its one production caller passes a desktop OS on a desktop machine.
-        // D-145's dominant-caller shape inside the function written to avoid it.
+        // Its one production caller passes a desktop OS on a desktop machine, so
+        // returning Desktop unconditionally leaves every other test green.
         assert_eq!(fit_profile_for_os("android"), FitProfile::Mobile);
         assert_eq!(fit_profile_for_os("ios"), FitProfile::Mobile);
         for os in ["macos", "linux", "windows", "freebsd", ""] {
@@ -1610,11 +1298,8 @@ mod tests {
 
     #[test]
     fn a_negative_compute_overhead_falls_back_rather_than_shrinking_every_footprint() {
-        // typify drops the schema's `nonnegative` (D-095), so this bound exists
-        // only here. A negative overhead makes every footprint smaller than it
-        // is, so the biggest model on the shelf "fits" a phone and the process
-        // is killed on load. Zero stays legal: the schema permits it and an
-        // author asking for no slack is making a choice.
+        // typify drops the schema's `nonnegative`, so this bound exists only
+        // here. Zero stays legal; a negative would shrink every footprint.
         let catalog = dev_catalog();
         let mut fit = catalog.fit.clone();
         fit.compute_overhead_bytes = -1;
@@ -1697,8 +1382,6 @@ mod tests {
         assert_eq!(gemma.apply.temperature, 1.0);
         assert_eq!(gemma.apply.top_k, 64);
     }
-
-    // --- what the TypeScript suite does not assert ---------------------------
 
     /// Every term of the footprint at once, against a value derived by hand
     /// from the catalog's own numbers: weights 2_740_937_888, KV cache
@@ -1838,11 +1521,10 @@ mod tests {
         assert_eq!(memory_budget_bytes(&vramless), 64 * GB);
     }
 
-    // --- the boundaries, each with the mutation that breaks it ---------------
+    // --- the boundaries ------------------------------------------------------
     //
-    // A threshold test whose fixture sits far from the threshold passes with
-    // the comparison deleted (D-015). Each of these sits exactly ON its
-    // boundary, and each names the operator mutation it is guarding.
+    // A threshold test whose fixture sits far from the threshold passes with the
+    // comparison deleted, so each of these sits exactly ON its boundary.
 
     /// A synthetic catalog with the fit policy set to whole numbers, so a limit
     /// is an exact integer and a footprint can be placed exactly on it. The real
@@ -1917,8 +1599,7 @@ mod tests {
     }
 
     /// BOUNDARY: `footprint <= limit`. A configuration costing exactly the
-    /// budget fits. Mutating `<=` to `<` drops it to the next rung down, so the
-    /// context assertion is what goes red.
+    /// budget fits.
     #[test]
     fn a_footprint_exactly_equal_to_the_limit_fits() {
         // kv(32768) = 4 * 32768 = 131_072, overhead = 600_000_000.
@@ -1935,9 +1616,7 @@ mod tests {
     }
 
     /// BOUNDARY: `quant_bpw <= SWEET_SPOT_MAX_BPW`. Q6_K sits exactly ON the
-    /// ceiling at 6.5 bits and must be recommendable. Mutating `<=` to `<`
-    /// excludes it, the sweet-spot search finds nothing, and the fallback
-    /// promotes Q8_0.
+    /// ceiling at 6.5 bits and must be recommendable.
     #[test]
     fn a_quant_exactly_at_the_sweet_spot_ceiling_is_recommendable() {
         const TOTAL: i64 = 100_000_000_000;
@@ -1966,8 +1645,7 @@ mod tests {
     }
 
     /// BOUNDARY: `score < floor`. The floor-reference model's own score is
-    /// exactly the floor and must qualify. Mutating `<` to `<=` excludes it,
-    /// and here that leaves nothing above the floor at all.
+    /// exactly the floor and must qualify.
     #[test]
     fn a_score_exactly_at_the_quality_floor_qualifies() {
         const TOTAL: i64 = 100_000_000_000;
@@ -1986,7 +1664,7 @@ mod tests {
     }
 
     /// BOUNDARY: `ctx > cap`. A model trained to exactly 8192 must be offered
-    /// 8192. Mutating `>` to `>=` skips its own maximum and drops it to 4096.
+    /// 8192.
     #[test]
     fn a_context_exactly_at_the_models_maximum_is_offered() {
         const TOTAL: i64 = 100_000_000_000;
@@ -1998,8 +1676,7 @@ mod tests {
     }
 
     /// BOUNDARY: the two `ctx <=` steps in the reasoning budget. 8192 is the
-    /// last context that gets 512 and 16384 the last that gets 1024. Mutating
-    /// either `<=` to `<` moves both answers up a step.
+    /// last context that gets 512 and 16384 the last that gets 1024.
     #[test]
     fn the_reasoning_budget_steps_exactly_at_its_thresholds() {
         assert_eq!(reasoning_budget_for(8191), 512);
@@ -2010,9 +1687,7 @@ mod tests {
     }
 
     /// BOUNDARY: `better()` falls through to the footprint only when the ranks
-    /// are EQUAL. Q4_K_M and UD-Q4_K_M are both 4.8 bits, so the tie is real
-    /// rather than arranged. Mutating the footprint comparison picks the larger
-    /// file for the same quality.
+    /// are EQUAL. Q4_K_M and UD-Q4_K_M are both 4.8 bits, so the tie is real.
     #[test]
     fn equal_quant_ranks_break_towards_the_smaller_footprint() {
         const TOTAL: i64 = 100_000_000_000;
@@ -2031,9 +1706,8 @@ mod tests {
         assert_eq!(view(&all, "m").quant, "UD-Q4_K_M");
     }
 
-    /// The catalog's tie-breakers, reached deliberately. Two models with
-    /// IDENTICAL primary scores, where the later one is tagged `qat`: without
-    /// the `preferTag:qat` rule the first one wins by arriving first.
+    /// Two models with IDENTICAL primary scores, the later one tagged `qat`:
+    /// without the `preferTag:qat` rule the first one wins by arriving first.
     #[test]
     fn a_tie_on_primary_score_is_broken_by_the_catalogs_rules() {
         const TOTAL: i64 = 100_000_000_000;
@@ -2082,10 +1756,9 @@ mod tests {
         assert!(recommend(&catalog, &budget(TOTAL)).buckets.full.is_some());
     }
 
-    /// The badge row is a user-visible list and a JavaScript `Set` preserves
-    /// insertion order, so the dedupe has to as well. Every model in the
-    /// shipped catalog carries at most one tag, which is why this needs a
-    /// fixture: with one tag a `BTreeSet` looks identical.
+    /// The badge row is user-visible, so the dedupe must preserve insertion
+    /// order. Needs a fixture: every shipped model carries at most one tag, and
+    /// with one tag a `BTreeSet` looks identical.
     #[test]
     fn tags_keep_their_catalog_order_through_the_dedupe() {
         const TOTAL: i64 = 100_000_000_000;
@@ -2136,18 +1809,10 @@ mod tests {
         .is_none());
     }
 
-    /// `config_for_quant` is what decides the context and the footprint of a
-    /// manual quant pick and of every row of the browser's quant list, and it
-    /// reads two constants nothing else in this file pins: the FULL budget
-    /// fraction and the FULL context ceiling.
-    ///
-    /// 24GB is where all three answers differ. The full limit
-    /// (21_692_823_398.4) affords the 9B at Q8_0 on the top rung
-    /// (15_340_635_424); the half limit (11_384_901_888) affords no rung at all,
-    /// so `budget_fraction.full -> .half` drops the context to 4096 and reports
-    /// it as not fitting; and the Smallest ceiling would cap it at 8192, so
-    /// `ctx_ceiling(Full) -> Smallest` lands on a third answer. Both mutations
-    /// survived the rest of this suite.
+    /// `config_for_quant` reads two constants nothing else in this file pins:
+    /// the FULL budget fraction and the FULL context ceiling. 24GB is the size
+    /// where the full limit, the half limit and the Smallest ceiling each give a
+    /// different answer, so the fixture discriminates all three.
     #[test]
     fn a_manual_quant_pick_is_budgeted_at_the_full_fraction_and_the_full_ceiling() {
         const SPEC: &str = "@unsloth/Qwen3.5-9B-GGUF/main/Qwen3.5-9B-Q8_0.gguf";
@@ -2176,11 +1841,9 @@ mod tests {
         assert!(q8.fits);
     }
 
-    /// The per-bucket ceilings with memory taken out of the picture. The real
-    /// catalog cannot show this: at every fixture size in this file at least one
-    /// bucket is budget-limited below its ceiling, so `CTX_CEILING.half` is
-    /// never the binding constraint and a wrong value ships green. Here the
-    /// budget fractions are 1.0, the margin is zero and the model costs
+    /// The per-bucket ceilings with memory taken out of the picture: the real
+    /// catalog never makes `ctx_ceiling.half` the binding constraint, so a wrong
+    /// value ships green. Here the fractions are 1.0 and the model costs
     /// kilobytes, so the ceiling is the only thing deciding.
     #[test]
     fn each_bucket_stops_at_its_own_ceiling_when_memory_is_not_the_constraint() {
@@ -2198,12 +1861,9 @@ mod tests {
         assert_eq!(rec.buckets.full.expect("full").apply.context_size, 32768);
     }
 
-    /// `lowerFootprint` is the FIRST rule in the shipped catalog's
-    /// `tieBreakers`, and it is the arm no other test checks: the tie case above
-    /// gives both models the same footprint on purpose, so that arm runs and its
-    /// answer is never read. Here the footprints differ and the LARGER model is
+    /// The `lowerFootprint` arm no other test reads. The LARGER model is
     /// declared first and tagged `qat`, so it wins by arrival order, by an
-    /// inverted comparison, and by the `preferTag:qat` rule that follows. Only a
+    /// inverted comparison, and by the `preferTag:qat` rule that follows: only a
     /// correct `lowerFootprint`, applied first, picks the smaller one.
     #[test]
     fn a_tie_breaks_towards_the_lower_footprint_before_any_tag_is_consulted() {

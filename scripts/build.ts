@@ -134,8 +134,7 @@ function buildables(
       sourceHash: () => coreItem.sourceHash(channel),
       outputHash: () => outputHash(coreItem, channel),
       // In-process rather than the build-core.ts subprocess, so the build emits
-      // the same artifact set a CI build runner does: binaries, helpers AND the
-      // speech sidecar (build-core.ts runs only buildAll + buildHelpers).
+      // the same artifact set a CI build runner does.
       run: () => buildCoreArtifacts([detectHostTriple()], channelBinSuffix(channel)).then(() => {}),
     },
     {

@@ -1,53 +1,15 @@
 //! The one outbound chokepoint for everything this package fetches.
 //!
-//! # Why it is a type rather than a convention
+//! Every request under `update/` goes through one [`Net`], which owns the only
+//! HTTP client here. Nothing in this package fetches at boot or on a timer: the
+//! manifest and artifact fetches hang off the check/update buttons, and the
+//! `self-install` and built-in-extension plant off the install phase, which
+//! `AGENTS.md` names as the one exception.
 //!
-//! `AGENTS.md`'s rule is absolute: once installed, Core makes NO outbound
-//! request without an explicit user action. This package has four outbound
-//! paths and exactly one of them is not behind a button, so "we were careful"
-//! is not an implementation strategy. Every request under `update/` goes
-//! through one [`Net`], which owns the only HTTP client here and counts every
-//! call it makes.
-//!
-//! | path                                     | authorised by                    |
-//! | ---------------------------------------- | -------------------------------- |
-//! | `core.json` for `GET /update/check`      | the "Check for Updates" button   |
-//! | `core.json` + artifacts for `POST /apply` | the "Update" button             |
-//! | `core.json` + artifacts for `self-install` | the install phase (see below)  |
-//! | the built-in extension plant in `bootstrap` | the install phase             |
-//!
-//! The last two are the exception `AGENTS.md` names: the install phase itself,
-//! the `install-service` subcommand the native installers delegate to, which
-//! runs before the app is considered installed. Both are reachable only from a
-//! short-lived CLI process someone invoked. **Nothing in this package fetches
-//! at boot or on a timer**, and that is the property to keep.
-//!
-//! # `calls()` counts THIS package, not the core
-//!
-//! Stated plainly because a counter is exactly the thing a later reader will
-//! over-trust. `downloads::net::Net` has an identical counter over the download
-//! engine's requests, `models::catalog` fetches through `reqwest` directly and
-//! is invisible to both, and this one sees only `update/`. **No single counter
-//! here is a core-wide total of outbound requests.** Each is a per-package
-//! chokepoint and the consent tests that read one are asserting about that
-//! package's paths.
-//!
-//! Two chokepoints of the same shape is a duplicated control, which D-049 says
-//! is the kind most worth hoisting. It is not hoisted yet for three reasons
-//! (half this package runs in a CLI with no `AppContext` and would construct
-//! its own instance anyway; the gunzip-then-hash verb `artifact.rs` needs does
-//! not exist there and adding it would be a write into D7's owned path; and the
-//! counter's meaning is already per-package). The hoist is a **tracked Stage 5
-//! item**, not a note here, precisely so it does not become permanent by
-//! default.
-//!
-//! # The counter has its own test, and that is not decoration
-//!
-//! Every consent test asserts `calls() == 0`. Deleting the increment leaves all
-//! of them green, because a counter that never counts always reads zero, so the
-//! whole enforcement would rest on an assertion that cannot fail. That is
-//! D-050 case 3, which cost D7 exactly this. It is paired here with a test that
-//! the counter goes UP.
+//! [`Net::calls`] counts THIS package only, not the core: `downloads::net::Net`
+//! has its own counter and other modules reach the network directly. It is
+//! tested to go UP, since a counter that never counts leaves every
+//! `calls() == 0` consent assertion green by construction.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -63,22 +25,13 @@ pub type Chunk = hyper::body::Bytes;
 
 /// How long a SMALL request may take in total: the signed manifest, the
 /// built-in extension manifest.
-///
-/// `shared/net.ts:14`'s `FETCH_TIMEOUT_MS`, which is also D7's
-/// `SMALL_REQUEST_TIMEOUT`. The two packages already agree on this number; it
-/// is not a new constant.
 pub const SMALL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long a STREAM may be silent before it is abandoned.
 ///
-/// An idle window rather than a wall-clock cap, because the core binary is
-/// ~100 MB and a slow-but-progressing transfer must not be killed while a dead
-/// socket fails fast. `shared/net.ts:19`'s `DOWNLOAD_STALL_MS`, and the same
-/// number as D7's stall watchdog.
-///
-/// It is armed BEFORE the connect, not after the first byte, so it also bounds
-/// a hung TLS handshake. That is `shared/net.ts:60-63`, where `arm()` runs
-/// above the `fetch`.
+/// An idle window rather than a wall-clock cap: the core binary is ~100 MB, so
+/// a slow-but-progressing transfer must survive while a dead socket fails fast.
+/// Armed BEFORE the connect, so it also bounds a hung TLS handshake.
 pub const STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The outbound side of the update and install paths.
@@ -99,13 +52,9 @@ impl Net {
         })
     }
 
-    /// Shrink the two bounds so a test can sit on the deadline instead of
-    /// waiting out the shipping value.
-    ///
-    /// The shipping values are asserted separately, with distinct non-zero
-    /// arguments, by `the_shipping_bounds_are_wired_through_and_not_transposed`.
-    /// Every timing test injecting its own constants would otherwise leave the
-    /// production wiring covered by nothing, which is D7's mutation 27.
+    /// Shrink the two bounds so a test can sit on the deadline. The shipping
+    /// values are asserted separately, by
+    /// `the_shipping_bounds_are_wired_through_and_not_transposed`.
     #[cfg(test)]
     pub fn with_bounds(mut self, small_request: Duration, stall: Duration) -> Self {
         self.small_request_timeout = small_request;
@@ -113,12 +62,8 @@ impl Net {
         self
     }
 
-    /// A GET whose body is a small document: a signed manifest.
-    ///
-    /// Returns the TEXT rather than a parsed value, because a signature covers
-    /// BYTES. See `manifest.rs`: handing back a parsed struct would give the
-    /// caller a second chance to differ from what was signed, which is the
-    /// defect D-065 records.
+    /// A GET whose body is a small document: a signed manifest. Returns TEXT
+    /// rather than a parsed value, because a signature covers bytes.
     pub async fn text(&self, url: &str) -> Result<String> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let deadline = self.small_request_timeout;
@@ -147,11 +92,8 @@ impl Net {
     }
 
     /// A GET whose body is streamed to disk: a core binary, a worker, a helper,
-    /// the built-in extension tarball.
-    ///
-    /// The stall deadline covers the connect as well as every chunk, so a host
-    /// that accepts the TCP connection and then says nothing fails here rather
-    /// than hanging an install at "Starting the Core".
+    /// the built-in extension tarball. The stall deadline covers the connect as
+    /// well as every chunk.
     pub async fn stream(&self, url: &str) -> Result<NetStream> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let stall = self.stall_timeout;
@@ -164,8 +106,6 @@ impl Net {
                 .map_err(|err| unreachable_host(url, &err))?;
             let status = res.status();
             if !status.is_success() {
-                // The oracle's wording (`shared/net.ts:66`), kept so a support
-                // log reads the same across the cutover.
                 return Err(AppError::new(
                     ErrorCode::InternalError,
                     format!("download HTTP {} for {url}", status.as_u16()),
@@ -198,17 +138,11 @@ impl Net {
 
     /// A client that trusts exactly one certificate: a CA of one.
     ///
-    /// `mint-code` talks to a freshly started core over TLS on loopback, using
-    /// the self-signed certificate the core wrote to `tls-cert.pem` at boot.
-    /// The point of the whole exercise is that verification stays **on**:
-    /// disabling it would make the pairing mint accept any listener that
-    /// answered on the port, which is the one request in the package that
-    /// carries the admin token.
-    ///
-    /// Both bounds collapse to `probe_timeout` here, because every request this
-    /// client makes is a small loopback exchange that the core answers in
-    /// milliseconds. A probe that has not returned in seconds is a stalled
-    /// connection rather than a slow one.
+    /// `mint-code` talks to a freshly started core over loopback TLS using the
+    /// self-signed cert it wrote at boot. Verification stays **on**: disabling
+    /// it would let the mint, which carries the admin token, accept any
+    /// listener on the port. Both bounds collapse to `probe_timeout`, since
+    /// every request here is a small loopback exchange.
     pub fn with_root_certificate(pem: &str, probe_timeout: Duration) -> Result<Self> {
         let certificate = reqwest::Certificate::from_pem(pem.as_bytes()).map_err(|err| {
             AppError::new(
@@ -234,12 +168,8 @@ impl Net {
         })
     }
 
-    /// A bounded GET used as a liveness probe. `true` only on a 2xx.
-    ///
-    /// Every other outcome, including a TLS failure against an untrusted
-    /// certificate, is `false` and the caller retries. That is right for a
-    /// probe: a core mid-boot and a core serving the wrong certificate both
-    /// mean "not ready yet" to something that is about to retry anyway.
+    /// A bounded GET used as a liveness probe. `true` only on a 2xx; every
+    /// other outcome, TLS failures included, is "not ready yet" and retried.
     pub async fn probe_ok(&self, url: &str) -> bool {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let deadline = self.small_request_timeout;
@@ -250,11 +180,8 @@ impl Net {
         }
     }
 
-    /// A bounded POST with headers, returning the body only on a 2xx.
-    ///
-    /// Three outcomes, kept distinct because the caller retries on two of them
-    /// and only one is a result: `Err` is a transport failure, `Ok(None)` is a
-    /// response the core refused, and `Ok(Some(body))` is an answer.
+    /// A bounded POST with headers, returning the body only on a 2xx. `Err` is
+    /// a transport failure, `Ok(None)` a refusal; the caller retries on both.
     pub async fn post_json(
         &self,
         url: &str,
@@ -277,8 +204,6 @@ impl Net {
                 .await
                 .map_err(|err| unreachable_host(url, &err))?;
             if !res.status().is_success() {
-                // The body is dropped rather than read, which is the Rust
-                // equivalent of the oracle's explicit `res.body?.cancel()`.
                 return Ok(None);
             }
             res.text().await.map(Some).map_err(|err| {
@@ -294,10 +219,8 @@ impl Net {
         }
     }
 
-    /// How many outbound requests this instance has made.
-    ///
-    /// Read only by tests. See the module docs: it is a per-package count, not
-    /// a core-wide one.
+    /// How many outbound requests this instance has made. Read only by tests,
+    /// and per-package rather than core-wide.
     #[cfg(test)]
     pub fn calls(&self) -> u64 {
         self.calls.load(Ordering::Relaxed)
@@ -320,12 +243,8 @@ impl std::fmt::Debug for NetStream {
 }
 
 impl NetStream {
-    /// The next chunk, `None` at a clean end of body.
-    ///
-    /// The deadline is per chunk rather than over the whole body, which is what
-    /// makes it a stall guard rather than a size limit: an hour-long download
-    /// that never pauses for a minute is fine, and a one-byte download that
-    /// pauses forever is not.
+    /// The next chunk, `None` at a clean end of body. The deadline is per
+    /// chunk, making it a stall guard rather than a size limit.
     pub async fn next_chunk(&mut self) -> Option<Result<Chunk>> {
         match tokio::time::timeout(self.stall, self.stream.next()).await {
             Err(_elapsed) => Some(Err(stalled(&self.url, self.stall))),
@@ -334,12 +253,9 @@ impl NetStream {
     }
 }
 
-/// Deliberately no client-level total-request timeout.
-///
-/// It would apply to the streaming GET too, and the core binary is ~100 MB on a
-/// connection this code cannot predict, so any deadline that fits one artifact
-/// fails another. Silence during a transfer is bounded by [`STALL_TIMEOUT`]
-/// instead; the small verb gets [`SMALL_REQUEST_TIMEOUT`] per call.
+/// Deliberately no client-level total-request timeout: it would also cap the
+/// streaming GET, where no fixed deadline fits every artifact. Silence is
+/// bounded by [`STALL_TIMEOUT`], the small verb by [`SMALL_REQUEST_TIMEOUT`].
 fn build_client() -> Result<reqwest::Client> {
     reqwest::Client::builder().build().map_err(|err| {
         AppError::new(
@@ -388,10 +304,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_text_and_a_stream_each_count_once() {
-        // The test that makes every `calls() == 0` assertion mean something.
-        // Without it, deleting the increment leaves the whole consent suite
-        // green: zero is what they expect, and a counter that never counts
-        // always reads zero. D-050 case 3.
+        // Makes every `calls() == 0` assertion mean something: a counter that
+        // never counts always reads zero.
         let up = Upstream::start(Serve::Body(b"hello".to_vec())).await;
         let net = Net::new().unwrap();
         assert_eq!(net.calls(), 0);
@@ -417,11 +331,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_black_holed_host_bounds_the_small_verb() {
-        // A host that accepts the connection and never answers is the only
-        // shape a per-request deadline defends against: nothing fails, so the
-        // caller waits forever. `/api/v1/update/check` runs inside an HTTP
-        // handler with no timeout layer in the router, so unbounded here means
-        // a request that never returns.
+        // `/api/v1/update/check` runs in a handler with no timeout layer, so
+        // unbounded here means a request that never returns.
         let up = Upstream::start(Serve::Never).await;
         let net = Net::new()
             .unwrap()
@@ -433,9 +344,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_stream_that_never_connects_is_bounded_by_the_stall_window() {
-        // Arming before the connect rather than after the first byte is what
-        // covers this case at all: with the deadline armed on first chunk, a
-        // handshake that never completes is not a stall and never fires.
+        // With the deadline armed on first chunk instead, a handshake that
+        // never completes is not a stall and never fires.
         let up = Upstream::start(Serve::Never).await;
         let net = Net::new()
             .unwrap()
@@ -473,10 +383,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_slow_but_progressing_stream_is_not_killed() {
-        // The converse, and the reason the bound is an idle window rather than
-        // a wall clock: this transfer takes 5x the stall window in total and
-        // must survive. A test for the stall alone passes just as happily
-        // against a total-duration cap, which is the wrong bound.
+        // The converse: this transfer takes 5x the stall window in total and
+        // must survive, which a total-duration cap would not allow.
         let up = Upstream::start(Serve::Trickle {
             chunk: vec![3u8; 4],
             count: 5,
@@ -499,14 +407,10 @@ mod tests {
 
     #[test]
     fn the_shipping_bounds_are_wired_through_and_not_transposed() {
-        // Every timing test above injects its own constants, which is right (it
-        // lets the assertion sit on the boundary), and it leaves the SHIPPING
-        // wiring covered by nothing: `Net::new` could swap the two fields and
-        // the suite would stay green. D7's mutation 27.
-        //
-        // The magnitudes are bounded rather than pinned, so a deliberate retune
-        // stays legal while a transposition or a unit slip does not. The two
-        // values are distinct, because equal ones cannot see a swap.
+        // The timing tests above inject their own constants, leaving the
+        // shipping wiring uncovered: `Net::new` could swap the two fields. The
+        // magnitudes are bounded rather than pinned, so a retune stays legal
+        // while a transposition or unit slip does not.
         let net = Net::new().unwrap();
         assert_eq!(net.small_request_timeout, SMALL_REQUEST_TIMEOUT);
         assert_eq!(net.stall_timeout, STALL_TIMEOUT);
@@ -520,9 +424,7 @@ mod tests {
 
     #[test]
     fn no_module_outside_net_reaches_the_network() {
-        // Read from the directory rather than a hand-kept list, so a new file
-        // joins the rule by existing. The chokepoint is only a chokepoint while
-        // it is the only thing naming the HTTP crate.
+        // Read from the directory, so a new file joins the rule by existing.
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/update");
         let mut offenders = Vec::new();
         walk(&dir, &mut |path: &std::path::Path| {
@@ -530,8 +432,7 @@ mod tests {
                 return;
             }
             let body = std::fs::read_to_string(path).unwrap_or_default();
-            // `reqwest::` rather than the bare word, so the module docs and
-            // this comment do not trip it.
+            // `reqwest::` rather than the bare word, so this comment passes.
             if body.contains("reqwest::") {
                 offenders.push(path.display().to_string());
             }

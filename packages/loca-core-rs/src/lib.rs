@@ -5,15 +5,6 @@
 //! the Tauri app and the client talks to it in-process, so the phone embeds the
 //! real core rather than a reimplementation of it.
 //!
-//! # Module tree
-//!
-//! Every module maps to exactly one work package in
-//! `docs/rust-port/registry.md`, and a package writes only inside its own
-//! module. This file, [`error`], [`contract`], `transport::router`, and
-//! `schema.sql` are shared surfaces: orchestrator-owned, so a package that needs
-//! a change there files a request in `docs/rust-port/shared/interfaces.md`
-//! rather than editing them.
-//!
 //! Each domain module owns its own route slice at `<module>/routes.rs`; the
 //! router that mounts them lives in [`transport`].
 

@@ -17,19 +17,12 @@ export {
 } from "./cores";
 export type { PairedCoreEntry } from "./cores";
 
-export { SessionsApi } from "./sessions";
-export { ChatApi } from "./chat";
-export { ModelsApi } from "./models";
-export { BinariesApi } from "./binaries";
-export { RequirementsApi } from "./requirements";
-export { StorageApi } from "./storage";
-export { ExtensionsApi } from "./extensions";
-export { MemoriesApi } from "./memories";
-export { ScheduledPromptsApi } from "./scheduled-prompts";
-export { GreetingsApi } from "./greetings";
-export { SttApi } from "./stt";
-export { TtsApi } from "./tts";
-export { CoreSettingsApi } from "./settings";
+export type {
+  McpServerInput,
+  ScheduledPromptPatch,
+  SttCatalogResponse,
+  TtsCatalogResponse,
+} from "./api";
 export {
   mintCodeWithAdminToken,
   PairingApi,
@@ -38,4 +31,3 @@ export {
   setAdminPasswordWithToken,
 } from "./pairing";
 export type { PairResult } from "./pairing";
-export { UpdateApi } from "./update";

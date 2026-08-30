@@ -18,14 +18,13 @@
   import { makeUiContext, setUiContext } from "@loca/shared/ui/context";
   import { getDefaultSettings } from "@loca/shared/domain/settings/engine";
   import { BASE_MS } from "@loca/shared/ui/animations";
-  import { type Timeline } from "../../lib/showcase";
+  import { type StageHandle } from "../../lib/showcase";
   import ShowcaseFrame from "./ShowcaseFrame.svelte";
 
   // Full-width horizontal snap-scroll track. Each panel is capped to the content
   // width (the Get Loca button width) and holds a scale-to-fit stage
   // (ShowcaseFrame) above its caption; neighbours peek on wide screens, dimmed and
   // frozen at time 0, while only the centred stage animates.
-  type Handle = { timeline: Timeline; reset: () => void };
 
   // Content width (the Get Loca button / caption width, max-w-xl) that caps every
   // panel, and the gap between adjacent panels (part of the snap step).
@@ -94,7 +93,7 @@
   ];
 
   const STAGES = 13;
-  const handles: (Handle | undefined)[] = Array.from({ length: STAGES }, () => undefined);
+  const handles: (StageHandle | undefined)[] = Array.from({ length: STAGES }, () => undefined);
   let registered = 0;
   let ready = $state(false);
 
@@ -197,7 +196,7 @@
     }, ADVANCE_DELAY_MS);
   }
 
-  function register(i: number, h: Handle): void {
+  function register(i: number, h: StageHandle): void {
     handles[i] = h;
     h.timeline.eventCallback("onComplete", onComplete);
     if (++registered === STAGES) {

@@ -29,7 +29,7 @@ tauri-plugin-fs = "2.5.1"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "sync", "time", "macros"] }
 tauri-plugin-dialog = "2.7.1"
 image = "0.25"
-base64 = "0.22"
+base64 = "0.23"
 keyring-core = "1"
 thiserror = "2"
 # Per-process CPU / memory for the Services field's "Main Application" row.
@@ -42,7 +42,7 @@ rustls = "0.23"
 # a terminating reverse proxy). Restricting to public roots also means an
 # OS-installed interception root is NOT auto-trusted for pairing.
 webpki-roots = "1"
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 x509-parser = "0.18"
 sha2 = "0.11"
@@ -99,7 +99,7 @@ loca-core-ffi = { path = "../../../loca-core-ffi", features = ["local-inference"
 # neither pin adds a first copy. Matching the Tauri stack keeps one of the two
 # from becoming a third.
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+jni = "0.22"
 # Hands back the JavaVM and the Activity the runtime already holds. The Activity
 # is what makes app classes resolvable: a JNI `FindClass` from a Rust-created
 # thread searches the SYSTEM classloader, which cannot see `com.rzkyif.loca.*`.
@@ -137,7 +137,7 @@ cpvc = "0.6"
 font-kit = "0.14"
 
 [dev-dependencies]
-rcgen = "=0.14.8"
+rcgen = "=0.14.10"
 tempfile = "=3.27.0"
 
 [lints.clippy]

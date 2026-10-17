@@ -37,10 +37,10 @@
     "dev:website": "deno task --cwd packages/loca-website dev",
 
     "check": "deno run -A scripts/pkg.ts check && deno run -A scripts/check.ts && deno task contract:check",
-    "lint:js": "deno run -A npm:oxlint@1.71.0 -c .oxlintrc.json . && deno run -A scripts/lint-walkers.ts",
+    "lint:js": "deno run -A npm:oxlint@1.88.0 -c .oxlintrc.json . && deno run -A scripts/lint-walkers.ts",
     "lint": "deno task lint:js && deno run -A scripts/pkg.ts lint",
-    "fmt": "deno run -A npm:oxfmt@0.56.0 . && deno run -A scripts/fmt-web.ts && deno run -A scripts/pkg.ts fmt",
-    "fmt:check": "deno run -A npm:oxfmt@0.56.0 --check . && deno run -A scripts/fmt-web.ts --check && deno run -A scripts/pkg.ts fmt:check",
+    "fmt": "deno run -A npm:oxfmt@0.73.0 . && deno run -A scripts/fmt-web.ts && deno run -A scripts/pkg.ts fmt",
+    "fmt:check": "deno run -A npm:oxfmt@0.73.0 --check . && deno run -A scripts/fmt-web.ts --check && deno run -A scripts/pkg.ts fmt:check",
     "test": "deno run -A scripts/pkg.ts test",
     "test:js": "deno run -A scripts/pkg.ts test:js",
     "test:e2e": "deno run -A scripts/test-e2e.ts",

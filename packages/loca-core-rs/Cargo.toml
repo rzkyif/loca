@@ -39,7 +39,7 @@ cc = "1.2"
 [dependencies]
 # Pinned exact so this crate, CI, and any staged prebuilt lib agree on one
 # version; `default-features` off so the link mode is selected, not inherited.
-sherpa-onnx = { version = "=1.13.3", default-features = false, optional = true }
+sherpa-onnx = { version = "=1.13.8", default-features = false, optional = true }
 
 # The WAV decoder in `speech::local::wav`. Unconditional: decoding in Rust
 # rather than handing sherpa a path is containment (sherpa's C++ calls `exit()`
@@ -74,17 +74,17 @@ rmcp = { version = "3.1.2", default-features = false, features = [
   "auth",
 ] }
 # The secrets vault: AES-GCM-256 over the `secrets.enc` bag.
-aes-gcm = { version = "0.10", features = ["std"] }
+aes-gcm = { version = "0.11", features = ["std"] }
 # CPace, hand-implemented over ristretto255 because no published crate targets
 # draft-21. `argon2` drops `password-hash`: the on-disk format is not PHC.
 async-trait = "0.1"
-argon2 = { version = "0.5", default-features = false, features = ["std"] }
+argon2 = { version = "0.6", default-features = false, features = ["std"] }
 curve25519-dalek = { version = "4.1", default-features = false, features = [
   "alloc",
   "precomputed-tables",
   "zeroize",
 ] }
-base64 = "0.22"
+base64 = "0.23"
 # Verifies the Ed25519 signature on the model catalog and the release manifests.
 ed25519-dalek = "2"
 # axum's Router is a `tower::Service`, the seam the mobile in-process path calls
@@ -93,9 +93,9 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 file-rotate = "0.8"
 futures-util = "0.3"
-getrandom = "0.3"
+getrandom = "0.4"
 hex = "0.4"
-hmac = "0.12"
+hmac = "0.13"
 hyper = "1"
 hyper-util = "0.1"
 indexmap = "2"
@@ -103,13 +103,13 @@ keyring-core = "1"
 # The TLS SPKI pin is byte-exact for already-paired clients, so key handling is
 # explicit. `arithmetic` provides `SecretKey::public_key()` and is a default
 # feature; `ecdsa` stays off since rcgen does the signing.
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
-rand = "0.9"
-rcgen = "=0.14.8"
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "pkcs8", "std"] }
+rand = "0.10"
+rcgen = "=0.14.10"
 regex = "1"
 # The generated contract compiles Zod `.regex()` constraints into
 # `regress::Regex` checks inside `Deserialize`.
-regress = "0.10"
+regress = "0.12"
 # `bundled` is mobile-critical: the Android NDK sysroot has no libsqlite3, and
 # it pins one SQLite version across every target. default-features off drops
 # 0.40's `ffi-sqlite-wasm-rs`; `cache` is re-added for `prepare_cached`.
@@ -121,8 +121,8 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 # no `dist.integrity`, and without it the installer refuses them. sha2 is pinned
 # to 0.10, not 0.11, because CPace needs `Hmac<Sha512>` from the `digest 0.10`
 # generation `hmac 0.12` is built on.
-sha1 = "0.10"
-sha2 = "0.10"
+sha1 = "0.11"
+sha2 = "0.11"
 serde_json = "1"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
@@ -154,7 +154,7 @@ flate2 = "1"
 # would change which files are hashed, drifting every installed extension.
 ignore = "0.4"
 # Tool-argument validation against the author's JSON Schema.
-jsonschema = { version = "0.33", default-features = false }
+jsonschema = { version = "0.59", default-features = false }
 # Cancellation for in-flight transfers.
 tokio-util = { version = "0.7", default-features = false }
 # The `deno` release asset is a `.zip` on every triple. `deflate` only: the
@@ -180,7 +180,7 @@ ash = { version = "0.38", default-features = false, features = ["loaded"] }
 # APK payload, not downloaded code, so W^X does not apply. iOS is absent on
 # purpose: upstream's iOS build is static and takes the crate's default mode.
 [target.'cfg(target_os = "android")'.dependencies]
-sherpa-onnx = { version = "=1.13.3", default-features = false, features = [
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = [
   "shared",
 ], optional = true }
 
@@ -191,7 +191,7 @@ windows-native-keyring-store = "1"
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "=3.27.0"
 tokio = { version = "1", features = [
   "rt",
   "rt-multi-thread",
@@ -202,8 +202,8 @@ tokio = { version = "1", features = [
   "io-util",
   "test-util",
 ] }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
-x509-parser = "0.18"
+tokio-tungstenite = { version = "=0.29.0", features = ["rustls-tls-webpki-roots"] }
+x509-parser = "=0.18.1"
 
 [lints.clippy]
 unwrap_used = "warn"

@@ -9,8 +9,8 @@ publish = false
 # a build-time tool, so it keeps its own lockfile and stays out of the gate.
 
 [dependencies]
-prettyplease = "0.2"
-schemars = "0.8"
+prettyplease = "0.3"
+schemars = "0.9"
 serde_json = "1"
 syn = "2"
-typify = "0.4"
+typify = "0.8"

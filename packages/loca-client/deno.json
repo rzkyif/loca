@@ -28,7 +28,7 @@
   },
   "imports": {
     "@loca/shared": "../loca-shared/src/index.ts",
-    "@ricky0123/vad-web": "npm:@ricky0123/vad-web@^0.0.30",
+    "@ricky0123/vad-web": "npm:@ricky0123/vad-web@^0.0.31",
     "@tauri-apps/api": "npm:@tauri-apps/api@^2.11.0",
     "@tauri-apps/api/core": "npm:@tauri-apps/api@^2.11.0/core",
     "@tauri-apps/api/event": "npm:@tauri-apps/api@^2.11.0/event",

@@ -28,7 +28,7 @@ const gen = new Deno.Command(Deno.execPath(), {
   args: [
     "run",
     "-A",
-    "npm:ts-json-schema-generator@2.4.0",
+    "npm:ts-json-schema-generator@2.9.0",
     "--path",
     join(HERE, "ts-entry.ts"),
     "--tsconfig",

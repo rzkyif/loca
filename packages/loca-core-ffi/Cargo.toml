@@ -30,7 +30,7 @@ local-speech = ["loca-core/local-speech"]
 loca-core = { package = "loca-core-rs", path = "../loca-core-rs" }
 # The command boundary is JSON, and a body is arbitrary bytes, so it crosses as
 # base64 exactly as `net_fetch`'s does. Same pin as the core's.
-base64 = "0.22"
+base64 = "0.23"
 serde = { version = "1", features = ["derive"] }
 # `rt` for the one spawned task per WebSocket connection, `sync` for the
 # start-once cell and the per-connection channel. No `rt-multi-thread`: this
@@ -43,8 +43,8 @@ tracing = "0.1"
 # marshalling tests drive a real router rather than a double. A dev-dependency
 # feature never reaches the shipped mobile artifact.
 loca-core = { package = "loca-core-rs", path = "../loca-core-rs", features = ["in-memory"] }
-serde_json = "1"
-tempfile = "3"
+serde_json = "=1.0.150"
+tempfile = "=3.27.0"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 
 [lints.clippy]
